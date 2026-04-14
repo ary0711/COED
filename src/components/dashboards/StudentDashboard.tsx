@@ -1,0 +1,440 @@
+import { User, BookOpen, Award, FileText, MessageSquare, Bell, Calendar } from 'lucide-react';
+import { Sidebar } from '../Sidebar';
+import { DashboardHeader } from '../DashboardHeader';
+
+const studentMenuItems = [
+  { icon: Bell, label: 'Dashboard', id: 'dashboard' },
+  { icon: User, label: 'Faculty & Departments', id: 'faculty' },
+  { icon: FileText, label: 'Evaluations & Feedback', id: 'evaluations' },
+  { icon: BookOpen, label: 'Academic Resources', id: 'resources' },
+  { icon: Award, label: 'Achievements & Activities', id: 'achievements' },
+  { icon: MessageSquare, label: 'Inquiry / Contact', id: 'inquiry' },
+];
+
+interface StudentDashboardProps {
+  onRoleChange: () => void;
+  activeMenuItem: string;
+  setActiveMenuItem: (id: string) => void;
+}
+
+export function StudentDashboard({ onRoleChange, activeMenuItem, setActiveMenuItem }: StudentDashboardProps) {
+  return (
+    <div className="flex min-h-screen bg-[#F1F5F9]">
+      <Sidebar
+        menuItems={studentMenuItems}
+        activeItem={activeMenuItem}
+        onItemClick={setActiveMenuItem}
+        userRole="Student"
+      />
+
+      <div className="flex-1 ml-64">
+        <DashboardHeader
+          userRole="Student"
+          userName="John Michael Cruz"
+          onRoleChange={onRoleChange}
+        />
+
+        <main className="p-6 animate-in fade-in duration-500">
+          {activeMenuItem === 'dashboard' && <StudentDashboardView />}
+          {activeMenuItem === 'faculty' && <FacultyDepartments />}
+          {activeMenuItem === 'evaluations' && <EvaluationsFeedback />}
+          {activeMenuItem === 'resources' && <AcademicResources />}
+          {activeMenuItem === 'achievements' && <AchievementsActivities />}
+          {activeMenuItem === 'inquiry' && <InquiryContact />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function StudentDashboardView() {
+  const announcements = [
+    { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
+    { id: 2, title: 'Faculty Evaluation Period Open', date: 'Feb 10, 2026', type: 'info' },
+    { id: 3, title: 'College Foundation Day Activities', date: 'Feb 8, 2026', type: 'info' },
+  ];
+
+  return (
+    <div>
+      <div className="mb-6 pb-6 border-b border-gray-200">
+        <h1 className="text-3xl font-semibold text-gray-900 mb-2">Student Dashboard</h1>
+        <p className="text-gray-600">Welcome back, John Michael Cruz</p>
+      </div>
+
+      {/* Student Info Card */}
+      <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-6 text-white mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold mb-2">John Michael Cruz</h2>
+            <p className="text-blue-100 mb-1">Student ID: 2023-00458</p>
+            <p className="text-blue-100">Bachelor of Secondary Education - Mathematics</p>
+            <p className="text-blue-100">3rd Year, Second Semester</p>
+          </div>
+          <div className="text-right">
+            <div className="text-4xl font-bold mb-1">3.75</div>
+            <div className="text-blue-100">Current GPA</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <BookOpen className="w-8 h-8 text-blue-600 mb-2" />
+          <div className="text-2xl font-bold text-gray-900">8</div>
+          <div className="text-sm text-gray-600">Enrolled Subjects</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <FileText className="w-8 h-8 text-green-600 mb-2" />
+          <div className="text-2xl font-bold text-gray-900">5</div>
+          <div className="text-sm text-gray-600">Evaluations Done</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <Calendar className="w-8 h-8 text-orange-600 mb-2" />
+          <div className="text-2xl font-bold text-gray-900">3</div>
+          <div className="text-sm text-gray-600">Pending Evaluations</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <Award className="w-8 h-8 text-purple-600 mb-2" />
+          <div className="text-2xl font-bold text-gray-900">Dean's List</div>
+          <div className="text-sm text-gray-600">Academic Standing</div>
+        </div>
+      </div>
+
+      {/* Announcements & Notifications */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Bell className="w-5 h-5" />
+            Announcements
+          </h2>
+          <div className="space-y-3">
+            {announcements.map((announcement) => (
+              <div
+                key={announcement.id}
+                className={`p-4 rounded-lg border-l-4 ${
+                  announcement.type === 'important' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'
+                }`}
+              >
+                <div className="font-medium text-gray-900">{announcement.title}</div>
+                <div className="text-sm text-gray-600 mt-1">{announcement.date}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Notifications</h2>
+          <div className="space-y-3">
+            <div className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
+              <div className="font-medium text-gray-900">Complete Faculty Evaluation</div>
+              <div className="text-sm text-gray-600 mt-1">3 faculty evaluations pending - Due: Feb 20</div>
+            </div>
+            <div className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+              <div className="font-medium text-gray-900">Upcoming Examinations</div>
+              <div className="text-sm text-gray-600 mt-1">Midterm exams start March 1, 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FacultyDepartments() {
+  const faculties = [
+    { name: 'Prof. Sarah Johnson', dept: 'Computer Science', position: 'Associate Professor', email: 's.johnson@university.edu' },
+    { name: 'Dr. Michael Chen', dept: 'Mathematics', position: 'Professor', email: 'm.chen@university.edu' },
+    { name: 'Dr. Patricia Williams', dept: 'Special Education', position: 'Department Chair', email: 'p.williams@university.edu' },
+    { name: 'Prof. Robert Anderson', dept: 'Educational Leadership', position: 'Professor', email: 'r.anderson@university.edu' },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Faculty & Departments</h1>
+      
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">My Faculty Members</h2>
+        <div className="grid gap-4">
+          {faculties.map((faculty, index) => (
+            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">{faculty.name}</div>
+                  <div className="text-sm text-gray-600">{faculty.position} - {faculty.dept}</div>
+                  <div className="text-sm text-blue-600">{faculty.email}</div>
+                </div>
+                <User className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Department Information</h2>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <h3 className="font-semibold text-gray-900 mb-2">Computer Science Department</h3>
+            <p className="text-sm text-gray-600 mb-2">Chair: Dr. Jennifer Lee</p>
+            <p className="text-sm text-gray-600">Office: CS Building, 3rd Floor</p>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg">
+            <h3 className="font-semibold text-gray-900 mb-2">Mathematics Department</h3>
+            <p className="text-sm text-gray-600 mb-2">Chair: Dr. Michael Chen</p>
+            <p className="text-sm text-gray-600">Office: Math Building, 2nd Floor</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EvaluationsFeedback() {
+  const pendingEvaluations = [
+    { faculty: 'Prof. Sarah Johnson', subject: 'Data Structures', status: 'pending' },
+    { faculty: 'Dr. Michael Chen', subject: 'Discrete Mathematics', status: 'pending' },
+    { faculty: 'Prof. Robert Anderson', subject: 'Educational Psychology', status: 'pending' },
+  ];
+
+  const completedEvaluations = [
+    { faculty: 'Dr. Patricia Williams', subject: 'Special Education', status: 'completed', date: 'Feb 10, 2026' },
+    { faculty: 'Prof. David Martinez', subject: 'Physical Education', status: 'completed', date: 'Feb 9, 2026' },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Evaluations & Feedback</h1>
+      
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Pending Faculty Evaluations</h2>
+        <div className="space-y-3">
+          {pendingEvaluations.map((evaluation, index) => (
+            <div key={index} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-900">{evaluation.faculty}</div>
+                  <div className="text-sm text-gray-600">{evaluation.subject}</div>
+                </div>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  Evaluate Now
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Completed Evaluations</h2>
+        <div className="space-y-3">
+          {completedEvaluations.map((evaluation, index) => (
+            <div key={index} className="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-900">{evaluation.faculty}</div>
+                  <div className="text-sm text-gray-600">{evaluation.subject}</div>
+                  <div className="text-xs text-gray-500 mt-1">Completed: {evaluation.date}</div>
+                </div>
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                  Submitted
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AcademicResources() {
+  const resources = [
+    { title: 'Academic Calendar 2025-2026', type: 'PDF', size: '2.5 MB' },
+    { title: 'Student Handbook', type: 'PDF', size: '5.8 MB' },
+    { title: 'Code of Conduct', type: 'PDF', size: '1.2 MB' },
+    { title: 'Registration Forms', type: 'PDF', size: '890 KB' },
+    { title: 'Scholarship Application Form', type: 'PDF', size: '1.5 MB' },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Academic Resources</h1>
+      
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Academic Calendar</h2>
+        <div className="p-6 bg-blue-50 rounded-lg">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-sm text-gray-600 mb-1">Second Semester</div>
+              <div className="font-medium text-gray-900">January 6 - May 15, 2026</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600 mb-1">Midterm Examinations</div>
+              <div className="font-medium text-gray-900">March 1-7, 2026</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600 mb-1">Final Examinations</div>
+              <div className="font-medium text-gray-900">May 8-14, 2026</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600 mb-1">Summer Term</div>
+              <div className="font-medium text-gray-900">June 1 - July 31, 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Downloadable Resources</h2>
+        <div className="space-y-3">
+          {resources.map((resource, index) => (
+            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-blue-600" />
+                  <div>
+                    <div className="font-medium text-gray-900">{resource.title}</div>
+                    <div className="text-sm text-gray-600">{resource.type} • {resource.size}</div>
+                  </div>
+                </div>
+                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  Download
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AchievementsActivities() {
+  const achievements = [
+    { title: 'Dean\'s List Recognition', date: 'First Semester 2025-2026', category: 'Academic' },
+    { title: 'Math Quiz Bowl Champion', date: 'January 2026', category: 'Competition' },
+    { title: 'Research Presentation Award', date: 'December 2025', category: 'Research' },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Achievements & Activities</h1>
+      
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">College Achievements</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          {achievements.map((achievement, index) => (
+            <div key={index} className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+              <div className="flex items-start gap-3">
+                <Award className="w-6 h-6 text-blue-600 mt-1" />
+                <div>
+                  <div className="font-semibold text-gray-900">{achievement.title}</div>
+                  <div className="text-sm text-gray-600">{achievement.date}</div>
+                  <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                    {achievement.category}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Upcoming College Activities</h2>
+        <div className="space-y-3">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Calendar className="w-6 h-6 text-blue-600" />
+              <div>
+                <div className="font-medium text-gray-900">College Foundation Day</div>
+                <div className="text-sm text-gray-600">March 15, 2026 • All Day Event</div>
+              </div>
+            </div>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Calendar className="w-6 h-6 text-green-600" />
+              <div>
+                <div className="font-medium text-gray-900">Career Fair</div>
+                <div className="text-sm text-gray-600">March 22, 2026 • 9:00 AM - 4:00 PM</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InquiryContact() {
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
+      
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Submit a Concern or Question</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+            <input
+              type="text"
+              placeholder="Enter subject"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>Academic Concern</option>
+              <option>Registration Issue</option>
+              <option>Faculty Inquiry</option>
+              <option>Facility Concern</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+            <textarea
+              rows={6}
+              placeholder="Describe your concern or question"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            Submit Inquiry
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">My Inquiries</h2>
+        <div className="space-y-3">
+          <div className="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-gray-900">Grade Inquiry - Math 201</div>
+                <div className="text-sm text-gray-600">Submitted: Feb 8, 2026</div>
+              </div>
+              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                Resolved
+              </span>
+            </div>
+          </div>
+          <div className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-gray-900">Schedule Conflict</div>
+                <div className="text-sm text-gray-600">Submitted: Feb 12, 2026</div>
+              </div>
+              <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
+                In Progress
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
