@@ -9,65 +9,27 @@ interface FacultyMember {
 }
 
 const facultyData: FacultyMember[] = [
-  {
-    id: '1',
-    name: 'Dr. Maria Santos',
-    status: 'submitted',
-    lastSubmission: 'Feb 10, 2026',
-    email: 'maria.santos@university.edu'
-  },
-  {
-    id: '2',
-    name: 'Prof. John Rodriguez',
-    status: 'submitted',
-    lastSubmission: 'Feb 11, 2026',
-    email: 'john.rodriguez@university.edu'
-  },
-  {
-    id: '3',
-    name: 'Dr. Lisa Chen',
-    status: 'pending',
-    lastSubmission: 'Jan 15, 2026',
-    email: 'lisa.chen@university.edu'
-  },
-  {
-    id: '4',
-    name: 'Prof. Michael Brown',
-    status: 'submitted',
-    lastSubmission: 'Feb 09, 2026',
-    email: 'michael.brown@university.edu'
-  },
-  {
-    id: '5',
-    name: 'Dr. Sarah Johnson',
-    status: 'pending',
-    lastSubmission: 'Jan 20, 2026',
-    email: 'sarah.johnson@university.edu'
-  },
-  {
-    id: '6',
-    name: 'Prof. David Martinez',
-    status: 'overdue',
-    lastSubmission: 'Dec 28, 2025',
-    email: 'david.martinez@university.edu'
-  },
-  {
-    id: '7',
-    name: 'Dr. Emily Wilson',
-    status: 'submitted',
-    lastSubmission: 'Feb 12, 2026',
-    email: 'emily.wilson@university.edu'
-  },
-  {
-    id: '8',
-    name: 'Prof. Robert Taylor',
-    status: 'pending',
-    lastSubmission: 'Jan 25, 2026',
-    email: 'robert.taylor@university.edu'
-  }
+  { id: '1', name: 'Dr. Maria Santos', status: 'submitted', lastSubmission: 'Feb 10, 2026', email: 'maria.santos@university.edu' },
+  { id: '2', name: 'Prof. John Rodriguez', status: 'submitted', lastSubmission: 'Feb 11, 2026', email: 'john.rodriguez@university.edu' },
+  { id: '3', name: 'Dr. Lisa Chen', status: 'pending', lastSubmission: 'Jan 15, 2026', email: 'lisa.chen@university.edu' },
+  { id: '4', name: 'Prof. Michael Brown', status: 'submitted', lastSubmission: 'Feb 09, 2026', email: 'michael.brown@university.edu' },
+  { id: '5', name: 'Dr. Sarah Johnson', status: 'pending', lastSubmission: 'Jan 20, 2026', email: 'sarah.johnson@university.edu' },
+  { id: '6', name: 'Prof. David Martinez', status: 'overdue', lastSubmission: 'Dec 28, 2025', email: 'david.martinez@university.edu' },
+  { id: '7', name: 'Dr. Emily Wilson', status: 'submitted', lastSubmission: 'Feb 12, 2026', email: 'emily.wilson@university.edu' },
+  { id: '8', name: 'Prof. Robert Taylor', status: 'pending', lastSubmission: 'Jan 25, 2026', email: 'robert.taylor@university.edu' }
 ];
 
 export function FacultyMonitoringTable() {
+  // Logic para sa General Reminder button
+  const handleSendGeneralReminder = () => {
+    alert("Sending reminders to all faculty members with pending or overdue reports...");
+  };
+
+  // Logic para sa View Details button
+  const handleViewDetails = (name: string) => {
+    alert(`Opening detailed submission history for ${name}.`);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'submitted':
@@ -104,7 +66,11 @@ export function FacultyMonitoringTable() {
             <h3 className="text-lg font-semibold text-gray-900">Faculty Monitoring</h3>
             <p className="text-sm text-gray-500">Report submission status</p>
           </div>
-          <button className="px-4 py-2 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E3A8A] transition-colors text-sm">
+          {/* UPDATED: Added onClick diri */}
+          <button 
+            onClick={handleSendGeneralReminder}
+            className="px-4 py-2 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E3A8A] transition-colors text-sm"
+          >
             Send Reminder
           </button>
         </div>
@@ -114,21 +80,11 @@ export function FacultyMonitoringTable() {
         <table className="w-full">
           <thead className="bg-[#F8FAFC]">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Faculty Name
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Email
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Last Submission
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Actions
-              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Faculty Name</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Email</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Last Submission</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -147,7 +103,11 @@ export function FacultyMonitoringTable() {
                   <div className="text-sm text-gray-600">{faculty.lastSubmission}</div>
                 </td>
                 <td className="px-6 py-4">
-                  <button className="text-[#2563EB] hover:text-[#1E3A8A] text-sm font-medium transition-colors">
+                  {/* UPDATED: Added onClick diri */}
+                  <button 
+                    onClick={() => handleViewDetails(faculty.name)}
+                    className="text-[#2563EB] hover:text-[#1E3A8A] text-sm font-medium transition-colors"
+                  >
                     View Details
                   </button>
                 </td>
@@ -157,7 +117,6 @@ export function FacultyMonitoringTable() {
         </table>
       </div>
 
-      {/* Summary Footer */}
       <div className="px-6 py-4 bg-[#F8FAFC] border-t border-gray-100">
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-6">

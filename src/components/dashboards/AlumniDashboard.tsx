@@ -1,4 +1,12 @@
-import { User, FileText, Award, BookOpen, MessageSquare, Bell, CheckCircle } from 'lucide-react';
+import { 
+  User, 
+  FileText, 
+  Award, 
+  BookOpen, 
+  MessageSquare, 
+  Bell, 
+  CheckCircle 
+} from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState } from 'react';
@@ -14,12 +22,11 @@ const alumniMenuItems = [
 ];
 
 interface AlumniDashboardProps {
-  onRoleChange: () => void;
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
 }
 
-export function AlumniDashboard({ onRoleChange, activeMenuItem, setActiveMenuItem }: AlumniDashboardProps) {
+export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDashboardProps) {
   return (
     <div className="flex min-h-screen bg-[#F1F5F9]">
       <Sidebar
@@ -33,11 +40,10 @@ export function AlumniDashboard({ onRoleChange, activeMenuItem, setActiveMenuIte
         <DashboardHeader
           userRole="Alumni"
           userName="Maria Gabriela Santos"
-          onRoleChange={onRoleChange}
         />
 
         <main className="p-6 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard' && <AlumniDashboardView />}
+          {activeMenuItem === 'dashboard' && <AlumniDashboardView setActiveMenuItem={setActiveMenuItem} />}
           {activeMenuItem === 'tracer' && <TracerSurvey />}
           {activeMenuItem === 'news' && <AlumniNews />}
           {activeMenuItem === 'college-info' && <CollegeInformation />}
@@ -50,7 +56,8 @@ export function AlumniDashboard({ onRoleChange, activeMenuItem, setActiveMenuIte
   );
 }
 
-function AlumniDashboardView() {
+// ====================== FUNCTIONAL DASHBOARD VIEW ======================
+function AlumniDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
   return (
     <div>
       <div className="mb-6 pb-6 border-b border-gray-200">
@@ -105,7 +112,7 @@ function AlumniDashboardView() {
         </div>
       </div>
 
-      {/* Announcements */}
+      {/* Announcements & Quick Actions */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -148,7 +155,9 @@ function AlumniDashboardView() {
   );
 }
 
+// ====================== FUNCTIONAL TRACER SURVEY ======================
 function TracerSurvey() {
+  const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     employmentStatus: 'employed',
     jobTitle: 'Elementary School Teacher',
@@ -158,7 +167,10 @@ function TracerSurvey() {
     relevance: 'very-relevant',
   });
 
-  const [isEditing, setIsEditing] = useState(false);
+  const handleSave = () => {
+    alert("✅ Tracer information updated successfully!");
+    setIsEditing(false);
+  };
 
   return (
     <div>
@@ -262,10 +274,13 @@ function TracerSurvey() {
 
           {isEditing && (
             <div className="flex gap-3 pt-4 border-t border-gray-200">
-              <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <button 
+                onClick={handleSave}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
                 Save Changes
               </button>
-              <button
+              <button 
                 onClick={() => setIsEditing(false)}
                 className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
               >
@@ -283,7 +298,6 @@ function TracerSurvey() {
             <h3 className="font-semibold text-gray-900 mb-2">Survey Completed</h3>
             <p className="text-sm text-gray-700">
               Thank you for keeping your information updated. Your responses help us improve our programs and track alumni success.
-              You can edit your responses at any time.
             </p>
           </div>
         </div>
@@ -292,7 +306,12 @@ function TracerSurvey() {
   );
 }
 
+// ====================== FUNCTIONAL ALUMNI NEWS ======================
 function AlumniNews() {
+  const handleReadMore = (title: string) => {
+    alert(`📖 Opening full article: "${title}"`);
+  };
+
   const news = [
     {
       id: 1,
@@ -320,7 +339,6 @@ function AlumniNews() {
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Alumni News</h1>
-      
       <div className="space-y-6">
         {news.map((item) => (
           <div key={item.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
@@ -332,7 +350,10 @@ function AlumniNews() {
                 <div className="text-sm text-blue-600 font-medium mb-2">{item.date}</div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-3">{item.title}</h2>
                 <p className="text-gray-600 mb-4">{item.excerpt}</p>
-                <button className="text-blue-600 hover:text-blue-700 font-medium">
+                <button 
+                  onClick={() => handleReadMore(item.title)}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
                   Read More →
                 </button>
               </div>
@@ -344,11 +365,100 @@ function AlumniNews() {
   );
 }
 
+// ====================== FUNCTIONAL DOCUMENTS & RESOURCES ======================
+function DocumentsResources() {
+  const handleDownload = (title: string) => {
+    alert(`📥 Downloading: ${title}`);
+  };
+
+  const documents = [
+    { title: 'Alumni Directory 2026', type: 'PDF', size: '3.2 MB' },
+    { title: 'Career Development Guide', type: 'PDF', size: '2.8 MB' },
+    { title: 'Alumni Benefits and Privileges', type: 'PDF', size: '1.5 MB' },
+    { title: 'Transcript Request Form', type: 'PDF', size: '890 KB' },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Documents & Resources</h1>
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Downloadable Resources</h2>
+        <div className="space-y-3">
+          {documents.map((doc, index) => (
+            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-blue-600" />
+                  <div>
+                    <div className="font-medium text-gray-900">{doc.title}</div>
+                    <div className="text-sm text-gray-600">{doc.type} • {doc.size}</div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleDownload(doc.title)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ====================== FUNCTIONAL INQUIRY ======================
+function AlumniInquiry() {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    alert("✅ Your inquiry has been submitted successfully! We will contact you soon.");
+  };
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Submit Alumni Concern</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+            <input type="text" placeholder="Enter subject" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+              <option>Transcript Request</option>
+              <option>Certificate Request</option>
+              <option>Alumni Card</option>
+              <option>Event Inquiry</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+            <textarea
+              rows={6}
+              placeholder="Describe your concern"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              required
+            />
+          </div>
+          <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            Submit Inquiry
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ====================== REMAINING SECTIONS (UI unchanged) ======================
 function CollegeInformation() {
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">College Information</h1>
-      
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">About COED</h2>
         <p className="text-gray-700 leading-relaxed mb-4">
@@ -400,7 +510,6 @@ function AlumniAchievements() {
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">College Achievements</h1>
-      
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Recent Awards</h2>
@@ -438,86 +547,6 @@ function AlumniAchievements() {
               <div className="text-sm text-gray-600">5 countries collaboration</div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DocumentsResources() {
-  const documents = [
-    { title: 'Alumni Directory 2026', type: 'PDF', size: '3.2 MB' },
-    { title: 'Career Development Guide', type: 'PDF', size: '2.8 MB' },
-    { title: 'Alumni Benefits and Privileges', type: 'PDF', size: '1.5 MB' },
-    { title: 'Transcript Request Form', type: 'PDF', size: '890 KB' },
-  ];
-
-  return (
-    <div>
-      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Documents & Resources</h1>
-      
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Downloadable Resources</h2>
-        <div className="space-y-3">
-          {documents.map((doc, index) => (
-            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                  <div>
-                    <div className="font-medium text-gray-900">{doc.title}</div>
-                    <div className="text-sm text-gray-600">{doc.type} • {doc.size}</div>
-                  </div>
-                </div>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                  Download
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AlumniInquiry() {
-  return (
-    <div>
-      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
-      
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Submit Alumni Concern</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-            <input
-              type="text"
-              placeholder="Enter subject"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option>Transcript Request</option>
-              <option>Certificate Request</option>
-              <option>Alumni Card</option>
-              <option>Event Inquiry</option>
-              <option>Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-            <textarea
-              rows={6}
-              placeholder="Describe your concern"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-          </div>
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            Submit Inquiry
-          </button>
         </div>
       </div>
     </div>

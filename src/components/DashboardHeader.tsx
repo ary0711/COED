@@ -3,15 +3,15 @@ import { Bell, Settings } from 'lucide-react';
 interface DashboardHeaderProps {
   userRole: string;
   userName: string;
-  onRoleChange: () => void;
 }
 
-export function DashboardHeader({ userRole, userName, onRoleChange }: DashboardHeaderProps) {
+export function DashboardHeader({ userRole, userName }: DashboardHeaderProps) {
   return (
     <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-200/50 shadow-sm">
       <div className="px-8 py-4">
         <div className="flex items-center justify-between">
-          {/* Left side - User info with elegant styling */}
+          
+          {/* Left side - User info */}
           <div className="flex items-center gap-4">
             <div className="relative">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] flex items-center justify-center text-white font-bold text-lg shadow-lg">
@@ -29,7 +29,7 @@ export function DashboardHeader({ userRole, userName, onRoleChange }: DashboardH
             </div>
           </div>
 
-          {/* Right side - Actions with modern icons */}
+          {/* Right side - Actions */}
           <div className="flex items-center gap-3">
             <button className="relative p-3 rounded-xl hover:bg-gray-100 transition-all duration-300 group">
               <Bell className="w-5 h-5 text-gray-600 group-hover:text-blue-600 transition-colors" />
@@ -40,14 +40,7 @@ export function DashboardHeader({ userRole, userName, onRoleChange }: DashboardH
               <Settings className="w-5 h-5 text-gray-600 group-hover:text-blue-600 transition-colors" />
             </button>
 
-            <div className="w-px h-8 bg-gray-200"></div>
-
-            <button
-              onClick={onRoleChange}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-700 font-medium text-sm transition-all duration-300 hover:shadow-md"
-            >
-              Switch Role
-            </button>
+            {/* Removed Switch Role Button */}
           </div>
         </div>
       </div>

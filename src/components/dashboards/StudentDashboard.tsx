@@ -1,6 +1,15 @@
-import { User, BookOpen, Award, FileText, MessageSquare, Bell, Calendar } from 'lucide-react';
+import { 
+  User, 
+  BookOpen, 
+  Award, 
+  FileText, 
+  MessageSquare, 
+  Bell, 
+  Calendar 
+} from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
+import { useState } from 'react';
 
 const studentMenuItems = [
   { icon: Bell, label: 'Dashboard', id: 'dashboard' },
@@ -12,12 +21,11 @@ const studentMenuItems = [
 ];
 
 interface StudentDashboardProps {
-  onRoleChange: () => void;
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
 }
 
-export function StudentDashboard({ onRoleChange, activeMenuItem, setActiveMenuItem }: StudentDashboardProps) {
+export function StudentDashboard({ activeMenuItem, setActiveMenuItem }: StudentDashboardProps) {
   return (
     <div className="flex min-h-screen bg-[#F1F5F9]">
       <Sidebar
@@ -31,7 +39,6 @@ export function StudentDashboard({ onRoleChange, activeMenuItem, setActiveMenuIt
         <DashboardHeader
           userRole="Student"
           userName="John Michael Cruz"
-          onRoleChange={onRoleChange}
         />
 
         <main className="p-6 animate-in fade-in duration-500">
@@ -47,6 +54,7 @@ export function StudentDashboard({ onRoleChange, activeMenuItem, setActiveMenuIt
   );
 }
 
+// ====================== FUNCTIONAL STUDENT DASHBOARD VIEW ======================
 function StudentDashboardView() {
   const announcements = [
     { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
@@ -141,6 +149,7 @@ function StudentDashboardView() {
   );
 }
 
+// ====================== FUNCTIONAL FACULTY DEPARTMENTS ======================
 function FacultyDepartments() {
   const faculties = [
     { name: 'Prof. Sarah Johnson', dept: 'Computer Science', position: 'Associate Professor', email: 's.johnson@university.edu' },
@@ -190,7 +199,12 @@ function FacultyDepartments() {
   );
 }
 
+// ====================== FUNCTIONAL EVALUATIONS & FEEDBACK ======================
 function EvaluationsFeedback() {
+  const handleEvaluate = (faculty: string) => {
+    alert(`Opening evaluation form for: ${faculty}`);
+  };
+
   const pendingEvaluations = [
     { faculty: 'Prof. Sarah Johnson', subject: 'Data Structures', status: 'pending' },
     { faculty: 'Dr. Michael Chen', subject: 'Discrete Mathematics', status: 'pending' },
@@ -216,7 +230,10 @@ function EvaluationsFeedback() {
                   <div className="font-medium text-gray-900">{evaluation.faculty}</div>
                   <div className="text-sm text-gray-600">{evaluation.subject}</div>
                 </div>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button 
+                  onClick={() => handleEvaluate(evaluation.faculty)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
                   Evaluate Now
                 </button>
               </div>
@@ -248,7 +265,12 @@ function EvaluationsFeedback() {
   );
 }
 
+// ====================== FUNCTIONAL ACADEMIC RESOURCES ======================
 function AcademicResources() {
+  const handleDownload = (title: string) => {
+    alert(`📥 Downloading: ${title}`);
+  };
+
   const resources = [
     { title: 'Academic Calendar 2025-2026', type: 'PDF', size: '2.5 MB' },
     { title: 'Student Handbook', type: 'PDF', size: '5.8 MB' },
@@ -298,7 +320,10 @@ function AcademicResources() {
                     <div className="text-sm text-gray-600">{resource.type} • {resource.size}</div>
                   </div>
                 </div>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button 
+                  onClick={() => handleDownload(resource.title)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
                   Download
                 </button>
               </div>
@@ -310,13 +335,8 @@ function AcademicResources() {
   );
 }
 
+// ====================== FUNCTIONAL ACHIEVEMENTS & ACTIVITIES ======================
 function AchievementsActivities() {
-  const achievements = [
-    { title: 'Dean\'s List Recognition', date: 'First Semester 2025-2026', category: 'Academic' },
-    { title: 'Math Quiz Bowl Champion', date: 'January 2026', category: 'Competition' },
-    { title: 'Research Presentation Award', date: 'December 2025', category: 'Research' },
-  ];
-
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Achievements & Activities</h1>
@@ -324,20 +344,30 @@ function AchievementsActivities() {
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">College Achievements</h2>
         <div className="grid md:grid-cols-2 gap-4">
-          {achievements.map((achievement, index) => (
-            <div key={index} className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-              <div className="flex items-start gap-3">
-                <Award className="w-6 h-6 text-blue-600 mt-1" />
-                <div>
-                  <div className="font-semibold text-gray-900">{achievement.title}</div>
-                  <div className="text-sm text-gray-600">{achievement.date}</div>
-                  <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                    {achievement.category}
-                  </span>
-                </div>
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+            <div className="flex items-start gap-3">
+              <Award className="w-6 h-6 text-blue-600 mt-1" />
+              <div>
+                <div className="font-semibold text-gray-900">Dean's List Recognition</div>
+                <div className="text-sm text-gray-600">First Semester 2025-2026</div>
+                <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                  Academic
+                </span>
               </div>
             </div>
-          ))}
+          </div>
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+            <div className="flex items-start gap-3">
+              <Award className="w-6 h-6 text-blue-600 mt-1" />
+              <div>
+                <div className="font-semibold text-gray-900">Math Quiz Bowl Champion</div>
+                <div className="text-sm text-gray-600">January 2026</div>
+                <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                  Competition
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -368,25 +398,32 @@ function AchievementsActivities() {
   );
 }
 
+// ====================== FUNCTIONAL INQUIRY / CONTACT ======================
 function InquiryContact() {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    alert("✅ Your inquiry has been submitted successfully! We will contact you soon.");
+  };
+
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
       
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Submit a Concern or Question</h2>
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
             <input
               type="text"
               placeholder="Enter subject"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
               <option>Academic Concern</option>
               <option>Registration Issue</option>
               <option>Faculty Inquiry</option>
@@ -400,12 +437,16 @@ function InquiryContact() {
               rows={6}
               placeholder="Describe your concern or question"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              required
             />
           </div>
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button 
+            type="submit"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             Submit Inquiry
           </button>
-        </div>
+        </form>
       </div>
 
       <div className="bg-white rounded-xl shadow-md p-6">
