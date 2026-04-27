@@ -5,7 +5,11 @@ import {
   FileText, 
   MessageSquare, 
   Bell, 
-  Calendar 
+  Calendar,
+  Users,
+  Building2,
+  Download,
+  Clock 
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -69,7 +73,6 @@ function StudentDashboardView() {
         <p className="text-gray-600">Welcome back, John Michael Cruz</p>
       </div>
 
-      {/* Student Info Card */}
       <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-6 text-white mb-6">
         <div className="flex items-center justify-between">
           <div>
@@ -85,7 +88,6 @@ function StudentDashboardView() {
         </div>
       </div>
 
-      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         <div className="bg-white rounded-xl shadow-md p-6">
           <BookOpen className="w-8 h-8 text-blue-600 mb-2" />
@@ -109,7 +111,6 @@ function StudentDashboardView() {
         </div>
       </div>
 
-      {/* Announcements & Notifications */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -274,7 +275,6 @@ function AcademicResources() {
   const resources = [
     { title: 'Academic Calendar 2025-2026', type: 'PDF', size: '2.5 MB' },
     { title: 'Student Handbook', type: 'PDF', size: '5.8 MB' },
-    { title: 'Code of Conduct', type: 'PDF', size: '1.2 MB' },
     { title: 'Registration Forms', type: 'PDF', size: '890 KB' },
     { title: 'Scholarship Application Form', type: 'PDF', size: '1.5 MB' },
   ];
@@ -335,8 +335,32 @@ function AcademicResources() {
   );
 }
 
-// ====================== FUNCTIONAL ACHIEVEMENTS & ACTIVITIES ======================
+// ====================== FUNCTIONAL ACHIEVEMENTS & ACTIVITIES (3 CLUBS) ======================
 function AchievementsActivities() {
+  const clubs = [
+    { 
+      name: "Mathematics Society", 
+      activity: "Math Quiz Bowl Practice",
+      day: "Mondays",
+      time: "4:00 PM - 5:30 PM",
+      venue: "Math Lab 2"
+    },
+    { 
+      name: "Computer Science Guild", 
+      activity: "Algorithm Workshop",
+      day: "Wednesdays",
+      time: "3:30 PM - 5:00 PM",
+      venue: "CL 1"
+    },
+    { 
+      name: "Educators Guild", 
+      activity: "Teaching Demo",
+      day: "Fridays",
+      time: "1:00 PM - 3:00 PM",
+      venue: "Hall A"
+    }
+  ];
+
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Achievements & Activities</h1>
@@ -344,30 +368,55 @@ function AchievementsActivities() {
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">College Achievements</h2>
         <div className="grid md:grid-cols-2 gap-4">
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-            <div className="flex items-start gap-3">
-              <Award className="w-6 h-6 text-blue-600 mt-1" />
-              <div>
-                <div className="font-semibold text-gray-900">Dean's List Recognition</div>
-                <div className="text-sm text-gray-600">First Semester 2025-2026</div>
-                <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                  Academic
-                </span>
-              </div>
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200 flex items-start gap-3">
+            <Award className="w-6 h-6 text-blue-600 mt-1" />
+            <div>
+              <div className="font-semibold text-gray-900">Dean's List Recognition</div>
+              <div className="text-sm text-gray-600">First Semester 2025-2026</div>
             </div>
           </div>
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-            <div className="flex items-start gap-3">
-              <Award className="w-6 h-6 text-blue-600 mt-1" />
-              <div>
-                <div className="font-semibold text-gray-900">Math Quiz Bowl Champion</div>
-                <div className="text-sm text-gray-600">January 2026</div>
-                <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                  Competition
-                </span>
-              </div>
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200 flex items-start gap-3">
+            <Award className="w-6 h-6 text-blue-600 mt-1" />
+            <div>
+              <div className="font-semibold text-gray-900">Math Quiz Bowl Champion</div>
+              <div className="text-sm text-gray-600">January 2026</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Campus Organizations Section */}
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Users className="w-6 h-6 text-blue-600" />
+          Clubs Activities & Schedules
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {clubs.map((club, index) => (
+            <div key={index} className="p-4 border border-gray-100 rounded-xl bg-slate-50">
+              <h3 className="font-bold text-blue-800 border-b border-blue-100 pb-2 mb-3 uppercase text-sm">
+                {club.name}
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase font-bold">Activity</div>
+                  <div className="text-sm text-gray-800">{club.activity}</div>
+                </div>
+                <div className="pt-2 border-t border-dashed border-gray-200">
+                  <div className="flex items-center gap-2 text-blue-700 mb-1">
+                    <Calendar className="w-3 h-3" />
+                    <span className="text-[10px] font-bold uppercase">Schedule</span>
+                  </div>
+                  <div className="text-xs text-gray-700">
+                    <div>{club.day} | {club.time}</div>
+                    <div className="text-gray-500 mt-1 flex items-center gap-1">
+                      <Building2 className="w-3 h-3" /> {club.venue}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -383,15 +432,6 @@ function AchievementsActivities() {
               </div>
             </div>
           </div>
-          <div className="p-4 bg-green-50 rounded-lg">
-            <div className="flex items-center gap-3">
-              <Calendar className="w-6 h-6 text-green-600" />
-              <div>
-                <div className="font-medium text-gray-900">Career Fair</div>
-                <div className="text-sm text-gray-600">March 22, 2026 • 9:00 AM - 4:00 PM</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -402,7 +442,7 @@ function AchievementsActivities() {
 function InquiryContact() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert("✅ Your inquiry has been submitted successfully! We will contact you soon.");
+    alert("✅ Your inquiry has been submitted successfully!");
   };
 
   return (
@@ -414,67 +454,16 @@ function InquiryContact() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-            <input
-              type="text"
-              placeholder="Enter subject"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-              <option>Academic Concern</option>
-              <option>Registration Issue</option>
-              <option>Faculty Inquiry</option>
-              <option>Facility Concern</option>
-              <option>Other</option>
-            </select>
+            <input type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-            <textarea
-              rows={6}
-              placeholder="Describe your concern or question"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              required
-            />
+            <textarea rows={6} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" required />
           </div>
-          <button 
-            type="submit"
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
+          <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             Submit Inquiry
           </button>
         </form>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">My Inquiries</h2>
-        <div className="space-y-3">
-          <div className="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-gray-900">Grade Inquiry - Math 201</div>
-                <div className="text-sm text-gray-600">Submitted: Feb 8, 2026</div>
-              </div>
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                Resolved
-              </span>
-            </div>
-          </div>
-          <div className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-gray-900">Schedule Conflict</div>
-                <div className="text-sm text-gray-600">Submitted: Feb 12, 2026</div>
-              </div>
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
-                In Progress
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

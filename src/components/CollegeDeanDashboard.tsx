@@ -17,7 +17,9 @@ import {
   Trash2,
   Download,
   Upload,
-  CheckCircle
+  CheckCircle,
+  ArrowLeft,
+  Save
 } from 'lucide-react';
 
 // Kinahanglan nimo ni i-import gikan sa ilang tagsa-tagsa nga files
@@ -60,7 +62,6 @@ export function CollegeDeanDashboard({ activeMenuItem, setActiveMenuItem }: Coll
       />
 
       <div className="flex-1 ml-64">
-        {/* GI-UPDATE DIRI: Gi-delete ang onRoleChange para mawala ang Code 2322 */}
         <DashboardHeader
           userRole="College Dean"
           userName="Dr. Elizabeth Martinez"
@@ -117,22 +118,50 @@ function UserManagement() {
     { id: 3, name: 'Dr. Michael Chen', role: 'Department Chair', dept: 'Mathematics', status: 'Active' },
     { id: 4, name: 'Maria Santos', role: 'Alumni', dept: 'Elementary Education', status: 'Active' },
   ]);
+  const [view, setView] = useState<'table' | 'add'>('table');
   const [search, setSearch] = useState('');
 
-  const handleAdd = () => {
-    const name = prompt("Enter Name:");
-    if (!name) return;
-    setUsers([...users, { id: Date.now(), name, role: 'Faculty', dept: 'General', status: 'Active' }]);
-  };
-
-  const handleEdit = (id: number) => {
-    const newName = prompt("Enter New Name:", users.find(u => u.id === id)?.name);
-    if (newName) setUsers(users.map(u => u.id === id ? { ...u, name: newName } : u));
-  };
-
-  const handleDelete = (id: number) => {
-    if (window.confirm("Delete this user?")) setUsers(users.filter(u => u.id !== id));
-  };
+  if (view === 'add') {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setView('table')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
+          <h1 className="text-3xl font-semibold text-gray-900">Add New User</h1>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input type="text" placeholder="Enter name" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input type="email" placeholder="email@university.edu" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                <option>Faculty</option>
+                <option>Student</option>
+                <option>Department Chair</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                <option>Computer Science</option>
+                <option>Mathematics</option>
+                <option>Elementary Education</option>
+              </select>
+            </div>
+          </div>
+          <button onClick={() => setView('table')} className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors">
+            <Save className="w-4 h-4" /> Save User Information
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -140,7 +169,7 @@ function UserManagement() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-gray-900">User Management</h1>
-        <button onClick={handleAdd} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+        <button onClick={() => setView('add')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
           <Plus className="w-5 h-5" /> Add New User
         </button>
       </div>
@@ -168,8 +197,8 @@ function UserManagement() {
                   <td className="py-4 px-6 text-center"><span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">{user.status}</span></td>
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => handleEdit(user.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => handleDelete(user.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                      <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit className="w-4 h-4" /></button>
+                      <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -183,7 +212,38 @@ function UserManagement() {
 }
 
 function AcademicRecords() {
+  const [view, setView] = useState<'main' | 'load'>('main');
   const handleAction = (type: string) => alert(`${type} action initiated.`);
+
+  if (view === 'load') {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setView('main')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
+          <h1 className="text-3xl font-semibold text-gray-900">Faculty Load Details</h1>
+        </div>
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="py-3 px-6 text-sm font-semibold text-gray-700">Faculty Member</th>
+                <th className="py-3 px-6 text-sm font-semibold text-gray-700">Total Units</th>
+                <th className="py-3 px-6 text-sm font-semibold text-gray-700">Subject Assignment</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="hover:bg-gray-50">
+                <td className="py-4 px-6 font-medium text-gray-900">Dr. Sarah Johnson</td>
+                <td className="py-4 px-6 text-gray-700">21 Units</td>
+                <td className="py-4 px-6 text-gray-600 italic">CS101, CS202, CS301</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Academic Records Management</h1>
@@ -196,7 +256,7 @@ function AcademicRecords() {
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Faculty Load</h2>
           <p className="text-gray-600 mb-4">View and manage faculty teaching loads</p>
-          <button onClick={() => handleAction('View Faculty Loads')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View Loads</button>
+          <button onClick={() => setView('load')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View Loads</button>
         </div>
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Documents</h2>
@@ -220,6 +280,34 @@ function AcademicRecords() {
 }
 
 function FacultyStaffManagement() {
+  const [view, setView] = useState<'main' | 'faculty' | 'staff'>('main');
+
+  if (view !== 'main') {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setView('main')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
+          <h1 className="text-3xl font-semibold text-gray-900">{view === 'faculty' ? 'Faculty Directory' : 'Staff Directory'}</h1>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="p-4 border border-gray-200 rounded-xl flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold ${view === 'faculty' ? 'bg-blue-600' : 'bg-green-600'}`}>
+                  {view === 'faculty' ? 'F' : 'S'}
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900">{view === 'faculty' ? 'Faculty Name' : 'Staff Name'} {i}</h4>
+                  <p className="text-sm text-gray-500">College Department</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
@@ -228,83 +316,68 @@ function FacultyStaffManagement() {
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
           <p className="text-3xl font-bold text-blue-600 mb-2">142</p>
           <p className="text-gray-600 mb-4">Total Faculty Members</p>
-          <button onClick={() => alert("Navigating to Faculty Directory")} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View All Faculty</button>
+          <button onClick={() => setView('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View All Faculty</button>
         </div>
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
           <p className="text-3xl font-bold text-green-600 mb-2">28</p>
           <p className="text-gray-600 mb-4">Total Staff Members</p>
-          <button onClick={() => alert("Navigating to Staff Directory")} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">View All Staff</button>
+          <button onClick={() => setView('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">View All Staff</button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function LandingPageManagement() {
-  const sections = ["Hero Section", "About the College", "Vision, Mission & Goals", "Programs Offered", "Faculty Directory", "Achievements", "Research & Extension", "News & Updates", "Contact Information"];
-  const [selectedSection, setSelectedSection] = useState(sections[0]);
-  const [content, setContent] = useState<any>({
-    "Hero Section": { title: "Welcome to the College of Education", description: "Empowering future educators through excellence and innovation." },
-    "About the College": { title: "About COED", description: "The College of Education provides high-quality teacher education programs." },
-    "Vision, Mission & Goals": { title: "Our Vision & Mission", description: "To be a center of excellence in teacher education." },
-    "Programs Offered": { title: "Our Programs", description: "Bachelor of Elementary Education, Bachelor of Secondary Education, and more." },
-    "Faculty Directory": { title: "Meet Our Faculty", description: "Highly qualified and experienced educators." },
-    "Achievements": { title: "Our Achievements", description: "Top performing graduates and award-winning faculty." },
-    "Research & Extension": { title: "Research & Community Engagement", description: "Active research and community extension programs." },
-    "News & Updates": { title: "Latest News", description: "Stay updated with announcements and events." },
-    "Contact Information": { title: "Contact Us", description: "Email: coed@university.edu | Phone: (123) 456-7890" }
-  });
-
-  const handleChange = (field: string, value: string) => {
-    setContent({ ...content, [selectedSection]: { ...content[selectedSection], [field]: value } });
-  };
-
-  const handleSave = () => alert(`Saved changes for ${selectedSection}!`);
-
-  return (
-    <div>
-      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Landing Page Management</h1>
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Select Section</label>
-        <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className="w-full md:w-1/2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-          {sections.map((section, index) => (<option key={index} value={section}>{section}</option>))}
-        </select>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Editing: {selectedSection}</h2>
-        <div className="space-y-4">
-          <input type="text" value={content[selectedSection].title} onChange={(e) => handleChange("title", e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
-          <textarea rows={5} value={content[selectedSection].description} onChange={(e) => handleChange("description", e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none" />
-          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Save Changes</button>
-        </div>
-      </div>
-      <div className="bg-gray-50 rounded-xl p-6">
-        <h2 className="text-xl font-semibold mb-4">Live Preview</h2>
-        <h3 className="text-2xl font-bold text-blue-600">{content[selectedSection].title}</h3>
-        <p className="text-gray-700 mt-2">{content[selectedSection].description}</p>
       </div>
     </div>
   );
 }
 
 function CalendarActivities() {
+  const [view, setView] = useState<'main' | 'add'>('main');
   const [events, setEvents] = useState([
     { title: 'Faculty Development Seminar', date: 'March 15, 2026', dept: 'All Departments' },
     { title: 'Department Meeting', date: 'March 18, 2026', dept: 'Computer Science' },
     { title: 'College Foundation Day', date: 'March 25, 2026', dept: 'All Departments' },
   ]);
 
-  const handleAdd = () => {
-    const title = prompt("Event Title:");
-    if (title) setEvents([{ title, date: new Date().toLocaleDateString(), dept: 'General' }, ...events]);
-  };
+  if (view === 'add') {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setView('main')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
+          <h1 className="text-3xl font-semibold text-gray-900">Add New Event</h1>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
+              <input type="text" placeholder="Seminar / Meeting Name" className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input type="date" className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none">
+                  <option>All Departments</option>
+                  <option>Computer Science</option>
+                  <option>Mathematics</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setView('main')} className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors">
+            <Save className="w-4 h-4" /> Publish Event
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
-        <button onClick={handleAdd} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"><Plus className="w-5 h-5" /> Add Event</button>
+        <button onClick={() => setView('add')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"><Plus className="w-5 h-5" /> Add Event</button>
       </div>
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <div className="h-96 bg-gray-100 rounded-lg flex items-center justify-center"><Calendar className="w-16 h-16 text-gray-400" /></div>
@@ -488,6 +561,53 @@ function AnnouncementsContent() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LandingPageManagement() {
+  const sections = ["Hero Section", "About the College", "Vision, Mission & Goals", "Programs Offered", "Faculty Directory", "Achievements", "Research & Extension", "News & Updates", "Contact Information"];
+  const [selectedSection, setSelectedSection] = useState(sections[0]);
+  const [content, setContent] = useState<any>({
+    "Hero Section": { title: "Welcome to the College of Education", description: "Empowering future educators through excellence and innovation." },
+    "About the College": { title: "About COED", description: "The College of Education provides high-quality teacher education programs." },
+    "Vision, Mission & Goals": { title: "Our Vision & Mission", description: "To be a center of excellence in teacher education." },
+    "Programs Offered": { title: "Our Programs", description: "Bachelor of Elementary Education, Bachelor of Secondary Education, and more." },
+    "Faculty Directory": { title: "Meet Our Faculty", description: "Highly qualified and experienced educators." },
+    "Achievements": { title: "Our Achievements", description: "Top performing graduates and award-winning faculty." },
+    "Research & Extension": { title: "Research & Community Engagement", description: "Active research and community extension programs." },
+    "News & Updates": { title: "Latest News", description: "Stay updated with announcements and events." },
+    "Contact Information": { title: "Contact Us", description: "Email: coed@university.edu | Phone: (123) 456-7890" }
+  });
+
+  const handleChange = (field: string, value: string) => {
+    setContent({ ...content, [selectedSection]: { ...content[selectedSection], [field]: value } });
+  };
+
+  const handleSave = () => alert(`Saved changes for ${selectedSection}!`);
+
+  return (
+    <div>
+      <h1 className="text-3xl font-semibold text-gray-900 mb-6">Landing Page Management</h1>
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Select Section</label>
+        <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className="w-full md:w-1/2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          {sections.map((section, index) => (<option key={index} value={section}>{section}</option>))}
+        </select>
+      </div>
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4">Editing: {selectedSection}</h2>
+        <div className="space-y-4">
+          <input type="text" value={content[selectedSection].title} onChange={(e) => handleChange("title", e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+          <textarea rows={5} value={content[selectedSection].description} onChange={(e) => handleChange("description", e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none" />
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Save Changes</button>
+        </div>
+      </div>
+      <div className="bg-gray-50 rounded-xl p-6">
+        <h2 className="text-xl font-semibold mb-4">Live Preview</h2>
+        <h3 className="text-2xl font-bold text-blue-600">{content[selectedSection].title}</h3>
+        <p className="text-gray-700 mt-2">{content[selectedSection].description}</p>
       </div>
     </div>
   );
