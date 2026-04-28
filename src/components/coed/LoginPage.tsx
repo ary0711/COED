@@ -85,12 +85,11 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
     setLoading(true);
     try {
-      // 1. Look up email by id_number in profiles
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('email, role, status')
-        .eq('id_number', loginIdNumber.trim())
-        .single();
+      // 1. Look up email by id_number via secure function (bypasses RLS safely)
+      const { data, error: profileError } = await supabase
+        .rpc('get_login_info', { p_id_number: loginIdNumber.trim() });
+
+      const profile = data?.[0];
 
       if (profileError || !profile) {
         setError('No account found with that ID number.');
@@ -187,7 +186,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         email: regEmail.trim(),
         role: dbRole,
         id_number: regIdNumber.trim(),
-        status: 'active', // requires admin approval
+        status: 'pending', // requires admin approval
       });
 
       if (insertError) {
@@ -226,9 +225,40 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
     setSuccessMsg('');
   };
 
-  // ─── Quick Demo (unchanged behaviour) ─────────────────────────────────────
+  // ─── Demo credentials ──────────────────────────────────────────────────────
+  const DEMO_CREDENTIALS: Record<string, { email: string; password: string }> = {
+    dean: { email: 'coed_dean94@gmail.com', password: 'your_dean_password_here' },
+  };
+
+  // ─── Quick Demo ────────────────────────────────────────────────────────────
   const handleDemoLogin = async (role: string) => {
-    onLogin(role);
+    const creds = DEMO_CREDENTIALS[role];
+    if (!creds) {
+      // No real credentials stored for this demo role — bypass directly
+      onLogin(role);
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: creds.email,
+        password: creds.password,
+      });
+
+      if (authError) {
+        setError(`Demo login failed: ${authError.message}`);
+        return;
+      }
+
+      onLogin(role);
+    } catch (err) {
+      setError('Demo login failed. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
