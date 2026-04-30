@@ -118,29 +118,50 @@ function UserManagement() {
     { id: 3, name: 'Dr. Michael Chen', role: 'Department Chair', dept: 'Mathematics', status: 'Active' },
     { id: 4, name: 'Maria Santos', role: 'Alumni', dept: 'Elementary Education', status: 'Active' },
   ]);
-  const [view, setView] = useState<'table' | 'add'>('table');
+  
+  // Gidugangan nato og 'edit' sa view state
+  const [view, setView] = useState<'table' | 'add' | 'edit'>('table');
   const [search, setSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
-  if (view === 'add') {
+  // Reusable Form para sa Add ug Edit
+  if (view === 'add' || view === 'edit') {
     return (
       <div>
         <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => setView('table')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
-          <h1 className="text-3xl font-semibold text-gray-900">Add New User</h1>
+          <button onClick={() => { setView('table'); setSelectedUser(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeft />
+          </button>
+          <h1 className="text-3xl font-semibold text-gray-900">
+            {view === 'add' ? 'Add New User' : 'Edit User Information'}
+          </h1>
         </div>
+        
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input type="text" placeholder="Enter name" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input 
+                type="text" 
+                placeholder="Enter name" 
+                defaultValue={selectedUser?.name || ''}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-              <input type="email" placeholder="email@university.edu" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input 
+                type="email" 
+                placeholder="email@university.edu" 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <select 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                defaultValue={selectedUser?.role || 'Faculty'}
+              >
                 <option>Faculty</option>
                 <option>Student</option>
                 <option>Department Chair</option>
@@ -148,15 +169,26 @@ function UserManagement() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <select 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                defaultValue={selectedUser?.dept || 'Computer Science'}
+              >
                 <option>Computer Science</option>
                 <option>Mathematics</option>
                 <option>Elementary Education</option>
               </select>
             </div>
           </div>
-          <button onClick={() => setView('table')} className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors">
-            <Save className="w-4 h-4" /> Save User Information
+          <button 
+            onClick={() => {
+              alert(view === 'add' ? "User Added Successfully!" : "User Updated Successfully!");
+              setView('table');
+              setSelectedUser(null);
+            }} 
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
+          >
+            <Save className="w-4 h-4" /> 
+            {view === 'add' ? 'Save User Information' : 'Update User Changes'}
           </button>
         </div>
       </div>
@@ -175,7 +207,13 @@ function UserManagement() {
       </div>
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <input type="text" placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input 
+            type="text" 
+            placeholder="Search users..." 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -194,11 +232,34 @@ function UserManagement() {
                   <td className="py-4 px-6 font-medium text-gray-900">{user.name}</td>
                   <td className="py-4 px-6 text-gray-700">{user.role}</td>
                   <td className="py-4 px-6 text-gray-700">{user.dept}</td>
-                  <td className="py-4 px-6 text-center"><span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">{user.status}</span></td>
+                  <td className="py-4 px-6 text-center">
+                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                      {user.status}
+                    </span>
+                  </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-center gap-2">
-                      <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit className="w-4 h-4" /></button>
-                      <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                      {/* EDIT BUTTON LOGIC */}
+                      <button 
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setView('edit');
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          if(confirm("Are you sure you want to delete this user?")) {
+                            setUsers(users.filter(u => u.id !== user.id));
+                          }
+                        }}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -337,35 +398,79 @@ function CalendarActivities() {
     { title: 'College Foundation Day', date: 'March 25, 2026', dept: 'All Departments' },
   ]);
 
+  // Temporary state para sa form inputs
+  const [newEvent, setNewEvent] = useState({
+    title: '',
+    date: '',
+    dept: 'All Departments'
+  });
+
+  // Function para i-save ang bag-ong schedule
+  const handlePublishEvent = () => {
+    if (newEvent.title === '' || newEvent.date === '') {
+      alert("Palihog kumpletiha ang Title ug Date, mega.");
+      return;
+    }
+
+    // I-add ang bag-ong event sa listahan
+    setEvents([newEvent, ...events]);
+    
+    // I-reset ang form ug balik sa main view
+    setNewEvent({ title: '', date: '', dept: 'All Departments' });
+    setView('main');
+    alert("New schedule published successfully!");
+  };
+
   if (view === 'add') {
     return (
       <div>
         <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => setView('main')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft /></button>
+          <button onClick={() => setView('main')} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeft />
+          </button>
           <h1 className="text-3xl font-semibold text-gray-900">Add New Event</h1>
         </div>
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="space-y-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
-              <input type="text" placeholder="Seminar / Meeting Name" className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" />
+              <input 
+                type="text" 
+                placeholder="Seminar / Meeting Name" 
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                value={newEvent.title}
+                onChange={(e) => setNewEvent({...newEvent, title: e.target.value})}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="date" className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" />
+                <input 
+                  type="date" 
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                  value={newEvent.date}
+                  onChange={(e) => setNewEvent({...newEvent, date: e.target.value})}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none">
+                <select 
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                  value={newEvent.dept}
+                  onChange={(e) => setNewEvent({...newEvent, dept: e.target.value})}
+                >
                   <option>All Departments</option>
                   <option>Computer Science</option>
                   <option>Mathematics</option>
+                  <option>Elementary Education</option>
                 </select>
               </div>
             </div>
           </div>
-          <button onClick={() => setView('main')} className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors">
+          <button 
+            onClick={handlePublishEvent} 
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
+          >
             <Save className="w-4 h-4" /> Publish Event
           </button>
         </div>
@@ -377,20 +482,42 @@ function CalendarActivities() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
-        <button onClick={() => setView('add')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"><Plus className="w-5 h-5" /> Add Event</button>
+        <button onClick={() => setView('add')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <Plus className="w-5 h-5" /> Add Event
+        </button>
       </div>
+      
+      {/* Visual Calendar Placeholder */}
       <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-        <div className="h-96 bg-gray-100 rounded-lg flex items-center justify-center"><Calendar className="w-16 h-16 text-gray-400" /></div>
+        <div className="h-96 bg-gray-100 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-gray-200">
+          <Calendar className="w-16 h-16 text-gray-400 mb-2" />
+          <p className="text-gray-500 font-medium italic">Interactive Calendar Integration (Coming Soon)</p>
+        </div>
       </div>
+
+      {/* Dynamic List of Activities */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Upcoming Activities</h2>
         <div className="space-y-3">
-          {events.map((event, i) => (
-            <div key={i} className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
-              <div className="font-medium text-gray-900">{event.title}</div>
-              <div className="text-sm text-gray-600">{event.date} • {event.dept}</div>
-            </div>
-          ))}
+          {events.length > 0 ? (
+            events.map((event, i) => (
+              <div key={i} className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500 flex justify-between items-center group">
+                <div>
+                  <div className="font-medium text-gray-900">{event.title}</div>
+                  <div className="text-sm text-gray-600">{event.date} • {event.dept}</div>
+                </div>
+                {/* Trash button para makatangtang og sayop nga schedule */}
+                <button 
+                  onClick={() => setEvents(events.filter((_, index) => index !== i))}
+                  className="p-2 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded-lg transition-all"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-gray-400 py-4 italic">No upcoming events scheduled.</p>
+          )}
         </div>
       </div>
     </div>
@@ -432,9 +559,78 @@ function ResearchAchievements() {
 }
 
 function EvaluationManagement() {
+  // Gidugangan og state para sa navigation ug pagpili og teacher
+  const [view, setView] = useState<'summary' | 'details'>('summary');
+  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+
+  const facultyData = [
+    { name: 'Dr. Sarah Johnson', rating: 4.8, responses: 156, dept: 'Computer Science', comments: ['Excellent teaching style!', 'Very approachable and clear explaining complex topics.'] },
+    { name: 'Prof. Michael Chen', rating: 4.7, responses: 142, dept: 'Mathematics', comments: ['Great examples in class.', 'Hard exams but very fair grading.'] },
+    { name: 'Dr. Patricia Williams', rating: 4.9, responses: 138, dept: 'Elementary Education', comments: ['The best mentor in the college.', 'Highly professional and inspiring.'] },
+  ];
+
+  // KINI NGA VIEW MO-SHOW INIG CLICK SA SPECIFIC TEACHER
+  if (view === 'details' && selectedTeacher) {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => { setView('summary'); setSelectedTeacher(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeft />
+          </button>
+          <h1 className="text-3xl font-semibold text-gray-900">Evaluation Details</h1>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-md p-8 mb-6">
+          <div className="flex justify-between items-start border-b pb-6 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">{selectedTeacher.name}</h2>
+              <p className="text-blue-600 font-medium">{selectedTeacher.dept}</p>
+            </div>
+            <div className="text-right">
+              <div className="text-4xl font-bold text-blue-600">{selectedTeacher.rating}</div>
+              <div className="text-sm text-gray-500">Overall Rating (out of 5.0)</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-4">Detailed Metrics</h3>
+              <div className="space-y-4">
+                {['Mastery of Subject', 'Communication Skills', 'Classroom Management', 'Approachability'].map((metric) => (
+                  <div key={metric}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>{metric}</span>
+                      <span className="font-bold italic">4.8</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: '96%' }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-4">Student Comments</h3>
+              <div className="space-y-3">
+                {selectedTeacher.comments.map((comment: string, i: number) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-lg border-l-4 border-blue-400 italic text-gray-700 text-sm">
+                    "{comment}"
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // DEFAULT VIEW (SUMMARY)
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Evaluation Management</h1>
+      
       <div className="grid md:grid-cols-3 gap-6 mb-6">
         <div className="bg-white rounded-xl shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Evaluations</h3>
@@ -452,14 +648,25 @@ function EvaluationManagement() {
           <p className="text-sm text-gray-600 mt-1">Overall faculty rating</p>
         </div>
       </div>
+
       <div className="bg-white rounded-xl shadow-md p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Faculty Performance Summary</h2>
         <div className="space-y-3">
-          {[{ name: 'Dr. Sarah Johnson', rating: 4.8, responses: 156 }, { name: 'Prof. Michael Chen', rating: 4.7, responses: 142 }, { name: 'Dr. Patricia Williams', rating: 4.9, responses: 138 }].map((faculty, i) => (
-            <div key={i} className="p-4 bg-gray-50 rounded-lg">
+          {facultyData.map((faculty, i) => (
+            <div 
+              key={i} 
+              onClick={() => { setSelectedTeacher(faculty); setView('details'); }}
+              className="p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-blue-50 hover:shadow-sm transition-all border border-transparent hover:border-blue-200 group"
+            >
               <div className="flex items-center justify-between">
-                <div><div className="font-medium text-gray-900">{faculty.name}</div><div className="text-sm text-gray-600">{faculty.responses} responses</div></div>
-                <div className="text-right"><div className="text-2xl font-bold text-blue-600">{faculty.rating}</div><div className="text-xs text-gray-600">out of 5.0</div></div>
+                <div>
+                  <div className="font-medium text-gray-900 group-hover:text-blue-700 transition-colors">{faculty.name}</div>
+                  <div className="text-sm text-gray-600">{faculty.responses} responses • {faculty.dept}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-blue-600">{faculty.rating}</div>
+                  <div className="text-xs text-gray-600">View detailed report →</div>
+                </div>
               </div>
             </div>
           ))}
@@ -491,24 +698,85 @@ function AlumniTracer() {
 }
 
 function ReportsAnalytics() {
-  const handleExport = (rep: string) => alert(`Exporting ${rep}...`);
+  // State para ma-track kung unsang report ang gi-generate karon
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  const handleExport = (reportName: string, format: 'PDF' | 'Excel') => {
+    // I-set ang generating state para naay visual feedback (Loading)
+    setGenerating(`${reportName}-${format}`);
+
+    // Simulate sa pag-generate sa report (e.g., fetching data from database)
+    setTimeout(() => {
+      setGenerating(null);
+      alert(`${reportName} has been successfully generated and downloaded as ${format}!`);
+      
+      // Dinhi dapit nimo ibutang ang actual logic para sa download:
+      // const doc = new jsPDF();
+      // doc.text("College Report Content", 10, 10);
+      // doc.save(`${reportName}.pdf`);
+    }, 1500); // 1.5 seconds nga delay
+  };
+
+  const reportTypes = ['Institutional Report', 'Faculty Performance', 'Student Analytics'];
+
   return (
     <div>
       <h1 className="text-3xl font-semibold text-gray-900 mb-6">Reports & Analytics</h1>
+      
       <div className="grid md:grid-cols-3 gap-6 mb-6">
-        {['Institutional Report', 'Faculty Performance', 'Student Analytics'].map((report, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-md p-6">
+        {reportTypes.map((report, i) => (
+          <div key={i} className="bg-white rounded-xl shadow-md p-6 border border-transparent hover:border-blue-200 transition-all">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">{report}</h3>
             <div className="space-y-2">
-              <button onClick={() => handleExport(report)} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"><Download className="w-4 h-4" /> Export PDF</button>
-              <button onClick={() => handleExport(report)} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"><Download className="w-4 h-4" /> Export Excel</button>
+              <button 
+                onClick={() => handleExport(report, 'PDF')}
+                disabled={generating !== null}
+                className={`w-full py-2 bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  generating === `${report}-PDF` ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'
+                }`}
+              >
+                {generating === `${report}-PDF` ? (
+                  <>Processing...</>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Export PDF
+                  </>
+                )}
+              </button>
+              
+              <button 
+                onClick={() => handleExport(report, 'Excel')}
+                disabled={generating !== null}
+                className={`w-full py-2 bg-green-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  generating === `${report}-Excel` ? 'opacity-70 cursor-not-allowed' : 'hover:bg-green-700'
+                }`}
+              >
+                {generating === `${report}-Excel` ? (
+                  <>Processing...</>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Export Excel
+                  </>
+                )}
+              </button>
             </div>
           </div>
         ))}
       </div>
+
       <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Analytics Dashboard</h2>
-        <div className="h-96 bg-gray-100 rounded-lg flex items-center justify-center"><BarChart3 className="w-16 h-16 text-gray-400" /></div>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Analytics Dashboard</h2>
+          <div className="flex gap-2">
+            <span className="text-xs text-gray-400 italic">Data source: Academic Year 2025-2026</span>
+          </div>
+        </div>
+        <div className="h-96 bg-gray-50 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-gray-200">
+          <BarChart3 className="w-16 h-16 text-gray-300 mb-2" />
+          <p className="text-gray-400 font-medium italic">Interactive Charts and Real-time Analytics View</p>
+        </div>
       </div>
     </div>
   );
