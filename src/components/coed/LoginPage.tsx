@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { User, Lock, GraduationCap, ArrowLeft, Mail, IdCard, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '../../supabaseClient';
 
+import { supabase } from '../../supabaseClient';
 // ─── Role mappings ───────────────────────────────────────────────────────────
 // Maps UI role keys → DB role values in profiles.role
 const UI_TO_DB_ROLE: Record<string, string> = {
