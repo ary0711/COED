@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { User, Lock, GraduationCap, ArrowLeft, Mail, IdCard, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, GraduationCap, ArrowLeft, Mail, IdCard, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
 
 import { supabase } from '../../supabaseClient';
+
 // ─── Role mappings ───────────────────────────────────────────────────────────
-// Maps UI role keys → DB role values in profiles.role
 const UI_TO_DB_ROLE: Record<string, string> = {
   dean: 'dean',
   chair: 'department_chair',
@@ -12,7 +12,6 @@ const UI_TO_DB_ROLE: Record<string, string> = {
   alumni: 'alumni',
 };
 
-// Maps DB role values → UI role keys (used after login to call onLogin)
 const DB_TO_UI_ROLE: Record<string, string> = {
   dean: 'dean',
   department_chair: 'chair',
@@ -20,13 +19,36 @@ const DB_TO_UI_ROLE: Record<string, string> = {
   staff: 'faculty',
   student: 'student',
   alumni: 'alumni',
-  admin: 'dean', // fallback for admin
+  admin: 'dean',
 };
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 interface LoginPageProps {
   onLogin: (role: string) => void;
   onBack?: () => void;
+}
+
+// ─── Alert Banner Component ───────────────────────────────────────────────────
+interface AlertBannerProps {
+  message: string;
+  type: 'success' | 'error';
+}
+
+function AlertBanner({ message, type }: AlertBannerProps) {
+  if (type === 'success') {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-green-50 border border-green-300 text-green-800 text-sm font-medium">
+        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+        <span>{message}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+      <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -38,6 +60,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   // Async state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Login form state
   const [loginIdNumber, setLoginIdNumber] = useState('');
@@ -69,6 +92,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   // ─── Sign In ───────────────────────────────────────────────────────────────
   const handleLogin = async () => {
     setError('');
+    setSuccessMsg('');
 
     if (!loginRole) {
       setError('Please select a role before signing in.');
@@ -85,7 +109,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
     setLoading(true);
     try {
-      // 1. Look up email by id_number via secure function (bypasses RLS safely)
+      // 1. Look up email by id_number
       const { data, error: profileError } = await supabase
         .rpc('get_login_info', { p_id_number: loginIdNumber.trim() });
 
@@ -106,9 +130,8 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         return;
       }
 
-      // 2. Verify the selected role matches the stored role
+      // 2. Verify role matches
       const expectedDbRole = UI_TO_DB_ROLE[loginRole];
-      // Allow 'faculty' UI role to match both 'faculty' and 'staff' DB roles
       const roleMatches =
         profile.role === expectedDbRole ||
         (loginRole === 'faculty' && profile.role === 'staff');
@@ -118,7 +141,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         return;
       }
 
-      // 3. Sign in with Supabase Auth using the retrieved email
+      // 3. Sign in with Supabase Auth
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password: loginPassword,
@@ -133,7 +156,12 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         return;
       }
 
-      // 4. Navigate to the appropriate dashboard
+      // 4. Show success alert then navigate
+      const roleLabel = loginRoles.find((r) => r.id === loginRole)?.label ?? loginRole;
+      setSuccessMsg(`Successfully signed in as ${roleLabel}! Redirecting…`);
+
+      await new Promise((res) => setTimeout(res, 1200));
+
       const uiRole = DB_TO_UI_ROLE[profile.role] ?? loginRole;
       onLogin(uiRole);
     } catch (err) {
@@ -147,6 +175,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   // ─── Register ──────────────────────────────────────────────────────────────
   const handleRegister = async () => {
     setError('');
+    setSuccessMsg('');
 
     if (!regFullName.trim()) { setError('Full name is required.'); return; }
     if (!regEmail.trim()) { setError('Email address is required.'); return; }
@@ -158,7 +187,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
     setLoading(true);
     try {
-      // 1. Create auth user (status defaults to 'pending' in profiles)
+      // 1. Create auth user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: regEmail.trim(),
         password: regPassword,
@@ -176,7 +205,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
       }
 
       // 2. Map UI user type to DB role
-      // 'faculty' in registration maps to 'faculty'; students/alumni map directly
       const dbRole = regUserType === 'faculty' ? 'faculty' : regUserType;
 
       // 3. Insert profile row
@@ -186,11 +214,10 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         email: regEmail.trim(),
         role: dbRole,
         id_number: regIdNumber.trim(),
-        status: 'pending', // requires admin approval
+        status: 'pending',
       });
 
       if (insertError) {
-        // Clean up auth user if profile insert fails
         await supabase.auth.signOut();
         if (insertError.message.includes('profiles_email_key')) {
           setError('An account with that email already exists.');
@@ -202,10 +229,9 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         return;
       }
 
-      // 4. Success — switch to sign in with a helpful message
+      // 4. Success — switch to sign in
       setMode('signin');
       setError('');
-      // Show success feedback via the error field styled differently (handled below via successMsg)
       setSuccessMsg('Account created! Please wait for admin approval before signing in.');
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -215,50 +241,11 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
     }
   };
 
-  // Success message state (separate from error)
-  const [successMsg, setSuccessMsg] = useState('');
-
-  // Clear messages when switching modes
+  // ─── Clear messages when switching modes ───────────────────────────────────
   const switchMode = (m: 'signin' | 'signup') => {
     setMode(m);
     setError('');
     setSuccessMsg('');
-  };
-
-  // ─── Demo credentials ──────────────────────────────────────────────────────
-  const DEMO_CREDENTIALS: Record<string, { email: string; password: string }> = {
-    dean: { email: 'coed_dean94@gmail.com', password: 'your_dean_password_here' },
-  };
-
-  // ─── Quick Demo ────────────────────────────────────────────────────────────
-  const handleDemoLogin = async (role: string) => {
-    const creds = DEMO_CREDENTIALS[role];
-    if (!creds) {
-      // No real credentials stored for this demo role — bypass directly
-      onLogin(role);
-      return;
-    }
-
-    setError('');
-    setLoading(true);
-    try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: creds.email,
-        password: creds.password,
-      });
-
-      if (authError) {
-        setError(`Demo login failed: ${authError.message}`);
-        return;
-      }
-
-      onLogin(role);
-    } catch (err) {
-      setError('Demo login failed. Please try again.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -284,6 +271,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
       <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-12 items-center">
+
           {/* Left side - Branding */}
           <div className="text-white space-y-8 hidden lg:block">
             <div className="space-y-4">
@@ -313,6 +301,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
           {/* Right side - Login/Register Form */}
           <div className="relative">
             <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-6 lg:p-7 border border-white/20">
+
               {/* Mode Toggle */}
               <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-2xl mb-6">
                 <button
@@ -337,15 +326,15 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                 </button>
               </div>
 
-              {/* ── Inline feedback banners (error / success) ── */}
-              {error && (
-                <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                  {error}
+              {/* ── Alert Banners ── */}
+              {successMsg && (
+                <div className="mb-4">
+                  <AlertBanner message={successMsg} type="success" />
                 </div>
               )}
-              {successMsg && (
-                <div className="mb-4 px-4 py-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-medium">
-                  {successMsg}
+              {error && (
+                <div className="mb-4">
+                  <AlertBanner message={error} type="error" />
                 </div>
               )}
 
@@ -391,6 +380,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                           placeholder="Enter your password"
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                           className="w-full pl-12 pr-12 py-4 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white"
                         />
                         <button
@@ -448,25 +438,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                   >
                     {loading ? 'Signing in…' : 'Sign In'}
                   </button>
-
-                  {/* Quick Demo */}
-                  <div className="pt-6 border-t border-gray-200">
-                    <p className="text-sm text-gray-600 text-center mb-3">Quick Demo Access</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => handleDemoLogin('dean')}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        👨‍💼 Dean Demo
-                      </button>
-                      <button
-                        onClick={() => handleDemoLogin('student')}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        🎓 Student Demo
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
