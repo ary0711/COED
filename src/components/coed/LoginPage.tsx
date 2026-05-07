@@ -3,6 +3,7 @@ import { User, Lock, GraduationCap, ArrowLeft, Mail, IdCard, Eye, EyeOff } from 
 import { supabase } from '../../supabaseClient';
 
 // ─── Role mappings ───────────────────────────────────────────────────────────
+// Maps UI role keys → DB role values in profiles.role
 const UI_TO_DB_ROLE: Record<string, string> = {
   dean: 'dean',
   chair: 'department_chair',
@@ -11,6 +12,7 @@ const UI_TO_DB_ROLE: Record<string, string> = {
   alumni: 'alumni',
 };
 
+// Maps DB role values → UI role keys (used after login to call onLogin)
 const DB_TO_UI_ROLE: Record<string, string> = {
   dean: 'dean',
   department_chair: 'chair',
@@ -18,7 +20,7 @@ const DB_TO_UI_ROLE: Record<string, string> = {
   staff: 'faculty',
   student: 'student',
   alumni: 'alumni',
-  admin: 'dean',
+  admin: 'dean', // fallback for admin
 };
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -36,7 +38,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   // Async state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   // Login form state
   const [loginIdNumber, setLoginIdNumber] = useState('');
@@ -48,16 +49,174 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   const [regEmail, setRegEmail] = useState('');
   const [regUserType, setRegUserType] = useState('');
   const [regIdNumber, setRegIdNumber] = useState('');
-  const [regYearGraduated, setRegYearGraduated] = useState('');
-  const [regCourse, setRegCourse] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+
+  const loginRoles = [
+    { id: 'dean', label: 'College Dean', icon: '👨‍💼' },
+    { id: 'chair', label: 'Dept. Chair', icon: '👔' },
+    { id: 'faculty', label: 'Faculty/Staff', icon: '👨‍🏫' },
+    { id: 'student', label: 'Student', icon: '🎓' },
+    { id: 'alumni', label: 'Alumni', icon: '🎖️' },
+  ];
 
   const userTypes = [
     { id: 'student', label: 'Student', icon: '🎓', description: 'Student Portal Access' },
     { id: 'faculty', label: 'Faculty/Employee', icon: '👨‍🏫', description: 'Faculty & Staff Portal' },
     { id: 'alumni', label: 'Alumni', icon: '🎖️', description: 'Alumni Services' },
   ];
+
+  // ─── Sign In ───────────────────────────────────────────────────────────────
+  const handleLogin = async () => {
+    setError('');
+
+    if (!loginRole) {
+      setError('Please select a role before signing in.');
+      return;
+    }
+    if (!loginIdNumber.trim()) {
+      setError('Please enter your ID number.');
+      return;
+    }
+    if (!loginPassword) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Look up email by id_number via secure function (bypasses RLS safely)
+      const { data, error: profileError } = await supabase
+        .rpc('get_login_info', { p_id_number: loginIdNumber.trim() });
+
+      const profile = data?.[0];
+
+      if (profileError || !profile) {
+        setError('No account found with that ID number.');
+        return;
+      }
+
+      if (profile.status === 'inactive') {
+        setError('Your account has been deactivated. Contact the administrator.');
+        return;
+      }
+
+      if (profile.status === 'pending') {
+        setError('Your account is pending approval. Please wait for activation.');
+        return;
+      }
+
+      // 2. Verify the selected role matches the stored role
+      const expectedDbRole = UI_TO_DB_ROLE[loginRole];
+      // Allow 'faculty' UI role to match both 'faculty' and 'staff' DB roles
+      const roleMatches =
+        profile.role === expectedDbRole ||
+        (loginRole === 'faculty' && profile.role === 'staff');
+
+      if (!roleMatches) {
+        setError('Selected role does not match your account. Please choose the correct role.');
+        return;
+      }
+
+      // 3. Sign in with Supabase Auth using the retrieved email
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: loginPassword,
+      });
+
+      if (authError) {
+        if (authError.message.toLowerCase().includes('invalid')) {
+          setError('Incorrect password. Please try again.');
+        } else {
+          setError(authError.message);
+        }
+        return;
+      }
+
+      // 4. Navigate to the appropriate dashboard
+      const uiRole = DB_TO_UI_ROLE[profile.role] ?? loginRole;
+      onLogin(uiRole);
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Register ──────────────────────────────────────────────────────────────
+  const handleRegister = async () => {
+    setError('');
+
+    if (!regFullName.trim()) { setError('Full name is required.'); return; }
+    if (!regEmail.trim()) { setError('Email address is required.'); return; }
+    if (!regUserType) { setError('Please select a user type.'); return; }
+    if (!regIdNumber.trim()) { setError('ID number is required.'); return; }
+    if (!regPassword) { setError('Password is required.'); return; }
+    if (regPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (regPassword !== regConfirmPassword) { setError('Passwords do not match.'); return; }
+
+    setLoading(true);
+    try {
+      // 1. Create auth user (status defaults to 'pending' in profiles)
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: regEmail.trim(),
+        password: regPassword,
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      const userId = authData.user?.id;
+      if (!userId) {
+        setError('Registration failed. Please try again.');
+        return;
+      }
+
+      // 2. Map UI user type to DB role
+      // 'faculty' in registration maps to 'faculty'; students/alumni map directly
+      const dbRole = regUserType === 'faculty' ? 'faculty' : regUserType;
+
+      // 3. Insert profile row
+      const { error: insertError } = await supabase.from('profiles').insert({
+        id: userId,
+        full_name: regFullName.trim(),
+        email: regEmail.trim(),
+        role: dbRole,
+        id_number: regIdNumber.trim(),
+        status: 'pending', // requires admin approval
+      });
+
+      if (insertError) {
+        // Clean up auth user if profile insert fails
+        await supabase.auth.signOut();
+        if (insertError.message.includes('profiles_email_key')) {
+          setError('An account with that email already exists.');
+        } else if (insertError.message.includes('profiles_id_number_key')) {
+          setError('An account with that ID number already exists.');
+        } else {
+          setError(insertError.message);
+        }
+        return;
+      }
+
+      // 4. Success — switch to sign in with a helpful message
+      setMode('signin');
+      setError('');
+      // Show success feedback via the error field styled differently (handled below via successMsg)
+      setSuccessMsg('Account created! Please wait for admin approval before signing in.');
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Success message state (separate from error)
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Clear messages when switching modes
   const switchMode = (m: 'signin' | 'signup') => {
@@ -75,6 +234,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   const handleDemoLogin = async (role: string) => {
     const creds = DEMO_CREDENTIALS[role];
     if (!creds) {
+      // No real credentials stored for this demo role — bypass directly
       onLogin(role);
       return;
     }
@@ -101,156 +261,10 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
     }
   };
 
-  // ─── Handle Login ──────────────────────────────────────────────────────────
-  const handleLogin = async () => {
-    setError('');
-
-    if (!loginRole) {
-      setError('Please select a role before signing in.');
-      return;
-    }
-    if (!loginIdNumber.trim()) {
-      setError('Please enter your ID number.');
-      return;
-    }
-    if (!loginPassword) {
-      setError('Please enter your password.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // 1. Look up email by id_number via secure function
-      const { data, error: profileError } = await supabase
-        .rpc('get_login_info', { p_id_number: loginIdNumber.trim() });
-
-      const profile = data?.[0];
-
-      if (profileError || !profile) {
-        setError('No account found with that ID number.');
-        return;
-      }
-
-      if (profile.status === 'inactive') {
-        setError('Your account has been deactivated. Contact the administrator.');
-        return;
-      }
-
-      if (profile.status === 'pending') {
-        setError('Your account is pending approval. Please wait for activation.');
-        return;
-      }
-
-      // 2. Verify the selected role matches the stored role
-      const expectedDbRole = UI_TO_DB_ROLE[loginRole];
-      const roleMatches =
-        profile.role === expectedDbRole ||
-        (loginRole === 'faculty' && profile.role === 'staff');
-
-      if (!roleMatches) {
-        setError('Selected role does not match your account. Please choose the correct role.');
-        return;
-      }
-
-      // 3. Sign in with Supabase Auth
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password: loginPassword,
-      });
-
-      if (authError) {
-        if (authError.message.toLowerCase().includes('invalid')) {
-          setError('Incorrect password. Please try again.');
-        } else {
-          setError(authError.message);
-        }
-        return;
-      }
-
-      // 4. Navigate to the appropriate dashboard
-      const uiRole = DB_TO_UI_ROLE[profile.role] ?? loginRole;
-      onLogin(uiRole);
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ─── Handle Register ───────────────────────────────────────────────────────
-  const handleRegister = async () => {
-    setError('');
-    setSuccessMsg('');
-
-    if (!regFullName.trim()) { setError('Full name is required.'); return; }
-    if (!regEmail.trim()) { setError('Email address is required.'); return; }
-    if (!regUserType) { setError('Please select a user type.'); return; }
-    if (!regIdNumber.trim() && regUserType !== 'alumni') {
-      setError('ID number is required.');
-      return;
-    }
-    if (!regPassword) { setError('Password is required.'); return; }
-    if (regPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
-    if (regPassword !== regConfirmPassword) { setError('Passwords do not match.'); return; }
-
-    if (regUserType === 'alumni') {
-      if (!regYearGraduated || !regCourse) {
-        setError('Year Graduated and Course are required for Alumni.');
-        return;
-      }
-    }
-
-    setLoading(true);
-    try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: regEmail.trim(),
-        password: regPassword,
-      });
-
-      if (signUpError) {
-        setError(signUpError.message);
-        return;
-      }
-
-      const userId = authData.user?.id;
-      if (!userId) {
-        setError('Registration failed. Please try again.');
-        return;
-      }
-
-      const dbRole = regUserType === 'faculty' ? 'faculty' : regUserType;
-
-      const { error: insertError } = await supabase.from('profiles').insert({
-        id: userId,
-        full_name: regFullName.trim(),
-        email: regEmail.trim(),
-        role: dbRole,
-        id_number: regIdNumber.trim() || null,
-        year_graduated: regUserType === 'alumni' ? regYearGraduated : null,
-        course: regUserType === 'alumni' ? regCourse : null,
-        status: 'pending',
-      });
-
-      if (insertError) {
-        await supabase.auth.signOut();
-        setError(insertError.message);
-        return;
-      }
-
-      setSuccessMsg('✅ Account created! Please wait for admin approval before signing in.');
-      switchMode('signin');
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-[#1E3A8A] via-[#2563EB] to-[#60A5FA]">
+      {/* Back to Home Button */}
       {onBack && (
         <button
           onClick={onBack}
@@ -270,7 +284,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
       <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-12 items-center">
-
           {/* Left side - Branding */}
           <div className="text-white space-y-8 hidden lg:block">
             <div className="space-y-4">
@@ -286,7 +299,9 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
 
               <h2 className="text-4xl font-bold leading-tight">
                 College of Education
-                <span className="block text-blue-100 mt-2">Information System</span>
+                <span className="block text-blue-100 mt-2">
+                  Information System
+                </span>
               </h2>
 
               <p className="text-xl text-blue-100 leading-relaxed">
@@ -295,16 +310,17 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
             </div>
           </div>
 
-          {/* Right side - Form */}
+          {/* Right side - Login/Register Form */}
           <div className="relative">
-            <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-6 lg:p-8 border border-white/20">
-
+            <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-6 lg:p-7 border border-white/20">
               {/* Mode Toggle */}
               <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-2xl mb-6">
                 <button
                   onClick={() => switchMode('signin')}
                   className={`flex-1 py-2.5 rounded-xl font-semibold transition-all ${
-                    mode === 'signin' ? 'bg-[#1E3A8A] text-white shadow-lg' : 'text-gray-600 hover:text-gray-900'
+                    mode === 'signin'
+                      ? 'bg-[#1E3A8A] text-white shadow-lg'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   Sign In
@@ -312,14 +328,16 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                 <button
                   onClick={() => switchMode('signup')}
                   className={`flex-1 py-2.5 rounded-xl font-semibold transition-all ${
-                    mode === 'signup' ? 'bg-[#1E3A8A] text-white shadow-lg' : 'text-gray-600 hover:text-gray-900'
+                    mode === 'signup'
+                      ? 'bg-[#1E3A8A] text-white shadow-lg'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   Register
                 </button>
               </div>
 
-              {/* Feedback banners */}
+              {/* ── Inline feedback banners (error / success) ── */}
               {error && (
                 <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
                   {error}
@@ -335,51 +353,37 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
               {mode === 'signin' && (
                 <div className="space-y-6">
                   <div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Welcome Back!</h3>
-                    <p className="text-gray-600">Select your role and enter your credentials</p>
-                  </div>
-
-                  {/* Role selector */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      I am a… <span className="text-red-500">*</span>
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {userTypes.map((type) => (
-                        <button
-                          key={type.id}
-                          onClick={() => setLoginRole(type.id)}
-                          className={`p-3 rounded-lg border-2 transition-all text-center ${
-                            loginRole === type.id
-                              ? 'border-[#2563EB] bg-blue-50 scale-105'
-                              : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="text-2xl mb-1">{type.icon}</div>
-                          <div className="text-xs font-semibold text-gray-900">{type.label}</div>
-                        </button>
-                      ))}
-                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                      Welcome Back!
+                    </h3>
+                    <p className="text-gray-600">
+                      Enter your ID number and password to continue
+                    </p>
                   </div>
 
                   <div className="space-y-4">
+                    {/* ID Number */}
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">ID Number</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        ID Number
+                      </label>
                       <div className="relative">
                         <IdCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                         <input
                           type="text"
-                          placeholder="Enter your ID Number"
+                          placeholder="Student ID / Employee ID / Alumni ID"
                           value={loginIdNumber}
                           onChange={(e) => setLoginIdNumber(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                           className="w-full pl-12 pr-4 py-4 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white"
                         />
                       </div>
                     </div>
 
+                    {/* Password */}
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Password
+                      </label>
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                         <input
@@ -387,7 +391,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                           placeholder="Enter your password"
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                           className="w-full pl-12 pr-12 py-4 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white"
                         />
                         <button
@@ -399,8 +402,45 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                         </button>
                       </div>
                     </div>
+
+                    {/* Role Selection */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Role <span className="text-red-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {loginRoles.map((role) => (
+                          <button
+                            key={role.id}
+                            onClick={() => setLoginRole(role.id)}
+                            className={`p-2 rounded-lg border-2 transition-all text-center ${
+                              loginRole === role.id
+                                ? 'border-[#2563EB] bg-blue-50 scale-105'
+                                : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="text-xl mb-0.5">{role.icon}</div>
+                            <div className="text-xs font-semibold text-gray-900 leading-tight">
+                              {role.label}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Remember me & Forgot password */}
+                    <div className="flex items-center justify-between text-sm">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" className="w-4 h-4 rounded accent-blue-600" />
+                        <span className="text-gray-600">Remember me</span>
+                      </label>
+                      <button className="text-blue-600 font-semibold hover:text-blue-700">
+                        Forgot Password?
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Sign In Button */}
                   <button
                     onClick={handleLogin}
                     disabled={loading}
@@ -434,8 +474,12 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
               {mode === 'signup' && (
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">Create Account</h3>
-                    <p className="text-sm text-gray-600">Fill in your details to register</p>
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">
+                      Create Account
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Fill in your details to get started
+                    </p>
                   </div>
 
                   <div className="space-y-3">
@@ -464,8 +508,8 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
-                          type="email"
-                          placeholder="your.email@ctu.edu.ph"
+                          type="text"
+                          placeholder="your.email@example.com"
                           value={regEmail}
                           onChange={(e) => setRegEmail(e.target.value)}
                           className="w-full pl-10 pr-3 py-2.5 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white text-sm"
@@ -473,7 +517,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                       </div>
                     </div>
 
-                    {/* User Type */}
+                    {/* User Type Selection */}
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
                         User Type <span className="text-red-500">*</span>
@@ -483,76 +527,46 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                           <button
                             key={type.id}
                             onClick={() => setRegUserType(type.id)}
-                            className={`p-3 rounded-lg border-2 transition-all text-center ${
+                            className={`p-2 rounded-lg border-2 transition-all text-center ${
                               regUserType === type.id
                                 ? 'border-[#2563EB] bg-blue-50 scale-105'
                                 : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                             }`}
                           >
-                            <div className="text-2xl mb-1">{type.icon}</div>
-                            <div className="text-xs font-semibold text-gray-900">{type.label}</div>
+                            <div className="text-xl mb-0.5">{type.icon}</div>
+                            <div className="text-xs font-semibold text-gray-900 leading-tight">
+                              {type.label}
+                            </div>
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* ID Number for Student & Faculty */}
-                    {(regUserType === 'student' || regUserType === 'faculty') && (
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                          ID Number <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder={regUserType === 'student' ? 'e.g., 7234567' : 'e.g., 721234'}
-                            value={regIdNumber}
-                            onChange={(e) => setRegIdNumber(e.target.value)}
-                            className="w-full pl-10 pr-3 py-2.5 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white text-sm"
-                          />
-                        </div>
+                    {/* ID Number */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        ID Number <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder={
+                            regUserType === 'student' ? 'e.g., 2024-12345' :
+                            regUserType === 'faculty' ? 'e.g., EMP-001' :
+                            regUserType === 'alumni' ? 'e.g., ALU-001' :
+                            'Your ID Number'
+                          }
+                          value={regIdNumber}
+                          onChange={(e) => setRegIdNumber(e.target.value)}
+                          className="w-full pl-10 pr-3 py-2.5 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white text-sm"
+                        />
                       </div>
-                    )}
+                    </div>
 
-                    {/* Alumni - Year & Course */}
-                    {regUserType === 'alumni' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                            Year Graduated <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            placeholder="e.g., 2020"
-                            min="1950"
-                            max={new Date().getFullYear()}
-                            value={regYearGraduated}
-                            onChange={(e) => setRegYearGraduated(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                            Course/Program <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={regCourse}
-                            onChange={(e) => setRegCourse(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors bg-white text-sm"
-                          >
-                            <option value="">Select Course</option>
-                            <option value="BSED">BSED - Bachelor of Secondary Education</option>
-                            <option value="BEED">BEED - Bachelor of Elementary Education</option>
-                            <option value="BPE">BPE - Bachelor of Physical Education</option>
-                            <option value="BTLED">BTLED - Bachelor of Technical-Vocational Teacher Education</option>
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Password & Confirm Password */}
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Password & Confirm Password - Side by side */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Password */}
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                           Password <span className="text-red-500">*</span>
@@ -576,9 +590,10 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                         </div>
                       </div>
 
+                      {/* Confirm Password */}
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                          Confirm Password <span className="text-red-500">*</span>
+                          Confirm <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -601,6 +616,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                     </div>
                   </div>
 
+                  {/* Register Button */}
                   <button
                     onClick={handleRegister}
                     disabled={loading}
@@ -610,7 +626,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                   </button>
                 </div>
               )}
-
             </div>
           </div>
         </div>
