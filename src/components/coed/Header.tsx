@@ -23,55 +23,49 @@ export function Header({ onNavigate, currentPage }: HeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
       {/* Full Width Navbar */}
-      <div className="w-full bg-white border-b border-gray-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-5">
-          <div className="flex items-center justify-between">
+     <div className="w-full bg-gray-100 border-b border-gray-300 shadow-sm">
+        
+        {/* Fixed Height Navbar */}
+        <div className="w-full px-4 lg:px-6 h-[72px]">
+          <div className="flex items-center justify-between h-full">
 
-            {/* Logo */}
+            {/* Logo Section */}
             <button
               onClick={() => onNavigate('home')}
-              className="flex items-center gap-3"
+              className="flex items-center gap-2 shrink-0"
             >
-              {/* Replace filename if needed */}
               <img
-                src="/coed-logo.png"
+                src="/COED LOGO.png"
                 alt="COED Logo"
-                className="w-11 h-11 object-contain"
+                className="w-14 h-14 object-contain"
               />
 
-              <div className="text-left">
-                <h1 className="text-[20px] font-bold text-gray-800 tracking-wide">
-                  COED
+              <div className="text-left leading-tight">
+                <h1 className="text-[18px] font-bold text-gray-800 tracking-wide">
+                  College of Education
                 </h1>
-                <p className="text-[11px] text-gray-500 leading-tight">
-                  Cebu Technological University
+
+                <p className="text-[11px] text-gray-500">
+                  Cebu Technological University - Argao Campus
                 </p>
               </div>
             </button>
 
-            {/* Desktop Nav */}
-            <nav className="hidden lg:flex items-center gap-8">
+            {/* Desktop Navigation */}
+            <nav className="hidden lg:flex items-center gap-9">
               {navItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
-                  className={`text-[13px] font-medium transition-all duration-200 ${
+                  className={`text-[14px] font-medium transition-all duration-200 ${
                     currentPage === item.id
                       ? 'text-[#2563EB]'
-                      : 'text-gray-500 hover:text-[#2563EB]'
+                      : 'text-black-500 hover:text-[#2563EB]'
                   }`}
                 >
                   {item.label}
                 </button>
               ))}
-
-              {/* Login Button */}
-              <button
-                onClick={() => onNavigate('login')}
-                className="px-6 py-2 border border-[#2563EB] text-[#2563EB] text-sm font-semibold hover:bg-[#2563EB] hover:text-white transition-all duration-300"
-              >
-                Login
-              </button>
             </nav>
 
             {/* Mobile Menu Button */}
@@ -93,6 +87,7 @@ export function Header({ onNavigate, currentPage }: HeaderProps) {
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white border-b border-gray-100 shadow-md">
           <div className="px-6 py-5 space-y-3">
+
             {navItems.map((item) => (
               <button
                 key={item.id}
@@ -110,18 +105,9 @@ export function Header({ onNavigate, currentPage }: HeaderProps) {
               </button>
             ))}
 
-            <button
-              onClick={() => {
-                onNavigate('login');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full mt-3 px-4 py-3 border border-[#2563EB] text-[#2563EB] font-semibold hover:bg-[#2563EB] hover:text-white transition-all"
-            >
-              Login
-            </button>
           </div>
         </div>
       )}
     </header>
   );
-}
+} 

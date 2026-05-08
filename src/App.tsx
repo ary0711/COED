@@ -89,7 +89,12 @@ export default function App() {
           {currentPage === 'achievements' && <AchievementsPage />}
           {currentPage === 'accreditation' && <AccreditationPage />}
           {currentPage === 'contact' && <ContactPage />}
-          {currentPage === 'login' && <LoginPage onLogin={handleLogin} />}
+          {currentPage === 'login' && (
+            <LoginPage
+              onLogin={handleLogin}
+              onBack={() => handleNavigate('home')}
+            />
+          )}
         </div>
 
         {currentPage !== 'login' && <Footer />}
