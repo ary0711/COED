@@ -110,6 +110,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'chair' && (
@@ -117,6 +118,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'faculty' && (
@@ -124,6 +126,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'student' && (
@@ -131,6 +134,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'alumni' && (
@@ -138,19 +142,11 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       
-      {/* Logout Button - Elegant fixed button */}
-      <button
-        onClick={handleLogout}
-        className="fixed bottom-8 right-8 px-8 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-2xl hover:from-red-600 hover:to-red-700 transition-all shadow-xl hover:shadow-2xl font-semibold z-50 hover:scale-105 flex items-center gap-2"
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-        </svg>
-        Logout
-      </button>
+
     </div>
   );
 }

@@ -113,14 +113,14 @@ interface CollegeDeanDashboardProps {
   onRoleChange: () => void;
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
-}
+  onLogout?: () => void; // ✅ add this
+} // ← this was missing
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export function CollegeDeanDashboard({
   onRoleChange,
   activeMenuItem,
   setActiveMenuItem,
+  onLogout,
 }: CollegeDeanDashboardProps) {
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -129,7 +129,7 @@ export function CollegeDeanDashboard({
         activeItem={activeMenuItem}
         onItemClick={setActiveMenuItem}
         userRole="College Dean"
-        onLogout={onRoleChange}
+        onLogout={onLogout}
       />
 
       <div className="flex-1 ml-64 flex flex-col h-screen overflow-hidden">

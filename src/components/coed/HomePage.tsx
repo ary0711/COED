@@ -14,8 +14,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <section className="relative w-full h-screen overflow-hidden">
 
         {/* Full-bleed background image */}
-        <img
-          src="https://images.unsplash.com/photo-1758270705482-cee87ea98738?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx1bml2ZXJzaXR5JTIwc3R1ZGVudHMlMjBzdHVkeWluZyUyMGNhbXB1cyUyMGVkdWNhdGlvbnxlbnwxfHx8fDE3NzA5NTQ0NDJ8MA&ixlib=rb-4.1.0&q=80&w=1920"
+       <img
+          src="/COED home.jpg"
           alt="Campus"
           className="absolute inset-0 w-full h-full object-cover object-center"
         />
