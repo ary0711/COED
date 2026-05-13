@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { ChevronRight, GraduationCap, LogOut } from 'lucide-react';
+import { ChevronRight, LogOut } from 'lucide-react';
 
 interface MenuItem {
   icon: LucideIcon;
@@ -16,34 +16,41 @@ interface SidebarProps {
 }
 
 export function Sidebar({ menuItems, activeItem, onItemClick, userRole, onLogout }: SidebarProps) {
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-white text-gray-700 shadow-lg z-50 flex flex-col overflow-hidden border-r border-gray-100">
 
       {/* Header — Logo */}
       <div className="flex-shrink-0 px-5 py-5 border-b border-blue-100 bg-white">
-  <div className="flex items-center gap-3">
-    
-    {/* COED LOGO */}
-    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0">
-      <img
-        src="/COED LOGO.png"
-        alt="COED Logo"
-        className="w-9 h-9 object-contain"
-      />
-    </div>
+        <div className="flex items-center gap-3">
 
-    {/* TEXT */}
-    <div>
-      <h1 className="font-bold text-sm text-blue-700 tracking-wide">
-        COED
-      </h1>
+          {/* COED LOGO */}
+          <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0">
+            <img
+              src="/COED LOGO.png"
+              alt="COED Logo"
+              className="w-9 h-9 object-contain"
+            />
+          </div>
 
-      <p className="text-[11px] text-blue-400 font-medium">
-        Information System
-      </p>
-    </div>
-  </div>
-</div>
+          {/* TEXT */}
+          <div>
+            <h1 className="font-bold text-sm text-blue-700 tracking-wide">
+              COED
+            </h1>
+            <p className="text-[11px] text-blue-400 font-medium">
+              Information System
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Navigation */}
       <nav className="flex-1 min-h-0 overflow-hidden px-3 py-3 flex flex-col gap-0.5">
@@ -95,10 +102,10 @@ export function Sidebar({ menuItems, activeItem, onItemClick, userRole, onLogout
       {/* Bottom — Logout */}
       <div className="flex-shrink-0 px-3 py-4 border-t border-gray-100">
         <button
-          onClick={onLogout}
-          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all duration-200 text-left"
+          onClick={handleLogout}
+          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all duration-200 text-left"
         >
-          <LogOut className="w-4 h-4 flex-shrink-0 group-hover:text-gray-600 transition-colors" />
+          <LogOut className="w-4 h-4 flex-shrink-0 group-hover:text-red-500 transition-colors" />
           <span className="text-xs font-medium">Log Out</span>
         </button>
       </div>

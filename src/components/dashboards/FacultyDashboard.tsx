@@ -17,6 +17,11 @@ import {
   TrendingUp,
   MessageSquare,
   Star,
+  UserCircle,
+  Pencil,
+  Trash2,
+  Save,
+  X,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -30,6 +35,7 @@ const facultyMenuItems = [
   { icon: FileText, label: 'Academic Records', id: 'records' },
   { icon: BarChart3, label: 'Evaluation Results', id: 'evaluation' },
   { icon: FileText, label: 'Reports', id: 'reports' },
+  { icon: UserCircle, label: 'My Profile', id: 'profile' },
 ];
 
 interface FacultyDashboardProps {
@@ -56,6 +62,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem }: FacultyD
           {activeMenuItem === 'records' && <AcademicRecordsView />}
           {activeMenuItem === 'evaluation' && <EvaluationResults />}
           {activeMenuItem === 'reports' && <ReportsView />}
+          {activeMenuItem === 'profile' && <MyProfile />}
         </main>
       </div>
     </div>
@@ -887,6 +894,145 @@ function ReportsView() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ====================== 5.7 MY PROFILE ======================
+function MyProfile() {
+  const [name, setName] = useState('Prof. Sarah Johnson');
+  const [email, setEmail] = useState('sarah.johnson@university.edu.ph');
+  const [editingField, setEditingField] = useState<'name' | 'email' | null>(null);
+  const [tempValue, setTempValue] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<'name' | 'email' | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const showSuccess = (msg: string) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };
+
+  const handleEdit = (field: 'name' | 'email') => {
+    setEditingField(field);
+    setTempValue(field === 'name' ? name : email);
+  };
+
+  const handleSave = () => {
+    if (editingField === 'name') setName(tempValue);
+    if (editingField === 'email') setEmail(tempValue);
+    setEditingField(null);
+    showSuccess('Updated successfully.');
+  };
+
+  const handleDelete = () => {
+    if (showDeleteConfirm === 'name') setName('');
+    if (showDeleteConfirm === 'email') setEmail('');
+    setShowDeleteConfirm(null);
+    showSuccess('Field cleared.');
+  };
+
+  const fields = [
+    { key: 'name' as const, label: 'Full Name', value: name },
+    { key: 'email' as const, label: 'Email Address', value: email },
+  ];
+
+  return (
+    <div>
+      <div className="mb-6 pb-6 border-b border-gray-200">
+        <h1 className="text-3xl font-semibold text-gray-900 mb-2">My Profile</h1>
+        <p className="text-gray-600">View and update your profile information</p>
+      </div>
+
+      {successMessage && (
+        <div className="fixed top-6 right-6 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
+          <CheckCircle className="w-5 h-5" />
+          <span className="font-medium">{successMessage}</span>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-md max-w-xl overflow-hidden">
+        {/* Avatar area */}
+        <div className="flex flex-col items-center py-10 bg-gray-50 border-b border-gray-100">
+          <div className="w-20 h-20 rounded-full bg-[#1E3A8A] flex items-center justify-center mb-3">
+            <span className="text-2xl font-bold text-white">
+              {name ? name.trim().split(' ').map(w => w[0]).slice(0, 2).join('') : '?'}
+            </span>
+          </div>
+          <p className="font-semibold text-gray-900 text-lg">{name || '—'}</p>
+          <p className="text-sm text-gray-500">{email || '—'}</p>
+        </div>
+
+        {/* Fields */}
+        <div className="divide-y divide-gray-100">
+          {fields.map(field => (
+            <div key={field.key} className="flex items-center gap-4 px-6 py-5">
+              <div className="w-32 shrink-0 text-sm font-medium text-gray-500">{field.label}</div>
+              <div className="flex-1">
+                {editingField === field.key ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempValue}
+                      onChange={e => setTempValue(e.target.value)}
+                      autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditingField(null); }}
+                      className="flex-1 px-3 py-2 border border-blue-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                    <button onClick={handleSave} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                      <Save className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingField(null)} className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className={`text-sm ${field.value ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+                    {field.value || 'Not set'}
+                  </span>
+                )}
+              </div>
+              {editingField !== field.key && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleEdit(field.key)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setShowDeleteConfirm(field.key)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors" title="Clear">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Clear Field</h3>
+                <p className="text-sm text-gray-500">This will remove the current value.</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Are you sure you want to clear the <strong>{showDeleteConfirm === 'name' ? 'Full Name' : 'Email Address'}</strong>?
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleDelete} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors">
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
