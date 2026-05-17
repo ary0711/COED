@@ -3,13 +3,6 @@ import { User, Lock, ArrowLeft, Mail, IdCard, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 // ─── Role mappings ───────────────────────────────────────────────────────────
-const UI_TO_DB_ROLE: Record<string, string> = {
-  dean: 'dean',
-  chair: 'department_chair',
-  faculty: 'faculty',
-  student: 'student',
-  alumni: 'alumni',
-};
 
 const DB_TO_UI_ROLE: Record<string, string> = {
   dean: 'dean',
@@ -35,10 +28,11 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Login fields
   const [loginIdNumber, setLoginIdNumber] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginRole, setLoginRole] = useState('');
 
+  // Register fields
   const [regFullName, setRegFullName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regUserType, setRegUserType] = useState('');
@@ -46,24 +40,15 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
-  const loginRoles = [
-    { id: 'dean',    label: 'College Dean',  icon: '👨‍💼' },
-    { id: 'chair',   label: 'Dept. Chair',   icon: '👔'  },
-    { id: 'faculty', label: 'Faculty/Staff', icon: '👨‍🏫' },
-    { id: 'student', label: 'Student',       icon: '🎓'  },
-    { id: 'alumni',  label: 'Alumni',        icon: '🎖️'  },
-  ];
-
   const userTypes = [
-    { id: 'student', label: 'Student',          icon: '🎓'  },
+    { id: 'student', label: 'Student',          icon: '🎓' },
     { id: 'faculty', label: 'Faculty/Employee', icon: '👨‍🏫' },
-    { id: 'alumni',  label: 'Alumni',           icon: '🎖️'  },
+    { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
   ];
 
-  // ─── Sign In ───────────────────────────────────────────────────────────────
+  // ─── Sign In (No role selection) ───────────────────────────────────────
   const handleLogin = async () => {
     setError('');
-    if (!loginRole)            { setError('Please select a role before signing in.'); return; }
     if (!loginIdNumber.trim()) { setError('Please enter your ID number.'); return; }
     if (!loginPassword)        { setError('Please enter your password.'); return; }
 
@@ -73,16 +58,18 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         .rpc('get_login_info', { p_id_number: loginIdNumber.trim() });
 
       const profile = data?.[0];
-      if (profileError || !profile) { setError('No account found with that ID number.'); return; }
-      if (profile.status === 'inactive') { setError('Your account has been deactivated. Contact the administrator.'); return; }
-      if (profile.status === 'pending')  { setError('Your account is pending approval. Please wait for activation.'); return; }
-
-      const expectedDbRole = UI_TO_DB_ROLE[loginRole];
-      const roleMatches =
-        profile.role === expectedDbRole ||
-        (loginRole === 'faculty' && profile.role === 'staff');
-
-      if (!roleMatches) { setError('Selected role does not match your account. Please choose the correct role.'); return; }
+      if (profileError || !profile) {
+        setError('No account found with that ID number.');
+        return;
+      }
+      if (profile.status === 'inactive') {
+        setError('Your account has been deactivated. Contact the administrator.');
+        return;
+      }
+      if (profile.status === 'pending') {
+        setError('Your account is pending approval. Please wait for activation.');
+        return;
+      }
 
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: profile.email,
@@ -96,7 +83,10 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
         return;
       }
 
-      onLogin(DB_TO_UI_ROLE[profile.role] ?? loginRole);
+      // Get the correct UI role from database role
+      const uiRole = DB_TO_UI_ROLE[profile.role] ?? 'faculty';
+      onLogin(uiRole);
+
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
       console.error(err);
@@ -318,28 +308,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                   </div>
                 </div>
 
-                {/* Role Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Select Role <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {loginRoles.map((role) => (
-                      <button
-                        key={role.id}
-                        onClick={() => setLoginRole(role.id)}
-                        className={`py-2.5 px-1 rounded-xl border-2 transition-all text-center ${
-                          loginRole === role.id
-                            ? 'border-[#1d4ed8] bg-blue-50'
-                            : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="text-xl mb-0.5">{role.icon}</div>
-                        <div className="text-[10px] font-semibold text-gray-700 leading-tight">{role.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                
 
                 {/* Remember & Forgot */}
                 <div className="flex items-center justify-between text-sm">
