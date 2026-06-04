@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect  } from 'react';
 import { CollegeDeanDashboard } from './components/CollegeDeanDashboard';
 import { DepartmentChairDashboard } from './components/DepartmentChairDashboard';
 import { FacultyDashboard } from './components/dashboards/FacultyDashboard';
@@ -15,6 +15,9 @@ import { AchievementsPage } from './components/coed/AchievementsPage';
 import { AccreditationPage } from './components/coed/AccreditationPage';
 import { ContactPage } from './components/coed/ContactPage';
 import { LoginPage } from './components/coed/LoginPage';
+import  { ForgotPasswordPage } from './components/coed/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/coed/ResetPasswordPage';
+
 
 /**
  * College of Education (COED) Website & Management System
@@ -37,13 +40,29 @@ import { LoginPage } from './components/coed/LoginPage';
 type AppMode = 'public' | 'dashboard';
 type UserRole = 'dean' | 'chair' | 'faculty' | 'student' | 'alumni' | null;
 // ✅ Added 'clubs' to the PublicPage type
-type PublicPage = 'home' | 'about' | 'departments' | 'clubs' | 'research' | 'achievements' | 'accreditation' | 'contact' | 'login';
+type PublicPage =
+  | 'home'
+  | 'about'
+  | 'departments'
+  | 'clubs'
+  | 'research'
+  | 'achievements'
+  | 'accreditation'
+  | 'contact'
+  | 'login'
+  | 'forgot-password'
+  | 'reset-password';
 
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('public');
   const [currentRole, setCurrentRole] = useState<UserRole>(null);
   const [currentPage, setCurrentPage] = useState<PublicPage>('home');
   const [activeMenuItem, setActiveMenuItem] = useState('dashboard');
+  useEffect(() => {
+  if (window.location.pathname === '/reset-password') {
+    setCurrentPage('reset-password');
+  }
+}, []);
 
   const handleLogin = (role: string) => {
     setCurrentRole(role as UserRole);
@@ -67,20 +86,35 @@ export default function App() {
   };
 
   const handleNavigate = (page: string) => {
-    setCurrentPage(page as PublicPage);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  console.log('Current page changing to:', page);
+  setCurrentPage(page as PublicPage);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+  
 
   // Public Website Mode
   if (appMode === 'public') {
     return (
       <div className="min-h-screen bg-white">
-        {currentPage !== 'login' && (
-          <Header onNavigate={handleNavigate} currentPage={currentPage} />
-        )}
+        {currentPage !== 'login' &&
+ currentPage !== 'forgot-password' && (
+  <Header
+    onNavigate={handleNavigate}
+    currentPage={currentPage}
+  />
+)}
         
         {/* Remove padding-top for home page to fit perfectly with header */}
-        <div className={currentPage !== 'login' && currentPage !== 'home' ? 'pt-20' : ''}>
+        <div
+  className={
+    currentPage !== 'login' &&
+    currentPage !== 'forgot-password' &&
+    currentPage !== 'reset-password' &&
+    currentPage !== 'home'
+      ? 'pt-20'
+      : ''
+  }
+>
           {currentPage === 'home' && <HomePage onNavigate={handleNavigate} />}
           {currentPage === 'about' && <AboutPage />}
           {currentPage === 'departments' && <DepartmentsPage />}
@@ -90,17 +124,38 @@ export default function App() {
           {currentPage === 'accreditation' && <AccreditationPage />}
           {currentPage === 'contact' && <ContactPage />}
           {currentPage === 'login' && (
-            <LoginPage
-              onLogin={handleLogin}
-              onBack={() => handleNavigate('home')}
-            />
-          )}
+  <LoginPage
+    onLogin={handleLogin}
+    onBack={() => handleNavigate('home')}
+    onForgotPassword={() => {
+  console.log('Navigate to forgot-password');
+  handleNavigate('forgot-password');
+}}
+  />
+)}
+
+{currentPage === 'forgot-password' && (
+  <ForgotPasswordPage
+    onBack={() => handleNavigate('home')}
+    onReturnToLogin={() => handleNavigate('login')}
+  />
+)}
         </div>
 
-        {currentPage !== 'login' && <Footer />}
+       {currentPage !== 'login' &&
+ currentPage !== 'forgot-password' && (
+  <Footer />
+)}
       </div>
     );
+    
   }
+  {currentPage === 'reset-password' && (
+  <ResetPasswordPage
+    onBack={() => handleNavigate('home')}
+    onReturnToLogin={() => handleNavigate('login')}
+  />
+)}
 
   // Dashboard Mode (after login)
   return (

@@ -17,9 +17,14 @@ const DB_TO_UI_ROLE: Record<string, string> = {
 interface LoginPageProps {
   onLogin: (role: string) => void;
   onBack?: () => void;
+  onForgotPassword?: () => void;
 }
 
-export function LoginPage({ onLogin, onBack }: LoginPageProps) {
+export function LoginPage({
+  onLogin,
+  onBack,
+  onForgotPassword,
+}: LoginPageProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -45,7 +50,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
     { id: 'faculty', label: 'Faculty/Employee', icon: '👨‍🏫' },
     { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
   ];
-
   // ─── Sign In (No role selection) ───────────────────────────────────────
   const handleLogin = async () => {
     setError('');
@@ -158,6 +162,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 flex overflow-hidden">
+
 
       {/* ══════════════════════════════════════════
           LEFT PANEL — full height, dark navy
@@ -316,9 +321,13 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                     <input type="checkbox" className="w-4 h-4 rounded accent-blue-600" />
                     <span className="text-gray-600">Remember me</span>
                   </label>
-                  <button className="text-[#1d4ed8] font-medium hover:underline">
-                    Forgot password?
-                  </button>
+                  
+                  <button
+                  onClick={onForgotPassword}
+                  className="text-[#1d4ed8] font-medium hover:underline"
+                >
+                Forgot password?
+                </button>
                 </div>
 
                 {/* Sign In Button */}
@@ -460,7 +469,7 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                   </div>
                 </div>
 
-                {/* Register Button */}
+                                {/* Register Button */}
                 <button
                   onClick={handleRegister}
                   disabled={loading}
@@ -470,7 +479,6 @@ export function LoginPage({ onLogin, onBack }: LoginPageProps) {
                 </button>
               </div>
             )}
-
           </div>
         </div>
       </div>
