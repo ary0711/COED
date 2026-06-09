@@ -66,8 +66,7 @@ function StudentDashboardView() {
   return (
     <div>
       <div className="mb-6 pb-6 border-b border-gray-200">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">Student Dashboard</h1>
-        <p className="text-gray-600">Welcome back, John Michael Cruz</p>
+         <p className="text-gray-600">Welcome back, John Michael Cruz</p>
       </div>
 
       <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-6 text-white mb-6">
