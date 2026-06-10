@@ -208,7 +208,18 @@ export function CollegeDeanDashboard({
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 function DashboardView() {
-  const [sideTab, setSideTab] = useState<'notifications' | 'quarterly'>('notifications');
+
+  // Mobile-only metric cards (charts replaced on small screens)
+  const mobileMetrics = [
+    { label: 'Total Faculty',       value: '142',   sub: '+5.2% this semester',  color: '#1E3A8A', bg: '#DBEAFE' },
+    { label: 'Total Students',      value: '3,847', sub: '+12.3% this semester', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Active Departments',  value: '8',     sub: 'All operational',      color: '#7C3AED', bg: '#EDE9FE' },
+    { label: 'Pending Reports',     value: '23',    sub: '8 newly added',        color: '#B45309', bg: '#FEF3C7' },
+    { label: 'Alumni Responses',    value: '1,256', sub: '+18.7% response rate', color: '#BE185D', bg: '#FCE7F3' },
+    { label: 'Evaluation Rating',   value: '4.6',   sub: 'Out of 5.0 avg.',      color: '#0369A1', bg: '#E0F2FE' },
+    { label: 'Research Submitted',  value: '14',    sub: '2 pending approval',   color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Completion Rate',     value: '94%',   sub: 'Student evaluations',  color: '#9D174D', bg: '#FCE7F3' },
+  ];
 
   return (
     <div className="flex flex-col h-full">
@@ -217,7 +228,7 @@ function DashboardView() {
         <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
       </div>
 
-      {/* Summary cards */}
+      {/* ── Summary cards (all screen sizes) ── */}
       <div className="mb-4">
         <div
           className="flex gap-3 overflow-x-auto pb-4 sm:hidden"
@@ -245,49 +256,69 @@ function DashboardView() {
         </div>
       </div>
 
-      {/* Charts + side panel */}
-<div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
-  <div className="lg:col-span-2 min-h-0 overflow-auto">
-    <ChartsSection />
-  </div>
-
-  {/* Tabbed side panel */}
-  <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-      {/* Tab header — stays fixed */}
-      <div className="flex border-b border-gray-100 flex-shrink-0">
-        <button
-          onClick={() => setSideTab('notifications')}
-          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold transition-colors ${
-            sideTab === 'notifications'
-              ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Bell className="w-3.5 h-3.5" />
-          Notifications
-        </button>
-        <button
-          onClick={() => setSideTab('quarterly')}
-          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold transition-colors ${
-            sideTab === 'quarterly'
-              ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
+      {/* ── MOBILE ONLY: metric cards grid (replaces charts) ── */}
+      <div className="lg:hidden mb-4">
+        <p className="text-xs text-gray-400 mb-3 flex items-center gap-1.5">
           <BarChart3 className="w-3.5 h-3.5" />
-          Quarterly Report
-        </button>
+          Key Metrics · Use the web version for full charts &amp; analytics
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {mobileMetrics.map((m) => (
+            <div
+              key={m.label}
+              className="rounded-2xl p-4"
+              style={{ backgroundColor: m.bg }}
+            >
+              <p className="text-xs font-medium mb-1" style={{ color: m.color, opacity: 0.75 }}>
+                {m.label}
+              </p>
+              <p className="text-2xl font-bold leading-none mb-1" style={{ color: m.color }}>
+                {m.value}
+              </p>
+              <p className="text-xs" style={{ color: m.color, opacity: 0.6 }}>
+                {m.sub}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {sideTab === 'notifications' && <NotificationsPanel userType="dean" />}
-        {sideTab === 'quarterly'     && <QuarterlyReportTracker />}
+{/* ── DESKTOP ONLY: Charts + side panel ── */}
+      <div className="hidden lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
+        <div className="lg:col-span-2 min-h-0 overflow-auto">
+          <ChartsSection />
+        </div>
+
+        <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+<NotificationsPanel userType="dean" />
+<QuarterlyReportTracker />
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-</div>
+
+      {/* ── MOBILE: Notifications + Quarterly stacked separately ── */}
+      <div className="lg:hidden flex flex-col gap-4">
+        {/* Notifications */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+            <Bell className="w-4 h-4 text-[#1E3A8A]" />
+            <span className="text-sm font-semibold text-gray-800">Notifications</span>
+          </div>
+          <NotificationsPanel userType="dean" />
+        </div>
+
+        {/* Quarterly Report */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+            <BarChart3 className="w-4 h-4 text-[#1E3A8A]" />
+            <span className="text-sm font-semibold text-gray-800">Quarterly Report</span>
+          </div>
+          <QuarterlyReportTracker />
+        </div>
+      </div>
     </div>
   );
 }
