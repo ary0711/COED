@@ -103,7 +103,7 @@ export function Sidebar({ menuItems, activeItem, onItemClick, userRole, onLogout
       <div className="flex-shrink-0 px-3 py-4 border-t border-gray-100">
         <button
           onClick={handleLogout}
-          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all duration-200 text-left"
+          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-100 transition-all duration-200 text-left"
         >
           <LogOut className="w-4 h-4 flex-shrink-0 group-hover:text-red-500 transition-colors" />
           <span className="text-xs font-medium">Log Out</span>
