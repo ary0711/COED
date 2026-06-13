@@ -51,6 +51,13 @@ export function LoginPage({
     { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
   ];
   // ─── Sign In (No role selection) ───────────────────────────────────────
+  const passwordChecks = {
+  length: regPassword.length >= 8,
+  uppercase: /[A-Z]/.test(regPassword),
+  lowercase: /[a-z]/.test(regPassword),
+  number: /\d/.test(regPassword),
+  special: /[@$!%*?&.#_-]/.test(regPassword),
+};
   const handleLogin = async () => {
     setError('');
     if (!loginIdNumber.trim()) { setError('Please enter your ID number.'); return; }
@@ -107,7 +114,15 @@ export function LoginPage({
     if (!regUserType)                   { setError('Please select a user type.'); return; }
     if (!regIdNumber.trim())            { setError('ID number is required.'); return; }
     if (!regPassword)                   { setError('Password is required.'); return; }
-    if (regPassword.length < 6)         { setError('Password must be at least 6 characters.'); return; }
+    const passwordRegex =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+if (!passwordRegex.test(regPassword)) {
+  setError(
+    'Password must be at least 8 characters and contain uppercase, lowercase, number, and special character.'
+  );
+  return;
+}
     if (regPassword !== regConfirmPassword) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
@@ -439,7 +454,7 @@ export function LoginPage({
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        placeholder="Password"
+                        placeholder="Min 8 chars, Aa1@"
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         className="w-full pl-10 pr-9 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm"
@@ -466,6 +481,30 @@ export function LoginPage({
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Must contain uppercase, lowercase, number, and special character.
+                      </p>
+                      <div className="mt-2 space-y-1 text-xs">
+  <p className={passwordChecks.length ? 'text-green-600' : 'text-red-500'}>
+    {passwordChecks.length ? '✓' : '✗'} At least 8 characters
+  </p>
+
+  <p className={passwordChecks.uppercase ? 'text-green-600' : 'text-red-500'}>
+    {passwordChecks.uppercase ? '✓' : '✗'} One uppercase letter (A-Z)
+  </p>
+
+  <p className={passwordChecks.lowercase ? 'text-green-600' : 'text-red-500'}>
+    {passwordChecks.lowercase ? '✓' : '✗'} One lowercase letter (a-z)
+  </p>
+
+  <p className={passwordChecks.number ? 'text-green-600' : 'text-red-500'}>
+    {passwordChecks.number ? '✓' : '✗'} One number (0-9)
+  </p>
+
+  <p className={passwordChecks.special ? 'text-green-600' : 'text-red-500'}>
+    {passwordChecks.special ? '✓' : '✗'} One special character (@, #, !, etc.)
+  </p>
+</div>
                   </div>
                 </div>
 
