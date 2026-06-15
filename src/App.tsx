@@ -64,7 +64,18 @@ export default function App() {
   }
 }, []);
 
-  const handleLogin = (role: string) => {
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string; idNumber?: string } | null>(null);
+
+const handleLogin = (role: string) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setCurrentUser({
+        username: payload.fullName ?? payload.username,
+        role: payload.role,
+        idNumber: payload.idNumber ?? '',
+      });
+    }
     setCurrentRole(role as UserRole);
     setAppMode('dashboard');
     setActiveMenuItem('dashboard');
@@ -181,7 +192,8 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
-           onLogout={handleLogout} 
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Faculty'}
         />
       )}
       {currentRole === 'student' && (
@@ -189,7 +201,8 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
-           onLogout={handleLogout} 
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Student'}
         />
       )}
       {currentRole === 'alumni' && (
@@ -197,7 +210,9 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
-           onLogout={handleLogout} 
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Alumni'}
+          idNumber={currentUser?.idNumber ?? ''}
         />
       )}
       
