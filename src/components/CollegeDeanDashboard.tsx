@@ -441,8 +441,21 @@ function UserManagement() {
     if (!selected) return;
     setSaving(true);
     try {
+      // Step 1: I-delete sa users table gamit email as username
+      const { data: userRecord } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', selected.email)
+        .single();
+
+      if (userRecord) {
+        await supabase.from('users').delete().eq('username', selected.email);
+      }
+
+      // Step 2: I-delete sa profiles
       const { error } = await supabase.from('profiles').delete().eq('id', selected.id);
       if (error) { setFormError(error.message); return; }
+
       setModal(null);
       fetchUsers();
     } finally { setSaving(false); }
@@ -450,9 +463,43 @@ function UserManagement() {
 
   const activatePending = async (user: Profile) => {
     setActivating(user.id);
-    await supabase.from('profiles').update({ status: 'active' }).eq('id', user.id);
-    setActivating(null);
-    fetchUsers();
+    try {
+      // Step 1: I-activate ang profile
+      await supabase.from('profiles').update({ status: 'active' }).eq('id', user.id);
+
+      // Step 2: I-add sa users table para maka-login via JWT
+      // Pangitaa ang username sa profiles
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        // Check kung naa na sa users table
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', profile.email)
+          .single();
+
+        // Kung wala pa, i-add gamit email as username
+        if (!existingUser) {
+          await fetch('http://localhost:5000/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: profile.email,
+              password: 'ChangeMe@123',
+              role: profile.role,
+            }),
+          });
+        }
+      }
+    } finally {
+      setActivating(null);
+      fetchUsers();
+    }
   };
 
   const toggleStatus = async (user: Profile) => {
@@ -1206,12 +1253,16 @@ function ReportsAnalytics() {
           <div key={i} className="bg-white rounded-xl shadow-md p-5 sm:p-6">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">{report}</h3>
             <div className="space-y-2">
-              <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm">
-                <Download className="w-4 h-4" /> Export PDF
-              </button>
-              <button className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm">
-                <Download className="w-4 h-4" /> Export Excel
-              </button>
+              <button
+  onClick={() => window.open('http://localhost:5000/api/reports/pdf', '_blank')}
+  className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm">
+  <Download className="w-4 h-4" /> Export PDF
+</button>
+<button
+  onClick={() => window.open('http://localhost:5000/api/reports/excel', '_blank')}
+  className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm">
+  <Download className="w-4 h-4" /> Export Excel
+</button>
             </div>
           </div>
         ))}

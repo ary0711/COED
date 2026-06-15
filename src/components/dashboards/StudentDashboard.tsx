@@ -26,9 +26,12 @@ const studentMenuItems = [
 interface StudentDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
+  onLogout?: () => void;
+  onRoleChange?: () => void;
+  userName?: string;
 }
 
-export function StudentDashboard({ activeMenuItem, setActiveMenuItem }: StudentDashboardProps) {
+export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Auto-close sidebar when resizing to desktop
@@ -73,7 +76,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem }: StudentD
             <div className="flex-1">
               <DashboardHeader
                 userRole="Student"
-                userName="John Michael Cruz"
+                userName={userName}
               />
             </div>
           </div>

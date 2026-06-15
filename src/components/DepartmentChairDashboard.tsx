@@ -31,9 +31,10 @@ const chairMenuItems = [
 ];
 
 interface DepartmentChairDashboardProps {
-  onRoleChange: () => void;
+  onRoleChange?: () => void;
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
+  onLogout?: () => void;
 }
 
 export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: DepartmentChairDashboardProps) {
