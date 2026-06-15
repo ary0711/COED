@@ -23,15 +23,11 @@ const alumniMenuItems = [
 ];
 
 interface AlumniDashboardProps {
-  onRoleChange?: () => void;
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
-  onLogout?: () => void;
-  userName?: string;
-  idNumber?: string;
 }
 
-export function AlumniDashboard({ activeMenuItem, setActiveMenuItem, userName: _userName = 'Alumni', idNumber: _idNumber = '' }: AlumniDashboardProps) {
+export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Auto-close sidebar when resizing to desktop
@@ -76,7 +72,7 @@ export function AlumniDashboard({ activeMenuItem, setActiveMenuItem, userName: _
             <div className="flex-1">
               <DashboardHeader
                 userRole="Alumni"
-                userName={_userName}
+                userName="Maria Gabriela Santos"
               />
             </div>
           </div>
@@ -101,10 +97,6 @@ function AlumniDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: st
   return (
     <div>
       <div className="mb-6 pb-6 border-b border-gray-200">
-<<<<<<< HEAD
-=======
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Alumni Dashboard</h1>
->>>>>>> f5dc92324af328e05575c88313a144db856e56f2
         <p className="text-gray-600 text-sm sm:text-base">Welcome back, Maria Gabriela Santos</p>
       </div>
 
