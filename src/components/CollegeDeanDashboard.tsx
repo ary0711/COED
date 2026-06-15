@@ -129,42 +129,22 @@ export function CollegeDeanDashboard({
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* ── Mobile overlay backdrop ── */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+     {/* ── Sidebar — handles its own overlay & slide via isOpen/onClose ── */}
+      <Sidebar
+        menuItems={deanMenuItems}
+        activeItem={activeMenuItem}
+        onItemClick={handleMenuItemClick}
+        userRole="College Dean"
+        onLogout={onLogout}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-      {/* ── Sidebar ── */}
-      <div
-        className={`
-          fixed top-0 left-0 h-full z-40 w-64 transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          lg:translate-x-0 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:flex-shrink-0
-        `}
-      >
-        {/* Close button — only on mobile/tablet, sits on top-right of sidebar */}
-        <button
-          className="lg:hidden absolute top-3 right-3 z-50 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close menu"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <Sidebar
-          menuItems={deanMenuItems}
-          activeItem={activeMenuItem}
-          onItemClick={handleMenuItemClick}
-          userRole="College Dean"
-          onLogout={onLogout}
-        />
-      </div>
+      {/* ── Desktop spacer so content clears the fixed sidebar ── */}
+      <div className="hidden lg:block w-64 shrink-0" />
 
       {/* ── Main content area ── */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ── Top bar: hamburger + DashboardHeader side by side ── */}
         <div className="sticky top-0 z-20 flex items-stretch bg-white border-b border-gray-200 shadow-sm">
