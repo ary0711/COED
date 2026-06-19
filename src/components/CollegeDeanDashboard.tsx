@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { notifyRole, } from '../notificationService';
 import {
   Users,
   GraduationCap,
@@ -1257,7 +1258,223 @@ function ReportsAnalytics() {
 
 // ─── Announcements ────────────────────────────────────────────────────────────
 function AnnouncementsContent() {
+  
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  
+  function formatManilaTime(dateString: string) {
+  return new Date(dateString).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
+  
+  
+  useEffect(() => {
+     loadAnnouncements();
+  const channel = supabase
+    .channel('announcements-channel')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'announcements'
+      },
+      (payload) => {
+        setAnnouncements((prev) => [
+          payload.new,
+          ...prev
+        ]);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
+  async function loadAnnouncements() {
+  const { data, error } = await supabase
+    .from('announcements')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (!error && data) {
+    setAnnouncements(data);
+  }
+}
+  async function publishAnnouncement() {
+  try {
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setModalTitle('Error');
+    setModalMessage('User not found');
+      setShowModal(true);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('announcements')
+      .insert([
+        {
+          title,
+          content,
+          author_id: user.id,
+          target_role: [
+            'admin',
+            'dean',
+            'department_chair',
+            'faculty',
+            'student',
+            'alumni'
+          ]
+        }
+      ])
+      .select()
+      .single();
+      
+
+    if (error) throw error;
+    const announcementId = data.id;
+    setAnnouncements(prev => [
+  data,
+  ...prev
+]);
+
+    // Notifications
+
+    await notifyRole(
+      'admin',
+      title,
+      content,
+      announcementId,
+    );
+
+    await notifyRole(
+      'dean',
+      title,
+      content,
+      announcementId,
+    );
+
+    await notifyRole(
+      'department_chair',
+      title,
+      content,
+      announcementId,
+    );
+
+    await notifyRole(
+      'faculty',
+      title,
+      content,
+      announcementId,
+    );
+
+    await notifyRole(
+      'student',
+      title,
+      content,
+      announcementId,
+    );
+
+    await notifyRole(
+      'alumni',
+      title,
+      content,
+      announcementId,
+    );
+
+    setTitle('');
+    setContent('');
+
+    setModalTitle('Success');
+    setModalMessage('Announcement published successfully.');
+    setShowModal(true);
+
+  } catch (err: any) {
+  console.error(err);
+
+  setModalTitle('Error');
+  setModalMessage(
+    err?.message ||
+    JSON.stringify(err) ||
+    'Failed to publish announcement.'
+  );
+
+  setShowModal(true);
+}
+}
+async function deleteAnnouncement(
+  announcementId: string
+) {
+  const confirmed = window.confirm(
+    'Delete this announcement?'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const { error: announcementError } =
+      await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', announcementId);
+
+    if (announcementError)
+      throw announcementError;
+
+    const { error: notificationError } =
+  await supabase
+    .from('notifications')
+    .delete()
+    .eq('reference_id', announcementId)
+    .eq('reference_table', 'announcements');
+
+if (notificationError)
+  throw notificationError;
+
+    setAnnouncements(prev =>
+      prev.filter(
+        a => a.id !== announcementId
+      )
+    );
+
+    setModalTitle('Success');
+    setModalMessage(
+      'Announcement deleted successfully.'
+    );
+    setShowModal(true);
+  } catch (err) {
+    console.error(err);
+
+    setModalTitle('Error');
+    setModalMessage(
+      'Failed to delete announcement.'
+    );
+    setShowModal(true);
+  }
+}
+
+if (!confirm) return;
   return (
+    
     <div>
       <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Announcements</h1>
@@ -1272,37 +1489,127 @@ function AnnouncementsContent() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-            <input type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base" placeholder="Enter announcement title" />
+            <input
+  type="text"
+  value={title}
+  onChange={(e) => setTitle(e.target.value)}
+  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+  placeholder="Enter announcement title"
+/>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Content</label>
-            <textarea rows={4} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm sm:text-base" placeholder="Enter announcement content" />
+            <textarea
+  rows={4}
+  value={content}
+  onChange={(e) => setContent(e.target.value)}
+  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+  placeholder="Enter announcement content"
+/>
           </div>
-          <button className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Publish Announcement</button>
+          <button
+  onClick={publishAnnouncement}
+  className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
+>
+  Publish Announcement
+</button>
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Announcements</h2>
-        <div className="space-y-3">
-          {[
-            { title: 'Enrollment Period Extended', date: 'Feb 10, 2026', status: 'Published' },
-            { title: 'Faculty Meeting Schedule',   date: 'Feb 8, 2026',  status: 'Published' },
-          ].map((a, i) => (
-            <div key={i} className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{a.title}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{a.date}</div>
-                </div>
-                <span className="px-2 sm:px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm flex-shrink-0">{a.status}</span>
+  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
+    Recent Announcements
+  </h2>
+
+  <div className="space-y-3">
+    {announcements.length === 0 ? (
+      <div className="text-gray-500 text-center py-6">
+        No announcements found.
+      </div>
+    ) : (
+      announcements.map((announcement) => (
+        <div
+          key={announcement.id}
+          className="p-4 bg-gray-50 rounded-lg"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-medium text-gray-900 text-sm sm:text-base">
+                {announcement.title}
+              </div>
+
+              <div className="text-xs sm:text-sm text-gray-600">
+  {formatManilaTime(announcement.created_at)}
+</div>
+
+              <div className="text-sm text-gray-500 mt-2">
+                {announcement.content}
               </div>
             </div>
-          ))}
+
+            <div className="flex gap-2">
+  <span
+    className="px-2 sm:px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm"
+  >
+    Published
+  </span>
+
+  <button
+    onClick={() =>
+      deleteAnnouncement(
+        announcement.id
+      )
+    }
+    className="
+      px-3
+      py-1
+      bg-red-500
+      text-white
+      rounded-lg
+      text-xs
+      hover:bg-red-600
+    "
+  >
+    Delete
+  </button>
+</div>
+          </div>
         </div>
+      ))
+    )}
+  </div>
+</div>
+      {showModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+      
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          {modalTitle}
+        </h3>
+
+        <p className="text-gray-600">
+          {modalMessage}
+        </p>
       </div>
+
+      <div className="flex justify-end border-t p-4">
+        <button
+          onClick={() => setShowModal(false)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          OK
+        </button>
+      </div>
+
     </div>
+  </div>
+)}
+    </div>
+    
   );
+  
 }
+
 
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
