@@ -28,35 +28,39 @@ interface OrgData {
 const orgData: OrgData = {
   dean: {
     id: 'dean',
-    name: 'Dr. Jorelyn P.Conception',
+    name: 'Dr.Jorelyn P.Conception',
     role: 'College Dean',
     education: 'Ph.D. in Educational Leadership, Stanford University',
     experience: '25 Years',
     subject: 'Educational Administration & Policy',
-    image: 'C:/Users/jenis/COED/COED/public/images/JPC.PNG'
+    image: 'C:/Users/jenis/COED/COED/public/images/JPC.PNG',
   },
   departments: [
     {
       id: 'elem-ed',
-      name: 'Elementary Education',
+      name: 'Bachelor of Elementary Education Program',
       chairman: {
         id: 'chair-1',
-        name: 'Dr. Sarah Johnson',
-        role: 'Department Chairman',
+        name: 'Dr. Viviana C. Genabe',
+        role: 'BEED Chairperson',
         education: 'Ph.D. in Elementary Education',
         experience: '18 Years',
         subject: 'Child Development & Pedagogy',
+        image: '',
       },
       teachers: [
-        { id: 't1', name: 'Mark Davis', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics' },
-        { id: 't2', name: 'Linda Smith', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy' },
-        { id: 't3', name: 'James Wilson', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science' },
-        { id: 't4', name: 'Anna Lee', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies' },
+        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics', image: '' },
+        { id: 't3', name: 'Dr. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy', image: '' },
+        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't5', name: 'Dr. Teresita Georgina B. Nikal', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies', image: '' },
+        { id: 't6', name: 'Dr. Marvin S. Olvido-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+       
       ]
     },
     {
       id: 'sec-ed',
-      name: 'Secondary Education',
+      name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
       chairman: {
         id: 'chair-2',
         name: 'Dr. Michael Chen',
@@ -64,17 +68,21 @@ const orgData: OrgData = {
         education: 'Ed.D. in Curriculum and Instruction',
         experience: '20 Years',
         subject: 'Curriculum Design',
+        image: '',
       },
       teachers: [
-        { id: 't5', name: 'Rachel Green', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English' },
-        { id: 't6', name: 'Dr. Robert Brown', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics' },
-        { id: 't7', name: 'Emily White', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra' },
-        { id: 't8', name: 'David Clark', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History' },
+        { id: 't7', name: 'Dr. Maricho U. Carreon', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English', image: '', },
+        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics', image: '', },
+        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra', image: '', },
+        { id: 't10', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't11', name: 'Dr. Crisju Theres B. Enriquez', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't12', name: 'Dr. Judith M. Aliquiot', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't13', name: 'Dr. Ariel L. RamosS', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
       ]
     },
     {
       id: 'sped',
-      name: 'Special Education',
+      name: 'Bachelor of Technology and Livelihood Education Program',
       chairman: {
         id: 'chair-3',
         name: 'Dr. Patricia Williams',
@@ -82,12 +90,17 @@ const orgData: OrgData = {
         education: 'Ph.D. in Special Education',
         experience: '22 Years',
         subject: 'Behavioral Interventions',
+         image: '',
       },
       teachers: [
-        { id: 't9', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies' },
-        { id: 't10', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.' },
-        { id: 't11', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.' },
-      ]
+        { id: 't14', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't15', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.', image: '', },
+        { id: 't16', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.', image: '', },
+        { id: 't17', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't18', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't19', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't20', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+     ]
     },
     {
       id: 'ed-lead',
@@ -99,11 +112,12 @@ const orgData: OrgData = {
         education: 'Ed.D. in School Administration',
         experience: '28 Years',
         subject: 'Organizational Leadership',
+         image: '',
       },
       teachers: [
-        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law' },
-        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance' },
-        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education' },
+        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law', image: '', },
+        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance', image: '', },
+        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education', image: '', },
       ]
     }
   ]
@@ -125,7 +139,7 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
   src={person.image}
   alt={person.name}
   className="absolute inset-0 w-full h-full object-cover bg-gray-300"
-  onError={(e) => { ... img-missing fallback ... }}
+  onError={() => {}}
 />
 <div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
   <User className="w-12 h-12 text-gray-400" />
@@ -341,7 +355,7 @@ export function AboutPage() {
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
              <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
-  <img src={selectedPerson.image} alt={selectedPerson.name} ... onError={...} />
+  <img src={selectedPerson.image} alt={selectedPerson.name} />
   <div className="hidden image-missing:flex ...">
     <User className="w-20 h-20 text-gray-400" />
   </div>
