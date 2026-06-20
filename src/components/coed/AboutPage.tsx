@@ -9,6 +9,7 @@ interface Person {
   education: string;
   experience: string;
   subject: string;
+  image: string;
 }
 
 interface Department {
@@ -27,11 +28,12 @@ interface OrgData {
 const orgData: OrgData = {
   dean: {
     id: 'dean',
-    name: 'Dr. Elizabeth Martinez',
+    name: 'Dr. Jorelyn P.Conception',
     role: 'College Dean',
     education: 'Ph.D. in Educational Leadership, Stanford University',
     experience: '25 Years',
     subject: 'Educational Administration & Policy',
+    image: 'C:/Users/jenis/COED/COED/public/images/JPC.PNG'
   },
   departments: [
     {
@@ -119,8 +121,16 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
     className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300"
   >
     {/* Placeholder for actual image */}
-    <div className="absolute inset-0 bg-gray-300 transition-colors group-hover:bg-gray-400"></div>
-    
+   <img
+  src={person.image}
+  alt={person.name}
+  className="absolute inset-0 w-full h-full object-cover bg-gray-300"
+  onError={(e) => { ... img-missing fallback ... }}
+/>
+<div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
+  <User className="w-12 h-12 text-gray-400" />
+</div>
+
     {/* Floating White Label */}
     <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 flex justify-between items-center shadow-md transform transition-transform group-hover:-translate-y-1">
       <div className="overflow-hidden">
@@ -330,8 +340,12 @@ export function AboutPage() {
           >
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
-              <div className="w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]"></div>
-              
+             <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
+  <img src={selectedPerson.image} alt={selectedPerson.name} ... onError={...} />
+  <div className="hidden image-missing:flex ...">
+    <User className="w-20 h-20 text-gray-400" />
+  </div>
+</div>
               {/* Right Side: Data */}
               <div className="w-full md:w-[55%] p-8 md:p-14 flex flex-col justify-center bg-[#f5f5f5]">
                 <h2 className="text-4xl md:text-5xl font-light text-gray-800 tracking-tight">
