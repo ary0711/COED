@@ -354,11 +354,17 @@ export function AboutPage() {
           >
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
-             <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
-  <img src={selectedPerson.image} alt={selectedPerson.name} />
-  <div className="hidden image-missing:flex ...">
-    <User className="w-20 h-20 text-gray-400" />
-  </div>
+            <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
+  <img 
+    src={selectedPerson.image} 
+    alt={selectedPerson.name}
+    className="absolute inset-0 w-full h-full object-cover object-top"
+  />
+  {!selectedPerson.image && (
+    <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
+      <User className="w-20 h-20 text-gray-400" />
+    </div>
+  )}
 </div>
               {/* Right Side: Data */}
               <div className="w-full md:w-[55%] p-8 md:p-14 flex flex-col justify-center bg-[#f5f5f5]">
