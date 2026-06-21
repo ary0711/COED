@@ -33,7 +33,7 @@ const orgData: OrgData = {
     education: 'Ph.D. in Educational Leadership, Stanford University',
     experience: '25 Years',
     subject: 'Educational Administration & Policy',
-    image: 'C:/Users/jenis/COED/COED/public/images/JPC.PNG',
+    image: '/images/JPC.PNG',
   },
   departments: [
     {
