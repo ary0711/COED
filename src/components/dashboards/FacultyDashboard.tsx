@@ -39,6 +39,7 @@ import {
     { icon: FileText,    label: 'Academic Records',    id: 'records' },
     { icon: BarChart3,   label: 'Evaluation Results',  id: 'evaluation' },
     { icon: FileText,    label: 'Reports',             id: 'reports' },
+    { icon: Calendar,    label: 'Calendar',            id: 'calendar' },
     { icon: Settings,    label: 'Settings',            id: 'settings' },
   ];
 
@@ -106,6 +107,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             {activeMenuItem === 'records'       && <AcademicRecordsView />}
             {activeMenuItem === 'evaluation'    && <EvaluationResults />}
             {activeMenuItem === 'reports'       && <ReportsView />}
+            {activeMenuItem === 'calendar'      && <FacultyCalendar />}
             {activeMenuItem === 'settings'      && <FacultySettings />}
           </main>
         </div>
@@ -994,6 +996,262 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ====================== 5.7 CALENDAR ======================
+  interface CalendarEvent {
+    id: string;
+    title: string;
+    date: number;
+    type: 'meeting' | 'seminar' | 'deadline' | 'event';
+    description?: string;
+    program?: string;
+    color?: string;
+  }
+
+  function FacultyCalendar() {
+    const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+    const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+
+    const calendarEvents: CalendarEvent[] = [
+      { id: '1', title: 'Faculty Meeting', date: 5, type: 'meeting', description: 'Monthly faculty meeting', program: 'College of Education', color: '#3B82F6' },
+      { id: '2', title: 'Research Seminar', date: 12, type: 'seminar', description: 'Seminar on AI in Education', program: 'Research Department', color: '#10B981' },
+      { id: '3', title: 'Report Deadline', date: 15, type: 'deadline', description: 'Quarterly report submission', program: 'Administration', color: '#EF4444' },
+      { id: '4', title: 'Department Event', date: 22, type: 'event', description: 'Annual department gathering', program: 'College of Education', color: '#A855F7' },
+      { id: '5', title: 'Evaluation Period', date: 28, type: 'deadline', description: 'Faculty evaluation period', program: 'HR Department', color: '#EF4444' },
+    ];
+
+    const isPastDay = (day: number) => {
+      return new Date(currentYear, currentMonth, day) < new Date(currentYear, currentMonth, today.getDate());
+    };
+
+    const isToday = (day: number) => {
+      return day === today.getDate();
+    };
+
+    const getDaysInMonth = (month: number, year: number) => {
+      return new Date(year, month + 1, 0).getDate();
+    };
+
+    const getFirstDayOfMonth = (month: number, year: number) => {
+      return new Date(year, month, 1).getDay();
+    };
+
+    const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+    const firstDay = getFirstDayOfMonth(currentMonth, currentYear);
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+    const upcomingActivities = calendarEvents
+      .filter(e => e.date >= today.getDate())
+      .sort((a, b) => a.date - b.date);
+
+    const historyActivities = calendarEvents
+      .filter(e => e.date < today.getDate())
+      .sort((a, b) => b.date - a.date);
+
+    const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    const eventTypeIcon = (type: string) => {
+      switch (type) {
+        case 'meeting': return '📋';
+        case 'seminar': return '🎓';
+        case 'deadline': return '⏰';
+        case 'event': return '🎉';
+        default: return '📌';
+      }
+    };
+
+    return (
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Calendar</h1>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Calendar */}
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-md p-5 sm:p-6">
+            <div className="mb-6">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">{monthName}</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="text-center text-xs sm:text-sm font-semibold text-gray-600 py-2">
+                    {day}
+                  </div>
+                ))}
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div key={`empty-${i}`} className="aspect-square"></div>
+                ))}
+                {days.map(day => {
+                  const dayEvents = calendarEvents.filter(e => e.date === day);
+                  const past = isPastDay(day);
+                  const present = isToday(day);
+
+                  return (
+                    <div
+                      key={day}
+                      className={`aspect-square rounded-lg p-2 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                        present
+                          ? 'ring-2 ring-[#2563EB] ring-offset-1 bg-white'
+                          : past
+                          ? 'bg-gray-200 opacity-60'
+                          : 'bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className={`text-xs sm:text-sm font-semibold mb-1 ${present ? 'text-[#2563EB]' : past ? 'text-gray-600' : 'text-gray-900'}`}>
+                        {day}
+                      </span>
+                      {dayEvents.length > 0 && (
+                        <div className="flex gap-1 flex-wrap justify-center">
+                          {dayEvents.map(event => (
+                            <button
+                              key={event.id}
+                              onClick={() => setSelectedEvent(event)}
+                              className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: event.color }}
+                              title={event.title}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Upcoming & History Tabs */}
+          <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
+            <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setActiveTab('upcoming')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  activeTab === 'upcoming' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Upcoming <span className="inline-block ml-1 bg-blue-100 text-blue-700 text-xs rounded-full px-2 py-0.5">{upcomingActivities.length}</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  activeTab === 'history' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                History <span className="inline-block ml-1 bg-gray-200 text-gray-700 text-xs rounded-full px-2 py-0.5">{historyActivities.length}</span>
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {activeTab === 'upcoming' && (
+                <>
+                  {upcomingActivities.length === 0 ? (
+                    <p className="text-xs text-gray-500 text-center py-4">No upcoming activities</p>
+                  ) : (
+                    upcomingActivities.map(activity => (
+                      <button
+                        key={activity.id}
+                        onClick={() => setSelectedEvent(activity)}
+                        className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors text-xs sm:text-sm border-l-4"
+                        style={{ borderColor: activity.color }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg flex-shrink-0">{eventTypeIcon(activity.type)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900 truncate">{activity.title}</div>
+                            <div className="text-xs text-gray-500">Day {activity.date}</div>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </>
+              )}
+
+              {activeTab === 'history' && (
+                <>
+                  {historyActivities.length === 0 ? (
+                    <p className="text-xs text-gray-500 text-center py-4">No past activities</p>
+                  ) : (
+                    historyActivities.map(activity => (
+                      <button
+                        key={activity.id}
+                        onClick={() => setSelectedEvent(activity)}
+                        className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-left transition-colors text-xs sm:text-sm border-l-4 opacity-75"
+                        style={{ borderColor: activity.color }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg flex-shrink-0">{eventTypeIcon(activity.type)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900 truncate">{activity.title}</div>
+                            <div className="text-xs text-gray-500">Past · Day {activity.date}</div>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Event Details Modal */}
+        {selectedEvent && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
+                    style={{ backgroundColor: selectedEvent.color }}
+                  />
+                  <div className="min-w-0">
+                    <h2 className="text-lg sm:text-xl font-semibold text-gray-900">{selectedEvent.title}</h2>
+                    <p className="text-xs sm:text-sm text-gray-500">Day {selectedEvent.date}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {selectedEvent.program && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Program</p>
+                    <p className="text-sm text-gray-900">{selectedEvent.program}</p>
+                  </div>
+                )}
+
+                {selectedEvent.description && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Description</p>
+                    <p className="text-sm text-gray-900">{selectedEvent.description}</p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t border-gray-200">
+                  <span
+                    className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase"
+                    style={{
+                      backgroundColor: selectedEvent.color + '20',
+                      color: selectedEvent.color,
+                    }}
+                  >
+                    {selectedEvent.type}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         )}

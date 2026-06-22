@@ -115,8 +115,6 @@ function StudentDashboardView() {
 
   return (
     <div>
-      
-
       <div className="bg-[#1E3A8A] rounded-xl shadow-lg p-5 sm:p-6 text-white mb-6">
         <div>
           <h2 className="text-xl sm:text-2xl font-semibold mb-2">

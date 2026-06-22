@@ -7,6 +7,9 @@ import {
   Bell, 
   CheckCircle,
   Menu,
+  Settings,
+  Lock,
+  LogOut,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -20,6 +23,7 @@ const alumniMenuItems = [
   { icon: Award,        label: 'Achievements',            id: 'achievements'},
   { icon: FileText,     label: 'Documents & Resources',   id: 'documents'   },
   { icon: MessageSquare,label: 'Inquiry / Contact',       id: 'inquiry'     },
+  { icon: Settings,     label: 'Settings',                id: 'settings'    },
 ];
 
 interface AlumniDashboardProps {
@@ -44,7 +48,7 @@ export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDas
 
       {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
-        menuItems={alumniMenuItems}a
+        menuItems={alumniMenuItems}
         activeItem={activeMenuItem}
         onItemClick={setActiveMenuItem}
         userRole="Alumni"
@@ -86,6 +90,7 @@ export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDas
           {activeMenuItem === 'achievements' && <AlumniAchievements />}
           {activeMenuItem === 'documents'    && <DocumentsResources />}
           {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
+          {activeMenuItem === 'settings'     && <AlumniSettings />}
         </main>
       </div>
     </div>
@@ -96,26 +101,14 @@ export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDas
 function AlumniDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
   return (
     <div>
-      <div className="mb-6 pb-6 border-b border-gray-200">
-        <p className="text-gray-600 text-sm sm:text-base">Welcome back, Maria Gabriela Santos</p>
-      </div>
-
       {/* Alumni Profile Card */}
-      <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-5 sm:p-6 text-white mb-6">
-        <div className="flex items-start sm:items-center justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-xl sm:text-2xl font-semibold mb-2">Maria Gabriela Santos</h2>
-            <p className="text-blue-100 mb-1 text-sm sm:text-base">Alumni ID: ALU-2020-0458</p>
-            <p className="text-blue-100 text-sm sm:text-base">Bachelor of Elementary Education</p>
-            <p className="text-blue-100 text-sm sm:text-base">Graduated: May 2020</p>
-            <p className="text-blue-100 mt-2 text-sm sm:text-base">Current Position: Elementary School Teacher</p>
-          </div>
-          <div className="text-center flex-shrink-0">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-2xl sm:text-3xl font-bold mb-2">
-              MS
-            </div>
-            <div className="text-xs sm:text-sm text-blue-100">Class of 2020</div>
-          </div>
+      <div className="bg-[#1E3A8A] rounded-xl shadow-lg p-5 sm:p-6 text-white mb-6">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-semibold mb-2">Maria Gabriela Santos</h2>
+          <p className="text-blue-100 mb-1 text-sm sm:text-base">Alumni ID: ALU-2020-0458</p>
+          <p className="text-blue-100 text-sm sm:text-base">Bachelor of Elementary Education</p>
+          <p className="text-blue-100 text-sm sm:text-base">Graduated: May 2020</p>
+          <p className="text-blue-100 mt-2 text-sm sm:text-base">Current Position: Elementary School Teacher</p>
         </div>
       </div>
 
@@ -519,6 +512,146 @@ function AlumniAchievements() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ====================== ALUMNI SETTINGS ======================
+function AlumniSettings() {
+  const [alumniUpdates, setAlumniUpdates] = useState(true);
+  const [eventsAnnouncements, setEventsAnnouncements] = useState(true);
+
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
+
+      {/* ⚙️ BASIC SETTINGS */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Settings className="w-5 h-5" /> Basic Settings
+        </h2>
+
+        {/* Profile Information */}
+        <div className="mb-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+              <input type="text" defaultValue="Maria Gabriela Santos" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Alumni ID</label>
+              <input type="text" defaultValue="ALU-2020-0458" disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+            <input type="email" defaultValue="maria.santos@example.com" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          </div>
+        </div>
+
+        {/* Password / Security */}
+        <div className="border-t border-gray-200 pt-8 mb-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Lock className="w-5 h-5" /> Password & Security
+          </h3>
+          <div className="space-y-3">
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Change Password
+            </button>
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Enable Two-Factor Authentication
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 🔔 NOTIFICATIONS */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Bell className="w-5 h-5" /> Notifications
+        </h2>
+
+        <div className="space-y-4">
+          {/* Alumni Updates */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Alumni Updates</p>
+              <p className="text-xs text-gray-500 mt-1">Get notified about alumni news and updates</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={alumniUpdates} 
+                onChange={(e) => setAlumniUpdates(e.target.checked)} 
+                className="sr-only peer" 
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* Events / Reunions Announcements */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Events / Reunions Announcements</p>
+              <p className="text-xs text-gray-500 mt-1">Be notified about alumni events and reunions</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={eventsAnnouncements} 
+                onChange={(e) => setEventsAnnouncements(e.target.checked)} 
+                className="sr-only peer" 
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* 🎓 ALUMNI INFORMATION */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <BookOpen className="w-5 h-5" /> Alumni Information
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="text-xs sm:text-sm text-blue-600 font-medium mb-2">Graduation Year</p>
+            <p className="text-lg sm:text-xl font-bold text-gray-900">2020</p>
+            <p className="text-xs text-gray-500 mt-2">(Read-only)</p>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+            <p className="text-xs sm:text-sm text-green-600 font-medium mb-2">Course / Program</p>
+            <p className="text-lg sm:text-xl font-bold text-gray-900">Bachelor of Elementary Education</p>
+            <p className="text-xs text-gray-500 mt-2">(Read-only)</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 📄 ACCOUNT ACTIONS */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <LogOut className="w-5 h-5" /> Account Actions
+        </h2>
+
+        <div className="space-y-3">
+          <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+            Log Out from All Devices
+          </button>
+          <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex gap-3">
+        <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+          Save Changes
+        </button>
+        <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+          Cancel
+        </button>
       </div>
     </div>
   );
