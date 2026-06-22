@@ -1,4 +1,4 @@
-  import {
+import {
     BookOpen,
     Award,
     FileText,
@@ -17,12 +17,15 @@
     TrendingUp,
     MessageSquare,
     Star,
-    UserCircle,
+    Bell,
     Pencil,
     Trash2,
     Save,
     X,
     Menu,
+    Settings,
+    Lock,
+    LogOut,
   } from 'lucide-react';
   import { Sidebar } from '../Sidebar';
   import { DashboardHeader } from '../DashboardHeader';
@@ -36,7 +39,7 @@
     { icon: FileText,    label: 'Academic Records',    id: 'records' },
     { icon: BarChart3,   label: 'Evaluation Results',  id: 'evaluation' },
     { icon: FileText,    label: 'Reports',             id: 'reports' },
-    { icon: UserCircle,  label: 'My Profile',          id: 'profile' },
+    { icon: Settings,    label: 'Settings',            id: 'settings' },
   ];
 
   interface FacultyDashboardProps {
@@ -103,7 +106,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             {activeMenuItem === 'records'       && <AcademicRecordsView />}
             {activeMenuItem === 'evaluation'    && <EvaluationResults />}
             {activeMenuItem === 'reports'       && <ReportsView />}
-            {activeMenuItem === 'profile'       && <MyProfile />}
+            {activeMenuItem === 'settings'      && <FacultySettings />}
           </main>
         </div>
       </div>
@@ -998,134 +1001,122 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     );
   }
 
-  // ====================== 5.7 MY PROFILE ======================
-  function MyProfile() {
-    const [name, setName] = useState('Prof. Sarah Johnson');
-    const [email, setEmail] = useState('sarah.johnson@university.edu.ph');
-    const [editingField, setEditingField] = useState<'name' | 'email' | null>(null);
-    const [tempValue, setTempValue] = useState('');
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<'name' | 'email' | null>(null);
-    const [successMessage, setSuccessMessage] = useState('');
-
-    const showSuccess = (msg: string) => {
-      setSuccessMessage(msg);
-      setTimeout(() => setSuccessMessage(''), 3000);
-    };
-
-    const handleEdit = (field: 'name' | 'email') => {
-      setEditingField(field);
-      setTempValue(field === 'name' ? name : email);
-    };
-
-    const handleSave = () => {
-      if (editingField === 'name') setName(tempValue);
-      if (editingField === 'email') setEmail(tempValue);
-      setEditingField(null);
-      showSuccess('Updated successfully.');
-    };
-
-    const handleDelete = () => {
-      if (showDeleteConfirm === 'name') setName('');
-      if (showDeleteConfirm === 'email') setEmail('');
-      setShowDeleteConfirm(null);
-      showSuccess('Field cleared.');
-    };
-
-    const fields = [
-      { key: 'name'  as const, label: 'Full Name',      value: name  },
-      { key: 'email' as const, label: 'Email Address',   value: email },
-    ];
+  // ====================== 5.7 SETTINGS ======================
+  function FacultySettings() {
+    const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+    const [departmentNotices, setDepartmentNotices] = useState(true);
 
     return (
       <div>
-        <div className="mb-6 pb-6 border-b border-gray-200">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">My Profile</h1>
-          <p className="text-gray-600 text-sm sm:text-base">View and update your profile information</p>
-        </div>
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
 
-        {successMessage && (
-          <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 bg-green-600 text-white px-4 sm:px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="font-medium text-sm sm:text-base">{successMessage}</span>
-          </div>
-        )}
+        {/* ⚙️ BASIC SETTINGS */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+            <Settings className="w-5 h-5" /> Basic Settings
+          </h2>
 
-        <div className="bg-white rounded-2xl shadow-md max-w-xl overflow-hidden">
-          <div className="flex flex-col items-center py-8 sm:py-10 bg-gray-50 border-b border-gray-100">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#1E3A8A] flex items-center justify-center mb-3">
-              <span className="text-xl sm:text-2xl font-bold text-white">
-                {name ? name.trim().split(' ').map(w => w[0]).slice(0, 2).join('') : '?'}
-              </span>
-            </div>
-            <p className="font-semibold text-gray-900 text-base sm:text-lg">{name || '—'}</p>
-            <p className="text-xs sm:text-sm text-gray-500 text-center px-4">{email || '—'}</p>
-          </div>
-
-          <div className="divide-y divide-gray-100">
-            {fields.map(field => (
-              <div key={field.key} className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5">
-                <div className="w-24 sm:w-32 shrink-0 text-xs sm:text-sm font-medium text-gray-500">{field.label}</div>
-                <div className="flex-1 min-w-0">
-                  {editingField === field.key ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={tempValue}
-                        onChange={e => setTempValue(e.target.value)}
-                        autoFocus
-                        onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditingField(null); }}
-                        className="flex-1 px-3 py-2 border border-blue-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 min-w-0"
-                      />
-                      <button onClick={handleSave} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0">
-                        <Save className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setEditingField(null)} className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <span className={`text-sm truncate block ${field.value ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                      {field.value || 'Not set'}
-                    </span>
-                  )}
-                </div>
-                {editingField !== field.key && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => handleEdit(field.key)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => setShowDeleteConfirm(field.key)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors" title="Clear">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+          {/* Profile Information */}
+          <div className="mb-8">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                <input type="text" defaultValue="Prof. Sarah Johnson" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
-            ))}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                <input type="text" defaultValue="FAC-2018-001" disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+              <input type="email" defaultValue="sarah.johnson@university.edu.ph" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            </div>
+          </div>
+
+          {/* Password / Security */}
+          <div className="border-t border-gray-200 pt-8">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Lock className="w-5 h-5" /> Password & Security
+            </h3>
+            <div className="space-y-3">
+              <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                Change Password
+              </button>
+              <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                Enable Two-Factor Authentication
+              </button>
+            </div>
           </div>
         </div>
 
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 sm:w-11 sm:h-11 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">Clear Field</h3>
-                  <p className="text-xs sm:text-sm text-gray-500">This will remove the current value.</p>
-                </div>
+        {/* 🔔 NOTIFICATIONS */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+            <Bell className="w-5 h-5" /> Notifications
+          </h2>
+
+          <div className="space-y-4">
+            {/* Announcement Alerts */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Announcements</p>
+                <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
               </div>
-              <p className="text-sm text-gray-600 mb-6">
-                Are you sure you want to clear the <strong>{showDeleteConfirm === 'name' ? 'Full Name' : 'Email Address'}</strong>?
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors text-sm">Cancel</button>
-                <button onClick={handleDelete} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors text-sm">Clear</button>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={announcementAlerts} 
+                  onChange={(e) => setAnnouncementAlerts(e.target.checked)} 
+                  className="sr-only peer" 
+                />
+                <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Department Notices */}
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Department Notices</p>
+                <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
               </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={departmentNotices} 
+                  onChange={(e) => setDepartmentNotices(e.target.checked)} 
+                  className="sr-only peer" 
+                />
+                <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* 📄 ACCOUNT ACTIONS */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+            <LogOut className="w-5 h-5" /> Account Actions
+          </h2>
+
+          <div className="space-y-3">
+            <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+              Log Out from All Devices
+            </button>
+            <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="mt-8 flex gap-3">
+          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+            Save Changes
+          </button>
+          <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+            Cancel
+          </button>
+        </div>
       </div>
     );
   }

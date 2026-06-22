@@ -44,7 +44,7 @@ export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDas
 
       {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
-        menuItems={alumniMenuItems}
+        menuItems={alumniMenuItems}a
         activeItem={activeMenuItem}
         onItemClick={setActiveMenuItem}
         userRole="Alumni"
