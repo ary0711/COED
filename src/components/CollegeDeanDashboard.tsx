@@ -31,6 +31,8 @@ import {
   History,
   Menu,
   Bell,
+  Lock,
+  LogOut,
 } from 'lucide-react';
 
 import { supabase } from '../supabaseClient';
@@ -121,6 +123,7 @@ export function CollegeDeanDashboard({
   onLogout,
 }: CollegeDeanDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [programs, setPrograms] = useState<string[]>([...DEFAULT_PROGRAMS]);
 
   // Close sidebar on route change (mobile)
   const handleMenuItemClick = (id: string) => {
@@ -173,14 +176,14 @@ export function CollegeDeanDashboard({
           {activeMenuItem === 'users'         && <UserManagement />}
           {activeMenuItem === 'records'       && <AcademicRecords />}
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
-          {activeMenuItem === 'calendar'      && <CalendarActivities />}
+          {activeMenuItem === 'calendar'      && <CalendarActivities programs={programs} />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
           {activeMenuItem === 'evaluation'    && <EvaluationManagement />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
           {activeMenuItem === 'reports'       && <ReportsAnalytics />}
           {activeMenuItem === 'announcements' && <AnnouncementsContent />}
           {activeMenuItem === 'landing'       && <LandingPageManagement />}
-          {activeMenuItem === 'settings'      && <SystemSettings />}
+          {activeMenuItem === 'settings'      && <SystemSettings programs={programs} setPrograms={setPrograms} />}
         </main>
       </div>
     </div>
@@ -422,7 +425,6 @@ function UserManagement() {
     if (!selected) return;
     setSaving(true);
     try {
-      // Step 1: I-delete sa users table gamit email as username
       const { data: userRecord } = await supabase
         .from('users')
         .select('id')
@@ -433,7 +435,6 @@ function UserManagement() {
         await supabase.from('users').delete().eq('username', selected.email);
       }
 
-      // Step 2: I-delete sa profiles
       const { error } = await supabase.from('profiles').delete().eq('id', selected.id);
       if (error) { setFormError(error.message); return; }
 
@@ -445,11 +446,8 @@ function UserManagement() {
   const activatePending = async (user: Profile) => {
     setActivating(user.id);
     try {
-      // Step 1: I-activate ang profile
       await supabase.from('profiles').update({ status: 'active' }).eq('id', user.id);
 
-      // Step 2: I-add sa users table para maka-login via JWT
-      // Pangitaa ang username sa profiles
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -457,14 +455,12 @@ function UserManagement() {
         .single();
 
       if (profile) {
-        // Check kung naa na sa users table
         const { data: existingUser } = await supabase
           .from('users')
           .select('id')
           .eq('username', profile.email)
           .single();
 
-        // Kung wala pa, i-add gamit email as username
         if (!existingUser) {
           await fetch('http://localhost:5000/api/auth/register', {
             method: 'POST',
@@ -793,7 +789,7 @@ function UserManagement() {
 }
 
 // ─── Calendar & Activities ────────────────────────────────────────────────────
-function CalendarActivities() {
+function CalendarActivities({ programs }: { programs: string[] }) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
@@ -805,7 +801,7 @@ function CalendarActivities() {
     { id: '5', title: 'Alumni Homecoming', date: '2026-04-05', program: 'All Programs', description: 'Annual alumni gathering.', color: '#EF4444' },
   ]);
 
-  const [programs] = useState(['All Programs', ...DEFAULT_PROGRAMS]);
+  const [programOptions] = useState(['All Programs', ...programs]);
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
@@ -1021,7 +1017,7 @@ function CalendarActivities() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
                 <select value={form.program} onChange={e => setForm({ ...form, program: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  {programs.map(p => <option key={p} value={p}>{p}</option>)}
+                  {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div>
@@ -1472,7 +1468,6 @@ if (notificationError)
   }
 }
 
-if (!confirm) return;
   return (
     
     <div>
@@ -1663,107 +1658,168 @@ function LandingPageManagement() {
 }
 
 // ─── System Settings ──────────────────────────────────────────────────────────
-function SystemSettings() {
-  const [programs, setPrograms] = useState<string[]>([...DEFAULT_PROGRAMS]);
+function SystemSettings({ programs, setPrograms }: { programs: string[]; setPrograms: (progs: string[]) => void }) {
   const [newProgram, setNewProgram] = useState('');
   const [editIdx, setEditIdx]       = useState<number | null>(null);
   const [editVal, setEditVal]       = useState('');
+  const [deanName, setDeanName]     = useState('Dr. Elizabeth Martinez');
+  const [deanEmail, setDeanEmail]   = useState('elizabeth.martinez@university.edu.ph');
+  const [deanId, setDeanId]         = useState('DEAN-2020-001');
 
   const addProgram = () => {
     const trimmed = newProgram.trim().toUpperCase();
     if (!trimmed || programs.includes(trimmed)) return;
-    setPrograms(prev => [...prev, trimmed]);
+    setPrograms([...programs, trimmed]);
     setNewProgram('');
   };
 
-  const deleteProgram = (idx: number) => setPrograms(prev => prev.filter((_, i) => i !== idx));
+  const deleteProgram = (idx: number) => setPrograms(programs.filter((_, i) => i !== idx));
 
   const startEdit = (idx: number) => { setEditIdx(idx); setEditVal(programs[idx]); };
   const saveEdit  = () => {
     if (editIdx === null) return;
     const trimmed = editVal.trim().toUpperCase();
     if (!trimmed) return;
-    setPrograms(prev => prev.map((p, i) => i === editIdx ? trimmed : p));
+    setPrograms(programs.map((p, i) => i === editIdx ? trimmed : p));
     setEditIdx(null);
   };
 
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">System Settings</h1>
+    <div className="space-y-4 sm:space-y-6">
+      <div>
+        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">System Settings</h1>
+      </div>
+
+      {/* Dean Profile Settings */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <UserCircle className="w-5 h-5" /> Profile Information
+        </h2>
+
+        <div className="mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+              <input type="text" value={deanName} onChange={e => setDeanName(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Dean ID</label>
+              <input type="text" value={deanId} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+            <input type="email" value={deanEmail} onChange={e => setDeanEmail(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          </div>
+        </div>
+
+        {/* Password & Security */}
+        <div className="border-t border-gray-200 pt-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Lock className="w-5 h-5" /> Password & Security
+          </h3>
+          <div className="space-y-3">
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Change Password
+            </button>
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Enable Two-Factor Authentication
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Programs Management */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Building2 className="w-5 h-5" /> Programs Management
+        </h2>
+
+        <div className="space-y-2 mb-4">
+          {programs.map((prog, idx) => (
+            <div key={prog} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              {editIdx === idx ? (
+                <>
+                  <input value={editVal} onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                    className="flex-1 px-2 py-1 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => setEditIdx(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm font-semibold text-gray-800">{prog}</span>
+                  <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => deleteProgram(idx)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={newProgram} onChange={e => setNewProgram(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addProgram()}
+            placeholder="New program (e.g. BSED-SCIENCE)"
+            className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button onClick={addProgram} className="px-3 sm:px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1">
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Academic Settings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Academic Year */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Academic Year Setup</h2>
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Calendar className="w-5 h-5" /> Academic Year Setup
+          </h2>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Current Academic Year</label>
-              <input type="text" defaultValue="2025-2026" className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base" />
+              <input type="text" defaultValue="2025-2026" className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
-              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base">
+              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm">
                 <option>Second Semester</option>
                 <option>First Semester</option>
                 <option>Summer</option>
               </select>
             </div>
-            <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Update Settings</button>
+            <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">Update Settings</button>
           </div>
         </div>
 
-        {/* Programs Management */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Programs Management</h2>
-          <div className="space-y-2 mb-4">
-            {programs.map((prog, idx) => (
-              <div key={prog} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
-                {editIdx === idx ? (
-                  <>
-                    <input value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                      className="flex-1 px-2 py-1 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditIdx(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm font-semibold text-gray-800">{prog}</span>
-                    <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => deleteProgram(idx)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input value={newProgram} onChange={e => setNewProgram(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addProgram()}
-              placeholder="New program (e.g. BSED-SCIENCE)"
-              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={addProgram} className="px-3 sm:px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1">
-              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Backup */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 md:col-span-2">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Backup & Maintenance</h2>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button className="flex-1 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
+        {/* Backup & Maintenance */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Download className="w-5 h-5" /> Backup & Maintenance
+          </h2>
+          <div className="space-y-3">
+            <button className="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm">
               <Download className="w-5 h-5" /> Create Backup
             </button>
-            <button className="flex-1 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
+            <button className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 text-sm">
               <Settings className="w-5 h-5" /> System Maintenance
             </button>
-          </div>
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              Last backup: February 13, 2026 at 2:00 AM
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                Last backup: February 13, 2026 at 2:00 AM
+              </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex gap-3 mt-8">
+        <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+          Save Changes
+        </button>
+        <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+          Cancel
+        </button>
       </div>
     </div>
   );
