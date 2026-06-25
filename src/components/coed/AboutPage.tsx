@@ -176,34 +176,40 @@ export function AboutPage() {
             About Us
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">About COED</h1>
-          <p className="text-xl text-gray-600">32 Years of Excellence in Education</p>
+          <p className="text-xl text-gray-600">Gatekeeping for Competence & Excellence</p>
         </div>
 
         {/* College History */}
         <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">Our History</h2>
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2">Our History</h2>
+          <p className="text-sm font-medium text-gray-500 italic mb-6">
+            Where Tradition Meets Transformation, and Teachers Are Forged for Tomorrow
+          </p>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
             <p>
-              Established in 1994, the College of Education has been a cornerstone of teacher education and professional development for over three decades. What began as a small institution with a handful of dedicated faculty members has grown into a premier college of education, recognized nationally for its innovative programs and commitment to excellence.
+              The story of Cebu Technological University&ndash;Argao Campus began on <strong>February 17, 1945</strong>, even before American forces had set foot on Cebu soil. Through the courage of Colonel Decoroso Rosales of the Cebu Resistance Movement, classes resumed in Argao under acting principal Mr. Gervasio Minoza, resurrecting learning that had been disrupted by World War II.
             </p>
             <p>
-              Throughout our 32-year journey, we have consistently adapted to meet the evolving needs of the education sector while maintaining our core values of integrity, innovation, and inclusivity. Our graduates serve in leadership positions across educational institutions, government agencies, and international organizations.
+              By <strong>July 1, 1945</strong>, the school was formally established as the Cebu South Provincial High School. Its physical structure rose from the ruins of war by 1949 and was formally inaugurated on September 28, 1950. Over the following decades, the institution was renamed and elevated several times&mdash;becoming Cebu South National High School in 1961, Cebu South Agro-Industrial School in 1978, and the Cebu State College of Science and Technology &ndash; Argao External Campus through Batas Pambansa Blg. 412 in 1983.
             </p>
             <p>
-              Today, COED stands as a testament to the power of quality education, producing thousands of highly competent educators who are transforming lives and communities through their dedication to teaching and learning.
+              On <strong>November 10, 2009</strong>, Republic Act 9744 transformed the institution into <strong>Cebu Technological University</strong>, a full-fledged state university. The College of Education itself traces its roots to <strong>1994&ndash;1995</strong>, when the Teacher Education Program was established under founding department chair Dr. Florita A. Pontillas, with a clear vision: to shape educators of purpose and principle.
+            </p>
+            <p>
+              Today, the College of Education stands as a prolific unit offering teacher training programs aligned with CHED memoranda, recognized as an <strong>AACCUP Level 3 &amp; 4 Re-Accredited Teacher Education Institution</strong>. As the College looks to the future, it continues to embody its motto: <strong>&ldquo;Quality is a race without a finish line.&rdquo;</strong>
             </p>
           </div>
         </div>
 
         {/* Vision, Mission, Goals */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-md p-8">
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
               <Eye className="w-7 h-7 text-[#2563EB]" />
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
             <p className="text-gray-700 leading-relaxed">
-              To be a leading institution in teacher education, recognized globally for producing innovative, competent, and socially responsible educators.
+              A premier science and technology university in Southeast Asia, and a sustainable technological university.
             </p>
           </div>
 
@@ -213,7 +219,7 @@ export function AboutPage() {
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
             <p className="text-gray-700 leading-relaxed">
-              To provide quality education through innovative teaching methods, research, and community engagement that develops future educators committed to lifelong learning.
+              The University is committed to providing inclusive, innovative, and internationally recognized degree programs that proactively respond to community and industry needs through the sustainable integration of its core functions, empowering multi-stakeholders to address regional and national development within the global knowledge economy and Industry 5.0.
             </p>
           </div>
 
@@ -223,8 +229,32 @@ export function AboutPage() {
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
             <p className="text-gray-700 leading-relaxed">
-              To maintain excellence in instruction, foster research and innovation, strengthen community partnerships, and ensure continuous program improvement.
+              To articulate a sustained quality higher education system, develop industry-responsive academic programs, vitalize resource-generation initiatives, achieve high national and international rankings, nurture institutional capability, cultivate disaster-resilient communities, and engage in sustainable community collaboration.
             </p>
+          </div>
+        </div>
+
+        {/* Core Values Acronym - PREMIER */}
+        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
+            {[
+              { letter: 'P', word: 'Progressive', desc: 'Advancing through innovation' },
+              { letter: 'R', word: 'Responsive', desc: 'Adaptive to evolving demands' },
+              { letter: 'E', word: 'Excellent', desc: 'Highest standards in education' },
+              { letter: 'M', word: 'Morally grounded', desc: 'Integrity & accountability' },
+              { letter: 'I', word: 'Inclusive', desc: 'Equal opportunities for all' },
+              { letter: 'E', word: 'Empowered', desc: 'Knowledge & sustainable skills' },
+              { letter: 'R', word: 'Relevant', desc: 'Addressing real-world needs' },
+            ].map((value, index) => (
+              <div key={index} className="flex flex-col items-center">
+                <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+                  {value.letter}
+                </div>
+                <div className="font-semibold text-gray-900 text-sm">{value.word}</div>
+                <div className="text-xs text-gray-500 mt-1">{value.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -326,7 +356,7 @@ export function AboutPage() {
         </div>
 
         {/* Core Values */}
-        <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-lg p-10 text-white">
+       <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
           <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
             {['Excellence', 'Integrity', 'Innovation', 'Inclusivity', 'Service'].map(

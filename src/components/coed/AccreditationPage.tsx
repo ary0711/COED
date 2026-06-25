@@ -4,50 +4,34 @@ export function AccreditationPage() {
   const programs = [
     {
       id: 1,
-      name: 'Bachelor of Elementary Education',
-      level: 'Level III',
-      status: 'Accredited',
-      validUntil: 'June 2027',
+      name: 'Bachelor of Elementary Education (BEEd)',
+      level: 'Level IV',
+      status: 'Re-Accredited',
+      cmoReference: 'CMO 74, s. 2017',
       accreditor: 'AACCUP',
     },
     {
       id: 2,
-      name: 'Bachelor of Secondary Education - English',
+      name: 'Bachelor of Secondary Education - Major in English (BSEd-English)',
       level: 'Level III',
-      status: 'Accredited',
-      validUntil: 'August 2027',
+      status: 'Re-Accredited',
+      cmoReference: 'CMO 75, s. 2017',
       accreditor: 'AACCUP',
     },
     {
       id: 3,
-      name: 'Bachelor of Secondary Education - Mathematics',
+      name: 'Bachelor of Secondary Education - Major in Mathematics (BSEd-Math)',
       level: 'Level III',
-      status: 'Accredited',
-      validUntil: 'August 2027',
+      status: 'Re-Accredited',
+      cmoReference: 'CMO 75, s. 2017',
       accreditor: 'AACCUP',
     },
     {
       id: 4,
-      name: 'Bachelor of Secondary Education - Science',
-      level: 'Level II',
-      status: 'Accredited',
-      validUntil: 'December 2026',
-      accreditor: 'AACCUP',
-    },
-    {
-      id: 5,
-      name: 'Bachelor of Special Needs Education',
-      level: 'Level II',
-      status: 'Accredited',
-      validUntil: 'March 2027',
-      accreditor: 'AACCUP',
-    },
-    {
-      id: 6,
-      name: 'Master in Educational Management',
+      name: 'Bachelor of Technology and Livelihood Education - Home Economics (BTLEd-HE)',
       level: 'Level III',
-      status: 'Accredited',
-      validUntil: 'May 2028',
+      status: 'Re-Accredited',
+      cmoReference: 'CMO 78, s. 2017',
       accreditor: 'AACCUP',
     },
   ];
@@ -55,26 +39,34 @@ export function AccreditationPage() {
   const certifications = [
     {
       id: 1,
-      title: 'CHED Center of Excellence',
-      description: 'Awarded for Teacher Education Programs',
-      year: '2023',
+      title: 'AACCUP Level 3 & 4 Re-Accredited TEI',
+      description: 'Teacher Education Institution status across program levels',
+      year: '2025',
     },
     {
       id: 2,
-      title: 'ISO 9001:2015 Certified',
-      description: 'Quality Management System Certification',
-      year: '2024',
+      title: 'CHEd Compliant College',
+      description: 'Fully aligned with CHED memoranda and outcomes-based education standards',
+      year: '2025',
     },
     {
       id: 3,
-      title: 'PACUCOA Institutional Accreditation',
-      description: 'Granted Level III Status',
+      title: 'ISO-Certified Quality Management',
+      description: 'Quality Management System certification for institutional processes',
+      year: '2025',
+    },
+    {
+      id: 4,
+      title: 'Institutional Sustainability Assessment (ISA) Ready',
+      description: 'Prepared for long-term institutional sustainability evaluation',
       year: '2025',
     },
   ];
 
-  const getLevelColor = (level: string) => {
+  const getLevelColor = (level) => {
     switch (level) {
+      case 'Level IV':
+        return 'bg-purple-100 text-purple-700 border-purple-500';
       case 'Level III':
         return 'bg-green-100 text-green-700 border-green-500';
       case 'Level II':
@@ -93,7 +85,7 @@ export function AccreditationPage() {
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">Accreditation</h1>
           <p className="text-xl text-gray-600">
-            Recognized for quality and excellence in teacher education
+            Gatekeeping for Competence & Excellence
           </p>
         </div>
 
@@ -102,13 +94,13 @@ export function AccreditationPage() {
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center">
               <Award className="w-12 h-12 mx-auto mb-3 opacity-90" />
-              <div className="text-3xl font-bold mb-2">6</div>
+              <div className="text-3xl font-bold mb-2">4</div>
               <div className="text-blue-100">Accredited Programs</div>
             </div>
             <div className="text-center">
               <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-90" />
-              <div className="text-3xl font-bold mb-2">Level III</div>
-              <div className="text-blue-100">Highest Accreditation</div>
+              <div className="text-3xl font-bold mb-2">Level IV</div>
+              <div className="text-blue-100">Highest Accreditation Attained</div>
             </div>
             <div className="text-center">
               <FileText className="w-12 h-12 mx-auto mb-3 opacity-90" />
@@ -125,10 +117,10 @@ export function AccreditationPage() {
           </h2>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
             <p>
-              Accreditation is a quality assurance process that certifies educational institutions and programs meet established standards of excellence. The College of Education is accredited by the Accrediting Agency of Chartered Colleges and Universities in the Philippines (AACCUP), the country's premier accrediting body for higher education.
+              Accreditation is a quality assurance process that certifies educational institutions and programs meet established standards of excellence. The College of Education of Cebu Technological University &ndash; Argao Campus is recognized as an <strong>AACCUP Level 3 &amp; 4 Re-Accredited Teacher Education Institution (TEI)</strong> and a fully <strong>CHEd Compliant College</strong>.
             </p>
             <p>
-              Our accreditation status demonstrates our commitment to continuous improvement and ensures that our graduates receive education that meets national and international standards. This recognition enhances the employability of our graduates and validates the quality of education we provide.
+              The success of the College is more than numbers&mdash;it is the result of systems thinking and values-based leadership, anchored on CHED-mandated outcomes-based education (OBE), ISO-certified quality management, and Institutional Sustainability Assessment (ISA) readiness. Together, these commitments have allowed the College to attain Level IV AACCUP accreditation, the highest level attainable for program-level quality assurance, while continuing to embody its motto: &ldquo;Quality is a race without a finish line.&rdquo;
             </p>
           </div>
         </div>
@@ -138,7 +130,7 @@ export function AccreditationPage() {
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">
             Understanding Accreditation Levels
           </h2>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-4 gap-6">
             <div className="border-2 border-yellow-500 rounded-lg p-6">
               <div className="text-center mb-4">
                 <div className="inline-block px-4 py-2 bg-yellow-100 text-yellow-700 rounded-full font-semibold">
@@ -146,7 +138,7 @@ export function AccreditationPage() {
                 </div>
               </div>
               <p className="text-sm text-gray-700 text-center">
-                Candidate Status - Program meets basic standards and shows potential for development
+                Candidate Status &ndash; Program meets basic standards and shows potential for development
               </p>
             </div>
             <div className="border-2 border-blue-500 rounded-lg p-6">
@@ -156,7 +148,7 @@ export function AccreditationPage() {
                 </div>
               </div>
               <p className="text-sm text-gray-700 text-center">
-                Fully Accredited - Program demonstrates quality education and continuous improvement
+                Fully Accredited &ndash; Program demonstrates quality education and continuous improvement
               </p>
             </div>
             <div className="border-2 border-green-500 rounded-lg p-6">
@@ -166,7 +158,17 @@ export function AccreditationPage() {
                 </div>
               </div>
               <p className="text-sm text-gray-700 text-center">
-                Excellence Status - Program exemplifies best practices and outstanding quality
+                Re-Accredited Status &ndash; Program exemplifies best practices and outstanding quality
+              </p>
+            </div>
+            <div className="border-2 border-purple-500 rounded-lg p-6">
+              <div className="text-center mb-4">
+                <div className="inline-block px-4 py-2 bg-purple-100 text-purple-700 rounded-full font-semibold">
+                  Level IV
+                </div>
+              </div>
+              <p className="text-sm text-gray-700 text-center">
+                Highest Distinction &ndash; The highest level attainable for program-level quality assurance
               </p>
             </div>
           </div>
@@ -188,7 +190,7 @@ export function AccreditationPage() {
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">
                       {program.name}
                     </h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
                       <CheckCircle className="w-4 h-4 text-green-600" />
                       <span>{program.status}</span>
                       <span className="text-gray-400">•</span>
@@ -197,10 +199,10 @@ export function AccreditationPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <div className="text-sm text-gray-600 mb-1">Valid Until</div>
+                      <div className="text-sm text-gray-600 mb-1">CMO Reference</div>
                       <div className="flex items-center gap-1 text-sm font-medium text-gray-900">
                         <Calendar className="w-4 h-4" />
-                        {program.validUntil}
+                        {program.cmoReference}
                       </div>
                     </div>
                     <div
@@ -222,7 +224,7 @@ export function AccreditationPage() {
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">
             Additional Certifications & Recognition
           </h2>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-4 gap-6">
             {certifications.map((cert) => (
               <div
                 key={cert.id}
