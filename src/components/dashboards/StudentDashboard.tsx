@@ -25,7 +25,6 @@ import { useState, useEffect } from 'react';
 const studentMenuItems = [
   { icon: Bell,         label: 'Dashboard',               id: 'dashboard'    },
   { icon: User,         label: 'Faculty & Departments',    id: 'faculty'      },
-  { icon: FileText,     label: 'Evaluations & Feedback',   id: 'evaluations'  },
   { icon: BookOpen,     label: 'Academic Resources',       id: 'resources'    },
   { icon: Award,        label: 'Achievements & Activities',id: 'achievements' },
   { icon: MessageSquare,label: 'Inquiry / Contact',        id: 'inquiry'      },
@@ -94,7 +93,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
           {activeMenuItem === 'dashboard'   && <StudentDashboardView />}
           {activeMenuItem === 'faculty'     && <FacultyDepartments />}
-          {activeMenuItem === 'evaluations' && <EvaluationsFeedback />}
           {activeMenuItem === 'resources'   && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
           {activeMenuItem === 'inquiry'     && <InquiryContact />}
@@ -130,21 +128,16 @@ function StudentDashboardView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6">
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <BookOpen className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600 mb-2" />
           <div className="text-xl sm:text-2xl font-bold text-gray-900">8</div>
           <div className="text-xs sm:text-sm text-gray-600">Enrolled Subjects</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <FileText className="w-7 h-7 sm:w-8 sm:h-8 text-green-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">5</div>
-          <div className="text-xs sm:text-sm text-gray-600">Evaluations Done</div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Calendar className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">3</div>
-          <div className="text-xs sm:text-sm text-gray-600">Pending Evaluations</div>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900">3rd</div>
+          <div className="text-xs sm:text-sm text-gray-600">Year Level</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Award className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 mb-2" />
@@ -171,10 +164,6 @@ function StudentDashboardView() {
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Notifications</h2>
           <div className="space-y-3">
-            <div className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Complete Faculty Evaluation</div>
-              <div className="text-xs sm:text-sm text-gray-600 mt-1">3 faculty evaluations pending - Due: Feb 20</div>
-            </div>
             <div className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
               <div className="font-medium text-gray-900 text-sm sm:text-base">Upcoming Examinations</div>
               <div className="text-xs sm:text-sm text-gray-600 mt-1">Midterm exams start March 1, 2026</div>
@@ -230,70 +219,6 @@ function FacultyDepartments() {
             <p className="text-sm text-gray-600 mb-2">Chair: Dr. Michael Chen</p>
             <p className="text-sm text-gray-600">Office: Math Building, 2nd Floor</p>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ====================== EVALUATIONS & FEEDBACK ======================
-function EvaluationsFeedback() {
-  const handleEvaluate = (faculty: string) => alert(`Opening evaluation form for: ${faculty}`);
-
-  const pendingEvaluations = [
-    { faculty: 'Prof. Sarah Johnson',   subject: 'Data Structures'       },
-    { faculty: 'Dr. Michael Chen',      subject: 'Discrete Mathematics'  },
-    { faculty: 'Prof. Robert Anderson', subject: 'Educational Psychology'},
-  ];
-
-  const completedEvaluations = [
-    { faculty: 'Dr. Patricia Williams', subject: 'Special Education', date: 'Feb 10, 2026' },
-    { faculty: 'Prof. David Martinez',  subject: 'Physical Education', date: 'Feb 9, 2026'  },
-  ];
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Evaluations & Feedback</h1>
-
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Pending Faculty Evaluations</h2>
-        <div className="space-y-3">
-          {pendingEvaluations.map((evaluation, index) => (
-            <div key={index} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">{evaluation.faculty}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{evaluation.subject}</div>
-                </div>
-                <button
-                  onClick={() => handleEvaluate(evaluation.faculty)}
-                  className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm flex-shrink-0"
-                >
-                  Evaluate Now
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Completed Evaluations</h2>
-        <div className="space-y-3">
-          {completedEvaluations.map((evaluation, index) => (
-            <div key={index} className="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">{evaluation.faculty}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{evaluation.subject}</div>
-                  <div className="text-xs text-gray-500 mt-1">Completed: {evaluation.date}</div>
-                </div>
-                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm font-medium flex-shrink-0">
-                  Submitted
-                </span>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     </div>
@@ -384,7 +309,7 @@ function AchievementsActivities() {
     { id: '2', title: 'Research Seminar', date: 12, type: 'seminar', description: 'Guest speaker on educational research methods', program: 'Research', color: '#10B981' },
     { id: '3', title: 'Report Deadline', date: 15, type: 'deadline', description: 'Submit final research report', program: 'Academics', color: '#EF4444' },
     { id: '4', title: 'Department Event', date: 22, type: 'event', description: 'College foundation day celebration and activities', program: 'Events', color: '#A855F7' },
-    { id: '5', title: 'Evaluation Period', date: 28, type: 'deadline', description: 'Faculty evaluation period closes', program: 'Academics', color: '#EF4444' },
+    { id: '5', title: 'Submission Period', date: 28, type: 'deadline', description: 'Academic records submission period closes', program: 'Academics', color: '#EF4444' },
   ];
 
   const today = new Date();

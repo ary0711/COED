@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { notifyRole, } from '../notificationService';
 import {
   Users,
   GraduationCap,
@@ -10,9 +9,6 @@ import {
   Settings,
   Calendar,
   Award,
-  ClipboardCheck,
-  BarChart3,
-  Megaphone,
   Plus,
   Edit,
   Trash2,
@@ -30,9 +26,8 @@ import {
   BookOpen,
   History,
   Menu,
-  Bell,
   Lock,
-  LogOut,
+  BarChart3,
 } from 'lucide-react';
 
 import { supabase } from '../supabaseClient';
@@ -40,7 +35,6 @@ import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { ChartsSection } from './ChartsSection';
-import { NotificationsPanel } from './NotificationsPanel';
 import { QuarterlyReportTracker } from './QuarterlyReportTracker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,10 +95,7 @@ const deanMenuItems = [
   { icon: GraduationCap,   label: 'Faculty & Staff',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
-  { icon: ClipboardCheck,  label: 'Evaluation Management',   id: 'evaluation' },
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
-  { icon: BarChart3,       label: 'Reports & Analytics',     id: 'reports' },
-  { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
   { icon: Edit,            label: 'Landing Page Management', id: 'landing' },
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
@@ -178,10 +169,7 @@ export function CollegeDeanDashboard({
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities programs={programs} />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
-          {activeMenuItem === 'evaluation'    && <EvaluationManagement />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
-          {activeMenuItem === 'reports'       && <ReportsAnalytics />}
-          {activeMenuItem === 'announcements' && <AnnouncementsContent />}
           {activeMenuItem === 'landing'       && <LandingPageManagement />}
           {activeMenuItem === 'settings'      && <SystemSettings programs={programs} setPrograms={setPrograms} />}
         </main>
@@ -200,9 +188,7 @@ function DashboardView() {
     { label: 'Active Departments',  value: '8',     sub: 'All operational',      color: '#7C3AED', bg: '#EDE9FE' },
     { label: 'Pending Reports',     value: '23',    sub: '8 newly added',        color: '#B45309', bg: '#FEF3C7' },
     { label: 'Alumni Responses',    value: '1,256', sub: '+18.7% response rate', color: '#BE185D', bg: '#FCE7F3' },
-    { label: 'Evaluation Rating',   value: '4.6',   sub: 'Out of 5.0 avg.',      color: '#0369A1', bg: '#E0F2FE' },
     { label: 'Research Submitted',  value: '14',    sub: '2 pending approval',   color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Completion Rate',     value: '94%',   sub: 'Student evaluations',  color: '#9D174D', bg: '#FCE7F3' },
   ];
 
   return (
@@ -267,7 +253,7 @@ function DashboardView() {
         </div>
       </div>
 
-{/* ── DESKTOP ONLY: Charts + side panel ── */}
+      {/* ── DESKTOP ONLY: Charts + Quarterly Report side panel (full height, no notifications) ── */}
       <div className="hidden lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
         <div className="lg:col-span-2 min-h-0 overflow-auto">
           <ChartsSection />
@@ -276,25 +262,14 @@ function DashboardView() {
         <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-<NotificationsPanel userType="dean" />
-<QuarterlyReportTracker />
+              <QuarterlyReportTracker />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── MOBILE: Notifications + Quarterly stacked separately ── */}
-      <div className="lg:hidden flex flex-col gap-4">
-        {/* Notifications */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-            <Bell className="w-4 h-4 text-[#1E3A8A]" />
-            <span className="text-sm font-semibold text-gray-800">Notifications</span>
-          </div>
-          <NotificationsPanel userType="dean" />
-        </div>
-
-        {/* Quarterly Report */}
+      {/* ── MOBILE: Quarterly Report ── */}
+      <div className="lg:hidden">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
             <BarChart3 className="w-4 h-4 text-[#1E3A8A]" />
@@ -1145,55 +1120,6 @@ function ResearchAchievements() {
   );
 }
 
-// ─── Evaluation Management ────────────────────────────────────────────────────
-function EvaluationManagement() {
-  return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Evaluation Management</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Total Evaluations</h3>
-          <p className="text-3xl font-bold text-blue-600">3,847</p>
-          <p className="text-sm text-gray-600 mt-1">Student responses</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Completion Rate</h3>
-          <p className="text-3xl font-bold text-green-600">94%</p>
-          <p className="text-sm text-gray-600 mt-1">Students completed</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Average Rating</h3>
-          <p className="text-3xl font-bold text-purple-600">4.6/5.0</p>
-          <p className="text-sm text-gray-600 mt-1">Overall faculty rating</p>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Performance Summary</h2>
-        <div className="space-y-3">
-          {[
-            { name: 'Dr. Sarah Johnson',     rating: 4.8, responses: 156 },
-            { name: 'Prof. Michael Chen',    rating: 4.7, responses: 142 },
-            { name: 'Dr. Patricia Williams', rating: 4.9, responses: 138 },
-          ].map((faculty, i) => (
-            <div key={i} className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">{faculty.name}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{faculty.responses} responses</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl sm:text-2xl font-bold text-blue-600">{faculty.rating}</div>
-                  <div className="text-xs text-gray-600">out of 5.0</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Alumni Tracer ────────────────────────────────────────────────────────────
 function AlumniTracer() {
   return (
@@ -1219,392 +1145,6 @@ function AlumniTracer() {
     </div>
   );
 }
-
-// ─── Reports & Analytics ──────────────────────────────────────────────────────
-function ReportsAnalytics() {
-  return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports & Analytics</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        {['Institutional Report', 'Faculty Performance', 'Student Analytics'].map((report, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">{report}</h3>
-            <div className="space-y-2">
-              <button
-  onClick={() => window.open('http://localhost:5000/api/reports/pdf', '_blank')}
-  className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm">
-  <Download className="w-4 h-4" /> Export PDF
-</button>
-<button
-  onClick={() => window.open('http://localhost:5000/api/reports/excel', '_blank')}
-  className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm">
-  <Download className="w-4 h-4" /> Export Excel
-</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Analytics Dashboard</h2>
-        <div className="h-64 sm:h-96 bg-gray-100 rounded-lg flex items-center justify-center"><BarChart3 className="w-12 sm:w-16 h-12 sm:h-16 text-gray-400" /></div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Announcements ────────────────────────────────────────────────────────────
-function AnnouncementsContent() {
-  
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [modalTitle, setModalTitle] = useState('');
-  const [modalMessage, setModalMessage] = useState('');
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  
-  function formatManilaTime(dateString: string) {
-  return new Date(dateString).toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  });
-}
-  
-  
-  useEffect(() => {
-     loadAnnouncements();
-  const channel = supabase
-    .channel('announcements-channel')
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'announcements'
-      },
-      (payload) => {
-        setAnnouncements((prev) => [
-          payload.new,
-          ...prev
-        ]);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
-
-  async function loadAnnouncements() {
-  const { data, error } = await supabase
-    .from('announcements')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (!error && data) {
-    setAnnouncements(data);
-  }
-}
-  async function publishAnnouncement() {
-  try {
-
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setModalTitle('Error');
-    setModalMessage('User not found');
-      setShowModal(true);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('announcements')
-      .insert([
-        {
-          title,
-          content,
-          author_id: user.id,
-          target_role: [
-            'admin',
-            'dean',
-            'department_chair',
-            'faculty',
-            'student',
-            'alumni'
-          ]
-        }
-      ])
-      .select()
-      .single();
-      
-
-    if (error) throw error;
-    const announcementId = data.id;
-    setAnnouncements(prev => [
-  data,
-  ...prev
-]);
-
-    // Notifications
-
-    await notifyRole(
-      'admin',
-      title,
-      content,
-      announcementId,
-    );
-
-    await notifyRole(
-      'dean',
-      title,
-      content,
-      announcementId,
-    );
-
-    await notifyRole(
-      'department_chair',
-      title,
-      content,
-      announcementId,
-    );
-
-    await notifyRole(
-      'faculty',
-      title,
-      content,
-      announcementId,
-    );
-
-    await notifyRole(
-      'student',
-      title,
-      content,
-      announcementId,
-    );
-
-    await notifyRole(
-      'alumni',
-      title,
-      content,
-      announcementId,
-    );
-
-    setTitle('');
-    setContent('');
-
-    setModalTitle('Success');
-    setModalMessage('Announcement published successfully.');
-    setShowModal(true);
-
-  } catch (err: any) {
-  console.error(err);
-
-  setModalTitle('Error');
-  setModalMessage(
-    err?.message ||
-    JSON.stringify(err) ||
-    'Failed to publish announcement.'
-  );
-
-  setShowModal(true);
-}
-}
-async function deleteAnnouncement(
-  announcementId: string
-) {
-  const confirmed = window.confirm(
-    'Delete this announcement?'
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const { error: announcementError } =
-      await supabase
-        .from('announcements')
-        .delete()
-        .eq('id', announcementId);
-
-    if (announcementError)
-      throw announcementError;
-
-    const { error: notificationError } =
-  await supabase
-    .from('notifications')
-    .delete()
-    .eq('reference_id', announcementId)
-    .eq('reference_table', 'announcements');
-
-if (notificationError)
-  throw notificationError;
-
-    setAnnouncements(prev =>
-      prev.filter(
-        a => a.id !== announcementId
-      )
-    );
-
-    setModalTitle('Success');
-    setModalMessage(
-      'Announcement deleted successfully.'
-    );
-    setShowModal(true);
-  } catch (err) {
-    console.error(err);
-
-    setModalTitle('Error');
-    setModalMessage(
-      'Failed to delete announcement.'
-    );
-    setShowModal(true);
-  }
-}
-
-  return (
-    
-    <div>
-      <div className="flex items-center justify-between gap-3 mb-6">
-        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Announcements</h1>
-        <button className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex-shrink-0">
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">New Announcement</span>
-          <span className="sm:hidden">New</span>
-        </button>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Create Announcement</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-            <input
-  type="text"
-  value={title}
-  onChange={(e) => setTitle(e.target.value)}
-  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-  placeholder="Enter announcement title"
-/>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Content</label>
-            <textarea
-  rows={4}
-  value={content}
-  onChange={(e) => setContent(e.target.value)}
-  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-  placeholder="Enter announcement content"
-/>
-          </div>
-          <button
-  onClick={publishAnnouncement}
-  className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
->
-  Publish Announcement
-</button>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-    Recent Announcements
-  </h2>
-
-  <div className="space-y-3">
-    {announcements.length === 0 ? (
-      <div className="text-gray-500 text-center py-6">
-        No announcements found.
-      </div>
-    ) : (
-      announcements.map((announcement) => (
-        <div
-          key={announcement.id}
-          className="p-4 bg-gray-50 rounded-lg"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="font-medium text-gray-900 text-sm sm:text-base">
-                {announcement.title}
-              </div>
-
-              <div className="text-xs sm:text-sm text-gray-600">
-  {formatManilaTime(announcement.created_at)}
-</div>
-
-              <div className="text-sm text-gray-500 mt-2">
-                {announcement.content}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-  <span
-    className="px-2 sm:px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm"
-  >
-    Published
-  </span>
-
-  <button
-    onClick={() =>
-      deleteAnnouncement(
-        announcement.id
-      )
-    }
-    className="
-      px-3
-      py-1
-      bg-red-500
-      text-white
-      rounded-lg
-      text-xs
-      hover:bg-red-600
-    "
-  >
-    Delete
-  </button>
-</div>
-          </div>
-        </div>
-      ))
-    )}
-  </div>
-</div>
-      {showModal && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-      
-      <div className="p-6">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          {modalTitle}
-        </h3>
-
-        <p className="text-gray-600">
-          {modalMessage}
-        </p>
-      </div>
-
-      <div className="flex justify-end border-t p-4">
-        <button
-          onClick={() => setShowModal(false)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          OK
-        </button>
-      </div>
-
-    </div>
-  </div>
-)}
-    </div>
-    
-  );
-  
-}
-
 
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {

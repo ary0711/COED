@@ -176,7 +176,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
       ═══════════════════════════════════════ */}
       <section className="py-24 px-4 bg-gradient-to-br from-white to-blue-50/40">
         <div className="max-w-5xl mx-auto">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1E3A8A] via-[#2563EB] to-[#3B82F6] p-12 lg:p-16 text-white shadow-2xl">
+          <div className="relative overflow-hidden rounded-3xl bg-[#1E3A8A] p-12 lg:p-16 text-white shadow-2xl">
             <div className="absolute inset-0 opacity-10">
               <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
             </div>
