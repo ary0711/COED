@@ -72,11 +72,11 @@ const orgData: OrgData = {
       },
       teachers: [
         { id: 't7', name: 'Dr. Maricho L. Carreon', role: 'BSEd-Math/English Chairman', education: 'M.A. in English Lit.', experience: '26 Years', subject: 'High School English', image: '', },
-        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '36 Years', subject: 'Advanced Physics', image: '', },
+        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '36 Years', subject: 'Advanced Physics', image: '/images/JFP.jpg', },
         { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Program GAD Coordinator', education: 'M.S. in Mathematics', experience: '35 Years', subject: 'Calculus & Algebra', image: '/images/', },
         { id: 't10', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'M.A. in History', experience: '39 Years', subject: 'World History', image: '/images/LMSC.PNG', },
         { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon', role: 'Teacher', education: 'M.A. in History', experience: '22 Years', subject: 'World History', image: '/images/CTRD.jpg', },
-        { id: 't12', name: 'Dr. Judith M. Aleguen', role: 'Teacher', education: 'M.A. in History', experience: '12 Years', subject: 'World History', image: '', },
+        { id: 't12', name: 'Dr. Judith M. Aleguen', role: 'Teacher', education: 'M.A. in History', experience: '12 Years', subject: 'World History', image: '/images/JMA.PNG', },
         { id: 't13', name: 'Dr. Ariel L. Ramos', role: 'Teacher', education: 'M.A. in History', experience: ' Years', subject: 'World History', image: '', },
       ]
     },
