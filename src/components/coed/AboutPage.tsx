@@ -17,116 +17,6 @@ interface Person {
   image: string;
 }
 
-interface Department {
-  id: string;
-  name: string;
-  chairman: Person;
-  teachers: Person[];
-}
-
-interface OrgData {
-  dean: Person;
-  departments: Department[];
-}
-
-// --- Dummy Data ---
-const orgData: OrgData = {
-  dean: {
-    id: 'dean',
-    name: 'Dr.Jorelyn P.Conception',
-    role: 'College Dean',
-    education: 'Ph.D. in Educational Leadership, Stanford University',
-    experience: '25 Years',
-    subject: 'Educational Administration & Policy',
-    image: '/images/JPC.PNG',
-  },
-  departments: [
-    {
-      id: 'elem-ed',
-      name: 'Bachelor of Elementary Education Program',
-      chairman: {
-        id: 'chair-1',
-        name: 'Dr. Viviana C. Genabe',
-        role: 'BEED Chairperson',
-        education: 'Ph.D. in Elementary Education',
-        experience: '18 Years',
-        subject: 'Child Development & Pedagogy',
-        image: '',
-      },
-      teachers: [
-        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics', image: '' },
-        { id: 't3', name: 'Dr. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy', image: '' },
-        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't5', name: 'Dr. Teresita Georgina B. Nikal', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies', image: '' },
-        { id: 't6', name: 'Dr. Marvin S. Olvido-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-       
-      ]
-    },
-    {
-      id: 'sec-ed',
-      name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
-      chairman: {
-        id: 'chair-2',
-        name: 'Dr. Michael Chen',
-        role: 'Department Chairman',
-        education: 'Ed.D. in Curriculum and Instruction',
-        experience: '20 Years',
-        subject: 'Curriculum Design',
-        image: '',
-      },
-      teachers: [
-        { id: 't7', name: 'Dr. Maricho U. Carreon', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English', image: '', },
-        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics', image: '', },
-        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra', image: '', },
-        { id: 't10', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't11', name: 'Dr. Crisju Theres B. Enriquez', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't12', name: 'Dr. Judith M. Aliquiot', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't13', name: 'Dr. Ariel L. RamosS', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-      ]
-    },
-    {
-      id: 'sped',
-      name: 'Bachelor of Technology and Livelihood Education Program',
-      chairman: {
-        id: 'chair-3',
-        name: 'Dr. Patricia Williams',
-        role: 'Department Chairman',
-        education: 'Ph.D. in Special Education',
-        experience: '22 Years',
-        subject: 'Behavioral Interventions',
-         image: '',
-      },
-      teachers: [
-        { id: 't14', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't15', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.', image: '', },
-        { id: 't16', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.', image: '', },
-        { id: 't17', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't18', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't19', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't20', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-     ]
-    },
-    {
-      id: 'ed-lead',
-      name: 'Educational Leadership',
-      chairman: {
-        id: 'chair-4',
-        name: 'Dr. Robert Anderson',
-        role: 'Department Chairman',
-        education: 'Ed.D. in School Administration',
-        experience: '28 Years',
-        subject: 'Organizational Leadership',
-         image: '',
-      },
-      teachers: [
-        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law', image: '', },
-        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance', image: '', },
-        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education', image: '', },
-      ]
-    }
-  ]
-};
 
 // --- Extracted ProfileCard Component ---
 interface ProfileCardProps {
@@ -140,15 +30,17 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
     className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300"
   >
     {/* Placeholder for actual image */}
-   <img
-  src={person.image}
-  alt={person.name}
-  className="absolute inset-0 w-full h-full object-cover bg-gray-300"
-  onError={() => {}}
-/>
-<div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
-  <User className="w-12 h-12 text-gray-400" />
-</div>
+   {person.image ? (
+  <img
+    src={person.image}
+    alt={person.name}
+    className="absolute inset-0 w-full h-full object-cover"
+  />
+) : (
+  <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
+    <User className="w-12 h-12 text-gray-400" />
+  </div>
+)}
 
     {/* Floating White Label */}
     <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 flex justify-between items-center shadow-md transform transition-transform group-hover:-translate-y-1">
@@ -178,7 +70,8 @@ const [statistics, setStatistics] =
 const [facultyMembers, setFacultyMembers] =
   useState<any[]>([]);
 const dean = facultyMembers.find(
-  (member) => member.role === 'Dean'
+  member =>
+    member.role?.toLowerCase().includes('dean')
 );
 
 const departments = [
@@ -317,7 +210,7 @@ const teachers =
   );
   const getContent = (section: string) => {
   if (previewMode) {
-    return previewContent?.[section];
+    return previewContent?.[section] || aboutContent?.[section];
   }
 
   return aboutContent?.[section];
@@ -347,7 +240,7 @@ const teachers =
         </div>
 
         {/* Vision, Mission, Goals */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-md p-8">
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
               <Eye className="w-7 h-7 text-[#2563EB]" />
@@ -374,8 +267,33 @@ const teachers =
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Goals')?.title || 'Goals'}</h3>
             <p className="text-gray-700 leading-relaxed">
+
              {getContent('Goals')?.description}
             </p>
+          </div>
+        </div>
+
+        {/* Core Values Acronym - PREMIER */}
+        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
+            {[
+              { letter: 'P', word: 'Progressive', desc: 'Advancing through innovation' },
+              { letter: 'R', word: 'Responsive', desc: 'Adaptive to evolving demands' },
+              { letter: 'E', word: 'Excellent', desc: 'Highest standards in education' },
+              { letter: 'M', word: 'Morally grounded', desc: 'Integrity & accountability' },
+              { letter: 'I', word: 'Inclusive', desc: 'Equal opportunities for all' },
+              { letter: 'E', word: 'Empowered', desc: 'Knowledge & sustainable skills' },
+              { letter: 'R', word: 'Relevant', desc: 'Addressing real-world needs' },
+            ].map((value, index) => (
+              <div key={index} className="flex flex-col items-center">
+                <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+                  {value.letter}
+                </div>
+                <div className="font-semibold text-gray-900 text-sm">{value.word}</div>
+                <div className="text-xs text-gray-500 mt-1">{value.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -549,16 +467,18 @@ const teachers =
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Role</span>
                     {selectedPerson.role}
                   </p>
-                  <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
-                    {selectedPerson.education}
+                 <p>
+                   <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
+                  {selectedPerson.education.split(',').map((line, i) => (
+                    <span key={i} className="block">{line.trim()}</span>
+                  ))}
                   </p>
-                  <p>
+                <p>
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Years of Teaching</span>
                     {selectedPerson.experience}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Subject Area</span>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Academic Rank</span>
                     {selectedPerson.subject}
                   </p>
                 </div>

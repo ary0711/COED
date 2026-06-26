@@ -82,7 +82,7 @@ const fetchHomepageContent = async () => {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 mb-5 w-fit">
             <Sparkles className="w-4 h-4 text-white" />
-            <span className="text-sm font-semibold text-white">Excellence in Education Since 1993</span>
+            <span className="text-sm font-semibold text-white">AACCUP Level 3 &amp; 4 Re-Accredited TEI &middot; Excellence Since 1994</span>
           </div>
 
           {/* Big headline — like "WANDER" in the reference */}
@@ -133,12 +133,17 @@ const fetchHomepageContent = async () => {
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
           {getContent('About Section')?.description}
           </p>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Since its founding in 1994&ndash;1995, COED has been at the forefront of teacher education,
+              producing passionate and skilled educators who transform lives&mdash;guided by our motto,
+              &ldquo;Quality is a race without a finish line.&rdquo;
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             <FeatureCard
               title="Accredited Programs"
-              description="All programs maintain Level III AACCUP accreditation status"
+              description="AACCUP Level 3 & 4 Re-Accredited Teacher Education Institution, with Level IV status attained"
               icon="🏆"
               gradient="from-amber-50 to-orange-50"
               borderColor="border-amber-200"
@@ -200,7 +205,7 @@ const fetchHomepageContent = async () => {
             <StatCard value="3,847" label="Active Students"   icon={Users}      gradient="from-blue-500 to-blue-600"   bgGradient="from-blue-50 to-blue-100" />
             <StatCard value="22"    label="Programs Offered"  icon={BookOpen}   gradient="from-purple-500 to-purple-600" bgGradient="from-purple-50 to-purple-100" />
             <StatCard value="142"   label="Expert Faculty"    icon={Award}      gradient="from-pink-500 to-pink-600"   bgGradient="from-pink-50 to-pink-100" />
-            <StatCard value="98%"   label="Employment Rate"   icon={TrendingUp} gradient="from-green-500 to-green-600" bgGradient="from-green-50 to-green-100" />
+            <StatCard value="97.1%" label="LET Passing Rate (2025)" icon={TrendingUp} gradient="from-green-500 to-green-600" bgGradient="from-green-50 to-green-100" />
           </div>
         </div>
       </section>
@@ -256,7 +261,7 @@ const fetchHomepageContent = async () => {
       ═══════════════════════════════════════ */}
       <section className="py-24 px-4 bg-gradient-to-br from-white to-blue-50/40">
         <div className="max-w-5xl mx-auto">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#1E3A8A] via-[#2563EB] to-[#3B82F6] p-12 lg:p-16 text-white shadow-2xl">
+          <div className="relative overflow-hidden rounded-3xl bg-[#1E3A8A] p-12 lg:p-16 text-white shadow-2xl">
             <div className="absolute inset-0 opacity-10">
               <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
             </div>

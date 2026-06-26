@@ -1,94 +1,61 @@
 import { BookOpen, Users, GraduationCap } from 'lucide-react';
 
 export function DepartmentsPage() {
-  const departments = [
+  const colleges = [
     {
       id: 1,
-      name: 'Elementary Education',
-      chair: 'Dr. Sarah Johnson',
+      collegeName: 'College of Education',
       programs: [
-        'Bachelor of Elementary Education (BEEd)',
-        'Master in Elementary Education',
-        'Certificate in Early Childhood Education',
+        {
+          id: 1,
+          name: 'Bachelor of Elementary Education',
+          description:
+            'Prepares future elementary school teachers with comprehensive pedagogical skills and child development knowledge.',
+          faculty: [
+            { name: 'Jerome Abregana, MAEd A.S.', position: 'BEED Chairperson' },
+            { name: 'Viviana C. Genabe, Dev. Ed. D.', position: 'Practice Teaching Coordinator' },
+            { name: 'Lynnette Matea S. Camello, D.A.L.C.', position: 'University Director Education for Sustainable Development' },
+            { name: 'Marivel Glinogo-Cañete, MAEd A.S.', position: 'Program GAD and Extension Coordinator' },
+            { name: 'Suzette T. Elladora, Ph.D.', position: 'Chairman Ph.D. Program Graduate School/Coordinator Research and Development' },
+            { name: 'Teresita Cleopolda B. Sarile, Dev. Ed.D.', position: 'Extension Director/College GAD, Program Internalization Coordinator' },
+          ],
+        },
+        {
+          id: 2,
+          name: 'Bachelor of Technology and Livelihood Education',
+          description:
+            'Develops competent technical and vocational education teachers with practical skills and industry knowledge.',
+          faculty: [
+            { name: 'Venus H. Baldea, Ph.D.', position: 'BTLED Chairperson' },
+            { name: 'Fitzgerald C. Kintanar, Ed.D.', position: 'Dean of Instruction, Alumni Affairs Director, Coordinator Research and Development' },
+            { name: 'Jeramie C. Linaban, Dev. Ed. D.', position: 'Teaching Internship Chairperson' },
+            { name: 'Rachelle G. Lopez, MAVEd', position: 'College Cultural Affairs & Internalization Coordinator' },
+            { name: 'Mildred G. Martinez, MAVEd', position: 'College Extension Coordinator' },
+            { name: 'Lemuel M. Velasco, Dev. Ed. D.', position: 'College Innovation & Sports Coordinator' },
+          ],
+        },
+        {
+          id: 3,
+          name: 'Bachelor of Secondary Education (Mathematics/English)',
+          description:
+            'Develops competent secondary school teachers specialized in Mathematics and English with strong content knowledge and pedagogical expertise.',
+          faculty: [
+            { name: 'Marichou L. Carreon, Dev. Ed. D.', position: 'BSED Math/English Chairperson' },
+            { name: 'Judith M. Aleguen, Ph.D.', position: 'College Research & Internalization Coordinator' },
+            { name: 'Virginia S. Albarracin, Ed. D.', position: 'Program GAD Coordinator' },
+            { name: 'Crysali Therese R. Dayaganon, Ph.D., Dev.Ed.D.', position: 'Extension Coordinator, ST Supervisor' },
+            { name: 'Jean F. Puerto, Ph.D., Dev. Ed.D.', position: 'Campus Director, OSGIN' },
+          ],
+        },
       ],
-      description:
-        'Prepares future elementary school teachers with comprehensive pedagogical skills and child development knowledge.',
-      faculty: 35,
-      students: 892,
-    },
-    {
-      id: 2,
-      name: 'Secondary Education',
-      chair: 'Dr. Michael Chen',
-      programs: [
-        'Bachelor of Secondary Education Major in English',
-        'Bachelor of Secondary Education Major in Mathematics',
-        'Bachelor of Secondary Education Major in Science',
-        'Bachelor of Secondary Education Major in Social Studies',
-        'Master in Secondary Education',
-      ],
-      description:
-        'Develops competent secondary school teachers specialized in various subject areas with strong content knowledge.',
-      faculty: 42,
-      students: 1245,
-    },
-    {
-      id: 3,
-      name: 'Special Education',
-      chair: 'Dr. Patricia Williams',
-      programs: [
-        'Bachelor of Special Needs Education',
-        'Certificate in Inclusive Education',
-        'Master in Special Education',
-      ],
-      description:
-        'Trains educators to work with learners with special needs, promoting inclusive education and differentiated instruction.',
-      faculty: 28,
-      students: 487,
-    },
-    {
-      id: 4,
-      name: 'Educational Leadership',
-      chair: 'Dr. Robert Anderson',
-      programs: [
-        'Master in Educational Management',
-        'Doctor of Philosophy in Educational Leadership',
-        'Certificate in School Administration',
-      ],
-      description:
-        'Develops educational leaders and administrators who can effectively manage and lead educational institutions.',
-      faculty: 22,
-      students: 356,
-    },
-    {
-      id: 5,
-      name: 'Technology Education',
-      chair: 'Dr. Jennifer Lee',
-      programs: [
-        'Bachelor in Educational Technology',
-        'Master in Instructional Design',
-        'Certificate in E-Learning Development',
-      ],
-      description:
-        'Focuses on integrating technology in education and preparing educators to leverage digital tools for enhanced learning.',
-      faculty: 18,
-      students: 423,
-    },
-    {
-      id: 6,
-      name: 'Physical Education',
-      chair: 'Dr. David Martinez',
-      programs: [
-        'Bachelor of Physical Education',
-        'Master in Sports Pedagogy',
-        'Certificate in Health and Wellness Education',
-      ],
-      description:
-        'Prepares physical education teachers and coaches who promote health, fitness, and sports development.',
-      faculty: 15,
-      students: 318,
     },
   ];
+
+  // Calculate totals
+  const totalPrograms = colleges.reduce((sum, college) => sum + college.programs.length, 0);
+  const totalFaculty = colleges.reduce((sum, college) => 
+    sum + college.programs.reduce((pSum, program) => pSum + program.faculty.length, 0), 0
+  );
 
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
@@ -96,10 +63,10 @@ export function DepartmentsPage() {
         {/* Page Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            Departments & Programs
+            College of Education - Departments & Programs
           </h1>
           <p className="text-xl text-gray-600">
-            Discover our diverse academic departments and degree programs
+            Meet our distinguished faculty and explore our academic programs
           </p>
         </div>
 
@@ -107,72 +74,75 @@ export function DepartmentsPage() {
         <div className="grid md:grid-cols-3 gap-6 mb-12">
           <div className="bg-gradient-to-br from-[#2563EB] to-[#60A5FA] rounded-xl shadow-lg p-6 text-white">
             <BookOpen className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">6</div>
-            <div className="text-blue-100">Academic Departments</div>
+            <div className="text-3xl font-bold mb-1">{totalPrograms}</div>
+            <div className="text-blue-100">Academic Programs</div>
           </div>
           <div className="bg-gradient-to-br from-[#10B981] to-[#34D399] rounded-xl shadow-lg p-6 text-white">
-            <GraduationCap className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">22</div>
-            <div className="text-green-100">Degree Programs</div>
+            <Users className="w-10 h-10 mb-3 opacity-90" />
+            <div className="text-3xl font-bold mb-1">{totalFaculty}</div>
+            <div className="text-green-100">Distinguished Faculty</div>
           </div>
           <div className="bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA] rounded-xl shadow-lg p-6 text-white">
-            <Users className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">3,721</div>
-            <div className="text-purple-100">Enrolled Students</div>
+            <GraduationCap className="w-10 h-10 mb-3 opacity-90" />
+            <div className="text-3xl font-bold mb-1">1</div>
+            <div className="text-purple-100">College</div>
           </div>
         </div>
 
-        {/* Departments List */}
-        <div className="space-y-6">
-          {departments.map((dept) => (
-            <div
-              key={dept.id}
-              className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
-            >
-              <div className="p-8">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
-                  <div className="flex-1">
-                    <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2">
-                      {dept.name}
-                    </h2>
-                    <div className="flex items-center gap-2 text-gray-600 mb-4">
-                      <Users className="w-4 h-4" />
-                      <span className="text-sm">
-                        Department Chair: <strong>{dept.chair}</strong>
-                      </span>
-                    </div>
-                    <p className="text-gray-700 leading-relaxed mb-6">
-                      {dept.description}
-                    </p>
-                  </div>
-                  <div className="flex md:flex-col gap-4 md:gap-2 md:ml-8">
-                    <div className="bg-blue-50 px-4 py-2 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-[#2563EB]">{dept.faculty}</div>
-                      <div className="text-xs text-gray-600">Faculty</div>
-                    </div>
-                    <div className="bg-green-50 px-4 py-2 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-green-600">{dept.students}</div>
-                      <div className="text-xs text-gray-600">Students</div>
-                    </div>
-                  </div>
-                </div>
+        {/* Colleges and Programs */}
+        <div className="space-y-8">
+          {colleges.map((college) => (
+            <div key={college.id}>
+              <div className="mb-6">
+                <h2 className="text-3xl font-bold text-[#1E3A8A] pb-3 border-b-4 border-[#2563EB]">
+                  {college.collegeName}
+                </h2>
+              </div>
 
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">
-                    Programs Offered:
-                  </h3>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    {dept.programs.map((program, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-gray-700 bg-gray-50 px-4 py-3 rounded-lg"
-                      >
-                        <div className="w-2 h-2 bg-[#2563EB] rounded-full flex-shrink-0"></div>
-                        <span className="text-sm">{program}</span>
+              {/* Programs within College */}
+              <div className="space-y-6">
+                {college.programs.map((program) => (
+                  <div
+                    key={program.id}
+                    className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
+                  >
+                    <div className="p-8">
+                      {/* Program Header */}
+                      <div className="mb-6">
+                        <h3 className="text-2xl font-semibold text-[#1E3A8A] mb-2">
+                          {program.name}
+                        </h3>
+                        <p className="text-gray-700 leading-relaxed">
+                          {program.description}
+                        </p>
                       </div>
-                    ))}
+
+                      {/* Faculty List */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide">
+                          Program Faculty:
+                        </h4>
+                        <div className="space-y-3">
+                          {program.faculty.map((faculty, index) => (
+                            <div
+                              key={index}
+                              className="flex flex-col sm:flex-row sm:items-start sm:justify-between p-4 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900 text-sm sm:text-base">
+                                  {faculty.name}
+                                </div>
+                                <div className="text-xs sm:text-sm text-gray-600 mt-1">
+                                  {faculty.position}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           ))}
@@ -184,7 +154,7 @@ export function DepartmentsPage() {
             Ready to Start Your Journey?
           </h2>
           <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            Join thousands of successful educators who began their career at COED. 
+            Join thousands of successful educators who began their career at Cebu Technological University - Argao Campus. 
             Explore our programs and find the perfect fit for your aspirations.
           </p>
           <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
