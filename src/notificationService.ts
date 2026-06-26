@@ -26,13 +26,22 @@ export async function notifyRole(
   message: string,
   referenceId?: string
 ) {
+  console.log('Looking for role:', role);
+
   const { data: users, error } = await supabase
     .from('profiles')
     .select('id')
     .eq('role', role);
 
-  if (error || !users) {
+  console.log('Users found:', users);
+
+  if (error) {
     console.error(error);
+    return;
+  }
+
+  if (!users || users.length === 0) {
+    console.log('No users found.');
     return;
   }
 
@@ -44,11 +53,15 @@ export async function notifyRole(
     reference_table: 'announcements'
   }));
 
+  console.log('Notifications to insert:', notifications);
+
   const { error: insertError } = await supabase
     .from('notifications')
     .insert(notifications);
 
   if (insertError) {
     console.error(insertError);
+  } else {
+    console.log('Notifications inserted successfully');
   }
 }

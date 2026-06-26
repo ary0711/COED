@@ -29,6 +29,8 @@ import {
   } from 'lucide-react';
   import { Sidebar } from '../Sidebar';
   import { DashboardHeader } from '../DashboardHeader';
+  import { supabase } from '../../supabaseClient';
+  import { notifyRole } from '../../notificationService';
   import { useState, useEffect } from 'react';
 
   const facultyMenuItems = [
@@ -616,7 +618,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
   function AcademicRecordsView() {
     const handleDownload = (name: string) => alert(`📥 Downloading: ${name}`);
     const [activeCategory, setActiveCategory] = useState('All');
-
+    useState<any[]>([]);
     const documents = [
       { name: 'Faculty Handbook 2025–2026',          category: 'Handbook',   size: '2.4 MB'  },
       { name: 'Academic Policies & Guidelines',       category: 'Policy',     size: '1.1 MB'  },
@@ -802,6 +804,37 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
   // ====================== 5.6 REPORTS ======================
   function ReportsView() {
+    
+    useEffect(() => {
+  loadDeadlines();
+}, []);
+
+useEffect(() => {
+  const channel = supabase
+    .channel('report-deadlines')
+
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'report_deadlines'
+      },
+     (payload: any) => {
+        setDeadlines(prev => [
+          payload.new,
+          ...prev
+        ]);
+      }
+    )
+
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
     const [reportType, setReportType] = useState<'monthly' | 'quarterly'>('monthly');
     const [period, setPeriod] = useState('');
     const [academicYear, setAcademicYear] = useState('2025–2026');
@@ -811,13 +844,98 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     const [showPreview, setShowPreview] = useState(false);
     const [generatedReport, setGeneratedReport] = useState('');
     const [tab, setTab] = useState<'form' | 'submitted'>('form');
+    const [deadlines, setDeadlines] = useState<any[]>([]);
+    const [showModal, setShowModal] =
+  useState(false);
 
+const [modalTitle, setModalTitle] =
+  useState('');
+
+const [modalMessage, setModalMessage] =
+  useState('');
     const submittedReports = [
       { type: 'Monthly',    period: 'January 2026',      date: 'Feb 1, 2026',  status: 'Received' },
       { type: 'Quarterly',  period: 'Q3 AY 2025–2026',   date: 'Jan 10, 2026', status: 'Received' },
       { type: 'Monthly',    period: 'December 2025',      date: 'Jan 3, 2026',  status: 'Received' },
     ];
+    async function loadDeadlines() {
+  const { data, error } = await supabase
+    .from('report_deadlines')
+    .select('*')
+    .order('due_date', {
+      ascending: true
+    });
 
+  if (!error && data) {
+    setDeadlines(data);
+  }
+}
+    async function submitReport() {
+  try {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setModalTitle('Error');
+      setModalMessage('User not found');
+      setShowModal(true);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('reports')
+      .insert([
+        {
+          faculty_id: user.id,
+          report_type: reportType,
+          period: period,
+          status: 'pending'
+        }
+      ]);
+
+    if (error) throw error;
+
+      await supabase
+  .from('reports')
+  .insert([
+    {
+      faculty_id: user.id,
+      report_type: reportType,
+      period,
+      status: 'pending',
+      highlights,
+      challenges,
+      recommendations
+    }
+  ]);
+      await notifyRole(
+      'dean',
+      'New Faculty Report Submitted',
+      `${period} report submitted by faculty`
+      );
+
+      await notifyRole(
+      'department_chair',
+      'New Faculty Report Submitted',
+      `${period} report submitted by faculty`
+      );   
+    setPeriod('');
+    setHighlights('');
+    setChallenges('');
+    setRecommendations('');
+
+    setModalTitle('Success');
+    setModalMessage('Report submitted successfully.');
+    setShowModal(true);
+
+  } catch (error) {
+    console.error(error);
+    setModalTitle('Error');
+    setModalMessage('Failed to submit report.');
+    setShowModal(true);
+  }
+}
     const generateFormalReport = () => {
       if (!period.trim()) { alert('Please select a Reporting Period.'); return; }
       const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -858,7 +976,46 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
     return (
       <div>
+
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
+        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
+
+  <h2 className="text-xl font-semibold text-gray-900 mb-4">
+    Active Report Deadlines
+  </h2>
+
+  {deadlines.length === 0 ? (
+    <div className="text-gray-500">
+      No deadlines posted.
+    </div>
+  ) : (
+    deadlines.map(deadline => (
+      <div
+        key={deadline.id}
+        className="border rounded-xl p-4 mb-3"
+      >
+        <div className="font-semibold text-gray-900">
+          {deadline.title}
+        </div>
+
+        <div className="text-gray-600 mt-1">
+          {deadline.description}
+        </div>
+
+        <div className="text-red-600 font-medium mt-2">
+          Due:
+          {' '}
+          {new Date(
+            deadline.due_date
+          ).toLocaleString('en-PH', {
+            timeZone: 'Asia/Manila'
+          })}
+        </div>
+      </div>
+    ))
+  )}
+
+</div>
         <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
           <button onClick={() => setTab('form')} className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'form' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>Submit Report</button>
           <button onClick={() => setTab('submitted')} className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'submitted' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>Submitted Reports</button>
@@ -919,12 +1076,14 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                   <button type="button" onClick={generateFormalReport} className="flex-1 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
                     <Eye className="w-5 h-5" /> Generate Preview
                   </button>
-                  <button type="button" onClick={() => {
-                    if (!period.trim()) { alert('Please select a reporting period.'); return; }
-                    alert(`✅ Report for ${period} submitted to the Dean.`);
-                  }} className="flex-1 py-4 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
-                    <Send className="w-5 h-5" /> Submit to Dean
-                  </button>
+                  <button
+  type="button"
+  onClick={submitReport}
+  className="flex-1 py-4 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
+  <Send className="w-5 h-5" />
+  Submit Report
+</button>
+
                 </div>
               </div>
             </div>
@@ -999,6 +1158,32 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             </div>
           </div>
         )}
+        {showModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          {modalTitle}
+        </h3>
+
+        <p className="text-gray-600">
+          {modalMessage}
+        </p>
+      </div>
+
+      <div className="border-t p-4 flex justify-end">
+        <button
+          onClick={() => setShowModal(false)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          OK
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
       </div>
     );
   }

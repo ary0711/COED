@@ -1,4 +1,4 @@
-import { Bell, Settings, Menu } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Notification } from '../notification';
@@ -31,49 +31,60 @@ const [notifications, setNotifications] = useState<Notification[]>([]);
 const [showNotifications, setShowNotifications] = useState(false);
 const [expandedId, setExpandedId] =
   useState<string | null>(null);
+const unreadCount = notifications.filter(
+  n => !n.is_read
+).length;
 async function markAsRead(id: string) {
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({
       is_read: true
     })
-    .eq('id', id);
+    .eq('id', id); // ✅ FIX HERE
+
+  if (error) {
+    console.error(error);
+    return;
+  }
 
   setNotifications(prev =>
     prev.map(notification =>
       notification.id === id
-        ? {
-            ...notification,
-            is_read: true
-          }
+        ? { ...notification, is_read: true }
         : notification
     )
   );
+  
 }
-const unreadCount = notifications.filter(
-  notification => !notification.is_read
-).length;
 useEffect(() => {
   loadNotifications();
 }, []);
-async function loadNotifications() {
+  async function loadNotifications() {
   const {
     data: { user }
   } = await supabase.auth.getUser();
 
+  console.log('Logged-in user ID:', user?.id);
+  console.log('Role from props:', userRole);
+  
+
   if (!user) return;
 
-  const { data } = await supabase
-    .from('annoucements')
+  const { data, error } = await supabase
+    .from('notifications')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', {
       ascending: false
     });
 
+  console.log('Notifications loaded:', data);
+  console.log('Query error:', error);
+
   if (data) {
     setNotifications(data);
   }
+
 }useEffect(() => {
   let channel: any;
 
@@ -86,7 +97,6 @@ async function loadNotifications() {
 
     channel = supabase
   .channel(`notifications-${user.id}`)
-
   .on(
     'postgres_changes',
     {
@@ -98,9 +108,7 @@ async function loadNotifications() {
       const newNotification =
         payload.new as Notification;
 
-      if (
-        newNotification.user_id === user.id
-      ) {
+      if (newNotification.user_id === user.id) {
         setNotifications(prev => [
           newNotification,
           ...prev
@@ -108,7 +116,6 @@ async function loadNotifications() {
       }
     }
   )
-
   .on(
     'postgres_changes',
     {
@@ -124,7 +131,6 @@ async function loadNotifications() {
       );
     }
   )
-
   .subscribe();
   }
 
@@ -292,9 +298,6 @@ async function loadNotifications() {
     </div>
   )}
 </div>
-            <button className="p-3 rounded-xl hover:bg-gray-100 transition-all duration-300 group">
-              <Settings className="w-5 h-5 text-gray-600 group-hover:text-blue-600 transition-colors" />
-            </button>
           </div>
 
         </div>

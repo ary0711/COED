@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { supabase } from '../../supabaseClient';
+interface AboutPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+}
 
 // --- TypeScript Interfaces ---
 interface Person {
@@ -159,13 +164,164 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 );
 
 // --- Main Page Component ---
-export function AboutPage() {
+export function AboutPage({
+  previewMode = false,
+  previewContent = {},
+}: AboutPageProps) {
+  
+  const [coreValues, setCoreValues] =
+  useState<any[]>([]);
+
+const [statistics, setStatistics] =
+  useState<any[]>([]);
+
+const [facultyMembers, setFacultyMembers] =
+  useState<any[]>([]);
+const dean = facultyMembers.find(
+  (member) => member.role === 'Dean'
+);
+
+const departments = [
+  ...new Set(
+    facultyMembers
+      .filter(member => member.department)
+      .map(member => member.department)
+  ),
+];
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [aboutContent, setAboutContent] = useState<any>({});
+  const fetchCoreValues = async () => {
+  const { data } = await supabase
+    .from('core_values')
+    .select('*')
+    .order('display_order');
 
-  const totalPages = 1 + orgData.departments.length; // 1 for Dean + 4 departments = 5 pages
+  setCoreValues(data || []);
+};
+const fetchStatistics = async () => {
+  const { data } = await supabase
+    .from('about_statistics')
+    .select('*')
+    .order('display_order');
 
+  setStatistics(data || []);
+};
+const fetchFacultyMembers = async () => {
+  const { data } = await supabase
+    .from('faculty_members')
+    .select('*')
+    .order('display_order');
+
+  setFacultyMembers(data || []);
+};
+  const fetchAboutContent = async () => {
+  const { data, error } = await supabase
+    .from('about_page_content')
+    .select('*');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const formatted: any = {};
+
+  data?.forEach((item: any) => {
+    formatted[item.section_name] = {
+      title: item.title,
+      description: item.description,
+    };
+  });
+
+  setAboutContent(formatted);
+};
+useEffect(() => {
+  if (previewMode) return;
+
+  fetchAboutContent();
+  fetchCoreValues();
+  fetchStatistics();
+  fetchFacultyMembers();
+
+  const channel = supabase
+  .channel('about-page-updates')
+
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'about_page_content',
+    },
+    fetchAboutContent
+  )
+
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'core_values',
+    },
+    fetchCoreValues
+  )
+
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'about_statistics',
+    },
+    fetchStatistics
+  )
+
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'faculty_members',
+    },
+    fetchFacultyMembers
+  )
+
+  .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [previewMode]);
+  
+  const totalPages =
+  1 + departments.length;
+  const currentDepartment =
+  departments[currentPage - 1];
+
+const chairman =
+  facultyMembers.find(
+    member =>
+      member.department ===
+        currentDepartment &&
+      member.role === 'Chairperson'
+  );
+
+const teachers =
+  facultyMembers.filter(
+    member =>
+      member.department ===
+        currentDepartment &&
+      member.role === 'Faculty'
+  );
+  const getContent = (section: string) => {
+  if (previewMode) {
+    return previewContent?.[section];
+  }
+
+  return aboutContent?.[section];
+};
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -175,22 +331,17 @@ export function AboutPage() {
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
             About Us
           </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">About COED</h1>
-          <p className="text-xl text-gray-600">32 Years of Excellence in Education</p>
+          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">{getContent('About Header')?.title || 'About COED'}</h1>
+          <p className="text-xl text-gray-600">{getContent('About Header')?.description ||
+  '32 Years of Excellence in Education'}</p>
         </div>
 
         {/* College History */}
         <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">Our History</h2>
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">{getContent('History')?.title || 'Our History'}</h2>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
             <p>
-              Established in 1994, the College of Education has been a cornerstone of teacher education and professional development for over three decades. What began as a small institution with a handful of dedicated faculty members has grown into a premier college of education, recognized nationally for its innovative programs and commitment to excellence.
-            </p>
-            <p>
-              Throughout our 32-year journey, we have consistently adapted to meet the evolving needs of the education sector while maintaining our core values of integrity, innovation, and inclusivity. Our graduates serve in leadership positions across educational institutions, government agencies, and international organizations.
-            </p>
-            <p>
-              Today, COED stands as a testament to the power of quality education, producing thousands of highly competent educators who are transforming lives and communities through their dedication to teaching and learning.
+              {getContent('History')?.description}
             </p>
           </div>
         </div>
@@ -201,9 +352,9 @@ export function AboutPage() {
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
               <Eye className="w-7 h-7 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Vision')?.title || 'Vision'}</h3>
             <p className="text-gray-700 leading-relaxed">
-              To be a leading institution in teacher education, recognized globally for producing innovative, competent, and socially responsible educators.
+              {getContent('Vision')?.description}
             </p>
           </div>
 
@@ -211,9 +362,9 @@ export function AboutPage() {
             <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4">
               <Target className="w-7 h-7 text-green-600" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Mission')?.title || 'Mission'}</h3>
             <p className="text-gray-700 leading-relaxed">
-              To provide quality education through innovative teaching methods, research, and community engagement that develops future educators committed to lifelong learning.
+              {getContent('Mission')?.description}
             </p>
           </div>
 
@@ -221,9 +372,9 @@ export function AboutPage() {
             <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
               <Award className="w-7 h-7 text-purple-600" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Goals')?.title || 'Goals'}</h3>
             <p className="text-gray-700 leading-relaxed">
-              To maintain excellence in instruction, foster research and innovation, strengthen community partnerships, and ensure continuous program improvement.
+             {getContent('Goals')?.description}
             </p>
           </div>
         </div>
@@ -234,10 +385,11 @@ export function AboutPage() {
             <div className="max-w-2xl">
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Our Team Structure</h4>
               <h2 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-                The People Behind the Programs
+                {getContent('Team Structure')?.title ||
+  'The People Behind the Programs'}
               </h2>
               <p className="text-gray-600">
-                Our team is a blend of visionaries, educators, and mentors dedicated to crafting experiences, not just classes. We come together with one shared goal: to guide you seamlessly through the world of education.
+               {getContent('Team Structure')?.description}
               </p>
             </div>
             
@@ -271,24 +423,34 @@ export function AboutPage() {
                 <div className="mb-6 text-center">
                   <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
                 </div>
-                <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
+                {dean && (
+  <ProfileCard
+  person={dean as Person}
+  onClick={setSelectedPerson}
+/>
+)}
               </div>
             ) : (
               /* Pages 2-5: Department Views */
               <div className="animate-fade-in pb-8">
+                
                 <div className="text-center mb-10">
                   <h3 className="text-2xl font-bold text-gray-800">
-                    {orgData.departments[currentPage - 1].name}
+                   {departments[currentPage - 1]}
                   </h3>
                 </div>
                 
                 {/* Chairman Top Center */}
                 <div className="flex justify-center mb-10">
-                  <div className="relative">
-                    <ProfileCard person={orgData.departments[currentPage - 1].chairman} onClick={setSelectedPerson} />
-                  </div>
-                </div>
-
+  <div className="relative">
+    {chairman && (
+      <ProfileCard
+        person={chairman as Person}
+        onClick={setSelectedPerson}
+      />
+    )}
+  </div>
+</div>
                 {/* Divider */}
                 <div className="flex items-center justify-center mb-10">
                   <div className="h-px bg-gray-200 w-full max-w-3xl"></div>
@@ -296,9 +458,13 @@ export function AboutPage() {
 
                 {/* Teachers Group Grid Below */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-                  {orgData.departments[currentPage - 1].teachers.map(teacher => (
-                    <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
-                  ))}
+                  {teachers.map((teacher) => (
+  <ProfileCard
+    key={teacher.id}
+    person={teacher as Person}
+    onClick={setSelectedPerson}
+  />
+))}
                 </div>
               </div>
             )}
@@ -307,41 +473,45 @@ export function AboutPage() {
 
         {/* Stats */}
         <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {[
-              { count: '142', label: 'Total Faculty' },
-              { count: '85', label: 'Full-Time' },
-              { count: '57', label: 'Part-Time' },
-              { count: '28', label: 'Support Staff' },
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                  <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">{stat.count}</div>
-                  <div className="text-sm text-gray-600">{stat.label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+    {statistics.map((stat) => (
+      <div
+        key={stat.id}
+        className="text-center"
+      >
+        <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
+          <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
 
-        {/* Core Values */}
-        <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-lg p-10 text-white">
-          <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
-            {['Excellence', 'Integrity', 'Innovation', 'Inclusivity', 'Service'].map(
-              (value, index) => (
-                <div key={index} className="text-center">
-                  <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
-                    <div className="text-lg md:text-xl font-medium">{value}</div>
-                  </div>
-                </div>
-              )
-            )}
+          <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
+            {stat.stat_value}
+          </div>
+
+          <div className="text-sm text-gray-600">
+            {stat.stat_label}
           </div>
         </div>
       </div>
+    ))}
+  </div>
+</div>
 
+        {/* Core Values */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+  {coreValues.map((value) => (
+    <div
+      key={value.id}
+      className="text-center"
+    >
+      <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
+        <div className="text-lg md:text-xl font-medium">
+          {value.value_name}
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
+  </div>
+            
       {/* Profile Detail Modal */}
       {selectedPerson && (
         <div 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Calendar,
@@ -20,6 +20,7 @@ import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { NotificationsPanel } from './NotificationsPanel';
 import { FacultyMonitoringTable } from './FacultyMonitoringTable';
+import { supabase } from '../supabaseClient';
 
 const chairMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',           id: 'dashboard' },
@@ -253,24 +254,72 @@ function FacultyMonitoring() {
 function ReportsMonitoring() {
   const [view, setView] = useState<'table' | 'details'>('table');
   const [selectedReport, setSelectedReport] = useState<any>(null);
+  useEffect(() => {
+  loadReports();
+}, []);
+async function approveReport(id: string) {
+  await supabase
+    .from('reports')
+    .update({
+      status: 'approved'
+    })
+    .eq('id', id);
+}
 
-  const [reports] = useState([
-    {
-      id: 1,
-      faculty: 'Dr. Sarah Johnson',
-      report: 'Q4 2025 Performance Report',
-      status: 'Submitted',
-      dateSubmitted: 'Feb 10, 2026',
-      content: 'Summary of student achievements and research progress for the semester. All course objectives met with 95% passing rate.',
-    },
-    {
-      id: 2,
-      faculty: 'Prof. Michael Chen',
-      report: 'Q4 2025 Performance Report',
-      status: 'Pending',
-      dateSubmitted: '---',
-      content: '',
-    },
+async function rejectReport(id: string) {
+  await supabase
+    .from('reports')
+    .update({
+      status: 'rejected'
+    })
+    .eq('id', id);
+}
+async function loadReports() {
+  const { data, error } = await supabase
+    .from('reports')
+    .select(`
+      *,
+      profiles (
+        first_name,
+        last_name
+      )
+    `)
+    .order('created_at', {
+      ascending: false
+    });
+
+  if (!error && data) {
+    setReports(data);
+  }
+}
+useEffect(() => {
+  const channel = supabase
+    .channel('reports-monitoring')
+
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'reports'
+      },
+      payload => {
+        setReports(prev => [
+          payload.new,
+          ...prev
+        ]);
+      }
+    )
+
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+  const [reports, setReports] =
+  useState<any[]>([
+    
   ]);
 
   if (view === 'details' && selectedReport) {
@@ -303,18 +352,88 @@ function ReportsMonitoring() {
           <div className="space-y-6 text-gray-700">
             <h3 className="text-lg font-semibold text-gray-800">Faculty Submission Content:</h3>
             <div className="p-4 sm:p-6 bg-gray-50 rounded-lg border border-gray-100 leading-relaxed italic">
-              "{selectedReport.content || 'No content provided for this report.'}"
+              <div className="space-y-6">
+
+  <div>
+    <h3 className="font-semibold">
+      Report Type
+    </h3>
+
+    <p>
+      {selectedReport.report_type}
+    </p>
+  </div>
+
+  <div>
+    <h3 className="font-semibold">
+      Period
+    </h3>
+
+    <p>
+      {selectedReport.period}
+    </p>
+  </div>
+
+  <div>
+    <h3 className="font-semibold">
+      Highlights
+    </h3>
+
+    <p>
+      {selectedReport.highlights}
+    </p>
+  </div>
+
+  <div>
+    <h3 className="font-semibold">
+      Challenges
+    </h3>
+
+    <p>
+      {selectedReport.challenges}
+    </p>
+  </div>
+
+  <div>
+    <h3 className="font-semibold">
+      Recommendations
+    </h3>
+
+    <p>
+      {selectedReport.recommendations}
+    </p>
+  </div>
+
+</div>
             </div>
             <button className="flex items-center gap-2 text-blue-600 font-medium hover:underline">
               <Download size={18} /> Download Full Attachment (PDF)
             </button>
           </div>
         </div>
+        <button
+  onClick={() =>
+    approveReport(selectedReport.id)
+  }
+  className="px-4 py-2 bg-green-600 text-white rounded-lg"
+>
+  Approve
+</button>
+
+<button
+  onClick={() =>
+    rejectReport(selectedReport.id)
+  }
+  className="px-4 py-2 bg-red-600 text-white rounded-lg"
+>
+  Reject
+</button>
       </div>
     );
   }
 
   return (
+    
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports Monitoring</h1>
 
@@ -333,9 +452,15 @@ function ReportsMonitoring() {
             <tbody>
               {reports.map((report) => (
                 <tr key={report.id} className="border-t border-gray-200 hover:bg-gray-50 transition-colors">
-                  <td className="py-4 px-4 sm:px-6 font-medium text-gray-900 whitespace-nowrap">{report.faculty}</td>
-                  <td className="py-4 px-4 sm:px-6 text-gray-600">{report.report}</td>
-                  <td className="py-4 px-4 sm:px-6 text-center text-gray-500 font-mono text-sm whitespace-nowrap">{report.dateSubmitted}</td>
+                  <td className="py-4 px-4 sm:px-6 font-medium text-gray-900 whitespace-nowrap">{report.profiles?.first_name}
+{' '}
+{report.profiles?.last_name}</td>
+                  <td className="py-4 px-4 sm:px-6 text-gray-600">{report.report_type}</td>
+                  <td className="py-4 px-4 sm:px-6 text-center text-gray-500 font-mono text-sm whitespace-nowrap">{new Date(
+  report.created_at
+).toLocaleString('en-PH',{
+  timeZone:'Asia/Manila'
+})}</td>
                   <td className="py-4 px-4 sm:px-6 text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${report.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                       {report.status}

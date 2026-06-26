@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { notifyRole, } from '../notificationService';
+import { HomePage } from './coed/HomePage';
+import { AboutPage } from './coed/AboutPage';
 import {
   Users,
   GraduationCap,
@@ -1226,8 +1228,135 @@ function AlumniTracer() {
 
 // ─── Reports & Analytics ──────────────────────────────────────────────────────
 function ReportsAnalytics() {
+  const [deadlineTitle, setDeadlineTitle] =
+  useState('');
+
+const [deadlineDescription, setDeadlineDescription] =
+  useState('');
+
+const [deadlineDate, setDeadlineDate] =
+  useState('');
+
+const [showModal, setShowModal] =
+  useState(false);
+
+const [modalTitle, setModalTitle] =
+  useState('');
+
+const [modalMessage, setModalMessage] =
+  useState('');
+
+  async function createDeadline() {
+  try {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setModalTitle('Error');
+      setModalMessage('User not found.');
+      setShowModal(true);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('report_deadlines')
+      .insert([
+        {
+          title: deadlineTitle,
+          description: deadlineDescription,
+          due_date: deadlineDate,
+          created_by: user.id
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await notifyRole(
+      'faculty',
+      deadlineTitle,
+      `Report Deadline: ${deadlineDescription}`
+    );
+
+    await notifyRole(
+      'department_chair',
+      deadlineTitle,
+      `Report Deadline: ${deadlineDescription}`
+    );
+
+    setDeadlineTitle('');
+    setDeadlineDescription('');
+    setDeadlineDate('');
+
+    setModalTitle('Success');
+    setModalMessage(
+      'Deadline posted successfully.'
+    );
+    setShowModal(true);
+
+  } catch (error: any) {
+
+    setModalTitle('Error');
+    setModalMessage(
+      error.message
+    );
+    setShowModal(true);
+
+  }
+}
   return (
+    
     <div>
+      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+
+  <h2 className="text-xl font-semibold mb-4">
+    Create Report Deadline
+  </h2>
+
+  <div className="space-y-4">
+
+    <input
+      type="text"
+      value={deadlineTitle}
+      onChange={(e) =>
+        setDeadlineTitle(e.target.value)
+      }
+      placeholder="Deadline Title"
+      className="w-full border rounded-lg p-3"
+    />
+
+    <textarea
+      value={deadlineDescription}
+      onChange={(e) =>
+        setDeadlineDescription(
+          e.target.value
+        )
+      }
+      placeholder="Deadline Description"
+      className="w-full border rounded-lg p-3"
+    />
+
+    <input
+      type="datetime-local"
+      value={deadlineDate}
+      onChange={(e) =>
+        setDeadlineDate(e.target.value)
+      }
+      className="w-full border rounded-lg p-3"
+    />
+
+    <button
+      onClick={createDeadline}
+      className="px-6 py-3 bg-blue-600 text-white rounded-lg"
+    >
+      Post Deadline
+    </button>
+
+  </div>
+
+</div>
       <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports & Analytics</h1>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
         {['Institutional Report', 'Faculty Performance', 'Student Analytics'].map((report, i) => (
@@ -1252,6 +1381,40 @@ function ReportsAnalytics() {
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Analytics Dashboard</h2>
         <div className="h-64 sm:h-96 bg-gray-100 rounded-lg flex items-center justify-center"><BarChart3 className="w-12 sm:w-16 h-12 sm:h-16 text-gray-400" /></div>
       </div>
+      {showModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+
+    <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+
+      <div className="p-6">
+
+        <h3 className="text-xl font-semibold">
+          {modalTitle}
+        </h3>
+
+        <p className="mt-2 text-gray-600">
+          {modalMessage}
+        </p>
+
+      </div>
+
+      <div className="border-t p-4 flex justify-end">
+
+        <button
+          onClick={() =>
+            setShowModal(false)
+          }
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+        >
+          OK
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+)}
     </div>
   );
 }
@@ -1356,7 +1519,42 @@ function AnnouncementsContent() {
   data,
   ...prev
 ]);
+async function notifyRole(
+  role: string,
+  title: string,
+  message: string,
+  announcementId: string
+) {
+  const { data: users, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('role', role);
 
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  if (!users?.length) return;
+
+  const notifications = users.map(user => ({
+    user_id: user.id,
+    title,
+    message,
+    type: 'announcement',
+    reference_id: announcementId,
+    reference_table: 'announcements',
+    is_read: false
+  }));
+
+  const { error: insertError } = await supabase
+    .from('notifications')
+    .insert(notifications);
+
+  if (insertError) {
+    console.error(insertError);
+  }
+}
     // Notifications
 
     await notifyRole(
@@ -1610,54 +1808,505 @@ if (!confirm) return;
   
 }
 
+interface SectionEditorProps {
+  section: string;
+  content: any;
+  updateField: (
+    section: string,
+    field: string,
+    value: string
+  ) => void;
+}
 
+function SectionEditor({
+  section,
+  content,
+  updateField,
+}: SectionEditorProps) {
+  return (
+    <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
+
+      <h2 className="text-xl font-bold text-gray-800 mb-4">
+        {section}
+      </h2>
+
+      <div className="space-y-4">
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Title
+          </label>
+
+          <input
+            type="text"
+            value={content[section]?.title || ''}
+            onChange={(e) =>
+              updateField(
+                section,
+                'title',
+                e.target.value
+              )
+            }
+            placeholder="Enter title"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Description
+          </label>
+
+          <textarea
+            rows={4}
+            value={content[section]?.description || ''}
+            onChange={(e) =>
+              updateField(
+                section,
+                'description',
+                e.target.value
+              )
+            }
+            placeholder="Enter description"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
+          />
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
-  const sections = [
-    'Hero Section', 'About the College', 'Vision, Mission & Goals',
-    'Programs Offered', 'Faculty Directory', 'Achievements',
-    'Research & Extension', 'News & Updates', 'Contact Information',
-  ];
+  const [homeContent, setHomeContent] =
+  useState<any>({});
 
-  const [selectedSection, setSelectedSection] = useState(sections[0]);
-  const [content, setContent] = useState<Record<string, { title: string; description: string }>>({
-    'Hero Section':            { title: 'Welcome to the College of Education',           description: 'Empowering future educators through excellence and innovation.' },
-    'About the College':       { title: 'About COED',                                    description: 'The College of Education provides high-quality teacher education programs.' },
-    'Vision, Mission & Goals': { title: 'Our Vision & Mission',                          description: 'To be a center of excellence in teacher education.' },
-    'Programs Offered':        { title: 'Our Programs',                                  description: 'Bachelor of Elementary Education, Bachelor of Secondary Education, and more.' },
-    'Faculty Directory':       { title: 'Meet Our Faculty',                              description: 'Highly qualified and experienced educators.' },
-    'Achievements':            { title: 'Our Achievements',                              description: 'Top performing graduates and award-winning faculty.' },
-    'Research & Extension':    { title: 'Research & Community Engagement',               description: 'Active research and community extension programs.' },
-    'News & Updates':          { title: 'Latest News',                                   description: 'Stay updated with announcements and events.' },
-    'Contact Information':     { title: 'Contact Us',                                    description: 'Email: coed@university.edu | Phone: (123) 456-7890' },
+const [aboutContent, setAboutContent] =
+  useState<any>({});
+  
+  const [showPreview, setShowPreview] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] =
+  useState(false);
+  const [activePage, setActivePage] =
+  useState<'homepage' | 'about'>(
+    'homepage'
+  );
+  const [modalMessage, setModalMessage] =
+  useState('');
+  useEffect(() => {
+    loadHomepageContent();
+    loadAboutContent();
+  }, []);
+
+  async function loadHomepageContent() {
+  const { data } = await supabase
+    .from('homepage_content')
+    .select('*');
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = {
+      title: item.title,
+      description: item.description,
+    };
   });
 
-  const handleChange = (field: string, value: string) => {
-    setContent({ ...content, [selectedSection]: { ...content[selectedSection], [field]: value } });
-  };
+  setHomeContent(formatted);
+}
+
+async function loadAboutContent() {
+  const { data } = await supabase
+    .from('about_page_content')
+    .select('*');
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = {
+      title: item.title,
+      description: item.description,
+    };
+  });
+
+  setAboutContent(formatted);
+}
+
+async function saveAboutPage() {
+  const updates = Object.entries(
+    aboutContent
+  ).map(([section_name, values]: any) => ({
+    section_name,
+    title: values.title,
+    description: values.description,
+  }));
+  const { error } = await supabase
+    .from('homepage_content')
+    .upsert(updates, {
+      onConflict: 'section_name',
+    });
+
+  if (error) {
+    setModalMessage(
+      `Error: ${error.message}`
+    );
+
+    setShowSuccessModal(true);
+    return;
+  }
+
+  setModalMessage(
+    'Aboutpage updated successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
+
+async function saveHomePage() {
+  const updates = Object.entries(
+    aboutContent
+  ).map(([section_name, values]: any) => ({
+    section_name,
+    title: values.title,
+    description: values.description,
+  }));
+
+  const { error } = await supabase
+    .from('homepage_content')
+    .upsert(updates, {
+      onConflict: 'section_name',
+    });
+
+  if (error) {
+    setModalMessage(
+      `Error: ${error.message}`
+    );
+
+    setShowSuccessModal(true);
+    return;
+  }
+
+  setModalMessage(
+    'Homepage updated successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
+
+  function updateHomepageField(
+  section: string,
+  field: string,
+  value: string
+) {
+  setHomeContent((prev: any) => ({
+    ...prev,
+    [section]: {
+      ...prev[section],
+      [field]: value,
+    },
+  }));
+}
+
+function updateAboutField(
+  section: string,
+  field: string,
+  value: string
+) {
+  setAboutContent((prev: any) => ({
+    ...prev,
+    [section]: {
+      ...prev[section],
+      [field]: value,
+    },
+  }));
+}
+  
 
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Landing Page Management</h1>
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Select Section</label>
-        <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)} className="w-full md:w-1/2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm sm:text-base">
-          {sections.map((s, i) => <option key={i} value={s}>{s}</option>)}
-        </select>
+    
+    <div className="max-w-6xl mx-auto p-6">
+
+      <h1 className="text-3xl font-bold mb-6">
+        Landing Page Management
+      </h1>
+      <div className="flex gap-4 mb-8">
+  <button
+    onClick={() =>
+      setActivePage('homepage')
+    }
+    className={`px-6 py-3 rounded-lg ${
+      activePage === 'homepage'
+        ? 'bg-blue-600 text-white'
+        : 'bg-gray-200'
+    }`}
+  >
+    Homepage
+  </button>
+
+  <button
+    onClick={() =>
+      setActivePage('about')
+    }
+    className={`px-6 py-3 rounded-lg ${
+      activePage === 'about'
+        ? 'bg-blue-600 text-white'
+        : 'bg-gray-200'
+    }`}
+  >
+    About Page
+  </button>
+</div>
+      {activePage === 'homepage' && (
+  <>
+    <SectionEditor
+      section="Hero Section"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="About Section"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="Vision Mission Goals"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="Programs Offered"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="Latest Updates"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="Contact Information"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+
+    <SectionEditor
+      section="CTA Section"
+      content={homeContent}
+      updateField={updateHomepageField}
+    />
+  </>
+)}
+{activePage === 'about' && (
+  <>
+    <SectionEditor
+      section="About Header"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="History"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="Vision"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="Mission"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="Goals"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="Team Structure"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+
+    <SectionEditor
+      section="Core Values"
+      content={aboutContent}
+      updateField={updateAboutField}
+    />
+  </>
+)}
+
+      <div className="flex gap-4">
+
+        <div className="flex gap-4">
+
+  <button
+    onClick={() => setShowPreview(true)}
+    className="px-6 py-3 bg-gray-700 text-white rounded-lg"
+  >
+    Preview {activePage === 'homepage'
+      ? 'Homepage'
+      : 'About Page'}
+  </button>
+
+  <button
+    onClick={() => {
+      if (activePage === 'homepage') {
+        saveHomePage();
+      } else {
+        saveAboutPage();
+      }
+    }}
+    className="px-6 py-3 bg-blue-600 text-white rounded-lg"
+  >
+    Save {activePage === 'homepage'
+      ? 'Homepage'
+      : 'About Page'}
+  </button>
+
+</div>
+
       </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
-        <h2 className="text-base sm:text-xl font-semibold mb-4">Editing: {selectedSection}</h2>
-        <div className="space-y-4">
-          <input type="text" value={content[selectedSection].title} onChange={e => handleChange('title', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base" />
-          <textarea rows={5} value={content[selectedSection].description} onChange={e => handleChange('description', e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none text-sm sm:text-base" />
-          <button className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Save Changes</button>
-        </div>
+      {showSuccessModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+
+      <h2 className="text-xl font-bold mb-4">
+        Success
+      </h2>
+
+      <p className="text-gray-600 mb-6">
+        {modalMessage}
+      </p>
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowSuccessModal(false)}
+          className="px-5 py-2 bg-blue-600 text-white rounded-lg"
+        >
+          OK
+        </button>
       </div>
-      <div className="bg-gray-50 rounded-xl p-5 sm:p-6">
-        <h2 className="text-base sm:text-xl font-semibold mb-4">Live Preview</h2>
-        <h3 className="text-xl sm:text-2xl font-bold text-blue-600">{content[selectedSection].title}</h3>
-        <p className="text-gray-700 mt-2 text-sm sm:text-base">{content[selectedSection].description}</p>
+
+    </div>
+  </div>
+)}
+{showPreview && (
+  <div className="fixed inset-0 z-50 bg-black/50 overflow-auto">
+
+    <div className="bg-white min-h-screen">
+
+      <div className="sticky top-0 bg-white border-b p-4 flex justify-end">
+        <button
+          onClick={() =>
+            setShowPreview(false)
+          }
+          className="px-4 py-2 bg-red-600 text-white rounded-lg"
+        >
+          Close Preview
+        </button>
       </div>
+          {activePage === 'homepage' ? (
+  <HomePage
+    previewMode={true}
+    previewContent={homeContent}
+  />
+) : (
+  <AboutPage
+    previewMode={true}
+    previewContent={aboutContent}
+  />
+)}
+      <div className="max-w-6xl mx-auto p-10">
+
+        <section className="mb-16">
+          <h1 className="text-6xl font-bold">
+            {homeContent['Hero Section']?.title}
+          </h1>
+
+          <p className="mt-4 text-xl">
+            {homeContent['Hero Section']?.description}
+          </p>
+        </section>
+
+        <section className="mb-16">
+          <h2 className="text-4xl font-bold">
+            {homeContent['About Section']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['About Section']?.description}
+          </p>
+        </section>
+
+        <section className="mb-16">
+          <h2 className="text-4xl font-bold">
+            {homeContent['Vision Mission Goals']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['Vision Mission Goals']?.description}
+          </p>
+        </section>
+
+        <section className="mb-16">
+          <h2 className="text-4xl font-bold">
+            {homeContent['Programs Offered']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['Programs Offered']?.description}
+          </p>
+        </section>
+
+        <section className="mb-16">
+          <h2 className="text-4xl font-bold">
+            {homeContent['Latest Updates']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['Latest Updates']?.description}
+          </p>
+        </section>
+
+        <section className="mb-16">
+          <h2 className="text-4xl font-bold">
+            {homeContent['Contact Information']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['Contact Information']?.description}
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-4xl font-bold">
+            {homeContent['CTA Section']?.title}
+          </h2>
+
+          <p className="mt-4">
+            {homeContent['CTA Section']?.description}
+          </p>
+        </section>
+
+      </div>
+
+    </div>
+
+  </div>
+)}
     </div>
   );
 }
