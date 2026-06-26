@@ -54,7 +54,7 @@ const orgData: OrgData = {
         { id: 't3', name: 'Dr. Suzette T. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '24 Years', subject: 'Early Literacy', image: '/images/STE.jpg' },
         { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '12 Years', subject: 'General Science', image: '/images/JLA.png' },
         { id: 't5', name: 'Dr. Teresita B. Sarile', role: 'Teacher', education: 'M.A. in Special Education', experience: '33 Years', subject: 'Inclusive Strategies', image: '/images/TCBS.jpg' },
-        { id: 't6', name: 'Dr. Marivel B. Glinogo-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '8 Years', subject: 'General Science', image: '/images/MGCB_1.png' },
+        { id: 't6', name: 'Miss Marivel B. Glinogo-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '8 Years', subject: 'General Science', image: '/images/MBGC.jpg' },
        
       ]
     },
@@ -73,9 +73,9 @@ const orgData: OrgData = {
       teachers: [
         { id: 't7', name: 'Dr. Maricho L. Carreon', role: 'BSEd-Math/English Chairman', education: 'M.A. in English Lit.', experience: '26 Years', subject: 'High School English', image: '', },
         { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '36 Years', subject: 'Advanced Physics', image: '', },
-        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Program GAD Coordinator', education: 'M.S. in Mathematics', experience: '35 Years', subject: 'Calculus & Algebra', image: '', },
-        { id: 't10', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'M.A. in History', experience: '39 Years', subject: 'World History', image: '', },
-        { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon', role: 'Teacher', education: 'M.A. in History', experience: '22 Years', subject: 'World History', image: '', },
+        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Program GAD Coordinator', education: 'M.S. in Mathematics', experience: '35 Years', subject: 'Calculus & Algebra', image: '/images/', },
+        { id: 't10', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'M.A. in History', experience: '39 Years', subject: 'World History', image: '/images/LMSC.PNG', },
+        { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon', role: 'Teacher', education: 'M.A. in History', experience: '22 Years', subject: 'World History', image: '/images/CTRD.jpg', },
         { id: 't12', name: 'Dr. Judith M. Aleguen', role: 'Teacher', education: 'M.A. in History', experience: '12 Years', subject: 'World History', image: '', },
         { id: 't13', name: 'Dr. Ariel L. Ramos', role: 'Teacher', education: 'M.A. in History', experience: ' Years', subject: 'World History', image: '', },
       ]
@@ -94,7 +94,7 @@ const orgData: OrgData = {
       },
       teachers: [
         { id: 't14', name: 'Dr. Venus H. Baldea', role: 'BTLED Chairman', education: 'M.A. in Special Ed.', experience: '26 Years', subject: 'Autism Spectrum Studies', image: '/images/VHB.jpg', },
-        { id: 't15', name: 'Dr. JIma S. Bajagan', role: 'Program GAD Coordinator', education: 'M.Ed. in Inclusion', experience: '26 Years', subject: 'Sign Language & Comm.', image: '', },
+        { id: 't15', name: 'Dr. Jima S. Bajagan', role: 'Program GAD Coordinator', education: 'M.Ed. in Inclusion', experience: '26 Years', subject: 'Sign Language & Comm.', image: '', },
         { id: 't16', name: 'Dr. Lemuel M. Velasco', role: 'College Instructor and Sports Coordinator', education: 'B.S. in Special Ed.', experience: '21 Years', subject: 'Adaptive Physical Ed.', image: '/images/LMV.jpg', },
         { id: 't17', name: 'Dr. Mildred G. Martinez', role: 'College Emmersion Coordinator', education: 'M.A. in Special Ed.', experience: '8 Years', subject: 'Autism Spectrum Studies', image: '/images/MGM.png', },
         { id: 't18', name: 'Mrs. Rachelle G. Lopez', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '8 Years', subject: 'Autism Spectrum Studies', image: '/images/RGL.png', },
