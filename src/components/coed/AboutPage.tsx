@@ -30,9 +30,9 @@ const orgData: OrgData = {
     id: 'dean',
     name: 'Dr.Jorelyn P.Conception',
     role: 'College Dean',
-    education: 'Ph.D. in Educational Leadership, Stanford University',
+    education: 'Bachelor of Elementary Education,BSEd – Physical Education,MATeaching – Phys. Ed,Ed. D. – Physical Ed.',
     experience: '28 Years',
-    subject: 'Educational Administration & Policy',
+    subject: 'Asso. Prof. V',
     image: '/images/JPC.PNG',
   },
   departments: [
@@ -43,17 +43,17 @@ const orgData: OrgData = {
         id: 'chair-1',
         name: 'Dr. Viviana C. Genabe',
         role: 'BEED Chairperson',
-        education: 'Ph.D. in Elementary Education',
+        education: 'BSED-Filipino (old curriculum program that can teach both elementary and secondary),MAEd-Administration & Supervision,Doctor in Developmental Education',
         experience: '42 Years',
-        subject: 'Child Development & Pedagogy',
+        subject: 'Asso. Prof. V',
         image: '/images/VCG.jpg',
       },
       teachers: [
-        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '39 Years', subject: 'Primary Mathematics', image: '/images/LMSC.PNG' },
-        { id: 't3', name: 'Dr. Suzette T. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '24 Years', subject: 'Early Literacy', image: '/images/STE.jpg' },
-        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '12 Years', subject: 'General Science', image: '/images/JLA.png' },
-        { id: 't5', name: 'Dr. Teresita B. Sarile', role: 'Teacher', education: 'M.A. in Special Education', experience: '33 Years', subject: 'Inclusive Strategies', image: '/images/TCBS.jpg' },
-        { id: 't6', name: 'Miss Marivel B. Glinogo-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '8 Years', subject: 'General Science', image: '/images/MBGC.jpg' },
+        { id: 't2', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'BSEducation major English,MAED-TESL,D.A in Literature and Communication,Ed. D. – English Language Teaching (complete academic requirements)', experience: '39 Years', subject: 'Professor II', image: '/images/LMSC.PNG' },
+        { id: 't3', name: 'Dr. Suzette T. Elladora', role: 'Teacher', education: 'BSEd Chem/Physics,MAEd – Science Education,PH. D. TM,Ed. D. Science Education (for Oral Defense)', experience: '24 Years', subject: 'Asso. Prof. V', image: '/images/STE.jpg' },
+        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'Bachelor of Elementary Education ,MAED – Administration & Supervision ,ED. D. Units', experience: '12 Years', subject: 'Instructor I', image: '/images/JLA.png' },
+        { id: 't5', name: 'Dr. Teresita B. Sarile', role: 'Teacher', education: 'AB Economics,BEED,M.A.Ed – Administration & Supervision,Doctor in Developmental Education', experience: '33 Years', subject: 'Prof. III', image: '/images/TCBS.jpg' },
+        { id: 't6', name: 'Miss Marivel B. Glinogo-Cañete', role: 'Teacher', education: 'Bachelor of Elementary Education,MAED – Administration and Supervision,Dev. Ed. D. Units (for oral defense)', experience: '8 Years', subject: 'Instructor III', image: '/images/MBGC.jpg' },
        
       ]
     },
@@ -388,16 +388,18 @@ export function AboutPage() {
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Role</span>
                     {selectedPerson.role}
                   </p>
-                  <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
-                    {selectedPerson.education}
+                 <p>
+                   <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
+                  {selectedPerson.education.split(',').map((line, i) => (
+                    <span key={i} className="block">{line.trim()}</span>
+                  ))}
                   </p>
-                  <p>
+                <p>
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Years of Teaching</span>
                     {selectedPerson.experience}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Subject Area</span>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Academic Rank</span>
                     {selectedPerson.subject}
                   </p>
                 </div>
