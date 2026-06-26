@@ -49,7 +49,6 @@ const orgData: OrgData = {
         image: '/images/VCG.jpg',
       },
       teachers: [
-        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '42 Years', subject: 'General Science', image: '/images/VCG.jpg' },
         { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '39 Years', subject: 'Primary Mathematics', image: '/images/LMSC.PNG' },
         { id: 't3', name: 'Dr. Suzette T. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '24 Years', subject: 'Early Literacy', image: '/images/STE.jpg' },
         { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '12 Years', subject: 'General Science', image: '/images/JLA.png' },
@@ -63,15 +62,14 @@ const orgData: OrgData = {
       name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
       chairman: {
         id: 'chair-2',
-        name: 'Dr. Michael Chen',
-        role: 'Department Chairman',
+        name: 'Dr. Maricho L. Carreon',
+        role: 'BSEd-Math/English Chairman',
         education: 'Ed.D. in Curriculum and Instruction',
-        experience: '20 Years',
+        experience: '26 Years',
         subject: 'Curriculum Design',
         image: '',
       },
       teachers: [
-        { id: 't7', name: 'Dr. Maricho L. Carreon', role: 'BSEd-Math/English Chairman', education: 'M.A. in English Lit.', experience: '26 Years', subject: 'High School English', image: '', },
         { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '36 Years', subject: 'Advanced Physics', image: '/images/JFP.jpg', },
         { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Program GAD Coordinator', education: 'M.S. in Mathematics', experience: '35 Years', subject: 'Calculus & Algebra', image: '/images/', },
         { id: 't10', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'M.A. in History', experience: '39 Years', subject: 'World History', image: '/images/LMSC.PNG', },
@@ -85,15 +83,14 @@ const orgData: OrgData = {
       name: 'Bachelor of Technology and Livelihood Education Program',
       chairman: {
         id: 'chair-3',
-        name: 'Dr. Patricia Williams',
-        role: 'Department Chairman',
+        name: 'Dr. Venus H. Baldea',
+        role: 'BTLED Chairman',
         education: 'Ph.D. in Special Education',
-        experience: '22 Years',
+        experience: '26 Years',
         subject: 'Behavioral Interventions',
-         image: '',
+         image: '/images/VHB.jpg',
       },
       teachers: [
-        { id: 't14', name: 'Dr. Venus H. Baldea', role: 'BTLED Chairman', education: 'M.A. in Special Ed.', experience: '26 Years', subject: 'Autism Spectrum Studies', image: '/images/VHB.jpg', },
         { id: 't15', name: 'Dr. Jima S. Bajagan', role: 'Program GAD Coordinator', education: 'M.Ed. in Inclusion', experience: '26 Years', subject: 'Sign Language & Comm.', image: '', },
         { id: 't16', name: 'Dr. Lemuel M. Velasco', role: 'College Instructor and Sports Coordinator', education: 'B.S. in Special Ed.', experience: '21 Years', subject: 'Adaptive Physical Ed.', image: '/images/LMV.jpg', },
         { id: 't17', name: 'Dr. Mildred G. Martinez', role: 'College Emmersion Coordinator', education: 'M.A. in Special Ed.', experience: '8 Years', subject: 'Autism Spectrum Studies', image: '/images/MGM.png', },
@@ -147,7 +144,7 @@ export function AboutPage() {
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
-  const totalPages = 1 + orgData.departments.length; // 1 for Dean + 4 departments = 5 pages
+  const totalPages = 1 + (orgData.departments.length * 2); // 1 for Dean + 4 departments = 5 pages
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
@@ -279,42 +276,41 @@ export function AboutPage() {
           {/* Render Active View */}
           <div className="min-h-[450px]">
             {currentPage === 0 ? (
-              /* Page 1: Dean Solo View */
-              <div className="flex flex-col items-center animate-fade-in py-10">
-                <div className="mb-6 text-center">
-                  <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
-                </div>
-                <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
-              </div>
-            ) : (
-              /* Pages 2-5: Department Views */
-              <div className="animate-fade-in pb-8">
-                <div className="text-center mb-10">
-                  <h3 className="text-2xl font-bold text-gray-800">
-                    {orgData.departments[currentPage - 1].name}
-                  </h3>
-                </div>
-                
-                {/* Chairman Top Center */}
-                <div className="flex justify-center mb-10">
-                  <div className="relative">
-                    <ProfileCard person={orgData.departments[currentPage - 1].chairman} onClick={setSelectedPerson} />
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <div className="flex items-center justify-center mb-10">
-                  <div className="h-px bg-gray-200 w-full max-w-3xl"></div>
-                </div>
-
-                {/* Teachers Group Grid Below */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-                  {orgData.departments[currentPage - 1].teachers.map(teacher => (
-                    <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
-                  ))}
-                </div>
-              </div>
-            )}
+  /* Page 1: Dean */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
+    </div>
+    <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
+  </div>
+) : currentPage % 2 === 1 ? (
+  /* Odd pages: Chairman only */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">
+        {orgData.departments[Math.floor((currentPage - 1) / 2)].name}
+      </h3>
+       </div>
+    <ProfileCard 
+      person={orgData.departments[Math.floor((currentPage - 1) / 2)].chairman} 
+      onClick={setSelectedPerson} 
+    />
+  </div>
+) : (
+  /* Even pages: Teachers grid */
+  <div className="animate-fade-in pb-8">
+    <div className="text-center mb-10">
+      <h3 className="text-2xl font-bold text-gray-800">
+        {orgData.departments[Math.floor((currentPage - 2) / 2)].name}
+      </h3>
+       </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
+      {orgData.departments[Math.floor((currentPage - 2) / 2)].teachers.map(teacher => (
+        <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
+      ))}
+    </div>
+  </div>
+)}
           </div>
         </div>
 
