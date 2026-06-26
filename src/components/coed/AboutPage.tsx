@@ -31,7 +31,7 @@ const orgData: OrgData = {
     name: 'Dr.Jorelyn P.Conception',
     role: 'College Dean',
     education: 'Ph.D. in Educational Leadership, Stanford University',
-    experience: '25 Years',
+    experience: '28 Years',
     subject: 'Educational Administration & Policy',
     image: '/images/JPC.PNG',
   },
@@ -44,17 +44,17 @@ const orgData: OrgData = {
         name: 'Dr. Viviana C. Genabe',
         role: 'BEED Chairperson',
         education: 'Ph.D. in Elementary Education',
-        experience: '18 Years',
+        experience: '42 Years',
         subject: 'Child Development & Pedagogy',
-        image: '',
+        image: '/images/VCG.jpg',
       },
       teachers: [
-        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics', image: '' },
-        { id: 't3', name: 'Dr. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy', image: '' },
-        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't5', name: 'Dr. Teresita Georgina B. Nikal', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies', image: '' },
-        { id: 't6', name: 'Dr. Marvin S. Olvido-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '42 Years', subject: 'General Science', image: '/images/VCG.jpg' },
+        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '39 Years', subject: 'Primary Mathematics', image: '/images/LMSC.PNG' },
+        { id: 't3', name: 'Dr. Suzette T. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '24 Years', subject: 'Early Literacy', image: '/images/STE.jpg' },
+        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '12 Years', subject: 'General Science', image: '/images/JLA.png' },
+        { id: 't5', name: 'Dr. Teresita B. Sarile', role: 'Teacher', education: 'M.A. in Special Education', experience: '33 Years', subject: 'Inclusive Strategies', image: '/images/TCBS.jpg' },
+        { id: 't6', name: 'Dr. Marivel B. Glinogo-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '8 Years', subject: 'General Science', image: '/images/MGCB_1.png' },
        
       ]
     },
@@ -71,13 +71,13 @@ const orgData: OrgData = {
         image: '',
       },
       teachers: [
-        { id: 't7', name: 'Dr. Maricho U. Carreon', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English', image: '', },
-        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics', image: '', },
-        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra', image: '', },
-        { id: 't10', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't11', name: 'Dr. Crisju Theres B. Enriquez', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't12', name: 'Dr. Judith M. Aliquiot', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't13', name: 'Dr. Ariel L. RamosS', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't7', name: 'Dr. Maricho L. Carreon', role: 'BSEd-Math/English Chairman', education: 'M.A. in English Lit.', experience: '26 Years', subject: 'High School English', image: '', },
+        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '36 Years', subject: 'Advanced Physics', image: '', },
+        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Program GAD Coordinator', education: 'M.S. in Mathematics', experience: '35 Years', subject: 'Calculus & Algebra', image: '', },
+        { id: 't10', name: 'Dr. Lynette Matea S. Camello', role: 'Teacher', education: 'M.A. in History', experience: '39 Years', subject: 'World History', image: '', },
+        { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon', role: 'Teacher', education: 'M.A. in History', experience: '22 Years', subject: 'World History', image: '', },
+        { id: 't12', name: 'Dr. Judith M. Aleguen', role: 'Teacher', education: 'M.A. in History', experience: '12 Years', subject: 'World History', image: '', },
+        { id: 't13', name: 'Dr. Ariel L. Ramos', role: 'Teacher', education: 'M.A. in History', experience: ' Years', subject: 'World History', image: '', },
       ]
     },
     {
@@ -93,33 +93,16 @@ const orgData: OrgData = {
          image: '',
       },
       teachers: [
-        { id: 't14', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't15', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.', image: '', },
-        { id: 't16', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.', image: '', },
-        { id: 't17', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't18', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't19', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't20', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't14', name: 'Dr. Venus H. Baldea', role: 'BTLED Chairman', education: 'M.A. in Special Ed.', experience: '26 Years', subject: 'Autism Spectrum Studies', image: '/images/VHB.jpg', },
+        { id: 't15', name: 'Dr. JIma S. Bajagan', role: 'Program GAD Coordinator', education: 'M.Ed. in Inclusion', experience: '26 Years', subject: 'Sign Language & Comm.', image: '', },
+        { id: 't16', name: 'Dr. Lemuel M. Velasco', role: 'College Instructor and Sports Coordinator', education: 'B.S. in Special Ed.', experience: '21 Years', subject: 'Adaptive Physical Ed.', image: '/images/LMV.jpg', },
+        { id: 't17', name: 'Dr. Mildred G. Martinez', role: 'College Emmersion Coordinator', education: 'M.A. in Special Ed.', experience: '8 Years', subject: 'Autism Spectrum Studies', image: '/images/MGM.png', },
+        { id: 't18', name: 'Mrs. Rachelle G. Lopez', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '8 Years', subject: 'Autism Spectrum Studies', image: '/images/RGL.png', },
+        { id: 't19', name: 'Dr. Jeramie C. Linaban', role: 'Teaching Internship Coordinator', education: 'M.A. in Special Ed.', experience: '13 Years', subject: 'Autism Spectrum Studies', image: '/images/JCL.jpg', },
+        { id: 't20', name: 'Dr. fitzgerald C. Kintanar', role: 'Alumni Affairs Director, Coordinator,Research & Development', education: 'M.A. in Special Ed.', experience: '13 Years', subject: 'Autism Spectrum Studies', image: '/images/FCK.jpg', },
      ]
     },
-    {
-      id: 'ed-lead',
-      name: 'Educational Leadership',
-      chairman: {
-        id: 'chair-4',
-        name: 'Dr. Robert Anderson',
-        role: 'Department Chairman',
-        education: 'Ed.D. in School Administration',
-        experience: '28 Years',
-        subject: 'Organizational Leadership',
-         image: '',
-      },
-      teachers: [
-        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law', image: '', },
-        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance', image: '', },
-        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education', image: '', },
-      ]
-    }
+   
   ]
 };
 
