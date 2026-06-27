@@ -131,7 +131,7 @@ export function CollegeDeanDashboard({
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-100">
      {/* ── Sidebar — handles its own overlay & slide via isOpen/onClose ── */}
       <Sidebar
         menuItems={deanMenuItems}
