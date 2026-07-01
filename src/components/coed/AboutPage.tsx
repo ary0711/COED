@@ -15,7 +15,9 @@ interface Person {
   experience: string;
   subject: string;
   image: string;
+  department?: string;
 }
+
 
 
 // --- Extracted ProfileCard Component ---
@@ -69,6 +71,7 @@ const [statistics, setStatistics] =
 
 const [facultyMembers, setFacultyMembers] =
   useState<any[]>([]);
+
 const dean = facultyMembers.find(
   member =>
     member.role?.toLowerCase().includes('dean')
@@ -77,35 +80,67 @@ const dean = facultyMembers.find(
 const departments = [
   ...new Set(
     facultyMembers
-      .filter(member => member.department)
+      .filter(
+        member =>
+          member.department &&
+          !member.role?.toLowerCase().includes('dean')
+      )
       .map(member => member.department)
   ),
 ];
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  const [aboutContent, setAboutContent] = useState<any>({});
-  const fetchCoreValues = async () => {
-  const { data } = await supabase
-    .from('core_values')
+  const [premierValues, setPremierValues] = useState<any[]>([]);
+
+const fetchPremierValues = async () => {
+  const { data, error } = await supabase
+    .from('premier_values')
     .select('*')
     .order('display_order');
 
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setPremierValues(data || []);
+};
+  const [aboutContent, setAboutContent] = useState<any>({});
+  const fetchCoreValues = async () => {
+  const { data, error } = await supabase
+  .from('core_values')
+  .select('*')
+  .order('display_order');
+
+if (error) {
+  console.error(error);
+  return;
+}
   setCoreValues(data || []);
 };
 const fetchStatistics = async () => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('about_statistics')
     .select('*')
     .order('display_order');
-
+  
+    if (error) {
+  console.error(error);
+  return;
+}
   setStatistics(data || []);
 };
 const fetchFacultyMembers = async () => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('faculty_members')
     .select('*')
     .order('display_order');
+    
+  if (error) {
+  console.error(error);
+  return;
+}
 
   setFacultyMembers(data || []);
 };
@@ -137,6 +172,8 @@ useEffect(() => {
   fetchCoreValues();
   fetchStatistics();
   fetchFacultyMembers();
+  fetchPremierValues();
+  
 
   const channel = supabase
   .channel('about-page-updates')
@@ -180,7 +217,15 @@ useEffect(() => {
     },
     fetchFacultyMembers
   )
-
+  .on(
+  'postgres_changes',
+  {
+    event: '*',
+    schema: 'public',
+    table: 'premier_values',
+  },
+  fetchPremierValues
+)
   .subscribe();
 
   return () => {
@@ -193,21 +238,23 @@ useEffect(() => {
   const currentDepartment =
   departments[currentPage - 1];
 
-const chairman =
-  facultyMembers.find(
-    member =>
-      member.department ===
-        currentDepartment &&
-      member.role === 'Chairperson'
-  );
+const chairman = facultyMembers.find(
+  member =>
+    member.department === currentDepartment &&
+    member.role?.toLowerCase().includes('chair')
+);
 
-const teachers =
-  facultyMembers.filter(
-    member =>
-      member.department ===
-        currentDepartment &&
-      member.role === 'Faculty'
-  );
+const getFacultyImage = (fileName: string) => {
+  return supabase.storage
+    .from('faculty-images')
+    .getPublicUrl(fileName)
+    .data.publicUrl;
+};
+const teachers = facultyMembers.filter(
+  member =>
+    member.department === currentDepartment &&
+    !member.role?.toLowerCase().includes('chair')
+);
   const getContent = (section: string) => {
   if (previewMode) {
     return previewContent?.[section] || aboutContent?.[section];
@@ -222,16 +269,17 @@ const teachers =
         {/* Page Header */}
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
-            About Us
+            {getContent('Badge')?.title || 'About Us'}
           </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">{getContent('About Header')?.title || 'About COED'}</h1>
+          <h1 className="text-5xl font-bold tracking-tight text-[#1E3A8A]">{getContent('About Header')?.title || 'About COED'}</h1>
           <p className="text-xl text-gray-600">{getContent('About Header')?.description ||
   '32 Years of Excellence in Education'}</p>
+        </div>
         </div>
 
         {/* College History */}
         <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">{getContent('History')?.title || 'Our History'}</h2>
+          <h2 className="text-3xl font-bold text-[#1E3A8A]">{getContent('History')?.title || 'Our History'}</h2>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
             <p>
               {getContent('History')?.description}
@@ -245,8 +293,8 @@ const teachers =
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
               <Eye className="w-7 h-7 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Vision')?.title || 'Vision'}</h3>
-            <p className="text-gray-700 leading-relaxed">
+            <h3 className="text-xl font-semibold text-gray-900">{getContent('Vision')?.title || 'Vision'}</h3>
+            <p className="text-lg text-gray-600 leading-relaxed">
               {getContent('Vision')?.description}
             </p>
           </div>
@@ -277,31 +325,31 @@ const teachers =
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
-            {[
-              { letter: 'P', word: 'Progressive', desc: 'Advancing through innovation' },
-              { letter: 'R', word: 'Responsive', desc: 'Adaptive to evolving demands' },
-              { letter: 'E', word: 'Excellent', desc: 'Highest standards in education' },
-              { letter: 'M', word: 'Morally grounded', desc: 'Integrity & accountability' },
-              { letter: 'I', word: 'Inclusive', desc: 'Equal opportunities for all' },
-              { letter: 'E', word: 'Empowered', desc: 'Knowledge & sustainable skills' },
-              { letter: 'R', word: 'Relevant', desc: 'Addressing real-world needs' },
-            ].map((value, index) => (
-              <div key={index} className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
-                  {value.letter}
-                </div>
-                <div className="font-semibold text-gray-900 text-sm">{value.word}</div>
-                <div className="text-xs text-gray-500 mt-1">{value.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+  {premierValues.map((value) => (
+    <div
+      key={value.id}
+      className="flex flex-col items-center"
+    >
+      <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+        {value.letter}
+      </div>
+
+      <div className="font-semibold text-gray-900 text-sm">
+        {value.word}
+      </div>
+
+      <div className="text-xs text-gray-500 mt-1">
+        {value.description}
+      </div>
+    </div>
+  ))}
+</div>
 
         {/* Organizational Structure Section */}
         <div className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-200 pb-6">
             <div className="max-w-2xl">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Our Team Structure</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">{getContent('Team Label')?.title || 'Our Team Structure'}</h4>
               <h2 className="text-4xl font-bold text-[#1E3A8A] mb-4">
                 {getContent('Team Structure')?.title ||
   'The People Behind the Programs'}
@@ -339,7 +387,9 @@ const teachers =
               /* Page 1: Dean Solo View */
               <div className="flex flex-col items-center animate-fade-in py-10">
                 <div className="mb-6 text-center">
-                  <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
+                  <h3 className="text-2xl font-bold text-gray-800"><h3 className="text-2xl font-bold text-gray-800">
+  {getContent('Dean Section')?.title || 'Office of the Dean'}
+</h3></h3>
                 </div>
                 {dean && (
   <ProfileCard
@@ -443,11 +493,17 @@ const teachers =
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
             <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
-  <img 
-    src={selectedPerson.image} 
-    alt={selectedPerson.name}
-    className="absolute inset-0 w-full h-full object-cover object-top"
-  />
+  {selectedPerson.image ? (
+  <img
+  src={getFacultyImage(selectedPerson.image)}
+  alt={selectedPerson.name}
+  className="absolute inset-0 w-full h-full object-cover object-top"
+/>
+) : (
+  <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
+    <User className="w-20 h-20 text-gray-400" />
+  </div>
+)}
   {!selectedPerson.image && (
     <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
       <User className="w-20 h-20 text-gray-400" />
