@@ -69,7 +69,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     }, []);
 
     return (
-      <div className="flex min-h-screen bg-transparent">
+      <div className="flex min-h-screen bg-gray-100">
 
         {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
         <Sidebar
@@ -131,7 +131,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     return (
       <div>
         <div className="mb-6 pb-6 border-b border-gray-200">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Faculty Dashboard</h1>
           <p className="text-gray-600">Welcome back, Prof. Sarah Johnson</p>
         </div>
 

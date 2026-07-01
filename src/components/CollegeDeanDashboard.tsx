@@ -131,7 +131,7 @@ export function CollegeDeanDashboard({
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-100">
      {/* ── Sidebar — handles its own overlay & slide via isOpen/onClose ── */}
       <Sidebar
         menuItems={deanMenuItems}
@@ -207,8 +207,7 @@ function DashboardView() {
   return (
     <div className="flex flex-col h-full">
       <div className="mb-4 pb-4 border-b border-gray-200">
-        <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-1">College Dean Dashboard</h1>
-        <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
+         <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
       </div>
 
       {/* ── Summary cards (all screen sizes) ── */}

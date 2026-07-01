@@ -42,7 +42,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-transparent">
+    <div className="flex min-h-screen bg-gray-100">
 
       {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
@@ -101,8 +101,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
   return (
     <div>
       <div className="mb-6 pb-6 border-b border-gray-200">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Department Chair Dashboard</h1>
-        <p className="text-gray-600">Computer Science Department Overview</p>
+         <p className="text-gray-600">Computer Science Department Overview</p>
       </div>
 
       {/* Summary cards */}

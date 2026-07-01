@@ -52,7 +52,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-[#F1F5F9]">
+    <div className="flex min-h-screen bg-gray-100">
 
       {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
