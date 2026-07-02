@@ -1,10 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User } from 'lucide-react';
-import { supabase } from '../../supabaseClient';
-interface AboutPageProps {
-  previewMode?: boolean;
-  previewContent?: any;
-}
 
 // --- TypeScript Interfaces ---
 interface Person {
@@ -15,10 +10,118 @@ interface Person {
   experience: string;
   subject: string;
   image: string;
-  department?: string;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  chairman: Person;
+  teachers: Person[];
+}
 
+interface OrgData {
+  dean: Person;
+  departments: Department[];
+}
+
+// --- Dummy Data ---
+const orgData: OrgData = {
+  dean: {
+    id: 'dean',
+    name: 'Dr.Jorelyn P.Conception',
+    role: 'College Dean',
+    education: 'Ph.D. in Educational Leadership, Stanford University',
+    experience: '25 Years',
+    subject: 'Educational Administration & Policy',
+    image: '/images/JPC.PNG',
+  },
+  departments: [
+    {
+      id: 'elem-ed',
+      name: 'Bachelor of Elementary Education Program',
+      chairman: {
+        id: 'chair-1',
+        name: 'Dr. Viviana C. Genabe',
+        role: 'BEED Chairperson',
+        education: 'Ph.D. in Elementary Education',
+        experience: '18 Years',
+        subject: 'Child Development & Pedagogy',
+        image: '',
+      },
+      teachers: [
+        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics', image: '' },
+        { id: 't3', name: 'Dr. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy', image: '' },
+        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't5', name: 'Dr. Teresita Georgina B. Nikal', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies', image: '' },
+        { id: 't6', name: 'Dr. Marvin S. Olvido-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+       
+      ]
+    },
+    {
+      id: 'sec-ed',
+      name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
+      chairman: {
+        id: 'chair-2',
+        name: 'Dr. Michael Chen',
+        role: 'Department Chairman',
+        education: 'Ed.D. in Curriculum and Instruction',
+        experience: '20 Years',
+        subject: 'Curriculum Design',
+        image: '',
+      },
+      teachers: [
+        { id: 't7', name: 'Dr. Maricho U. Carreon', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English', image: '', },
+        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics', image: '', },
+        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra', image: '', },
+        { id: 't10', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't11', name: 'Dr. Crisju Theres B. Enriquez', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't12', name: 'Dr. Judith M. Aliquiot', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't13', name: 'Dr. Ariel L. RamosS', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+      ]
+    },
+    {
+      id: 'sped',
+      name: 'Bachelor of Technology and Livelihood Education Program',
+      chairman: {
+        id: 'chair-3',
+        name: 'Dr. Patricia Williams',
+        role: 'Department Chairman',
+        education: 'Ph.D. in Special Education',
+        experience: '22 Years',
+        subject: 'Behavioral Interventions',
+         image: '',
+      },
+      teachers: [
+        { id: 't14', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't15', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.', image: '', },
+        { id: 't16', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.', image: '', },
+        { id: 't17', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't18', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't19', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't20', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+     ]
+    },
+    {
+      id: 'ed-lead',
+      name: 'Educational Leadership',
+      chairman: {
+        id: 'chair-4',
+        name: 'Dr. Robert Anderson',
+        role: 'Department Chairman',
+        education: 'Ed.D. in School Administration',
+        experience: '28 Years',
+        subject: 'Organizational Leadership',
+         image: '',
+      },
+      teachers: [
+        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law', image: '', },
+        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance', image: '', },
+        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education', image: '', },
+      ]
+    }
+  ]
+};
 
 // --- Extracted ProfileCard Component ---
 interface ProfileCardProps {
@@ -32,17 +135,15 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
     className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300"
   >
     {/* Placeholder for actual image */}
-   {person.image ? (
-  <img
-    src={person.image}
-    alt={person.name}
-    className="absolute inset-0 w-full h-full object-cover"
-  />
-) : (
-  <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
-    <User className="w-12 h-12 text-gray-400" />
-  </div>
-)}
+   <img
+  src={person.image}
+  alt={person.name}
+  className="absolute inset-0 w-full h-full object-cover bg-gray-300"
+  onError={() => {}}
+/>
+<div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
+  <User className="w-12 h-12 text-gray-400" />
+</div>
 
     {/* Floating White Label */}
     <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 flex justify-between items-center shadow-md transform transition-transform group-hover:-translate-y-1">
@@ -58,210 +159,13 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 );
 
 // --- Main Page Component ---
-export function AboutPage({
-  previewMode = false,
-  previewContent = {},
-}: AboutPageProps) {
-  
-  const [coreValues, setCoreValues] =
-  useState<any[]>([]);
-
-const [statistics, setStatistics] =
-  useState<any[]>([]);
-
-const [facultyMembers, setFacultyMembers] =
-  useState<any[]>([]);
-
-const dean = facultyMembers.find(
-  member =>
-    member.role?.toLowerCase().includes('dean')
-);
-
-const departments = [
-  ...new Set(
-    facultyMembers
-      .filter(
-        member =>
-          member.department &&
-          !member.role?.toLowerCase().includes('dean')
-      )
-      .map(member => member.department)
-  ),
-];
+export function AboutPage() {
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  const [premierValues, setPremierValues] = useState<any[]>([]);
 
-const fetchPremierValues = async () => {
-  const { data, error } = await supabase
-    .from('premier_values')
-    .select('*')
-    .order('display_order');
+  const totalPages = 1 + orgData.departments.length; // 1 for Dean + 4 departments = 5 pages
 
-  if (error) {
-    console.error(error);
-    return;
-  }
-
-  setPremierValues(data || []);
-};
-  const [aboutContent, setAboutContent] = useState<any>({});
-  const fetchCoreValues = async () => {
-  const { data, error } = await supabase
-  .from('core_values')
-  .select('*')
-  .order('display_order');
-
-if (error) {
-  console.error(error);
-  return;
-}
-  setCoreValues(data || []);
-};
-const fetchStatistics = async () => {
-  const { data, error } = await supabase
-    .from('about_statistics')
-    .select('*')
-    .order('display_order');
-  
-    if (error) {
-  console.error(error);
-  return;
-}
-  setStatistics(data || []);
-};
-const fetchFacultyMembers = async () => {
-  const { data, error } = await supabase
-    .from('faculty_members')
-    .select('*')
-    .order('display_order');
-    
-  if (error) {
-  console.error(error);
-  return;
-}
-
-  setFacultyMembers(data || []);
-};
-  const fetchAboutContent = async () => {
-  const { data, error } = await supabase
-    .from('about_page_content')
-    .select('*');
-
-  if (error) {
-    console.error(error);
-    return;
-  }
-
-  const formatted: any = {};
-
-  data?.forEach((item: any) => {
-    formatted[item.section_name] = {
-      title: item.title,
-      description: item.description,
-    };
-  });
-
-  setAboutContent(formatted);
-};
-useEffect(() => {
-  if (previewMode) return;
-
-  fetchAboutContent();
-  fetchCoreValues();
-  fetchStatistics();
-  fetchFacultyMembers();
-  fetchPremierValues();
-  
-
-  const channel = supabase
-  .channel('about-page-updates')
-
-  .on(
-    'postgres_changes',
-    {
-      event: '*',
-      schema: 'public',
-      table: 'about_page_content',
-    },
-    fetchAboutContent
-  )
-
-  .on(
-    'postgres_changes',
-    {
-      event: '*',
-      schema: 'public',
-      table: 'core_values',
-    },
-    fetchCoreValues
-  )
-
-  .on(
-    'postgres_changes',
-    {
-      event: '*',
-      schema: 'public',
-      table: 'about_statistics',
-    },
-    fetchStatistics
-  )
-
-  .on(
-    'postgres_changes',
-    {
-      event: '*',
-      schema: 'public',
-      table: 'faculty_members',
-    },
-    fetchFacultyMembers
-  )
-  .on(
-  'postgres_changes',
-  {
-    event: '*',
-    schema: 'public',
-    table: 'premier_values',
-  },
-  fetchPremierValues
-)
-  .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [previewMode]);
-  
-  const totalPages =
-  1 + departments.length;
-  const currentDepartment =
-  departments[currentPage - 1];
-
-const chairman = facultyMembers.find(
-  member =>
-    member.department === currentDepartment &&
-    member.role?.toLowerCase().includes('chair')
-);
-
-const getFacultyImage = (fileName: string) => {
-  return supabase.storage
-    .from('faculty-images')
-    .getPublicUrl(fileName)
-    .data.publicUrl;
-};
-const teachers = facultyMembers.filter(
-  member =>
-    member.department === currentDepartment &&
-    !member.role?.toLowerCase().includes('chair')
-);
-  const getContent = (section: string) => {
-  if (previewMode) {
-    return previewContent?.[section] || aboutContent?.[section];
-  }
-
-  return aboutContent?.[section];
-};
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -269,20 +173,30 @@ const teachers = facultyMembers.filter(
         {/* Page Header */}
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
-            {getContent('Badge')?.title || 'About Us'}
+            About Us
           </div>
-          <h1 className="text-5xl font-bold tracking-tight text-[#1E3A8A]">{getContent('About Header')?.title || 'About COED'}</h1>
-          <p className="text-xl text-gray-600">{getContent('About Header')?.description ||
-  '32 Years of Excellence in Education'}</p>
-        </div>
+          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">About COED</h1>
+          <p className="text-xl text-gray-600">Gatekeeping for Competence & Excellence</p>
         </div>
 
         {/* College History */}
         <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-3xl font-bold text-[#1E3A8A]">{getContent('History')?.title || 'Our History'}</h2>
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2">Our History</h2>
+          <p className="text-sm font-medium text-gray-500 italic mb-6">
+            Where Tradition Meets Transformation, and Teachers Are Forged for Tomorrow
+          </p>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
             <p>
-              {getContent('History')?.description}
+              The story of Cebu Technological University&ndash;Argao Campus began on <strong>February 17, 1945</strong>, even before American forces had set foot on Cebu soil. Through the courage of Colonel Decoroso Rosales of the Cebu Resistance Movement, classes resumed in Argao under acting principal Mr. Gervasio Minoza, resurrecting learning that had been disrupted by World War II.
+            </p>
+            <p>
+              By <strong>July 1, 1945</strong>, the school was formally established as the Cebu South Provincial High School. Its physical structure rose from the ruins of war by 1949 and was formally inaugurated on September 28, 1950. Over the following decades, the institution was renamed and elevated several times&mdash;becoming Cebu South National High School in 1961, Cebu South Agro-Industrial School in 1978, and the Cebu State College of Science and Technology &ndash; Argao External Campus through Batas Pambansa Blg. 412 in 1983.
+            </p>
+            <p>
+              On <strong>November 10, 2009</strong>, Republic Act 9744 transformed the institution into <strong>Cebu Technological University</strong>, a full-fledged state university. The College of Education itself traces its roots to <strong>1994&ndash;1995</strong>, when the Teacher Education Program was established under founding department chair Dr. Florita A. Pontillas, with a clear vision: to shape educators of purpose and principle.
+            </p>
+            <p>
+              Today, the College of Education stands as a prolific unit offering teacher training programs aligned with CHED memoranda, recognized as an <strong>AACCUP Level 3 &amp; 4 Re-Accredited Teacher Education Institution</strong>. As the College looks to the future, it continues to embody its motto: <strong>&ldquo;Quality is a race without a finish line.&rdquo;</strong>
             </p>
           </div>
         </div>
@@ -293,9 +207,9 @@ const teachers = facultyMembers.filter(
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
               <Eye className="w-7 h-7 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900">{getContent('Vision')?.title || 'Vision'}</h3>
-            <p className="text-lg text-gray-600 leading-relaxed">
-              {getContent('Vision')?.description}
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
+            <p className="text-gray-700 leading-relaxed">
+              A premier science and technology university in Southeast Asia, and a sustainable technological university.
             </p>
           </div>
 
@@ -303,9 +217,9 @@ const teachers = facultyMembers.filter(
             <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4">
               <Target className="w-7 h-7 text-green-600" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Mission')?.title || 'Mission'}</h3>
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
             <p className="text-gray-700 leading-relaxed">
-              {getContent('Mission')?.description}
+              The University is committed to providing inclusive, innovative, and internationally recognized degree programs that proactively respond to community and industry needs through the sustainable integration of its core functions, empowering multi-stakeholders to address regional and national development within the global knowledge economy and Industry 5.0.
             </p>
           </div>
 
@@ -313,10 +227,9 @@ const teachers = facultyMembers.filter(
             <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
               <Award className="w-7 h-7 text-purple-600" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">{getContent('Goals')?.title || 'Goals'}</h3>
+            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
             <p className="text-gray-700 leading-relaxed">
-
-             {getContent('Goals')?.description}
+              To articulate a sustained quality higher education system, develop industry-responsive academic programs, vitalize resource-generation initiatives, achieve high national and international rankings, nurture institutional capability, cultivate disaster-resilient communities, and engage in sustainable community collaboration.
             </p>
           </div>
         </div>
@@ -325,37 +238,36 @@ const teachers = facultyMembers.filter(
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
-  {premierValues.map((value) => (
-    <div
-      key={value.id}
-      className="flex flex-col items-center"
-    >
-      <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
-        {value.letter}
-      </div>
-
-      <div className="font-semibold text-gray-900 text-sm">
-        {value.word}
-      </div>
-
-      <div className="text-xs text-gray-500 mt-1">
-        {value.description}
-      </div>
-    </div>
-  ))}
-</div>
+            {[
+              { letter: 'P', word: 'Progressive', desc: 'Advancing through innovation' },
+              { letter: 'R', word: 'Responsive', desc: 'Adaptive to evolving demands' },
+              { letter: 'E', word: 'Excellent', desc: 'Highest standards in education' },
+              { letter: 'M', word: 'Morally grounded', desc: 'Integrity & accountability' },
+              { letter: 'I', word: 'Inclusive', desc: 'Equal opportunities for all' },
+              { letter: 'E', word: 'Empowered', desc: 'Knowledge & sustainable skills' },
+              { letter: 'R', word: 'Relevant', desc: 'Addressing real-world needs' },
+            ].map((value, index) => (
+              <div key={index} className="flex flex-col items-center">
+                <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+                  {value.letter}
+                </div>
+                <div className="font-semibold text-gray-900 text-sm">{value.word}</div>
+                <div className="text-xs text-gray-500 mt-1">{value.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Organizational Structure Section */}
         <div className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-200 pb-6">
             <div className="max-w-2xl">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">{getContent('Team Label')?.title || 'Our Team Structure'}</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Our Team Structure</h4>
               <h2 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-                {getContent('Team Structure')?.title ||
-  'The People Behind the Programs'}
+                The People Behind the Programs
               </h2>
               <p className="text-gray-600">
-               {getContent('Team Structure')?.description}
+                Our team is a blend of visionaries, educators, and mentors dedicated to crafting experiences, not just classes. We come together with one shared goal: to guide you seamlessly through the world of education.
               </p>
             </div>
             
@@ -387,38 +299,26 @@ const teachers = facultyMembers.filter(
               /* Page 1: Dean Solo View */
               <div className="flex flex-col items-center animate-fade-in py-10">
                 <div className="mb-6 text-center">
-                  <h3 className="text-2xl font-bold text-gray-800"><h3 className="text-2xl font-bold text-gray-800">
-  {getContent('Dean Section')?.title || 'Office of the Dean'}
-</h3></h3>
+                  <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
                 </div>
-                {dean && (
-  <ProfileCard
-  person={dean as Person}
-  onClick={setSelectedPerson}
-/>
-)}
+                <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
               </div>
             ) : (
               /* Pages 2-5: Department Views */
               <div className="animate-fade-in pb-8">
-                
                 <div className="text-center mb-10">
                   <h3 className="text-2xl font-bold text-gray-800">
-                   {departments[currentPage - 1]}
+                    {orgData.departments[currentPage - 1].name}
                   </h3>
                 </div>
                 
                 {/* Chairman Top Center */}
                 <div className="flex justify-center mb-10">
-  <div className="relative">
-    {chairman && (
-      <ProfileCard
-        person={chairman as Person}
-        onClick={setSelectedPerson}
-      />
-    )}
-  </div>
-</div>
+                  <div className="relative">
+                    <ProfileCard person={orgData.departments[currentPage - 1].chairman} onClick={setSelectedPerson} />
+                  </div>
+                </div>
+
                 {/* Divider */}
                 <div className="flex items-center justify-center mb-10">
                   <div className="h-px bg-gray-200 w-full max-w-3xl"></div>
@@ -426,13 +326,9 @@ const teachers = facultyMembers.filter(
 
                 {/* Teachers Group Grid Below */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-                  {teachers.map((teacher) => (
-  <ProfileCard
-    key={teacher.id}
-    person={teacher as Person}
-    onClick={setSelectedPerson}
-  />
-))}
+                  {orgData.departments[currentPage - 1].teachers.map(teacher => (
+                    <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
+                  ))}
                 </div>
               </div>
             )}
@@ -441,45 +337,41 @@ const teachers = facultyMembers.filter(
 
         {/* Stats */}
         <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
-  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-    {statistics.map((stat) => (
-      <div
-        key={stat.id}
-        className="text-center"
-      >
-        <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-          <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
-
-          <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
-            {stat.stat_value}
-          </div>
-
-          <div className="text-sm text-gray-600">
-            {stat.stat_label}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { count: '142', label: 'Total Faculty' },
+              { count: '85', label: 'Full-Time' },
+              { count: '57', label: 'Part-Time' },
+              { count: '28', label: 'Support Staff' },
+            ].map((stat, index) => (
+              <div key={index} className="text-center">
+                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
+                  <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
+                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">{stat.count}</div>
+                  <div className="text-sm text-gray-600">{stat.label}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-    ))}
-  </div>
-</div>
 
         {/* Core Values */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
-  {coreValues.map((value) => (
-    <div
-      key={value.id}
-      className="text-center"
-    >
-      <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
-        <div className="text-lg md:text-xl font-medium">
-          {value.value_name}
+       <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
+          <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+            {['Excellence', 'Integrity', 'Innovation', 'Inclusivity', 'Service'].map(
+              (value, index) => (
+                <div key={index} className="text-center">
+                  <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
+                    <div className="text-lg md:text-xl font-medium">{value}</div>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  ))}
-</div>
-  </div>
-            
+
       {/* Profile Detail Modal */}
       {selectedPerson && (
         <div 
@@ -493,17 +385,11 @@ const teachers = facultyMembers.filter(
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
             <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
-  {selectedPerson.image ? (
-  <img
-  src={getFacultyImage(selectedPerson.image)}
-  alt={selectedPerson.name}
-  className="absolute inset-0 w-full h-full object-cover object-top"
-/>
-) : (
-  <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
-    <User className="w-20 h-20 text-gray-400" />
-  </div>
-)}
+  <img 
+    src={selectedPerson.image} 
+    alt={selectedPerson.name}
+    className="absolute inset-0 w-full h-full object-cover object-top"
+  />
   {!selectedPerson.image && (
     <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
       <User className="w-20 h-20 text-gray-400" />
@@ -523,18 +409,16 @@ const teachers = facultyMembers.filter(
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Role</span>
                     {selectedPerson.role}
                   </p>
-                 <p>
-                   <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
-                  {selectedPerson.education.split(',').map((line, i) => (
-                    <span key={i} className="block">{line.trim()}</span>
-                  ))}
+                  <p>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
+                    {selectedPerson.education}
                   </p>
-                <p>
+                  <p>
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Years of Teaching</span>
                     {selectedPerson.experience}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Academic Rank</span>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Subject Area</span>
                     {selectedPerson.subject}
                   </p>
                 </div>

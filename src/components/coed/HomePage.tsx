@@ -1,60 +1,10 @@
 import { ChevronRight, Award, Users, BookOpen, TrendingUp, ArrowRight, Sparkles, GraduationCap, Trophy } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { supabase } from '../../supabaseClient';
+
 interface HomePageProps {
   onNavigate?: (page: string) => void;
-  previewMode?: boolean;
-  previewContent?: any;
 }
 
-export function HomePage({
-  onNavigate,
-  previewMode = false,
-  previewContent = {},
-}: HomePageProps) {
-  const [homepageContent, setHomepageContent] = useState<any>({});
-  const getContent = (section: string) => {
-  if (previewMode) {
-    return previewContent?.[section];
-  }
-
-  return homepageContent?.[section];
-};
-  useEffect(() => {
-  fetchHomepageContent();
-    
-  const channel = supabase
-    .channel('homepage-live-updates')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'homepage_content',
-      },
-      () => {
-        fetchHomepageContent();
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
-const fetchHomepageContent = async () => {
-  const { data } = await supabase
-    .from('homepage_content')
-    .select('*');
-
-  const formatted: any = {};
-
-  data?.forEach((item) => {
-    formatted[item.section_name] = item;
-  });
-
-  setHomepageContent(formatted);
-};
+export function HomePage({ onNavigate }: HomePageProps) {
   return (
     <div className="min-h-screen bg-white">
 
@@ -87,11 +37,14 @@ const fetchHomepageContent = async () => {
 
           {/* Big headline — like "WANDER" in the reference */}
           <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black text-white leading-none mb-6 tracking-tight drop-shadow-lg">
-        {getContent('Hero Section')?.title || 'College of Education'}
+            College of<br />
+            <span className="text-blue-400">Education</span>
           </h1>
 
+          {/* Subtitle */}
           <p className="text-lg text-white/80 max-w-xl leading-relaxed mb-8">
-        {getContent('Hero Section')?.description}
+            Shaping tomorrow's educators at Cebu Technological University – Argao Campus.
+            Join us in our mission to develop passionate and skilled teachers.
           </p>
 
           {/* CTA Buttons */}
@@ -127,12 +80,11 @@ const fetchHomepageContent = async () => {
               About COED
             </div>
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
-            {getContent('About Section')?.title}
+              Empowering Future{' '}
+              <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                Educators
+              </span>
             </h2>
-
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-          {getContent('About Section')?.description}
-          </p>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Since its founding in 1994&ndash;1995, COED has been at the forefront of teacher education,
               producing passionate and skilled educators who transform lives&mdash;guided by our motto,
@@ -165,29 +117,7 @@ const fetchHomepageContent = async () => {
           </div>
         </div>
       </section>
-        <section className="py-20 bg-white">
-  <div className="max-w-6xl mx-auto px-4">
-    <h2 className="text-4xl font-bold text-center mb-6">
-      {getContent('Vision Mission Goals')?.title}
-    </h2>
 
-    <p className="text-lg text-gray-600 text-center max-w-4xl mx-auto">
-      {getContent('Vision Mission Goals')?.description}
-    </p>
-  </div>
-</section>
-
-<section className="py-20 bg-gray-50">
-  <div className="max-w-6xl mx-auto px-4">
-    <h2 className="text-4xl font-bold text-center mb-6">
-      {getContent('Programs Offered')?.title}
-    </h2>
-
-    <p className="text-lg text-gray-600 text-center max-w-4xl mx-auto">
-      {getContent('Programs Offered')?.description}
-    </p>
-  </div>
-</section>
       {/* ═══════════════════════════════════════
           STATS SECTION
       ═══════════════════════════════════════ */}
@@ -222,13 +152,8 @@ const fetchHomepageContent = async () => {
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-3">
                 Latest News
               </div>
-              <h2 className="text-4xl font-bold text-gray-900 mb-2">
-          {getContent('Latest Updates')?.title}
-      </h2>
-
-        <p className="text-gray-600">
-          {getContent('Latest Updates')?.description}
-          </p>
+              <h2 className="text-4xl font-bold text-gray-900 mb-2">Latest Updates</h2>
+              <p className="text-gray-600">Stay informed with our recent announcements</p>
             </div>
             <button
               onClick={() => onNavigate?.('achievements')}
@@ -245,17 +170,7 @@ const fetchHomepageContent = async () => {
           </div>
         </div>
       </section>
-        <section className="py-20 bg-white">
-  <div className="max-w-5xl mx-auto text-center px-4">
-    <h2 className="text-4xl font-bold mb-6">
-      {getContent('Contact Information')?.title}
-    </h2>
 
-    <p className="text-lg text-gray-600">
-      {getContent('Contact Information')?.description}
-    </p>
-  </div>
-</section>
       {/* ═══════════════════════════════════════
           CTA SECTION
       ═══════════════════════════════════════ */}
@@ -270,13 +185,10 @@ const fetchHomepageContent = async () => {
                 <Trophy className="w-4 h-4" />
                 <span className="text-sm font-semibold">Start Your Journey Today</span>
               </div>
-              <h2 className="text-4xl lg:text-5xl font-bold">
-  {getContent('CTA Section')?.title}
-</h2>
-
-<p className="text-xl text-blue-100 max-w-2xl mx-auto">
-  {getContent('CTA Section')?.description}
-</p>
+              <h2 className="text-4xl lg:text-5xl font-bold">Ready to Start Your Journey?</h2>
+              <p className="text-xl text-blue-100 max-w-2xl mx-auto">
+                Join thousands of successful educators who started their career at COED
+              </p>
               <button
                 onClick={() => onNavigate?.('contact')}
                 className="px-8 py-4 bg-white text-blue-600 rounded-xl font-semibold shadow-xl hover:shadow-2xl transition-all hover:scale-105"
