@@ -30,9 +30,9 @@ const orgData: OrgData = {
     id: 'dean',
     name: 'Dr.Jorelyn P.Conception',
     role: 'College Dean',
-    education: 'Ph.D. in Educational Leadership, Stanford University',
-    experience: '25 Years',
-    subject: 'Educational Administration & Policy',
+    education: 'Bachelor of Elementary Education,BSEd – Physical Education,MATeaching – Phys. Ed,Ed. D. – Physical Ed.',
+    experience: '28 Years',
+    subject: 'Asso. Prof. V',
     image: '/images/JPC.PNG',
   },
   departments: [
@@ -41,20 +41,19 @@ const orgData: OrgData = {
       name: 'Bachelor of Elementary Education Program',
       chairman: {
         id: 'chair-1',
-        name: 'Dr. Viviana C. Genabe',
+        name: 'Dr. Viviana C. Genabe, Dev.Ed.D',
         role: 'BEED Chairperson',
-        education: 'Ph.D. in Elementary Education',
-        experience: '18 Years',
-        subject: 'Child Development & Pedagogy',
-        image: '',
+        education: 'BSED-Filipino (old curriculum program that can teach both elementary and secondary),MAEd-Administration & Supervision,Doctor in Developmental Education',
+        experience: '42 Years',
+        subject: 'Asso. Prof. V',
+        image: '/images/VCG.jpg',
       },
       teachers: [
-        { id: 't1', name: 'Dr. Viviana C. Genabe', role: 'BEED Chairperson', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't2', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics', image: '' },
-        { id: 't3', name: 'Dr. Ellagora', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy', image: '' },
-        { id: 't4', name: 'Dr. Jerome L. Abregana', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
-        { id: 't5', name: 'Dr. Teresita Georgina B. Nikal', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies', image: '' },
-        { id: 't6', name: 'Dr. Marvin S. Olvido-Cañete', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science', image: '' },
+        { id: 't2', name: 'Dr. Lynette Matea S. Camello, D.A.L.C', role: 'University Director Education for Sustainable Development', education: 'BSEducation major English,MAED-TESL,D.A in Literature and Communication,Ed. D. – English Language Teaching (complete academic requirements)', experience: '39 Years', subject: 'Professor II', image: '/images/LMSC.PNG' },
+        { id: 't3', name: 'Dr. Suzette T. Elladora, Ph.D.', role: 'Chairman Ph.D. Program Graduate School/Coordinator Research and Development', education: 'BSEd Chem/Physics,MAEd – Science Education,PH. D. TM,Ed. D. Science Education (for Oral Defense)', experience: '24 Years', subject: 'Asso. Prof. V', image: '/images/STE.jpg' },
+        { id: 't4', name: 'Dr. Jerome L. Abregana, MAEd A.S.', role: 'Practice Teaching Coordinator', education: 'Bachelor of Elementary Education ,MAED – Administration & Supervision ,ED. D. Units', experience: '12 Years', subject: 'Instructor I', image: '/images/JLA.png' },
+        { id: 't5', name: 'Dr. Teresita Cleopolda B. Sarile, Dev.Ed.D', role: 'Extension Director/College GAD,Program Internalization Coordinator', education: 'AB Economics,BEED,M.A.Ed – Administration & Supervision,Doctor in Developmental Education', experience: '33 Years', subject: 'Prof. III', image: '/images/TCBS.jpg' },
+        { id: 't6', name: 'Miss Marivel B. Glinogo-Cañete, MAEd A.S.', role: 'Program GAD and Extension Coordinator', education: 'Bachelor of Elementary Education,MAED – Administration and Supervision,Dev. Ed. D. Units (for oral defense)', experience: '8 Years', subject: 'Instructor III', image: '/images/MBGC.jpg' },
        
       ]
     },
@@ -63,21 +62,20 @@ const orgData: OrgData = {
       name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
       chairman: {
         id: 'chair-2',
-        name: 'Dr. Michael Chen',
-        role: 'Department Chairman',
-        education: 'Ed.D. in Curriculum and Instruction',
-        experience: '20 Years',
-        subject: 'Curriculum Design',
+        name: 'Dr. Marichou L. Carreon, Dev.Ed.D',
+        role: 'BSEd-Math/English Chairman',
+        education: 'BSEd – Mathematics,M.A.T. – Mathematics,Dev. Ed. D.',
+        experience: '26 Years',
+        subject: 'Asso Prof. V',
         image: '',
       },
       teachers: [
-        { id: 't7', name: 'Dr. Maricho U. Carreon', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English', image: '', },
-        { id: 't8', name: 'Dr. Jean F. Puerto', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics', image: '', },
-        { id: 't9', name: 'Dr. Virginia S. Albarracin', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra', image: '', },
-        { id: 't10', name: 'Dr. Lynette Matea S. Camelo', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't11', name: 'Dr. Crisju Theres B. Enriquez', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't12', name: 'Dr. Judith M. Aliquiot', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
-        { id: 't13', name: 'Dr. Ariel L. RamosS', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History', image: '', },
+        { id: 't8', name: 'Dr. Jean F. Puerto, Ph.D., Dev.Ed.D.', role: 'Campus Director,OSGIN', education: 'BSEd-Mathematics,M.A.T – Mathematics,Dev. Ed. D.,Ph. D. – Sci. Ed. Major in Math Ed', experience: '36 Years', subject: 'Asso. Prof. V', image: '/images/JFP.jpg', },
+        { id: 't9', name: 'Dr. Virginia S. Albarracin, Ed.D.', role: 'Program GAD Coordinator', education: 'BS Biology ,Education units,MAED – Science Teaching,Ed. D. – Educt’l Management', experience: '35 Years', subject: 'Asso. Prof. V', image: '/images/VSG.PNG', },
+        { id: 't10', name: 'Dr. Lynette Matea S. Camello, D.A.L.C', role: 'University Director Education for Sustainable Development', education: 'BSEducation major English,MAED-TESL,D.A in Literature and Communication,Ed. D. – English Language Teaching (complete academic requirements)', experience: '39 Years', subject: 'Professor II', image: '/images/LMSC.PNG', },
+        { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon, Ph.D., Dev.Ed.D.', role: 'Extension Coordinator, ST Supervisor', education: 'BSEd – Mathematics,MAEd – Mathematics,Dev. Ed. D.,Ph. D. Math Ed', experience: '22 Years', subject: 'Asso. Prof. V', image: '/images/CTRD.jpg', },
+        { id: 't12', name: 'Dr. Judith M. Aleguen, Ph.D.', role: 'College Research and Internalization Coordinator', education: 'BSEd major in Mathematics,MAED-Mathematics,Ph.D. in Research and Evaluation', experience: '12 Years', subject: 'Instructor I', image: '/images/JMA.PNG', },
+        { id: 't13', name: 'Dr. Ariel L. Ramos', role: 'Teacher', education: 'M.A. in History', experience: ' Years', subject: 'World History', image: '', },
       ]
     },
     {
@@ -85,43 +83,27 @@ const orgData: OrgData = {
       name: 'Bachelor of Technology and Livelihood Education Program',
       chairman: {
         id: 'chair-3',
-        name: 'Dr. Patricia Williams',
-        role: 'Department Chairman',
-        education: 'Ph.D. in Special Education',
-        experience: '22 Years',
-        subject: 'Behavioral Interventions',
-         image: '',
+        name: 'Dr. Venus H. Baldea, Ph.D.',
+        role: 'BTLED Chairman',
+        education: 'BSED – THE Food Trades,MA in Vocational Education,Ph. D. Technology Management',
+        experience: '26 Years',
+        subject: 'Asso Prof. III',
+         image: '/images/VHB.jpg',
       },
       teachers: [
-        { id: 't14', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't15', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.', image: '', },
-        { id: 't16', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.', image: '', },
-        { id: 't17', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't18', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't19', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
-        { id: 't20', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies', image: '', },
+        { id: 't15', name: 'Dr. Jima S. Bejagan', role: 'Program GAD Coordinator', education: 'BSED – THE Food Trades,MA in Vocational Education,Ph. D. Technology Management', experience: '26 Years', subject: 'Asso. Prof. V', image: '', },
+        { id: 't16', name: 'Dr. Lemuel M. Velasco, Dev.Ed.D.', role: 'College Innovation and Sports Coordinator', education: 'BSEd-THE Drafting Technology,MA in Vocational Education,Doctor in Developmental Education', experience: '21 Years', subject: 'Asso. Prof. V', image: '/images/LMV.jpg', },
+        { id: 't17', name: 'Dr. Mildred G. Martinez, MAVEd', role: 'College Extension Coordinator', education: 'BSEd-THE Food Tradesw,MA in Vocational Education,Ph. D. Technology Management Units', experience: '8 Years', subject: 'Asso. Prof. II', image: '/images/MGM.png', },
+        { id: 't18', name: 'Mrs. Rachelle G. Lopez, MAVEd', role: 'College Cultural Affairs & Internalization Coordinator', education: 'BSEd-THE Food Trades,MA in Vocational Education,Ph. D. Technology Management Units', experience: '8 Years', subject: 'Asso. Prof. I', image: '/images/RGL.png', },
+        { id: 't19', name: 'Dr. Jeramie C. Linaban, Dev.Ed.D.', role: 'Teaching Internship Chairperson', education: 'BSEd-TLE Business Technology,M.A.Ed-Administration & Supervision,Doctor in Developmental Education', experience: '13 Years', subject: 'Asso. Prof. III', image: '/images/JCL.jpg', },
+        { id: 't20', name: 'Dr. Fitzgerald C. Kintanar, Ed.D.', role: 'Dean of Instruction, Alumni Affairs Director, Coordinator Research and Development', education: 'BSEd-TLE Business Technology,M.A.Ed-Administration & Supervision,MAVED,Ed. D. in Educational Mngt.', experience: '13 Years', subject: 'Asso. Prof. II', image: '/images/FCK.jpg', },
      ]
     },
-    {
-      id: 'ed-lead',
-      name: 'Educational Leadership',
-      chairman: {
-        id: 'chair-4',
-        name: 'Dr. Robert Anderson',
-        role: 'Department Chairman',
-        education: 'Ed.D. in School Administration',
-        experience: '28 Years',
-        subject: 'Organizational Leadership',
-         image: '',
-      },
-      teachers: [
-        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law', image: '', },
-        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance', image: '', },
-        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education', image: '', },
-      ]
-    }
+   
   ]
 };
+
+
 
 // --- Extracted ProfileCard Component ---
 interface ProfileCardProps {
@@ -164,7 +146,7 @@ export function AboutPage() {
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
-  const totalPages = 1 + orgData.departments.length; // 1 for Dean + 4 departments = 5 pages
+  const totalPages = 1 + orgData.departments.length * 2; // 1 for Dean + 4 departments = 5 pages
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
@@ -292,48 +274,47 @@ export function AboutPage() {
               </button>
             </div>
           </div>
-
-          {/* Render Active View */}
+  {/* Render Active View */}
           <div className="min-h-[450px]">
             {currentPage === 0 ? (
-              /* Page 1: Dean Solo View */
-              <div className="flex flex-col items-center animate-fade-in py-10">
-                <div className="mb-6 text-center">
-                  <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
-                </div>
-                <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
-              </div>
-            ) : (
-              /* Pages 2-5: Department Views */
-              <div className="animate-fade-in pb-8">
-                <div className="text-center mb-10">
-                  <h3 className="text-2xl font-bold text-gray-800">
-                    {orgData.departments[currentPage - 1].name}
-                  </h3>
-                </div>
-                
-                {/* Chairman Top Center */}
-                <div className="flex justify-center mb-10">
-                  <div className="relative">
-                    <ProfileCard person={orgData.departments[currentPage - 1].chairman} onClick={setSelectedPerson} />
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <div className="flex items-center justify-center mb-10">
-                  <div className="h-px bg-gray-200 w-full max-w-3xl"></div>
-                </div>
-
-                {/* Teachers Group Grid Below */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-                  {orgData.departments[currentPage - 1].teachers.map(teacher => (
-                    <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
-                  ))}
-                </div>
-              </div>
-            )}
+  /* Page 1: Dean */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
+    </div>
+    <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
+  </div>
+) : currentPage % 2 === 1 ? (
+  /* Odd pages: Chairman only */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">
+        {orgData.departments[Math.floor((currentPage - 1) / 2)].name}
+      </h3>
+       </div>
+    <ProfileCard 
+      person={orgData.departments[Math.floor((currentPage - 1) / 2)].chairman} 
+      onClick={setSelectedPerson} 
+    />
+  </div>
+) : (
+  /* Even pages: Teachers grid */
+  <div className="animate-fade-in pb-8">
+    <div className="text-center mb-10">
+      <h3 className="text-2xl font-bold text-gray-800">
+        {orgData.departments[Math.floor((currentPage - 2) / 2)].name}
+      </h3>
+       </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
+      {orgData.departments[Math.floor((currentPage - 2) / 2)].teachers.map(teacher => (
+        <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
+      ))}
+    </div>
+  </div>
+)}
           </div>
         </div>
+
 
         {/* Stats */}
         <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
@@ -410,15 +391,22 @@ export function AboutPage() {
                     {selectedPerson.role}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
-                    {selectedPerson.education}
-                  </p>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">
+                    Educational Attainment
+                  </span>
+
+                  {selectedPerson.education.split(',').map((item, index) => (
+                    <span key={index} className="block">
+                      {item.trim()}
+                    </span>
+                  ))}
+                </p>
                   <p>
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Years of Teaching</span>
                     {selectedPerson.experience}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Subject Area</span>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Academic Rank</span>
                     {selectedPerson.subject}
                   </p>
                 </div>
