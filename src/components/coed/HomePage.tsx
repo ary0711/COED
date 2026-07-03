@@ -1,10 +1,124 @@
 import { ChevronRight, Award, Users, BookOpen, TrendingUp, ArrowRight, Sparkles, GraduationCap, Trophy } from 'lucide-react';
-
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 interface HomePageProps {
   onNavigate?: (page: string) => void;
+  previewMode?: boolean;
+  previewContent?: any;
+
+  previewFeatures?: any[];
+  previewStats?: any[];
+  previewAnnouncements?: any[];
+}
+interface Feature {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
 }
 
-export function HomePage({ onNavigate }: HomePageProps) {
+interface Stat {
+  id: string;
+  value: string;
+  label: string;
+}
+
+interface Announcement {
+  id: string;
+  announcement_date: string;
+  title: string;
+  description: string;
+  color: string;
+}
+
+export function HomePage({
+  onNavigate,
+  previewMode,
+  previewContent,
+  previewFeatures,
+  previewStats,
+  previewAnnouncements,
+}: HomePageProps) {
+  
+  const [content, setContent] = useState<any>({});
+  const source = previewMode
+  ? previewContent
+  : content;
+
+  const hero = source['Hero Section'];
+  const about = source['About Section'];
+  const statsSection = source['Stats Section'];
+  const announcementsSection =
+  source['Announcements Section'];
+  const cta = source['CTA Section'];
+  const [features, setFeatures] = useState<Feature[]>([]);
+  const [stats, setStats] = useState<Stat[]>([]);
+  
+  const [announcements, setAnnouncements] =
+  useState<Announcement[]>([]);
+  useEffect(() => {
+  loadFeatures();
+  loadStats();
+  loadAnnouncements();
+  loadHomepageContent();
+}, []);
+  const displayFeatures =
+  previewMode && previewFeatures
+    ? previewFeatures
+    : features;
+
+const displayStats =
+  previewMode && previewStats
+    ? previewStats
+    : stats;
+
+const displayAnnouncements =
+  previewMode && previewAnnouncements
+    ? previewAnnouncements
+    : announcements;
+async function loadHomepageContent() {
+  const { data, error } = await supabase
+    .from('homepage_content')
+    .select('*');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setContent(formatted);
+}
+async function loadStats() {
+  const { data } = await supabase
+    .from('homepage_stats')
+    .select('*')
+    .order('sort_order');
+
+  setStats(data || []);
+}
+
+async function loadFeatures() {
+  const { data } = await supabase
+    .from('homepage_features')
+    .select('*')
+    .order('sort_order');
+
+  setFeatures(data || []);
+}
+async function loadAnnouncements() {
+  const { data } = await supabase
+    .from('homepage_announcements')
+    .select('*')
+    .order('sort_order');
+
+  setAnnouncements(data || []);
+}
   return (
     <div className="min-h-screen bg-white">
 
@@ -12,11 +126,11 @@ export function HomePage({ onNavigate }: HomePageProps) {
           HERO — Full-bleed image, content overlaid on top
       ═══════════════════════════════════════════════════ */}
       <section className="relative w-full h-screen overflow-hidden">
-
         {/* Full-bleed background image */}
        <img
-          src="/COED home.jpg"
-          alt="Campus"
+       
+           src="/COED home.jpg"
+         alt="Campus"
           className="absolute inset-0 w-full h-full object-cover object-center"
         />
 
@@ -32,19 +146,18 @@ export function HomePage({ onNavigate }: HomePageProps) {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 mb-5 w-fit">
             <Sparkles className="w-4 h-4 text-white" />
-            <span className="text-sm font-semibold text-white">AACCUP Level 3 &amp; 4 Re-Accredited TEI &middot; Excellence Since 1994</span>
+            <span className="text-sm font-semibold text-white"> {hero?.badge_text}</span>
           </div>
 
           {/* Big headline — like "WANDER" in the reference */}
           <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black text-white leading-none mb-6 tracking-tight drop-shadow-lg">
-            College of<br />
-            <span className="text-blue-400">Education</span>
+             {hero?.title}<br />
+            <span className="text-blue-400"> {hero?.highlight_text}</span>
           </h1>
 
           {/* Subtitle */}
           <p className="text-lg text-white/80 max-w-xl leading-relaxed mb-8">
-            Shaping tomorrow's educators at Cebu Technological University – Argao Campus.
-            Join us in our mission to develop passionate and skilled teachers.
+             {hero?.subtitle}
           </p>
 
           {/* CTA Buttons */}
@@ -53,7 +166,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               onClick={() => onNavigate?.('login')}
               className="group px-8 py-4 bg-white text-[#1E3A8A] rounded-full font-semibold shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center gap-2"
             >
-              Log In
+               {hero?.button_text}
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
@@ -77,43 +190,47 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
               <GraduationCap className="w-4 h-4" />
-              About COED
+                {about?.badge_text}
             </div>
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
-              Empowering Future{' '}
+               {about?.heading}{' '}
               <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                Educators
+                {about?.highlight_text}
               </span>
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Since its founding in 1994&ndash;1995, COED has been at the forefront of teacher education,
-              producing passionate and skilled educators who transform lives&mdash;guided by our motto,
-              &ldquo;Quality is a race without a finish line.&rdquo;
+              {about?.description}
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            <FeatureCard
-              title="Accredited Programs"
-              description="AACCUP Level 3 & 4 Re-Accredited Teacher Education Institution, with Level IV status attained"
-              icon="🏆"
-              gradient="from-amber-50 to-orange-50"
-              borderColor="border-amber-200"
-            />
-            <FeatureCard
-              title="Expert Faculty"
-              description="Learn from experienced educators with advanced degrees and industry expertise"
-              icon="👨‍🏫"
-              gradient="from-blue-50 to-cyan-50"
-              borderColor="border-blue-200"
-            />
-            <FeatureCard
-              title="Modern Facilities"
-              description="State-of-the-art classrooms and learning resources for optimal education"
-              icon="🏛️"
-              gradient="from-purple-50 to-pink-50"
-              borderColor="border-purple-200"
-            />
+            {displayFeatures.map((feature, index) => {
+  const styles = [
+    {
+      gradient: "from-amber-50 to-orange-50",
+      borderColor: "border-amber-200",
+    },
+    {
+      gradient: "from-blue-50 to-cyan-50",
+      borderColor: "border-blue-200",
+    },
+    {
+      gradient: "from-purple-50 to-pink-50",
+      borderColor: "border-purple-200",
+    },
+  ];
+
+  return (
+    <FeatureCard
+      key={feature.id}
+      title={feature.title}
+      description={feature.description}
+      icon={feature.icon}
+      gradient={styles[index]?.gradient}
+      borderColor={styles[index]?.borderColor}
+    />
+  );
+})}
           </div>
         </div>
       </section>
@@ -127,15 +244,43 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
         <div className="max-w-7xl mx-auto relative">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">COED at a Glance</h2>
-            <p className="text-gray-600">Our impact in numbers</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2"> {statsSection?.title}</h2>
+            <p className="text-gray-600">  {statsSection?.subtitle}
+</p>
           </div>
-
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <StatCard value="3,847" label="Active Students"   icon={Users}      gradient="from-blue-500 to-blue-600"   bgGradient="from-blue-50 to-blue-100" />
-            <StatCard value="22"    label="Programs Offered"  icon={BookOpen}   gradient="from-purple-500 to-purple-600" bgGradient="from-purple-50 to-purple-100" />
-            <StatCard value="142"   label="Expert Faculty"    icon={Award}      gradient="from-pink-500 to-pink-600"   bgGradient="from-pink-50 to-pink-100" />
-            <StatCard value="97.1%" label="LET Passing Rate (2025)" icon={TrendingUp} gradient="from-green-500 to-green-600" bgGradient="from-green-50 to-green-100" />
+            {displayStats.map((stat, index) => {
+  const styles = [
+    {
+      gradient: "from-blue-500 to-blue-600",
+      bgGradient: "from-blue-50 to-blue-100",
+    },
+    {
+      gradient: "from-purple-500 to-purple-600",
+      bgGradient: "from-purple-50 to-purple-100",
+    },
+    {
+      gradient: "from-pink-500 to-pink-600",
+      bgGradient: "from-pink-50 to-pink-100",
+    },
+    {
+      gradient: "from-green-500 to-green-600",
+      bgGradient: "from-green-50 to-green-100",
+    },
+  ];
+
+  return (
+    <StatCard
+      key={stat.id}
+      value={stat.value}
+      label={stat.label}
+      icon={Users}
+      gradient={styles[index % styles.length].gradient}
+      bgGradient={styles[index % styles.length].bgGradient}
+    />
+  );
+})}
+            
           </div>
         </div>
       </section>
@@ -150,10 +295,10 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <div className="flex items-center justify-between mb-12">
             <div>
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-3">
-                Latest News
+                 {announcementsSection?.badge_text}
               </div>
-              <h2 className="text-4xl font-bold text-gray-900 mb-2">Latest Updates</h2>
-              <p className="text-gray-600">Stay informed with our recent announcements</p>
+              <h2 className="text-4xl font-bold text-gray-900 mb-2"> {announcementsSection?.title}</h2>
+              <p className="text-gray-600"> {announcementsSection?.subtitle}</p>
             </div>
             <button
               onClick={() => onNavigate?.('achievements')}
@@ -161,12 +306,20 @@ export function HomePage({ onNavigate }: HomePageProps) {
             >
               View All
             </button>
+
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            <AnnouncementCard date="Feb 13" title="Enrollment for Summer 2026"    description="Online enrollment now open for all programs"          color="blue"   />
-            <AnnouncementCard date="Feb 10" title="Faculty Development Seminar"   description="Professional development workshop this March"          color="purple" />
-            <AnnouncementCard date="Feb 8"  title="Dean's List Released"          description="Congratulations to all honor students"                 color="green"  />
+           {displayAnnouncements.map(item => (
+    <AnnouncementCard
+      key={item.id}
+      date={item.announcement_date}
+      title={item.title}
+      description={item.description}
+      color={item.color}
+    />
+  ))}
+            
           </div>
         </div>
       </section>
@@ -183,17 +336,17 @@ export function HomePage({ onNavigate }: HomePageProps) {
             <div className="relative text-center space-y-6">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 mb-2">
                 <Trophy className="w-4 h-4" />
-                <span className="text-sm font-semibold">Start Your Journey Today</span>
+                <span className="text-sm font-semibold"> {cta?.badge_text}</span>
               </div>
-              <h2 className="text-4xl lg:text-5xl font-bold">Ready to Start Your Journey?</h2>
+              <h2 className="text-4xl lg:text-5xl font-bold"> {cta?.title}</h2>
               <p className="text-xl text-blue-100 max-w-2xl mx-auto">
-                Join thousands of successful educators who started their career at COED
+                 {cta?.description}
               </p>
               <button
                 onClick={() => onNavigate?.('contact')}
                 className="px-8 py-4 bg-white text-blue-600 rounded-xl font-semibold shadow-xl hover:shadow-2xl transition-all hover:scale-105"
               >
-                Apply Now
+                {cta?.button_text}
               </button>
             </div>
           </div>

@@ -2,6 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { notifyRole, } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
+import {HeroSectionEditor} from './admin/HeroSectionEditor';
+import {AboutSectionEditor} from './admin/AboutSectionEditor';
+import {FeaturesEditor} from './admin/FeaturesEditor';
+import {StatsEditor} from './admin/StatsEditor';
+import {AnnouncementsEditor} from './admin/AnnouncementsEditor';
+import {CTASectionEditor} from './admin/CTASectionEditor';
 import {
   Users,
   GraduationCap,
@@ -1883,10 +1889,12 @@ function LandingPageManagement() {
 
 const [aboutContent, setAboutContent] =
   useState<any>({});
-  
   const [showPreview, setShowPreview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] =
   useState(false);
+  const [features, setFeatures] = useState<any[]>([]);
+  const [stats, setStats] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [activePage, setActivePage] =
   useState<'homepage' | 'about'>(
     'homepage'
@@ -1896,8 +1904,36 @@ const [aboutContent, setAboutContent] =
   useEffect(() => {
     loadHomepageContent();
     loadAboutContent();
+    loadFeatures();
+    loadStats();
+    loadAnnouncements();
   }, []);
+  async function loadFeatures() {
+  const { data } = await supabase
+    .from('homepage_features')
+    .select('*')
+    .order('sort_order');
 
+  setFeatures(data || []);
+}
+
+async function loadStats() {
+  const { data } = await supabase
+    .from('homepage_stats')
+    .select('*')
+    .order('sort_order');
+
+  setStats(data || []);
+}
+
+async function loadAnnouncements() {
+  const { data } = await supabase
+    .from('homepage_announcements')
+    .select('*')
+    .order('sort_order');
+
+  setAnnouncements(data || []);
+}
   async function loadHomepageContent() {
   const { data } = await supabase
     .from('homepage_content')
@@ -1906,10 +1942,7 @@ const [aboutContent, setAboutContent] =
   const formatted: any = {};
 
   data?.forEach(item => {
-    formatted[item.section_name] = {
-      title: item.title,
-      description: item.description,
-    };
+    formatted[item.section_name] = item;
   });
 
   setHomeContent(formatted);
@@ -1963,13 +1996,12 @@ async function saveAboutPage() {
 }
 
 async function saveHomePage() {
-  const updates = Object.entries(
-    aboutContent
-  ).map(([section_name, values]: any) => ({
-    section_name,
-    title: values.title,
-    description: values.description,
-  }));
+  const updates = Object.entries(homeContent).map(
+    ([section_name, values]: any) => ({
+      section_name,
+      ...values,
+    })
+  );
 
   const { error } = await supabase
     .from('homepage_content')
@@ -1978,10 +2010,7 @@ async function saveHomePage() {
     });
 
   if (error) {
-    setModalMessage(
-      `Error: ${error.message}`
-    );
-
+    setModalMessage(`Error: ${error.message}`);
     setShowSuccessModal(true);
     return;
   }
@@ -2058,44 +2087,33 @@ function updateAboutField(
 </div>
       {activePage === 'homepage' && (
   <>
-    <SectionEditor
-      section="Hero Section"
+    <HeroSectionEditor
       content={homeContent}
       updateField={updateHomepageField}
     />
 
-    <SectionEditor
-      section="About Section"
+    <AboutSectionEditor
       content={homeContent}
       updateField={updateHomepageField}
     />
 
-    <SectionEditor
-      section="Vision Mission Goals"
-      content={homeContent}
-      updateField={updateHomepageField}
+    <FeaturesEditor
+      features={features}
+      setFeatures={setFeatures}
     />
 
-    <SectionEditor
-      section="Programs Offered"
-      content={homeContent}
-      updateField={updateHomepageField}
+    <StatsEditor
+      stats={stats}
+      setStats={setStats}
     />
 
-    <SectionEditor
-      section="Latest Updates"
-      content={homeContent}
-      updateField={updateHomepageField}
+    <AnnouncementsEditor
+      announcements={announcements}
+      setAnnouncements={setAnnouncements}
     />
 
-    <SectionEditor
-      section="Contact Information"
-      content={homeContent}
-      updateField={updateHomepageField}
-    />
 
-    <SectionEditor
-      section="CTA Section"
+    <CTASectionEditor
       content={homeContent}
       updateField={updateHomepageField}
     />
@@ -2219,88 +2237,18 @@ function updateAboutField(
       </div>
           {activePage === 'homepage' ? (
   <HomePage
-    previewMode={true}
-    previewContent={homeContent}
-  />
+  previewMode={true}
+  previewContent={homeContent}
+  previewFeatures={features}
+  previewStats={stats}
+  previewAnnouncements={announcements}
+/>
 ) : (
   <AboutPage
     previewMode={true}
     previewContent={aboutContent}
   />
 )}
-      <div className="max-w-6xl mx-auto p-10">
-
-        <section className="mb-16">
-          <h1 className="text-6xl font-bold">
-            {homeContent['Hero Section']?.title}
-          </h1>
-
-          <p className="mt-4 text-xl">
-            {homeContent['Hero Section']?.description}
-          </p>
-        </section>
-
-        <section className="mb-16">
-          <h2 className="text-4xl font-bold">
-            {homeContent['About Section']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['About Section']?.description}
-          </p>
-        </section>
-
-        <section className="mb-16">
-          <h2 className="text-4xl font-bold">
-            {homeContent['Vision Mission Goals']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['Vision Mission Goals']?.description}
-          </p>
-        </section>
-
-        <section className="mb-16">
-          <h2 className="text-4xl font-bold">
-            {homeContent['Programs Offered']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['Programs Offered']?.description}
-          </p>
-        </section>
-
-        <section className="mb-16">
-          <h2 className="text-4xl font-bold">
-            {homeContent['Latest Updates']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['Latest Updates']?.description}
-          </p>
-        </section>
-
-        <section className="mb-16">
-          <h2 className="text-4xl font-bold">
-            {homeContent['Contact Information']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['Contact Information']?.description}
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-4xl font-bold">
-            {homeContent['CTA Section']?.title}
-          </h2>
-
-          <p className="mt-4">
-            {homeContent['CTA Section']?.description}
-          </p>
-        </section>
-
-      </div>
 
     </div>
 
