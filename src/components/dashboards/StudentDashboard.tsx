@@ -17,6 +17,7 @@ import {
   Settings,
   Lock,
   LogOut,
+  GraduationCap,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -31,6 +32,22 @@ const studentMenuItems = [
   { icon: Settings,     label: 'Settings',                 id: 'settings'     },
 ];
 
+// Available academic programs (BSIT intentionally excluded)
+const PROGRAM_OPTIONS = [
+  'Bachelor of Secondary Education - Mathematics',
+  'Bachelor of Secondary Education - English',
+  'Bachelor of Secondary Education - Science',
+  'Bachelor of Elementary Education',
+  'Bachelor of Science in Nursing',
+  'Bachelor of Science in Business Administration',
+  'Bachelor of Science in Accountancy',
+  'Bachelor of Science in Criminology',
+  'Bachelor of Science in Hospitality Management',
+  'Bachelor of Science in Psychology',
+  'Bachelor of Science in Civil Engineering',
+  'Bachelor of Science in Social Work',
+];
+
 interface StudentDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
@@ -41,6 +58,7 @@ interface StudentDashboardProps {
 
 export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
 
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
@@ -91,12 +109,17 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
         </div>
 
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard'   && <StudentDashboardView />}
+          {activeMenuItem === 'dashboard'   && <StudentDashboardView selectedProgram={selectedProgram} />}
           {activeMenuItem === 'faculty'     && <FacultyDepartments />}
           {activeMenuItem === 'resources'   && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
           {activeMenuItem === 'inquiry'     && <InquiryContact />}
-          {activeMenuItem === 'settings'    && <StudentSettings />}
+          {activeMenuItem === 'settings'    && (
+            <StudentSettings
+              selectedProgram={selectedProgram}
+              setSelectedProgram={setSelectedProgram}
+            />
+          )}
         </main>
       </div>
     </div>
@@ -104,7 +127,11 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
 }
 
 // ====================== STUDENT DASHBOARD VIEW ======================
-function StudentDashboardView() {
+interface StudentDashboardViewProps {
+  selectedProgram: string;
+}
+
+function StudentDashboardView({ selectedProgram }: StudentDashboardViewProps) {
   const announcements = [
     { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
     { id: 2, title: 'Faculty Evaluation Period Open',        date: 'Feb 10, 2026', type: 'info'      },
@@ -120,7 +147,7 @@ function StudentDashboardView() {
           </h2>
           <p className="text-blue-100 mb-1">Student ID: 2023-00458</p>
           <p className="text-blue-100">
-            Bachelor of Secondary Education - Mathematics
+            {selectedProgram}
           </p>
           <p className="text-blue-100">
             3rd Year, Second Semester
@@ -644,7 +671,12 @@ function InquiryContact() {
 }
 
 // ====================== SETTINGS ======================
-function StudentSettings() {
+interface StudentSettingsProps {
+  selectedProgram: string;
+  setSelectedProgram: (program: string) => void;
+}
+
+function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSettingsProps) {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
@@ -743,10 +775,29 @@ function StudentSettings() {
         </h2>
 
         <div className="space-y-4">
+          {/* Program Selection */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-xs text-blue-600 uppercase font-semibold mb-1">Enrolled Program</p>
-            <p className="text-sm font-medium text-gray-900 mb-3">Bachelor of Secondary Education - Mathematics</p>
-            <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Year Level:</span> 3rd Year</p>
+            <label htmlFor="program-select" className="text-xs text-blue-600 uppercase font-semibold mb-2 flex items-center gap-1.5">
+              <GraduationCap className="w-4 h-4" /> Select Your Program
+            </label>
+            <select
+              id="program-select"
+              value={selectedProgram}
+              onChange={(e) => setSelectedProgram(e.target.value)}
+              className="w-full mt-1 px-4 py-2 border border-blue-200 rounded-lg bg-white text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {PROGRAM_OPTIONS.map((program) => (
+                <option key={program} value={program}>
+                  {program}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-2">
+              Choose the program you are currently enrolled in.
+            </p>
+            <p className="text-xs text-gray-600 mt-3">
+              <span className="font-semibold">Year Level:</span> 3rd Year
+            </p>
             <p className="text-xs text-gray-600"><span className="font-semibold">Semester:</span> Second Semester</p>
           </div>
 
