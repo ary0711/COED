@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { supabase } from '../../supabaseClient';
 
 // --- TypeScript Interfaces ---
 interface Person {
@@ -12,97 +13,46 @@ interface Person {
   image: string;
 }
 
+// --- Dummy Data ---
+interface FacultyMember {
+  id: string;
+  name: string;
+  role: string;
+  education: string;
+  experience: string;
+  academic_rank: string;
+  image: string;
+  department_id: string;
+  member_type: string;
+}
+
 interface Department {
   id: string;
   name: string;
-  chairman: Person;
-  teachers: Person[];
 }
 
-interface OrgData {
-  dean: Person;
-  departments: Department[];
+interface CoreValue {
+  id: string;
+  letter: string;
+  word: string;
+  description: string;
 }
 
-// --- Dummy Data ---
-const orgData: OrgData = {
-  dean: {
-    id: 'dean',
-    name: 'Dr.Jorelyn P.Conception',
-    role: 'College Dean',
-    education: 'Bachelor of Elementary Education,BSEd – Physical Education,MATeaching – Phys. Ed,Ed. D. – Physical Ed.',
-    experience: '28 Years',
-    subject: 'Asso. Prof. V',
-    image: '/images/JPC.PNG',
-  },
-  departments: [
-    {
-      id: 'elem-ed',
-      name: 'Bachelor of Elementary Education Program',
-      chairman: {
-        id: 'chair-1',
-        name: 'Dr. Viviana C. Genabe, Dev.Ed.D',
-        role: 'BEED Chairperson',
-        education: 'BSED-Filipino (old curriculum program that can teach both elementary and secondary),MAEd-Administration & Supervision,Doctor in Developmental Education',
-        experience: '42 Years',
-        subject: 'Asso. Prof. V',
-        image: '/images/VCG.jpg',
-      },
-      teachers: [
-        { id: 't2', name: 'Dr. Lynette Matea S. Camello, D.A.L.C', role: 'University Director Education for Sustainable Development', education: 'BSEducation major English,MAED-TESL,D.A in Literature and Communication,Ed. D. – English Language Teaching (complete academic requirements)', experience: '39 Years', subject: 'Professor II', image: '/images/LMSC.PNG' },
-        { id: 't3', name: 'Dr. Suzette T. Elladora, Ph.D.', role: 'Chairman Ph.D. Program Graduate School/Coordinator Research and Development', education: 'BSEd Chem/Physics,MAEd – Science Education,PH. D. TM,Ed. D. Science Education (for Oral Defense)', experience: '24 Years', subject: 'Asso. Prof. V', image: '/images/STE.jpg' },
-        { id: 't4', name: 'Dr. Jerome L. Abregana, MAEd A.S.', role: 'Practice Teaching Coordinator', education: 'Bachelor of Elementary Education ,MAED – Administration & Supervision ,ED. D. Units', experience: '12 Years', subject: 'Instructor I', image: '/images/JLA.png' },
-        { id: 't5', name: 'Dr. Teresita Cleopolda B. Sarile, Dev.Ed.D', role: 'Extension Director/College GAD,Program Internalization Coordinator', education: 'AB Economics,BEED,M.A.Ed – Administration & Supervision,Doctor in Developmental Education', experience: '33 Years', subject: 'Prof. III', image: '/images/TCBS.jpg' },
-        { id: 't6', name: 'Miss Marivel B. Glinogo-Cañete, MAEd A.S.', role: 'Program GAD and Extension Coordinator', education: 'Bachelor of Elementary Education,MAED – Administration and Supervision,Dev. Ed. D. Units (for oral defense)', experience: '8 Years', subject: 'Instructor III', image: '/images/MBGC.jpg' },
-       
-      ]
-    },
-    {
-      id: 'sec-ed',
-      name: 'Bachelor of Secondary Education Major in Mathematics/English Program',
-      chairman: {
-        id: 'chair-2',
-        name: 'Dr. Marichou L. Carreon, Dev.Ed.D',
-        role: 'BSEd-Math/English Chairman',
-        education: 'BSEd – Mathematics,M.A.T. – Mathematics,Dev. Ed. D.',
-        experience: '26 Years',
-        subject: 'Asso Prof. V',
-        image: '',
-      },
-      teachers: [
-        { id: 't8', name: 'Dr. Jean F. Puerto, Ph.D., Dev.Ed.D.', role: 'Campus Director,OSGIN', education: 'BSEd-Mathematics,M.A.T – Mathematics,Dev. Ed. D.,Ph. D. – Sci. Ed. Major in Math Ed', experience: '36 Years', subject: 'Asso. Prof. V', image: '/images/JFP.jpg', },
-        { id: 't9', name: 'Dr. Virginia S. Albarracin, Ed.D.', role: 'Program GAD Coordinator', education: 'BS Biology ,Education units,MAED – Science Teaching,Ed. D. – Educt’l Management', experience: '35 Years', subject: 'Asso. Prof. V', image: '/images/VSG.PNG', },
-        { id: 't10', name: 'Dr. Lynette Matea S. Camello, D.A.L.C', role: 'University Director Education for Sustainable Development', education: 'BSEducation major English,MAED-TESL,D.A in Literature and Communication,Ed. D. – English Language Teaching (complete academic requirements)', experience: '39 Years', subject: 'Professor II', image: '/images/LMSC.PNG', },
-        { id: 't11', name: 'Dr. Crysali Therese R. Dayaganon, Ph.D., Dev.Ed.D.', role: 'Extension Coordinator, ST Supervisor', education: 'BSEd – Mathematics,MAEd – Mathematics,Dev. Ed. D.,Ph. D. Math Ed', experience: '22 Years', subject: 'Asso. Prof. V', image: '/images/CTRD.jpg', },
-        { id: 't12', name: 'Dr. Judith M. Aleguen, Ph.D.', role: 'College Research and Internalization Coordinator', education: 'BSEd major in Mathematics,MAED-Mathematics,Ph.D. in Research and Evaluation', experience: '12 Years', subject: 'Instructor I', image: '/images/JMA.PNG', },
-        { id: 't13', name: 'Dr. Ariel L. Ramos', role: 'Teacher', education: 'M.A. in History', experience: ' Years', subject: 'World History', image: '', },
-      ]
-    },
-    {
-      id: 'sped',
-      name: 'Bachelor of Technology and Livelihood Education Program',
-      chairman: {
-        id: 'chair-3',
-        name: 'Dr. Venus H. Baldea, Ph.D.',
-        role: 'BTLED Chairman',
-        education: 'BSED – THE Food Trades,MA in Vocational Education,Ph. D. Technology Management',
-        experience: '26 Years',
-        subject: 'Asso Prof. III',
-         image: '/images/VHB.jpg',
-      },
-      teachers: [
-        { id: 't15', name: 'Dr. Jima S. Bejagan', role: 'Program GAD Coordinator', education: 'BSED – THE Food Trades,MA in Vocational Education,Ph. D. Technology Management', experience: '26 Years', subject: 'Asso. Prof. V', image: '', },
-        { id: 't16', name: 'Dr. Lemuel M. Velasco, Dev.Ed.D.', role: 'College Innovation and Sports Coordinator', education: 'BSEd-THE Drafting Technology,MA in Vocational Education,Doctor in Developmental Education', experience: '21 Years', subject: 'Asso. Prof. V', image: '/images/LMV.jpg', },
-        { id: 't17', name: 'Dr. Mildred G. Martinez, MAVEd', role: 'College Extension Coordinator', education: 'BSEd-THE Food Tradesw,MA in Vocational Education,Ph. D. Technology Management Units', experience: '8 Years', subject: 'Asso. Prof. II', image: '/images/MGM.png', },
-        { id: 't18', name: 'Mrs. Rachelle G. Lopez, MAVEd', role: 'College Cultural Affairs & Internalization Coordinator', education: 'BSEd-THE Food Trades,MA in Vocational Education,Ph. D. Technology Management Units', experience: '8 Years', subject: 'Asso. Prof. I', image: '/images/RGL.png', },
-        { id: 't19', name: 'Dr. Jeramie C. Linaban, Dev.Ed.D.', role: 'Teaching Internship Chairperson', education: 'BSEd-TLE Business Technology,M.A.Ed-Administration & Supervision,Doctor in Developmental Education', experience: '13 Years', subject: 'Asso. Prof. III', image: '/images/JCL.jpg', },
-        { id: 't20', name: 'Dr. Fitzgerald C. Kintanar, Ed.D.', role: 'Dean of Instruction, Alumni Affairs Director, Coordinator Research and Development', education: 'BSEd-TLE Business Technology,M.A.Ed-Administration & Supervision,MAVED,Ed. D. in Educational Mngt.', experience: '13 Years', subject: 'Asso. Prof. II', image: '/images/FCK.jpg', },
-     ]
-    },
-   
-  ]
-};
-
+interface Statistic {
+  id: string;
+  count: string;
+  label: string;
+}
+interface AboutPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewStats?: any[];
+}
+interface CoreValueCard {
+  id: string;
+  value_name: string;
+  display_order: number;
+}
 
 
 // --- Extracted ProfileCard Component ---
@@ -141,13 +91,111 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 );
 
 // --- Main Page Component ---
-export function AboutPage() {
+export function AboutPage({
+  previewMode = false,
+  previewContent = {},
+  previewStats = []
+}: AboutPageProps) {
+  
+  useEffect(() => {
+  if (!previewMode) {
+    loadAboutPage();
+  }
+}, [previewMode]);
+
+const [dean, setDean] =
+  useState<FacultyMember | null>(null);
+  const [aboutContent, setAboutContent] =
+  useState<Record<string, any>>({});
+  const content = previewMode
+  ? previewContent
+  : aboutContent;
+  
+const [departments, setDepartments] =
+  useState<Department[]>([]);
+
+const [facultyMembers, setFacultyMembers] =
+  useState<FacultyMember[]>([]);
+
+const [coreValues, setCoreValues] =
+  useState<CoreValue[]>([]);
+
+const [statistics, setStatistics] =
+  useState<Statistic[]>([]);
+  const statsToDisplay =
+  previewMode
+    ? previewStats
+    : statistics;
+const [coreValueCards, setCoreValueCards] =
+  useState<CoreValueCard[]>([]);
+async function loadAboutPage() {
+  const formatted: Record<string, any> = {};
+  const [
+  contentRes,
+  deptRes,
+  facultyRes,
+  valuesRes,
+  statsRes,
+  coreValuesRes,
+  deanRes
+] = await Promise.all([
+  supabase.from('about_page_content').select('*'),
+  supabase.from('departments').select('*'),
+  supabase.from('faculty_members').select('*'),
+  supabase.from('premier_values').select('*'),
+  supabase.from('about_statistics').select('*'),
+  supabase
+  .from('core_values')
+  .select('*')
+  .order('display_order'),
+  supabase
+    .from('faculty_members')
+    .select('*')
+    .eq('member_type', 'dean')
+    .single()
+]);
+    
+   
+
+  contentRes.data?.forEach((item: any) => {
+    formatted[item.section_name] = item;
+  });
+  
+  setAboutContent(formatted);
+
+  setDepartments(deptRes.data || []);
+  setFacultyMembers(facultyRes.data || []);
+  setCoreValues(valuesRes.data || []);
+  setStatistics(statsRes.data || []);
+  setCoreValueCards(coreValuesRes.data || []);
+  setDean(deanRes.data || null);
+}
+  
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
+  const department =
+  departments[Math.floor((currentPage - 1) / 2)] || null;
+
+const chairman = facultyMembers.find(
+  member =>
+    member.department_id === department?.id &&
+    member.member_type === 'chairman'
+);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  
+  const totalPages =
+  1 + departments.length * 2; // 1 for Dean + 4 departments = 5 pages
+  const teacherDepartment =
+  departments[
+    Math.floor((currentPage - 2) / 2)
+  ];
 
-  const totalPages = 1 + orgData.departments.length * 2; // 1 for Dean + 4 departments = 5 pages
-
+const teachers =
+  facultyMembers.filter(
+    member =>
+      member.department_id === teacherDepartment?.id &&
+      member.member_type === 'teacher'
+  );
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -157,29 +205,23 @@ export function AboutPage() {
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
             About Us
           </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">About COED</h1>
-          <p className="text-xl text-gray-600">Gatekeeping for Competence & Excellence</p>
+          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">  {content['header']?.title}</h1>
+          <p className="text-xl text-gray-600">  {content['header']?.description}</p>
         </div>
 
         {/* College History */}
         <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2">Our History</h2>
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2"> {content['history']?.title}</h2>
           <p className="text-sm font-medium text-gray-500 italic mb-6">
-            Where Tradition Meets Transformation, and Teachers Are Forged for Tomorrow
+          {content['history']?.description}
           </p>
           <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
-            <p>
-              The story of Cebu Technological University&ndash;Argao Campus began on <strong>February 17, 1945</strong>, even before American forces had set foot on Cebu soil. Through the courage of Colonel Decoroso Rosales of the Cebu Resistance Movement, classes resumed in Argao under acting principal Mr. Gervasio Minoza, resurrecting learning that had been disrupted by World War II.
-            </p>
-            <p>
-              By <strong>July 1, 1945</strong>, the school was formally established as the Cebu South Provincial High School. Its physical structure rose from the ruins of war by 1949 and was formally inaugurated on September 28, 1950. Over the following decades, the institution was renamed and elevated several times&mdash;becoming Cebu South National High School in 1961, Cebu South Agro-Industrial School in 1978, and the Cebu State College of Science and Technology &ndash; Argao External Campus through Batas Pambansa Blg. 412 in 1983.
-            </p>
-            <p>
-              On <strong>November 10, 2009</strong>, Republic Act 9744 transformed the institution into <strong>Cebu Technological University</strong>, a full-fledged state university. The College of Education itself traces its roots to <strong>1994&ndash;1995</strong>, when the Teacher Education Program was established under founding department chair Dr. Florita A. Pontillas, with a clear vision: to shape educators of purpose and principle.
-            </p>
-            <p>
-              Today, the College of Education stands as a prolific unit offering teacher training programs aligned with CHED memoranda, recognized as an <strong>AACCUP Level 3 &amp; 4 Re-Accredited Teacher Education Institution</strong>. As the College looks to the future, it continues to embody its motto: <strong>&ldquo;Quality is a race without a finish line.&rdquo;</strong>
-            </p>
+            <div
+  className="prose max-w-none text-gray-700 leading-relaxed [&>p]:mb-6"
+  dangerouslySetInnerHTML={{
+    __html: content['history']?.content || ''
+  }}
+/>
           </div>
         </div>
 
@@ -190,9 +232,9 @@ export function AboutPage() {
               <Eye className="w-7 h-7 text-[#2563EB]" />
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
-            <p className="text-gray-700 leading-relaxed">
-              A premier science and technology university in Southeast Asia, and a sustainable technological university.
-            </p>
+            <div className="text-gray-700 leading-relaxed">
+  {content['vision']?.description}
+</div>
           </div>
 
           <div className="bg-white rounded-xl shadow-md p-8">
@@ -200,9 +242,9 @@ export function AboutPage() {
               <Target className="w-7 h-7 text-green-600" />
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
-            <p className="text-gray-700 leading-relaxed">
-              The University is committed to providing inclusive, innovative, and internationally recognized degree programs that proactively respond to community and industry needs through the sustainable integration of its core functions, empowering multi-stakeholders to address regional and national development within the global knowledge economy and Industry 5.0.
-            </p>
+            <div className="text-gray-700 leading-relaxed">
+  {content['mission']?.description}
+</div>
           </div>
 
           <div className="bg-white rounded-xl shadow-md p-8">
@@ -210,9 +252,9 @@ export function AboutPage() {
               <Award className="w-7 h-7 text-purple-600" />
             </div>
             <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
-            <p className="text-gray-700 leading-relaxed">
-              To articulate a sustained quality higher education system, develop industry-responsive academic programs, vitalize resource-generation initiatives, achieve high national and international rankings, nurture institutional capability, cultivate disaster-resilient communities, and engage in sustainable community collaboration.
-            </p>
+            <div className="text-gray-700 leading-relaxed">
+  {content['goals']?.description}
+</div>
           </div>
         </div>
 
@@ -220,37 +262,37 @@ export function AboutPage() {
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
-            {[
-              { letter: 'P', word: 'Progressive', desc: 'Advancing through innovation' },
-              { letter: 'R', word: 'Responsive', desc: 'Adaptive to evolving demands' },
-              { letter: 'E', word: 'Excellent', desc: 'Highest standards in education' },
-              { letter: 'M', word: 'Morally grounded', desc: 'Integrity & accountability' },
-              { letter: 'I', word: 'Inclusive', desc: 'Equal opportunities for all' },
-              { letter: 'E', word: 'Empowered', desc: 'Knowledge & sustainable skills' },
-              { letter: 'R', word: 'Relevant', desc: 'Addressing real-world needs' },
-            ].map((value, index) => (
-              <div key={index} className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
-                  {value.letter}
-                </div>
-                <div className="font-semibold text-gray-900 text-sm">{value.word}</div>
-                <div className="text-xs text-gray-500 mt-1">{value.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+            {coreValues.map((value) => (
+  <div
+    key={value.id}
+    className="flex flex-col items-center"
+  >
+    <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+      {value.letter}
+    </div>
+
+    <div className="font-semibold text-gray-900 text-sm">
+      {value.word}
+    </div>
+
+    <div className="text-xs text-gray-500 mt-1">
+      {value.description}
+    </div>
+  </div>
+))}
+    </div>
+    </div>
 
         {/* Organizational Structure Section */}
         <div className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-200 pb-6">
             <div className="max-w-2xl">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Our Team Structure</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">{content.team_structure?.title}<div className="section_name"></div></h4>
               <h2 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-                The People Behind the Programs
+                {content.team_structure?.description}
               </h2>
               <p className="text-gray-600">
-                Our team is a blend of visionaries, educators, and mentors dedicated to crafting experiences, not just classes. We come together with one shared goal: to guide you seamlessly through the world of education.
-              </p>
+              {content.team_structure?.content}              </p>
             </div>
             
             {/* Pagination Controls */}
@@ -282,32 +324,69 @@ export function AboutPage() {
     <div className="mb-6 text-center">
       <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
     </div>
-    <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
+    {dean && (
+  <ProfileCard
+    person={{
+      id: dean.id,
+      name: dean.name,
+      role: dean.role,
+      education: dean.education,
+      experience: dean.experience,
+      subject: dean.academic_rank,
+      image: dean.image
+    }}
+    onClick={setSelectedPerson}
+  />
+)}
   </div>
 ) : currentPage % 2 === 1 ? (
   /* Odd pages: Chairman only */
   <div className="flex flex-col items-center animate-fade-in py-10">
     <div className="mb-6 text-center">
       <h3 className="text-2xl font-bold text-gray-800">
-        {orgData.departments[Math.floor((currentPage - 1) / 2)].name}
+        {departments[
+ Math.floor((currentPage - 1) / 2)
+].name}
       </h3>
        </div>
-    <ProfileCard 
-      person={orgData.departments[Math.floor((currentPage - 1) / 2)].chairman} 
-      onClick={setSelectedPerson} 
-    />
+    {chairman && (
+  <ProfileCard
+    person={{
+      id: chairman.id,
+      name: chairman.name,
+      role: chairman.role,
+      education: chairman.education,
+      experience: chairman.experience,
+      subject: chairman.academic_rank,
+      image: chairman.image
+    }}
+    onClick={setSelectedPerson}
+  />
+)}
   </div>
 ) : (
   /* Even pages: Teachers grid */
   <div className="animate-fade-in pb-8">
     <div className="text-center mb-10">
       <h3 className="text-2xl font-bold text-gray-800">
-        {orgData.departments[Math.floor((currentPage - 2) / 2)].name}
+        {teacherDepartment?.name}
       </h3>
        </div>
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-      {orgData.departments[Math.floor((currentPage - 2) / 2)].teachers.map(teacher => (
-        <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
+      {teachers.map((teacher) => (
+  <ProfileCard
+    key={teacher.id}
+    person={{
+      id: teacher.id,
+      name: teacher.name,
+      role: teacher.role,
+      education: teacher.education,
+      experience: teacher.experience,
+      subject: teacher.academic_rank,
+      image: teacher.image
+    }}
+    onClick={setSelectedPerson}
+  />
       ))}
     </div>
   </div>
@@ -319,32 +398,34 @@ export function AboutPage() {
         {/* Stats */}
         <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {[
-              { count: '142', label: 'Total Faculty' },
-              { count: '85', label: 'Full-Time' },
-              { count: '57', label: 'Part-Time' },
-              { count: '28', label: 'Support Staff' },
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                  <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">{stat.count}</div>
-                  <div className="text-sm text-gray-600">{stat.label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+            {statsToDisplay.map((stat) => (
+  <div
+    key={stat.id}
+    className="text-center"
+  >
+    <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
+      <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
 
+      <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
+        {stat.count}
+      </div>
+
+      <div className="text-sm text-gray-600">
+        {stat.label}
+      </div>
+    </div>
+  </div>
+))}
+          </div>
+</div>
         {/* Core Values */}
        <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
           <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
-            {['Excellence', 'Integrity', 'Innovation', 'Inclusivity', 'Service'].map(
-              (value, index) => (
-                <div key={index} className="text-center">
+            {coreValueCards.map((value) => (
+                <div key={value.id} className="text-center">
                   <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
-                    <div className="text-lg md:text-xl font-medium">{value}</div>
+                    <div className="text-lg md:text-xl font-medium">{value.value_name}</div>
                   </div>
                 </div>
               )

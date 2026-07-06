@@ -31,6 +31,13 @@ interface Announcement {
   color: string;
 }
 
+interface AboutStatistic {
+  id: string;
+  label: string;
+  count: string;
+  display_order: number;
+}
+
 export function HomePage({
   onNavigate,
   previewMode,

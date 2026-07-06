@@ -2,12 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { notifyRole, } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
-import {HeroSectionEditor} from './admin/HeroSectionEditor';
-import {AboutSectionEditor} from './admin/AboutSectionEditor';
-import {FeaturesEditor} from './admin/FeaturesEditor';
-import {StatsEditor} from './admin/StatsEditor';
-import {AnnouncementsEditor} from './admin/AnnouncementsEditor';
-import {CTASectionEditor} from './admin/CTASectionEditor';
+import {HeroSectionEditor} from './HomePageSectors/HeroSectionEditor';
+import {AboutSectionEditor} from './HomePageSectors/AboutSectionEditor';
+import {FeaturesEditor} from './HomePageSectors/FeaturesEditor';
+import {StatsEditor} from './HomePageSectors/StatsEditor';
+import {AnnouncementsEditor} from './HomePageSectors/AnnouncementsEditor';
+import {CTASectionEditor} from './HomePageSectors/CTASectionEditor';
+import  AboutHeaderEditor  from './AboutPageSectors/AboutHeaderEditor';
+import  HistoryEditor  from './AboutPageSectors/HistoryEditor';
+import  VisionMissionGoalsEditor  from './AboutPageSectors/VisionMissionGoalsEditor';
+import  TeamStructureEditor  from './AboutPageSectors/TeamStructureEditor';
+import  AboutStatsEditor from './AboutPageSectors/AboutStatsEditor';
+import  CoreValuesEditor  from './AboutPageSectors/CoreValuesEditor';
+import  AboutOurCoreValuesEditor  from './AboutPageSectors/AboutOurCoreValuesEditor';
 import {
   Users,
   GraduationCap,
@@ -1884,10 +1891,48 @@ function SectionEditor({
 }
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
+  interface CoreValue {
+  id: string;
+  letter: string;
+  word: string;
+  description: string;
+  display_order: number;
+}
+  interface FacultyMember {
+  id: string;
+  name: string;
+  role: string;
+  education: string;
+  experience: string;
+  academic_rank: string;
+  image: string;
+  member_type: string;
+  display_order: number;
+}
+
+interface AboutStat {
+  id: string;
+  label: string;
+  count: string;
+  display_order: number;
+}
+interface CoreValueCard {
+  id: string;
+  value_name: string;
+  display_order: number;
+}
+const [coreValueCards, setCoreValueCards] =
+  useState<CoreValueCard[]>([]);
+const [aboutStats, setAboutStats] =
+  useState<AboutStat[]>([]);
   const [homeContent, setHomeContent] =
   useState<any>({});
+  const [facultyMembers, setFacultyMembers] =
+  useState<FacultyMember[]>([]);
 
-const [aboutContent, setAboutContent] =
+  const [departments, setDepartments] =
+  useState<any[]>([]);
+  const [aboutContent, setAboutContent] =
   useState<any>({});
   const [showPreview, setShowPreview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] =
@@ -1895,6 +1940,8 @@ const [aboutContent, setAboutContent] =
   const [features, setFeatures] = useState<any[]>([]);
   const [stats, setStats] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [coreValues, setCoreValues] =
+  useState<CoreValue[]>([]);
   const [activePage, setActivePage] =
   useState<'homepage' | 'about'>(
     'homepage'
@@ -1907,7 +1954,21 @@ const [aboutContent, setAboutContent] =
     loadFeatures();
     loadStats();
     loadAnnouncements();
+    loadCoreValues();
+    loadFacultyMembers();
+    loadDepartments();
+    loadAboutStats();
+    loadCoreValueCards();
   }, []);
+  
+  async function loadAboutStats() {
+  const { data } = await supabase
+    .from('about_statistics')
+    .select('*')
+    .order('display_order');
+
+  setAboutStats(data || []);
+}
   async function loadFeatures() {
   const { data } = await supabase
     .from('homepage_features')
@@ -1916,7 +1977,41 @@ const [aboutContent, setAboutContent] =
 
   setFeatures(data || []);
 }
+async function loadCoreValues() {
+  const { data } = await supabase
+    .from('premier_values')
+    .select('*')
+    .order('display_order');
 
+  setCoreValues(data || []);
+}
+async function loadFacultyMembers() {
+  const { data, error } = await supabase
+    .from('faculty_members')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setFacultyMembers(data || []);
+}
+
+async function loadDepartments() {
+  const { data, error } = await supabase
+    .from('departments')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setDepartments(data || []);
+}
 async function loadStats() {
   const { data } = await supabase
     .from('homepage_stats')
@@ -1925,7 +2020,14 @@ async function loadStats() {
 
   setStats(data || []);
 }
+async function loadCoreValueCards() {
+  const { data } = await supabase
+    .from('core_values')
+    .select('*')
+    .order('display_order');
 
+  setCoreValueCards(data || []);
+}
 async function loadAnnouncements() {
   const { data } = await supabase
     .from('homepage_announcements')
@@ -1957,24 +2059,44 @@ async function loadAboutContent() {
 
   data?.forEach(item => {
     formatted[item.section_name] = {
-      title: item.title,
-      description: item.description,
-    };
+  title: item.title,
+  description: item.description,
+  content: item.content,
+};
   });
 
   setAboutContent(formatted);
 }
 
 async function saveAboutPage() {
-  const updates = Object.entries(
-    aboutContent
-  ).map(([section_name, values]: any) => ({
+  const updates = Object.entries(aboutContent).map(
+  ([section_name, values]: any) => ({
     section_name,
     title: values.title,
     description: values.description,
-  }));
+    content: values.content
+  })
+);
+    await supabase
+    .from('premier_values')
+    .upsert(coreValues);
+
+    await supabase
+    .from('about_statistics')
+    .upsert(aboutStats);
+    
+    await supabase
+    .from('faculty_members')
+    .upsert(facultyMembers);
+
+    await supabase
+    .from('core_values')
+    .upsert(coreValueCards);
+  setModalMessage(
+    'About Page updated successfully!'
+  );
   const { error } = await supabase
-    .from('homepage_content')
+    .from('about_page_content')
     .upsert(updates, {
       onConflict: 'section_name',
     });
@@ -2121,47 +2243,42 @@ function updateAboutField(
 )}
 {activePage === 'about' && (
   <>
-    <SectionEditor
-      section="About Header"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+    <AboutHeaderEditor
+  content={aboutContent}
+  updateField={updateAboutField}
+/>
 
-    <SectionEditor
-      section="History"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+<HistoryEditor
+  content={aboutContent}
+  updateField={updateAboutField}
+/>
 
-    <SectionEditor
-      section="Vision"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+<VisionMissionGoalsEditor
+  content={aboutContent}
+  updateField={updateAboutField}
+/>
 
-    <SectionEditor
-      section="Mission"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+ <CoreValuesEditor
+  values={coreValues}
+  setValues={setCoreValues}
+/>
 
-    <SectionEditor
-      section="Goals"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+<TeamStructureEditor
+  content={aboutContent}
+  updateField={updateAboutField}
+  facultyMembers={facultyMembers}
+  setFacultyMembers={setFacultyMembers}
+  departments={departments}
+/>
 
-    <SectionEditor
-      section="Team Structure"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
-
-    <SectionEditor
-      section="Core Values"
-      content={aboutContent}
-      updateField={updateAboutField}
-    />
+<AboutStatsEditor
+  stats={aboutStats}
+  setStats={setAboutStats}
+/>
+<AboutOurCoreValuesEditor
+  values={coreValueCards}
+  setValues={setCoreValueCards}
+/>
   </>
 )}
 
@@ -2247,6 +2364,7 @@ function updateAboutField(
   <AboutPage
     previewMode={true}
     previewContent={aboutContent}
+    previewStats={aboutStats}
   />
 )}
 
