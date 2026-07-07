@@ -1,72 +1,146 @@
 import { BookOpen, Users, GraduationCap } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
-export function DepartmentsPage() {
-  const colleges = [
-    {
-      id: 1,
-      collegeName: 'College of Education',
-      programs: [
-        {
-          id: 1,
-          name: 'Bachelor of Elementary Education',
-          description:
-            'Prepares future elementary school teachers with comprehensive pedagogical skills and child development knowledge.',
-          faculty: [
-            { name: 'Jerome Abregana, MAEd A.S.', position: 'BEED Chairperson' },
-            { name: 'Viviana C. Genabe, Dev. Ed. D.', position: 'Practice Teaching Coordinator' },
-            { name: 'Lynnette Matea S. Camello, D.A.L.C.', position: 'University Director Education for Sustainable Development' },
-            { name: 'Marivel Glinogo-Cañete, MAEd A.S.', position: 'Program GAD and Extension Coordinator' },
-            { name: 'Suzette T. Elladora, Ph.D.', position: 'Chairman Ph.D. Program Graduate School/Coordinator Research and Development' },
-            { name: 'Teresita Cleopolda B. Sarile, Dev. Ed.D.', position: 'Extension Director/College GAD, Program Internalization Coordinator' },
-          ],
-        },
-        {
-          id: 2,
-          name: 'Bachelor of Technology and Livelihood Education',
-          description:
-            'Develops competent technical and vocational education teachers with practical skills and industry knowledge.',
-          faculty: [
-            { name: 'Venus H. Baldea, Ph.D.', position: 'BTLED Chairperson' },
-            { name: 'Fitzgerald C. Kintanar, Ed.D.', position: 'Dean of Instruction, Alumni Affairs Director, Coordinator Research and Development' },
-            { name: 'Jeramie C. Linaban, Dev. Ed. D.', position: 'Teaching Internship Chairperson' },
-            { name: 'Rachelle G. Lopez, MAVEd', position: 'College Cultural Affairs & Internalization Coordinator' },
-            { name: 'Mildred G. Martinez, MAVEd', position: 'College Extension Coordinator' },
-            { name: 'Lemuel M. Velasco, Dev. Ed. D.', position: 'College Innovation & Sports Coordinator' },
-          ],
-        },
-        {
-          id: 3,
-          name: 'Bachelor of Secondary Education (Mathematics/English)',
-          description:
-            'Develops competent secondary school teachers specialized in Mathematics and English with strong content knowledge and pedagogical expertise.',
-          faculty: [
-            { name: 'Marichou L. Carreon, Dev. Ed. D.', position: 'BSED Math/English Chairperson' },
-            { name: 'Judith M. Aleguen, Ph.D.', position: 'College Research & Internalization Coordinator' },
-            { name: 'Virginia S. Albarracin, Ed. D.', position: 'Program GAD Coordinator' },
-            { name: 'Crysali Therese R. Dayaganon, Ph.D., Dev.Ed.D.', position: 'Extension Coordinator, ST Supervisor' },
-            { name: 'Jean F. Puerto, Ph.D., Dev. Ed.D.', position: 'Campus Director, OSGIN' },
-          ],
-        },
-      ],
-    },
-  ];
+interface Faculty {
+  id: string;
+  faculty_name: string;
+  position: string;
+  display_order: number;
+}
 
+interface Program {
+  id: string;
+  program_name: string;
+  description: string;
+  display_order: number;
+  program_faculty: Faculty[];
+}
+
+interface College {
+  id: string;
+  college_name: string;
+  display_order: number;
+  programs: Program[];
+}
+
+interface DepartmentsPageProps {
+  onNavigate?: (page: string) => void;
+
+  previewMode?: boolean;
+  previewContent?: any;
+  previewColleges?: College[];
+}
+
+export function DepartmentsPage({
+  onNavigate,
+  previewMode = false,
+  previewContent,
+  previewColleges,
+}: DepartmentsPageProps) {
+  const [pageContent, setPageContent] =
+  useState<Record<string, any>>({});
+  const [colleges, setColleges] = useState<College[]>(
+  previewMode ? previewColleges || [] : []
+);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+  loadDepartmentsPage();
+   loadPageContent();
+}, []);
+  const displayContent =
+  previewMode && previewContent
+    ? previewContent
+    : pageContent;
+
+const displayColleges =
+  previewMode && previewColleges
+    ? previewColleges
+    : colleges;
+async function loadPageContent() {
+  const { data, error } = await supabase
+    .from('department_page_content')
+    .select('*');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const formatted: Record<string, any> = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setPageContent(formatted);
+}
+async function loadDepartmentsPage() {
+  const { data, error } = await supabase
+    .from('colleges')
+    .select(`
+      *,
+      programs (
+        *,
+        program_faculty (*)
+      )
+    `)
+    .order('display_order', { ascending: true });
+
+ if (error) {
+  console.error(error);
+  setLoading(false);
+  return;
+}
+  
+
+  const formatted =
+    data?.map((college: any) => ({
+      ...college,
+      programs:
+        college.programs?.sort(
+          (a: any, b: any) =>
+            a.display_order - b.display_order
+        ) || [],
+    })) || [];
+
+  setColleges(formatted);
+  setLoading(false);
+}
   // Calculate totals
-  const totalPrograms = colleges.reduce((sum, college) => sum + college.programs.length, 0);
-  const totalFaculty = colleges.reduce((sum, college) => 
-    sum + college.programs.reduce((pSum, program) => pSum + program.faculty.length, 0), 0
-  );
+  const totalPrograms =  displayColleges.reduce(
+  (sum, college) => sum + college.programs.length,
+  0
+);
 
+const totalFaculty =  displayColleges.reduce(
+  (sum, college) =>
+    sum +
+    college.programs.reduce(
+      (pSum, program) =>
+        pSum +
+        (program.program_faculty?.length || 0),
+      0
+    ),
+  0
+);
+if (loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      Loading...
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            College of Education - Departments & Programs
+             {displayContent.header?.title}
           </h1>
           <p className="text-xl text-gray-600">
-            Meet our distinguished faculty and explore our academic programs
+              {displayContent.header?.description}
           </p>
         </div>
 
@@ -84,18 +158,18 @@ export function DepartmentsPage() {
           </div>
           <div className="bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA] rounded-xl shadow-lg p-6 text-white">
             <GraduationCap className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">1</div>
+            <div className="text-3xl font-bold mb-1">{ displayColleges.length}</div>
             <div className="text-purple-100">College</div>
           </div>
         </div>
 
         {/* Colleges and Programs */}
         <div className="space-y-8">
-          {colleges.map((college) => (
+          {displayColleges.map((college) => (
             <div key={college.id}>
               <div className="mb-6">
                 <h2 className="text-3xl font-bold text-[#1E3A8A] pb-3 border-b-4 border-[#2563EB]">
-                  {college.collegeName}
+                  {college.college_name}
                 </h2>
               </div>
 
@@ -110,7 +184,7 @@ export function DepartmentsPage() {
                       {/* Program Header */}
                       <div className="mb-6">
                         <h3 className="text-2xl font-semibold text-[#1E3A8A] mb-2">
-                          {program.name}
+                          {program.program_name}
                         </h3>
                         <p className="text-gray-700 leading-relaxed">
                           {program.description}
@@ -123,14 +197,14 @@ export function DepartmentsPage() {
                           Program Faculty:
                         </h4>
                         <div className="space-y-3">
-                          {program.faculty.map((faculty, index) => (
+                          {program.program_faculty?.map((faculty) => (
                             <div
-                              key={index}
+                             key={faculty.id}
                               className="flex flex-col sm:flex-row sm:items-start sm:justify-between p-4 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors"
                             >
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-gray-900 text-sm sm:text-base">
-                                  {faculty.name}
+                                 {faculty.faculty_name}
                                 </div>
                                 <div className="text-xs sm:text-sm text-gray-600 mt-1">
                                   {faculty.position}
@@ -151,14 +225,14 @@ export function DepartmentsPage() {
         {/* Call to Action */}
         <div className="mt-12 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
           <h2 className="text-2xl font-semibold mb-3">
-            Ready to Start Your Journey?
+             {displayContent.cta?.title}
           </h2>
           <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            Join thousands of successful educators who began their career at Cebu Technological University - Argao Campus. 
-            Explore our programs and find the perfect fit for your aspirations.
+              {displayContent.cta?.description}
           </p>
-          <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            Contact Admissions
+          <button   onClick={() => onNavigate?.('contact')}
+          className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
+            {displayContent.cta?.content}
           </button>
         </div>
       </div>

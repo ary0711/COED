@@ -128,7 +128,11 @@ const handleLogin = (role: string) => {
 >
           {currentPage === 'home' && <HomePage onNavigate={handleNavigate} />}
           {currentPage === 'about' && <AboutPage />}
-          {currentPage === 'departments' && <DepartmentsPage />}
+          {currentPage === 'departments' && (
+  <DepartmentsPage
+    onNavigate={handleNavigate}
+  />
+)}
           {currentPage === 'clubs' && <ClubsPage />} {/* ✅ Added ClubsPage route */}
           {currentPage === 'research' && <ResearchPage />}
           {currentPage === 'achievements' && <AchievementsPage />}

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { notifyRole, } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
+import { ClubsPage } from './coed/ClubsPage';
+import { DepartmentsPage } from './coed/DepartmentsPage';
 import {HeroSectionEditor} from './HomePageSectors/HeroSectionEditor';
 import {AboutSectionEditor} from './HomePageSectors/AboutSectionEditor';
 import {FeaturesEditor} from './HomePageSectors/FeaturesEditor';
@@ -15,6 +17,16 @@ import  TeamStructureEditor  from './AboutPageSectors/TeamStructureEditor';
 import  AboutStatsEditor from './AboutPageSectors/AboutStatsEditor';
 import  CoreValuesEditor  from './AboutPageSectors/CoreValuesEditor';
 import  AboutOurCoreValuesEditor  from './AboutPageSectors/AboutOurCoreValuesEditor';
+import  {DepartmentHeaderEditor}  from './DepartmentSectors/DepartmentHeaderEditor';
+import  {CollegeEditor} from './DepartmentSectors/CollegeEditor';
+import  {DepartmentCTAEditor} from './DepartmentSectors/DepartmentCTAEditor';
+import  {ProgramEditor} from './DepartmentSectors/ProgramEditor';
+import  {ProgramFacultyEditor} from './DepartmentSectors/ProgramFacultyEditor';
+import  {ClubsCTAEditor} from './ClubSectors/ClubsCTAEditor';
+import  {ClubsHeaderEditor} from './ClubSectors/ClubsHeaderEditor';
+import  {ClubsStatisticsEditor} from './ClubSectors/ClubsStatisticsEditor';
+import  {CommitteeEditor} from './ClubSectors/CommitteeEditor';
+import  {OrganizationEditor} from './ClubSectors/OrganizationEditor';
 import {
   Users,
   GraduationCap,
@@ -1921,6 +1933,53 @@ interface CoreValueCard {
   value_name: string;
   display_order: number;
 }
+interface ClubStatistic {
+  id: string;
+  label: string;
+  value: string;
+  display_order: number;
+}
+interface Organization {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  members: string;
+  motto: string;
+  display_order: number;
+}
+interface Committee {
+  id: string;
+  committee_code: string;
+  full_name: string;
+  description: string;
+  focus: string;
+  display_order: number;
+}
+function updateClubsField(
+  section: string,
+  field: string,
+  value: string
+) {
+  setClubsContent((prev: any) => ({
+    ...prev,
+    [section]: {
+      ...prev[section],
+      [field]: value,
+    },
+  }));
+}
+const [clubsContent, setClubsContent] =
+  useState<any>({});
+
+const [clubsStatistics, setClubsStatistics] =
+  useState<ClubStatistic[]>([]);
+
+const [organizations, setOrganizations] =
+  useState<Organization[]>([]);
+
+const [committees, setCommittees] =
+  useState<Committee[]>([]);
 const [coreValueCards, setCoreValueCards] =
   useState<CoreValueCard[]>([]);
 const [aboutStats, setAboutStats] =
@@ -1929,7 +1988,11 @@ const [aboutStats, setAboutStats] =
   useState<any>({});
   const [facultyMembers, setFacultyMembers] =
   useState<FacultyMember[]>([]);
+  const [departmentContent, setDepartmentContent] =
+  useState<any>({});
 
+  const [colleges, setColleges] =
+  useState<any[]>([]);
   const [departments, setDepartments] =
   useState<any[]>([]);
   const [aboutContent, setAboutContent] =
@@ -1943,9 +2006,12 @@ const [aboutStats, setAboutStats] =
   const [coreValues, setCoreValues] =
   useState<CoreValue[]>([]);
   const [activePage, setActivePage] =
-  useState<'homepage' | 'about'>(
-    'homepage'
-  );
+useState<
+  'homepage' |
+  'about' |
+  'departments' |
+  'clubs'
+>('homepage');
   const [modalMessage, setModalMessage] =
   useState('');
   useEffect(() => {
@@ -1959,8 +2025,154 @@ const [aboutStats, setAboutStats] =
     loadDepartments();
     loadAboutStats();
     loadCoreValueCards();
+    loadDepartmentContent();
+    loadColleges();
+    loadClubsContent();
+    loadClubsStatistics();
+    loadOrganizations();
+    loadCommittees();
   }, []);
-  
+
+async function saveClubsPage() {
+  const updates = Object.entries(clubsContent).map(
+    ([section_name, values]: any) => ({
+      section_name,
+      title: values.title,
+      description: values.description,
+      content: values.content,
+    })
+  );
+
+  await supabase
+    .from('clubs_page_content')
+    .upsert(updates, {
+      onConflict: 'section_name',
+    });
+
+  await supabase
+    .from('clubs_statistics')
+    .upsert(clubsStatistics);
+
+  await supabase
+    .from('organizations')
+    .upsert(organizations);
+
+  await supabase
+    .from('committees')
+    .upsert(committees);
+
+  setModalMessage(
+    'Clubs Page Updated Successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
+async function saveDepartmentsPage() {
+  const updates = Object.entries(
+    departmentContent
+  ).map(([section_name, values]: any) => ({
+    section_name,
+    title: values.title,
+    description: values.description,
+    content: values.content,
+  }));
+
+  await supabase
+    .from('department_page_content')
+    .upsert(updates, {
+      onConflict: 'section_name',
+    });
+
+  await supabase
+    .from('colleges')
+    .upsert(colleges);
+
+  setModalMessage(
+    'Departments Page Updated Successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
+function updateDepartmentField(
+  section: string,
+  field: string,
+  value: string
+) {
+  setDepartmentContent((prev: any) => ({
+    ...prev,
+    [section]: {
+      ...prev[section],
+      [field]: value,
+    },
+  }));
+}
+async function loadClubsContent() {
+  const { data } = await supabase
+    .from('clubs_page_content')
+    .select('*');
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setClubsContent(formatted);
+}
+
+async function loadClubsStatistics() {
+  const { data } = await supabase
+    .from('clubs_statistics')
+    .select('*')
+    .order('display_order');
+
+  setClubsStatistics(data || []);
+}
+
+async function loadOrganizations() {
+  const { data } = await supabase
+    .from('organizations')
+    .select('*')
+    .order('display_order');
+
+  setOrganizations(data || []);
+}
+
+async function loadCommittees() {
+  const { data } = await supabase
+    .from('committees')
+    .select('*')
+    .order('display_order');
+
+  setCommittees(data || []);
+}
+async function loadColleges() {
+  const { data } = await supabase
+    .from('colleges')
+    .select(`
+      *,
+      programs (
+        *,
+        program_faculty (*)
+      )
+    `)
+    .order('display_order');
+
+  setColleges(data || []);
+}
+  async function loadDepartmentContent() {
+  const { data } = await supabase
+    .from('department_page_content')
+    .select('*');
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setDepartmentContent(formatted);
+}
   async function loadAboutStats() {
   const { data } = await supabase
     .from('about_statistics')
@@ -2206,6 +2418,30 @@ function updateAboutField(
   >
     About Page
   </button>
+  <button
+  onClick={() =>
+    setActivePage('departments')
+  }
+  className={`px-6 py-3 rounded-lg ${
+    activePage === 'departments'
+      ? 'bg-blue-600 text-white'
+      : 'bg-gray-200'
+  }`}
+>
+  Departments Page
+  </button>
+  <button
+  onClick={() =>
+    setActivePage('clubs')
+  }
+  className={`px-6 py-3 rounded-lg ${
+    activePage === 'clubs'
+      ? 'bg-blue-600 text-white'
+      : 'bg-gray-200'
+  }`}
+>
+  Clubs Page
+</button>
 </div>
       {activePage === 'homepage' && (
   <>
@@ -2281,6 +2517,63 @@ function updateAboutField(
 />
   </>
 )}
+  {activePage === 'departments' && (
+  <>
+    <DepartmentHeaderEditor
+      content={departmentContent}
+      updateField={updateDepartmentField}
+    />
+
+    <CollegeEditor
+      colleges={colleges}
+      setColleges={setColleges}
+    />
+
+    <ProgramEditor
+      colleges={colleges}
+      setColleges={setColleges}
+    />
+
+    <ProgramFacultyEditor
+      colleges={colleges}
+      setColleges={setColleges}
+    />
+
+    <DepartmentCTAEditor
+      content={departmentContent}
+      updateField={updateDepartmentField}
+    />
+  </>
+)}
+{activePage === 'clubs' && (
+  <>
+    <ClubsHeaderEditor
+      content={clubsContent}
+      updateField={updateClubsField}
+    />
+
+    <ClubsStatisticsEditor
+      statistics={clubsStatistics}
+      setStatistics={setClubsStatistics}
+    />
+
+    <OrganizationEditor
+      organizations={organizations}
+      setOrganizations={setOrganizations}
+    />
+
+    <CommitteeEditor
+      committees={committees}
+      setCommittees={setCommittees}
+    />
+
+    <ClubsCTAEditor
+      content={clubsContent}
+      updateField={updateClubsField}
+    />
+  </>
+)}
+
 
       <div className="flex gap-4">
 
@@ -2292,22 +2585,40 @@ function updateAboutField(
   >
     Preview {activePage === 'homepage'
       ? 'Homepage'
-      : 'About Page'}
+      : activePage === 'about'
+    ? 'About Page'
+    : activePage === 'departments'
+    ? 'Departments Page'
+    : 'Clubs Page'
+}
   </button>
 
   <button
     onClick={() => {
-      if (activePage === 'homepage') {
-        saveHomePage();
-      } else {
-        saveAboutPage();
-      }
-    }}
+  if (activePage === 'homepage') {
+    saveHomePage();
+  }
+  else if (activePage === 'about') {
+    saveAboutPage();
+  }
+  else if (activePage === 'departments') {
+    saveDepartmentsPage();
+  }
+  else if (activePage === 'clubs') {
+    saveClubsPage();
+  }
+}}
     className="px-6 py-3 bg-blue-600 text-white rounded-lg"
   >
-    Save {activePage === 'homepage'
-      ? 'Homepage'
-      : 'About Page'}
+    Save {
+  activePage === 'homepage'
+    ? 'Homepage'
+    : activePage === 'about'
+    ? 'About Page'
+    : activePage === 'departments'
+    ? 'Departments Page'
+    : 'Clubs Page'
+}
   </button>
 
 </div>
@@ -2354,20 +2665,33 @@ function updateAboutField(
       </div>
           {activePage === 'homepage' ? (
   <HomePage
-  previewMode={true}
-  previewContent={homeContent}
-  previewFeatures={features}
-  previewStats={stats}
-  previewAnnouncements={announcements}
-/>
-) : (
+    previewMode
+    previewContent={homeContent}
+    previewFeatures={features}
+    previewStats={stats}
+    previewAnnouncements={announcements}
+  />
+) : activePage === 'about' ? (
   <AboutPage
-    previewMode={true}
+    previewMode
     previewContent={aboutContent}
     previewStats={aboutStats}
   />
+) : activePage === 'departments' ? (
+  <DepartmentsPage
+    previewMode
+    previewContent={departmentContent}
+    previewColleges={colleges}
+  />
+) : (
+  <ClubsPage
+    previewMode
+    previewContent={clubsContent}
+    previewStatistics={clubsStatistics}
+    previewOrganizations={organizations}
+    previewCommittees={committees}
+  />
 )}
-
     </div>
 
   </div>

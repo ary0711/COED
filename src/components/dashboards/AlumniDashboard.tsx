@@ -25,9 +25,22 @@ const alumniMenuItems = [
 interface AlumniDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
+
+  onRoleChange?: () => void;
+  onLogout?: () => void;
+
+  userName?: string;
+  idNumber?: string;
 }
 
-export function AlumniDashboard({ activeMenuItem, setActiveMenuItem }: AlumniDashboardProps) {
+export function AlumniDashboard({
+  activeMenuItem,
+  setActiveMenuItem,
+  onRoleChange,
+  onLogout,
+  userName,
+  idNumber,
+}: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Auto-close sidebar when resizing to desktop

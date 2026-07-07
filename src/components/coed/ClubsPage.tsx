@@ -1,93 +1,142 @@
 import { Users, Award, Star } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
-export function ClubsPage() {
-  const organizations = [
-    {
-      id: 1,
-      name: 'United Educators Club (UnEC)',
-      type: 'Main Student Organization',
-      description:
-        'The governing body of the teacher education students of CTU Argao Campus. UnEC serves as the voice of students, promotes unity and cooperation, and fosters physical, intellectual, cultural, and social development among education majors.',
-      members: 'All Education Students',
-      motto: 'Unity, Service, and Educational Excellence',
-    },
-  ];
 
-  const committees = [
-    {
-      id: 1,
-      name: 'EDUPANUHID',
-      fullName: 'UnEC Committee on Research and Development',
-      description:
-        'Dedicated to advancing research within the College, fostering an effective research culture, supporting academic inquiry, and promoting innovation and knowledge dissemination.',
-      focus: 'Research & Innovation',
-    },
-    {
-      id: 2,
-      name: 'EDUKAABAG',
-      fullName: 'UnEC Committee on Community Extension Services',
-      description:
-        'Serves as a bridge between the academic realm and the community by conceptualizing, implementing, and evaluating extension programs and projects.',
-      focus: 'Community Outreach & Service',
-    },
-    {
-      id: 3,
-      name: 'EDUKOMUNIKASYON',
-      fullName: 'UnEC Committee on Literature, Publication, and Communication',
-      description:
-        'Nurtures literacy talents, enhances publication skills, and promotes effective communication among students. Facilitates workshops, writing contests, and publishing opportunities.',
-      focus: 'Communication & Publishing',
-    },
-    {
-      id: 4,
-      name: 'EDUPATIGAYON',
-      fullName: 'UnEC Committee on Production and Resource Generation',
-      description:
-        'Tasked with generating resources and developing innovative projects. Explores sustainable income-generating activities and fosters resourcefulness and self-sufficiency.',
-      focus: 'Resource Generation & Projects',
-    },
-    {
-      id: 5,
-      name: 'EDU-AMPO',
-      fullName: 'UnEC Committee on College Ministry',
-      description:
-        'Focused on promoting spiritual life development in educators. Provides experiences for spiritual growth, mentorship, and collaboration fostering shared faith journeys.',
-      focus: 'Spiritual Development',
-    },
-    {
-      id: 6,
-      name: 'EDUKAHIMSOG',
-      fullName: 'UnEC Committee on Sports and Wellness',
-      description:
-        'Fosters a culture of physical activity, health, and well-being. Cultivates athletic talents, promotes healthy lifestyles, and emphasizes sportsmanship and teamwork.',
-      focus: 'Sports & Health & Wellness',
-    },
-    {
-      id: 7,
-      name: 'EDUKANTA',
-      fullName: 'UnEC Committee on Music',
-      description:
-        'Cultivates and promotes musical talents among students. Provides a structured environment for those interested in performance, composition, and musical appreciation.',
-      focus: 'Music & Performance',
-    },
-    {
-      id: 8,
-      name: 'EDUSAYAW',
-      fullName: 'UnEC Committee on Performing Arts',
-      description:
-        'Dedicated to cultivating a dance community within the College. Organizes dance workshops, competitions, and performances fostering artistic enrichment.',
-      focus: 'Dance & Performing Arts',
-    },
-    {
-      id: 9,
-      name: 'EDUDEBUHO',
-      fullName: 'UnEC Committee on Visual Arts',
-      description:
-        'Encourages and advances visual arts among educators. Develops creative minds and talents while building a supportive community of art enthusiasts.',
-      focus: 'Visual Arts & Design',
-    },
-  ];
+interface ClubStatistic {
+  id: string;
+  label: string;
+  value: string;
+  display_order: number;
+}
 
+interface Organization {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  members: string;
+  motto: string;
+  display_order: number;
+}
+
+interface Committee {
+  id: string;
+  committee_code: string;
+  full_name: string;
+  description: string;
+  focus: string;
+  display_order: number;
+}
+
+interface ClubsPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewStatistics?: ClubStatistic[];
+  previewOrganizations?: Organization[];
+  previewCommittees?: Committee[];
+}
+export function ClubsPage({
+  previewMode = false,
+  previewContent,
+  previewStatistics,
+  previewOrganizations,
+  previewCommittees,
+}: ClubsPageProps) {
+  const [pageContent, setPageContent] =
+useState<Record<string, any>>({});
+
+const [statistics, setStatistics] =
+useState<ClubStatistic[]>([]);
+
+const [organizations, setOrganizations] =
+useState<Organization[]>([]);
+
+const [committees, setCommittees] =
+useState<Committee[]>([]);
+
+const [loading, setLoading] =
+useState(true);
+ useEffect(() => {
+}, []);
+useEffect(() => {
+  if (previewMode) {
+    if (previewContent)
+      setPageContent(previewContent);
+
+    if (previewStatistics)
+      setStatistics(previewStatistics);
+
+    if (previewOrganizations)
+      setOrganizations(previewOrganizations);
+
+    if (previewCommittees)
+      setCommittees(previewCommittees);
+
+    setLoading(false);
+    return;
+  }
+
+  loadData();
+}, []);
+async function loadData() {
+  await Promise.all([
+    loadPageContent(),
+    loadStatistics(),
+    loadOrganizations(),
+    loadCommittees(),
+  ]);
+
+  setLoading(false);
+}
+async function loadPageContent() {
+  const { data } = await supabase
+    .from('clubs_page_content')
+    .select('*');
+
+  const formatted: any = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setPageContent(formatted);
+}
+async function loadStatistics() {
+  const { data } = await supabase
+    .from('clubs_statistics')
+    .select('*')
+    .order('display_order');
+
+  setStatistics(data || []);
+}
+
+async function loadOrganizations() {
+  const { data } = await supabase
+    .from('organizations')
+    .select('*')
+    .order('display_order');
+
+  setOrganizations(data || []);
+}
+
+async function loadCommittees() {
+  const { data } = await supabase
+    .from('committees')
+    .select('*')
+    .order('display_order');
+
+  setCommittees(data || []);
+
+  setLoading(false);
+}
+if (loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      Loading...
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -95,33 +144,47 @@ export function ClubsPage() {
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            United Educators Club (UnEC)
+            {pageContent.header?.title}
           </h1>
           <p className="text-xl text-gray-600">
-            Explore our dynamic committees and get involved in the College of Education community
-          </p>
+  {pageContent.header?.description}          </p>
         </div>
 
         {/* Stats */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <div className="bg-gradient-to-br from-[#2563EB] to-[#60A5FA] rounded-xl shadow-lg p-6 text-white">
-            <Users className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">1</div>
-            <div className="text-blue-100">Main Organization</div>
-          </div>
+  {statistics.map((stat, index) => (
+    <div
+      key={stat.id}
+      className={`rounded-xl shadow-lg p-6 text-white ${
+        index === 0
+          ? 'bg-gradient-to-br from-[#2563EB] to-[#60A5FA]'
+          : index === 1
+          ? 'bg-gradient-to-br from-[#10B981] to-[#34D399]'
+          : 'bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA]'
+      }`}
+    >
+      {index === 0 && (
+        <Users className="w-10 h-10 mb-3 opacity-90" />
+      )}
 
-          <div className="bg-gradient-to-br from-[#10B981] to-[#34D399] rounded-xl shadow-lg p-6 text-white">
-            <Award className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">9</div>
-            <div className="text-green-100">Active Committees</div>
-          </div>
+      {index === 1 && (
+        <Award className="w-10 h-10 mb-3 opacity-90" />
+      )}
 
-          <div className="bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA] rounded-xl shadow-lg p-6 text-white">
-            <Star className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">All CTU Students</div>
-            <div className="text-purple-100">Members Welcome</div>
-          </div>
-        </div>
+      {index === 2 && (
+        <Star className="w-10 h-10 mb-3 opacity-90" />
+      )}
+
+      <div className="text-3xl font-bold mb-1">
+        {stat.value}
+      </div>
+
+      <div>
+        {stat.label}
+      </div>
+    </div>
+  ))}
+</div>
 
         {/* Main Organization */}
         <div className="mb-14">
@@ -174,10 +237,10 @@ export function ClubsPage() {
               >
                 <div className="mb-4">
                   <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold mb-3">
-                    {committee.name}
+                    {committee.committee_code}
                   </div>
                   <h3 className="text-lg font-semibold text-[#2563EB]">
-                    {committee.fullName}
+                    {committee.full_name}
                   </h3>
                 </div>
                 
@@ -199,14 +262,12 @@ export function ClubsPage() {
         {/* CTA */}
         <div className="mt-14 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
           <h2 className="text-2xl font-semibold mb-3">
-            Get Involved with UnEC!
+               {pageContent.cta?.title}
           </h2>
           <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            Join any of our committees and develop leadership, collaboration, and innovation skills while making a positive impact on the College of Education.
-          </p>
+    {pageContent.cta?.description}          </p>
           <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            Learn More About UnEC
-          </button>
+ {pageContent.cta?.content}          </button>
         </div>
 
       </div>
