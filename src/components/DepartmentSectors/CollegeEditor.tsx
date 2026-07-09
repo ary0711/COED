@@ -1,3 +1,4 @@
+
 interface Props {
   colleges: any[];
   setColleges: React.Dispatch<
@@ -24,27 +25,6 @@ export function CollegeEditor({
     setColleges(updated);
   };
 
-  const addCollege = () => {
-    setColleges([
-      ...colleges,
-      {
-        college_name: '',
-        display_order: colleges.length + 1,
-        programs: [],
-      },
-    ]);
-  };
-
-  const removeCollege = (
-    index: number
-  ) => {
-    setColleges(
-      colleges.filter(
-        (_, i) => i !== index
-      )
-    );
-  };
-
   return (
     <div className="bg-white p-6 rounded-xl shadow mb-6">
 
@@ -53,12 +33,8 @@ export function CollegeEditor({
           Colleges
         </h2>
 
-        <button
-          onClick={addCollege}
-          className="bg-green-600 text-white px-4 py-2 rounded"
-        >
-          Add College
-        </button>
+      
+
       </div>
 
       {colleges.map(
@@ -82,14 +58,7 @@ export function CollegeEditor({
               className="w-full border p-2 rounded mb-3"
             />
 
-            <button
-              onClick={() =>
-                removeCollege(index)
-              }
-              className="bg-red-600 text-white px-3 py-1 rounded"
-            >
-              Delete
-            </button>
+            
           </div>
         )
       )}

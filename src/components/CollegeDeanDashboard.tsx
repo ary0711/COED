@@ -3,6 +3,7 @@ import { notifyRole, } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
 import { ClubsPage } from './coed/ClubsPage';
+import { ResearchPage } from './coed/ResearchPage';
 import { DepartmentsPage } from './coed/DepartmentsPage';
 import {HeroSectionEditor} from './HomePageSectors/HeroSectionEditor';
 import {AboutSectionEditor} from './HomePageSectors/AboutSectionEditor';
@@ -27,6 +28,26 @@ import  {ClubsHeaderEditor} from './ClubSectors/ClubsHeaderEditor';
 import  {ClubsStatisticsEditor} from './ClubSectors/ClubsStatisticsEditor';
 import  {CommitteeEditor} from './ClubSectors/CommitteeEditor';
 import  {OrganizationEditor} from './ClubSectors/OrganizationEditor';
+import { ResearchHeaderEditor } from './ResearchSectors/ResearchHeaderEditor';
+import { ResearchPublicationsEditor } from './ResearchSectors/ResearchPublicationsEditor';
+import { ResearchAwardsEditor } from './ResearchSectors/ResearchAwardsEditor';
+import { FeaturedAlumniEditor } from './ResearchSectors/FeaturedAlumniEditor';
+import { ResearchCTAEditor } from './ResearchSectors/ResearchCTAEditor';
+import {
+  getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent}from '../landing-page/services/homepageService';
+
+import {
+  getAboutContent,getAboutStats,getCoreValues,getCoreValueCards,getFacultyMembers,saveAboutContent,saveAboutStats,saveCoreValues,saveCoreValueCards,saveFacultyMembers} from '../landing-page/services/aboutService';
+
+import {
+  getDepartmentContent,getColleges,saveDepartmentContent,saveColleges} from '../landing-page/services/departmentService';
+
+import {
+  getClubsContent,getClubStatistics,getOrganizations,getCommittees,saveClubsContent,saveClubStatistics,saveOrganizations,saveCommittees} from '../landing-page/services/clubsService';
+import type {
+  CoreValue,FacultyMember,AboutStat,CoreValueCard,ClubStatistic,Organization,Committee,} from '../landing-page/services/landingPageTypes';
+import {
+  loadResearchContent,loadResearchPublications,loadAwards,loadFeaturedAlumni,saveResearchPage} from '../landing-page/services/researchService';
 import {
   Users,
   GraduationCap,
@@ -1903,59 +1924,6 @@ function SectionEditor({
 }
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
-  interface CoreValue {
-  id: string;
-  letter: string;
-  word: string;
-  description: string;
-  display_order: number;
-}
-  interface FacultyMember {
-  id: string;
-  name: string;
-  role: string;
-  education: string;
-  experience: string;
-  academic_rank: string;
-  image: string;
-  member_type: string;
-  display_order: number;
-}
-
-interface AboutStat {
-  id: string;
-  label: string;
-  count: string;
-  display_order: number;
-}
-interface CoreValueCard {
-  id: string;
-  value_name: string;
-  display_order: number;
-}
-interface ClubStatistic {
-  id: string;
-  label: string;
-  value: string;
-  display_order: number;
-}
-interface Organization {
-  id: string;
-  name: string;
-  type: string;
-  description: string;
-  members: string;
-  motto: string;
-  display_order: number;
-}
-interface Committee {
-  id: string;
-  committee_code: string;
-  full_name: string;
-  description: string;
-  focus: string;
-  display_order: number;
-}
 function updateClubsField(
   section: string,
   field: string,
@@ -2005,12 +1973,21 @@ const [aboutStats, setAboutStats] =
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [coreValues, setCoreValues] =
   useState<CoreValue[]>([]);
+  const [researchContent, setResearchContent] =
+  useState<any>({});
+  const [researchPublications, setResearchPublications] =
+  useState<any[]>([]);
+  const [researchAwards, setResearchAwards] =
+  useState<any[]>([]);
+  const [featuredAlumni, setFeaturedAlumni] =
+  useState<any[]>([]);
   const [activePage, setActivePage] =
 useState<
   'homepage' |
   'about' |
   'departments' |
-  'clubs'
+  'clubs' |
+  'research'
 >('homepage');
   const [modalMessage, setModalMessage] =
   useState('');
@@ -2031,35 +2008,113 @@ useState<
     loadClubsStatistics();
     loadOrganizations();
     loadCommittees();
-  }, []);
+    loadResearchPageData();
+    
 
-async function saveClubsPage() {
-  const updates = Object.entries(clubsContent).map(
-    ([section_name, values]: any) => ({
-      section_name,
-      title: values.title,
-      description: values.description,
-      content: values.content,
-    })
+  }, []);
+  const pages = [
+  {
+    key: 'homepage',
+    label: 'Homepage',
+  },
+  {
+    key: 'about',
+    label: 'About Page',
+  },
+  {
+    key: 'departments',
+    label: 'Departments Page',
+  },
+  {
+    key: 'clubs',
+    label: 'Clubs Page',
+  },
+  {
+    key: 'research',
+    label: 'Research Page',
+  },
+];
+  const pageTitles = {
+  homepage: 'Homepage',
+  about: 'About Page',
+  departments: 'Departments Page',
+  clubs: 'Clubs Page',
+  research: 'Research Page',
+};
+  const saveHandlers = {
+  homepage: saveHomePage,
+  about: saveAboutPage,
+  departments: saveDepartmentsPage,
+  clubs: saveClubsPage,
+  research: handleSaveResearchPage,
+};
+async function loadResearchPageData() {
+  const content =
+    await loadResearchContent();
+
+  const publications =
+    await loadResearchPublications();
+
+  const achievements =
+    await loadAwards();
+
+  const alumni =
+    await loadFeaturedAlumni();
+
+  setResearchContent(content);
+
+  setResearchPublications(publications);
+
+  setResearchAwards(achievements);
+  
+  setFeaturedAlumni(alumni);
+}
+
+async function handleSaveResearchPage() {
+
+  await saveResearchPage(
+    researchContent,
+    researchPublications,
+    researchAwards,
+    featuredAlumni
   );
 
-  await supabase
-    .from('clubs_page_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
+  setModalMessage(
+    'Research Page Updated Successfully!'
+  );
 
-  await supabase
-    .from('clubs_statistics')
-    .upsert(clubsStatistics);
+  setShowSuccessModal(true);
+}
+  function updateResearchField(
+  section: string,
+  field: string,
+  value: string
+) {
+  setResearchContent((prev: any) => ({
+    ...prev,
+    [section]: {
+      ...prev[section],
+      [field]: value,
+    },
+  }));
+}
+async function saveClubsPage() {
 
-  await supabase
-    .from('organizations')
-    .upsert(organizations);
+  await saveClubsContent(
+    clubsContent
+  );
 
-  await supabase
-    .from('committees')
-    .upsert(committees);
+  await saveClubStatistics(
+    clubsStatistics
+  );
+
+  await saveOrganizations(
+    organizations
+  );
+
+  await saveCommittees(
+    committees
+  );
 
   setModalMessage(
     'Clubs Page Updated Successfully!'
@@ -2067,32 +2122,7 @@ async function saveClubsPage() {
 
   setShowSuccessModal(true);
 }
-async function saveDepartmentsPage() {
-  const updates = Object.entries(
-    departmentContent
-  ).map(([section_name, values]: any) => ({
-    section_name,
-    title: values.title,
-    description: values.description,
-    content: values.content,
-  }));
 
-  await supabase
-    .from('department_page_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
-
-  await supabase
-    .from('colleges')
-    .upsert(colleges);
-
-  setModalMessage(
-    'Departments Page Updated Successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
 function updateDepartmentField(
   section: string,
   field: string,
@@ -2106,107 +2136,88 @@ function updateDepartmentField(
     },
   }));
 }
-async function loadClubsContent() {
-  const { data } = await supabase
-    .from('clubs_page_content')
-    .select('*');
 
-  const formatted: any = {};
+async function loadClubsContent() {
+
+  const { data } =
+    await getClubsContent();
+
+  const formatted:any = {};
 
   data?.forEach(item => {
-    formatted[item.section_name] = item;
+    formatted[item.section_name] =
+      item;
   });
 
   setClubsContent(formatted);
 }
 
 async function loadClubsStatistics() {
-  const { data } = await supabase
-    .from('clubs_statistics')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getClubStatistics();
 
   setClubsStatistics(data || []);
 }
 
 async function loadOrganizations() {
-  const { data } = await supabase
-    .from('organizations')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getOrganizations();
 
   setOrganizations(data || []);
 }
-
 async function loadCommittees() {
-  const { data } = await supabase
-    .from('committees')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getCommittees();
 
   setCommittees(data || []);
 }
 async function loadColleges() {
-  const { data } = await supabase
-    .from('colleges')
-    .select(`
-      *,
-      programs (
-        *,
-        program_faculty (*)
-      )
-    `)
-    .order('display_order');
+
+  const { data } =
+    await getColleges();
 
   setColleges(data || []);
 }
   async function loadDepartmentContent() {
-  const { data } = await supabase
-    .from('department_page_content')
-    .select('*');
 
-  const formatted: any = {};
+  const { data } =
+    await getDepartmentContent();
+
+  const formatted:any = {};
 
   data?.forEach(item => {
-    formatted[item.section_name] = item;
+    formatted[item.section_name] =
+      item;
   });
 
   setDepartmentContent(formatted);
 }
   async function loadAboutStats() {
-  const { data } = await supabase
-    .from('about_statistics')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getAboutStats();
 
   setAboutStats(data || []);
 }
   async function loadFeatures() {
-  const { data } = await supabase
-    .from('homepage_features')
-    .select('*')
-    .order('sort_order');
+  const { data } = await getHomepageFeatures();
 
   setFeatures(data || []);
 }
 async function loadCoreValues() {
-  const { data } = await supabase
-    .from('premier_values')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getCoreValues();
 
   setCoreValues(data || []);
 }
 async function loadFacultyMembers() {
-  const { data, error } = await supabase
-    .from('faculty_members')
-    .select('*')
-    .order('display_order');
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+  const { data } =
+    await getFacultyMembers();
 
   setFacultyMembers(data || []);
 }
@@ -2225,33 +2236,24 @@ async function loadDepartments() {
   setDepartments(data || []);
 }
 async function loadStats() {
-  const { data } = await supabase
-    .from('homepage_stats')
-    .select('*')
-    .order('sort_order');
+  const { data } = await getHomepageStats();
 
   setStats(data || []);
 }
 async function loadCoreValueCards() {
-  const { data } = await supabase
-    .from('core_values')
-    .select('*')
-    .order('display_order');
+
+  const { data } =
+    await getCoreValueCards();
 
   setCoreValueCards(data || []);
 }
 async function loadAnnouncements() {
-  const { data } = await supabase
-    .from('homepage_announcements')
-    .select('*')
-    .order('sort_order');
+  const { data } = await getHomepageAnnouncements();
 
   setAnnouncements(data || []);
 }
   async function loadHomepageContent() {
-  const { data } = await supabase
-    .from('homepage_content')
-    .select('*');
+  const { data } = await getHomepageContent();
 
   const formatted: any = {};
 
@@ -2263,55 +2265,65 @@ async function loadAnnouncements() {
 }
 
 async function loadAboutContent() {
-  const { data } = await supabase
-    .from('about_page_content')
-    .select('*');
 
-  const formatted: any = {};
+  const { data } =
+    await getAboutContent();
+
+  const formatted:any = {};
 
   data?.forEach(item => {
     formatted[item.section_name] = {
-  title: item.title,
-  description: item.description,
-  content: item.content,
-};
+      title: item.title,
+      description: item.description,
+      content: item.content,
+    };
   });
 
   setAboutContent(formatted);
 }
 
 async function saveAboutPage() {
-  const updates = Object.entries(aboutContent).map(
-  ([section_name, values]: any) => ({
-    section_name,
-    title: values.title,
-    description: values.description,
-    content: values.content
-  })
-);
-    await supabase
-    .from('premier_values')
-    .upsert(coreValues);
 
-    await supabase
-    .from('about_statistics')
-    .upsert(aboutStats);
-    
-    await supabase
-    .from('faculty_members')
-    .upsert(facultyMembers);
-
-    await supabase
-    .from('core_values')
-    .upsert(coreValueCards);
-  setModalMessage(
-    'About Page updated successfully!'
+  await saveCoreValues(
+    coreValues
   );
-  const { error } = await supabase
-    .from('about_page_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
+
+  await saveAboutStats(
+    aboutStats
+  );
+
+  await saveFacultyMembers(
+    facultyMembers
+  );
+
+  await saveCoreValueCards(
+    coreValueCards
+  );
+
+  const { error } =
+    await saveAboutContent(
+      aboutContent
+    );
+
+  if (error) {
+    setModalMessage(
+      error.message
+    );
+
+    setShowSuccessModal(true);
+
+    return;
+  }
+
+  setModalMessage(
+    'About Page Updated Successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
+async function saveHomePage() {
+  const { error } =
+    await saveHomepageContent(homeContent);
 
   if (error) {
     setModalMessage(
@@ -2323,39 +2335,27 @@ async function saveAboutPage() {
   }
 
   setModalMessage(
-    'Aboutpage updated successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-
-async function saveHomePage() {
-  const updates = Object.entries(homeContent).map(
-    ([section_name, values]: any) => ({
-      section_name,
-      ...values,
-    })
-  );
-
-  const { error } = await supabase
-    .from('homepage_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
-
-  if (error) {
-    setModalMessage(`Error: ${error.message}`);
-    setShowSuccessModal(true);
-    return;
-  }
-
-  setModalMessage(
     'Homepage updated successfully!'
   );
 
   setShowSuccessModal(true);
 }
+async function saveDepartmentsPage() {
 
+  await saveColleges(
+    colleges
+  );
+
+  await saveDepartmentContent(
+    departmentContent
+  );
+
+  setModalMessage(
+    'Departments Page Updated Successfully!'
+  );
+
+  setShowSuccessModal(true);
+}
   function updateHomepageField(
   section: string,
   field: string,
@@ -2393,55 +2393,23 @@ function updateAboutField(
         Landing Page Management
       </h1>
       <div className="flex gap-4 mb-8">
-  <button
-    onClick={() =>
-      setActivePage('homepage')
-    }
-    className={`px-6 py-3 rounded-lg ${
-      activePage === 'homepage'
-        ? 'bg-blue-600 text-white'
-        : 'bg-gray-200'
-    }`}
-  >
-    Homepage
-  </button>
-
-  <button
-    onClick={() =>
-      setActivePage('about')
-    }
-    className={`px-6 py-3 rounded-lg ${
-      activePage === 'about'
-        ? 'bg-blue-600 text-white'
-        : 'bg-gray-200'
-    }`}
-  >
-    About Page
-  </button>
-  <button
-  onClick={() =>
-    setActivePage('departments')
-  }
-  className={`px-6 py-3 rounded-lg ${
-    activePage === 'departments'
-      ? 'bg-blue-600 text-white'
-      : 'bg-gray-200'
-  }`}
->
-  Departments Page
-  </button>
-  <button
-  onClick={() =>
-    setActivePage('clubs')
-  }
-  className={`px-6 py-3 rounded-lg ${
-    activePage === 'clubs'
-      ? 'bg-blue-600 text-white'
-      : 'bg-gray-200'
-  }`}
->
-  Clubs Page
-</button>
+  {pages.map((page) => (
+    <button
+      key={page.key}
+      onClick={() =>
+        setActivePage(
+          page.key as any
+        )
+      }
+      className={`px-6 py-3 rounded-lg ${
+        activePage === page.key
+          ? 'bg-blue-600 text-white'
+          : 'bg-gray-200'
+      }`}
+    >
+      {page.label}
+    </button>
+  ))}
 </div>
       {activePage === 'homepage' && (
   <>
@@ -2530,9 +2498,9 @@ function updateAboutField(
     />
 
     <ProgramEditor
-      colleges={colleges}
-      setColleges={setColleges}
-    />
+  colleges={colleges}
+  setColleges={setColleges}
+/>
 
     <ProgramFacultyEditor
       colleges={colleges}
@@ -2573,6 +2541,36 @@ function updateAboutField(
     />
   </>
 )}
+{
+  activePage === 'research' && (
+    <>
+      <ResearchHeaderEditor
+        content={researchContent}
+        updateField={updateResearchField}
+      />
+
+      <ResearchPublicationsEditor
+        publications={researchPublications}
+        setPublications={setResearchPublications}
+      />
+
+      <ResearchAwardsEditor
+  awards={researchAwards}
+  setAwards={setResearchAwards}
+/>
+
+      <FeaturedAlumniEditor
+        alumni={featuredAlumni}
+        setAlumni={setFeaturedAlumni}
+      />
+
+      <ResearchCTAEditor
+        content={researchContent}
+        updateField={updateResearchField}
+      />
+    </>
+  )
+}
 
 
       <div className="flex gap-4">
@@ -2580,46 +2578,20 @@ function updateAboutField(
         <div className="flex gap-4">
 
   <button
-    onClick={() => setShowPreview(true)}
-    className="px-6 py-3 bg-gray-700 text-white rounded-lg"
-  >
-    Preview {activePage === 'homepage'
-      ? 'Homepage'
-      : activePage === 'about'
-    ? 'About Page'
-    : activePage === 'departments'
-    ? 'Departments Page'
-    : 'Clubs Page'
-}
-  </button>
+  onClick={() => setShowPreview(true)}
+  className="px-6 py-3 bg-gray-700 text-white rounded-lg"
+>
+  Preview {pageTitles[activePage]}
+</button>
 
   <button
-    onClick={() => {
-  if (activePage === 'homepage') {
-    saveHomePage();
+  onClick={() =>
+    saveHandlers[activePage]()
   }
-  else if (activePage === 'about') {
-    saveAboutPage();
-  }
-  else if (activePage === 'departments') {
-    saveDepartmentsPage();
-  }
-  else if (activePage === 'clubs') {
-    saveClubsPage();
-  }
-}}
-    className="px-6 py-3 bg-blue-600 text-white rounded-lg"
-  >
-    Save {
-  activePage === 'homepage'
-    ? 'Homepage'
-    : activePage === 'about'
-    ? 'About Page'
-    : activePage === 'departments'
-    ? 'Departments Page'
-    : 'Clubs Page'
-}
-  </button>
+  className="px-6 py-3 bg-blue-600 text-white rounded-lg"
+>
+  Save {pageTitles[activePage]}
+</button>
 
 </div>
 
@@ -2650,50 +2622,56 @@ function updateAboutField(
 )}
 {showPreview && (
   <div className="fixed inset-0 z-50 bg-black/50 overflow-auto">
-
     <div className="bg-white min-h-screen">
 
       <div className="sticky top-0 bg-white border-b p-4 flex justify-end">
         <button
-          onClick={() =>
-            setShowPreview(false)
-          }
+          onClick={() => setShowPreview(false)}
           className="px-4 py-2 bg-red-600 text-white rounded-lg"
         >
           Close Preview
         </button>
       </div>
-          {activePage === 'homepage' ? (
-  <HomePage
-    previewMode
-    previewContent={homeContent}
-    previewFeatures={features}
-    previewStats={stats}
-    previewAnnouncements={announcements}
-  />
-) : activePage === 'about' ? (
-  <AboutPage
-    previewMode
-    previewContent={aboutContent}
-    previewStats={aboutStats}
-  />
-) : activePage === 'departments' ? (
-  <DepartmentsPage
-    previewMode
-    previewContent={departmentContent}
-    previewColleges={colleges}
-  />
-) : (
-  <ClubsPage
-    previewMode
-    previewContent={clubsContent}
-    previewStatistics={clubsStatistics}
-    previewOrganizations={organizations}
-    previewCommittees={committees}
-  />
-)}
-    </div>
 
+      {activePage === 'homepage' ? (
+        <HomePage
+          previewMode
+          previewContent={homeContent}
+          previewFeatures={features}
+          previewStats={stats}
+          previewAnnouncements={announcements}
+        />
+      ) : activePage === 'about' ? (
+        <AboutPage
+          previewMode
+          previewContent={aboutContent}
+          previewStats={aboutStats}
+        />
+      ) : activePage === 'departments' ? (
+        <DepartmentsPage
+          previewMode
+          previewContent={departmentContent}
+          previewColleges={colleges}
+        />
+      ) : activePage === 'clubs' ? (
+        <ClubsPage
+          previewMode
+          previewContent={clubsContent}
+          previewStatistics={clubsStatistics}
+          previewOrganizations={organizations}
+          previewCommittees={committees}
+        />
+      ) : activePage === 'research' ? (
+        <ResearchPage
+          previewMode
+          previewContent={researchContent}
+          previewPublications={researchPublications}
+          previewAchievements={researchAwards}
+          previewAlumni={featuredAlumni}
+        />
+      ) : null}
+
+    </div>
   </div>
 )}
     </div>

@@ -1,139 +1,221 @@
-import { BookOpen, Award, Users, ExternalLink } from 'lucide-react';
+import {
+  BookOpen,
+  Award,
+  Users,
+  ExternalLink
+} from 'lucide-react';
 
-export function ResearchPage() {
-  const researches = [
-    {
-      id: 1,
-      title: 'Innovative Teaching Strategies in the Digital Age',
-      authors: 'Dr. Sarah Johnson, Dr. Michael Chen',
-      journal: 'Journal of Educational Technology',
-      year: '2025',
-      category: 'Research',
-    },
-    {
-      id: 2,
-      title: 'Impact of Inclusive Education on Student Achievement',
-      authors: 'Dr. Patricia Williams',
-      journal: 'International Journal of Special Education',
-      year: '2025',
-      category: 'Research',
-    },
-    {
-      id: 3,
-      title: 'Leadership Practices in High-Performing Schools',
-      authors: 'Dr. Robert Anderson, Dr. Jennifer Lee',
-      journal: 'Educational Management Review',
-      year: '2024',
-      category: 'Research',
-    },
-    {
-      id: 4,
-      title: 'Community Literacy Program: A Year in Review',
-      authors: 'COED Extension Office',
-      journal: 'University Extension Report',
-      year: '2025',
-      category: 'Extension',
-    },
-    {
-      id: 5,
-      title: 'Teacher Training Workshops for Rural Schools',
-      authors: 'Dr. David Martinez, Extension Team',
-      journal: 'Community Outreach Initiative',
-      year: '2025',
-      category: 'Extension',
-    },
-  ];
+import { useEffect, useState } from 'react';
+import { supabase } from '../../supabaseClient';
 
-  const achievements = [
-    {
-      id: 1,
-      title: 'Excellence in Teacher Education Award',
-      recipient: 'College of Education',
-      year: '2025',
-      organization: 'National Commission on Higher Education',
-    },
-    {
-      id: 2,
-      title: 'Outstanding Research Publication',
-      recipient: 'Dr. Sarah Johnson',
-      year: '2025',
-      organization: 'Philippine Educational Research Association',
-    },
-    {
-      id: 3,
-      title: 'Best Community Extension Program',
-      recipient: 'COED Extension Office',
-      year: '2024',
-      organization: 'University Awards',
-    },
-    {
-      id: 4,
-      title: 'Innovation in Educational Technology',
-      recipient: 'Dr. Jennifer Lee',
-      year: '2024',
-      organization: 'Asian EdTech Conference',
-    },
-  ];
+interface ResearchPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewPublications?: any[];
+  previewAchievements?: any[];
+  previewAlumni?: any[];
+}
 
-  const alumni = [
-    {
-      id: 1,
-      name: 'Maria Santos',
-      year: '2018',
-      position: 'Principal, Metropolitan High School',
-      achievement: 'Led school to receive National Excellence Award',
-      image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400',
-    },
-    {
-      id: 2,
-      name: 'Juan Dela Cruz',
-      year: '2015',
-      position: 'Division Superintendent, Department of Education',
-      achievement: 'Implemented innovative district-wide literacy program',
-      image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
-    },
-    {
-      id: 3,
-      name: 'Ana Reyes',
-      year: '2020',
-      position: 'Master Teacher, Science Department',
-      achievement: 'National Top 1 Licensure Examination Topnotcher',
-      image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400',
-    },
-  ];
+export function ResearchPage({
+  previewMode = false,
+  previewContent,
+  previewPublications,
+  previewAchievements,
+  previewAlumni,
+}: ResearchPageProps) {
+
+  const [pageContent, setPageContent] =
+    useState<any>({});
+
+  const [publications, setPublications] =
+    useState<any[]>([]);
+
+  const [achievements, setAchievements] =
+    useState<any[]>([]);
+
+  const [alumni, setAlumni] =
+    useState<any[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [selectedAlumni, setSelectedAlumni] =
+  useState<any>(null);
+  useEffect(() => {
+
+    if (previewMode) {
+
+      setPageContent(
+        previewContent || {}
+      );
+
+      setPublications(
+        previewPublications || []
+      );
+
+      setAchievements(
+        previewAchievements || []
+      );
+
+      setAlumni(
+        previewAlumni || []
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    loadData();
+
+  }, []);
+
+  async function loadData() {
+
+    await Promise.all([
+      loadPageContent(),
+      loadPublications(),
+      loadAchievements(),
+      loadAlumni(),
+    ]);
+
+    setLoading(false);
+  }
+
+  async function loadPageContent() {
+
+    const { data } = await supabase
+      .from('research_page_content')
+      .select('*');
+
+    const formatted: any = {};
+
+    data?.forEach(item => {
+      formatted[item.section_name] = item;
+    });
+
+    setPageContent(formatted);
+  }
+
+  async function loadPublications() {
+
+    const { data } = await supabase
+      .from('research_publications')
+      .select('*')
+      .order('display_order');
+
+    setPublications(data || []);
+  }
+
+  async function loadAchievements() {
+
+    const { data } = await supabase
+      .from('research_awards')
+      .select('*')
+      .order('display_order');
+
+    setAchievements(data || []);
+  }
+
+  async function loadAlumni() {
+
+    const { data } = await supabase
+      .from('featured_alumni')
+      .select('*')
+      .order('display_order');
+
+    setAlumni(data || []);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Page Header */}
+
+        {/* HEADER */}
+
         <div className="mb-12">
+
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            Research, Extension & Achievements
+            {pageContent.header?.title}
           </h1>
+
           <p className="text-xl text-gray-600">
-            Showcasing our contributions to education and community development
+            {pageContent.header?.description}
           </p>
+
         </div>
 
-        {/* Published Research */}
+        {/* PUBLICATIONS */}
+
         <section className="mb-12">
+
           <div className="flex items-center gap-3 mb-6">
+
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
               <BookOpen className="w-6 h-6 text-[#2563EB]" />
             </div>
+
             <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              Published Research & Extension
+              {pageContent.publications?.title ||
+                'Published Research & Extension'}
             </h2>
+
           </div>
+
           <div className="grid gap-4">
-            {researches.map((research) => (
+
+            {publications.map((research) => (
+
               <div
-                key={research.id}
-                className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
-              >
+  key={research.id}
+  onClick={() =>
+    window.open(research.link, '_blank')
+  }
+  className="
+    bg-white
+    rounded-xl
+    shadow-md
+    p-6
+    hover:shadow-lg
+    transition-shadow
+    cursor-pointer
+    hover:border-blue-500
+    border
+    border-transparent
+  "
+>
+  <div className="mt-4">
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      window.open(research.link, '_blank');
+    }}
+    className="
+      px-4 py-2
+      bg-blue-600
+      text-white
+      rounded-lg
+      hover:bg-blue-700
+    "
+  >
+    Read Research
+  </button>
+</div>
+
                 <div className="flex items-start justify-between">
+
                   <div className="flex-1">
+
                     <div className="flex items-center gap-3 mb-2">
+
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
                           research.category === 'Research'
@@ -143,117 +225,262 @@ export function ResearchPage() {
                       >
                         {research.category}
                       </span>
-                      <span className="text-sm text-gray-600">{research.year}</span>
+
+                      <span className="text-sm text-gray-600">
+                        {research.year}
+                      </span>
+
                     </div>
+
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">
                       {research.title}
                     </h3>
+
                     <p className="text-sm text-gray-600 mb-1">
                       <strong>Authors:</strong> {research.authors}
                     </p>
+
                     <p className="text-sm text-gray-600">
                       <strong>Published in:</strong> {research.journal}
                     </p>
+
                   </div>
-                  <button className="ml-4 p-2 text-[#2563EB] hover:bg-blue-50 rounded-lg transition-colors">
+
+                  <a
+                    href={research.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-4 p-2 text-[#2563EB] hover:bg-blue-50 rounded-lg"
+                  >
                     <ExternalLink className="w-5 h-5" />
-                  </button>
+                  </a>
+
                 </div>
+
               </div>
+
             ))}
+
           </div>
+
         </section>
 
-        {/* Awards & Recognition */}
+        {/* ACHIEVEMENTS */}
+
         <section className="mb-12">
+
           <div className="flex items-center gap-3 mb-6">
+
             <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
               <Award className="w-6 h-6 text-yellow-600" />
             </div>
+
             <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              Awards & Recognition
+              {pageContent.achievements?.title ||
+                'Awards & Recognition'}
             </h2>
+
           </div>
+
           <div className="grid md:grid-cols-2 gap-6">
+
             {achievements.map((achievement) => (
+
               <div
                 key={achievement.id}
                 className="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500"
               >
+
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">
                   {achievement.title}
                 </h3>
+
                 <div className="space-y-2 text-sm text-gray-600">
+
                   <p>
-                    <strong>Recipient:</strong> {achievement.recipient}
+                    <strong>Recipient:</strong>
+                    {' '}
+                    {achievement.recipient}
                   </p>
+
                   <p>
-                    <strong>Awarded by:</strong> {achievement.organization}
+                    <strong>Awarded by:</strong>
+                    {' '}
+                    {achievement.organization}
                   </p>
+
                   <p>
-                    <strong>Year:</strong> {achievement.year}
+                    <strong>Year:</strong>
+                    {' '}
+                    {achievement.year}
                   </p>
+
                 </div>
+
               </div>
+
             ))}
+
           </div>
+
         </section>
 
-        {/* Alumni Highlights */}
+        {/* ALUMNI */}
+
         <section>
+
           <div className="flex items-center gap-3 mb-6">
+
             <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
               <Users className="w-6 h-6 text-purple-600" />
             </div>
+
             <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              Featured Alumni
+              {pageContent.alumni?.title ||
+                'Featured Alumni'}
             </h2>
+
           </div>
+
           <div className="grid md:grid-cols-3 gap-6">
-            {alumni.map((alumnus) => (
-              <div
-                key={alumnus.id}
-                className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
-              >
-                <div className="h-48 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] overflow-hidden">
+
+            {alumni.map((person) => (
+  <div
+    key={person.id}
+    onClick={() =>
+      setSelectedAlumni(person)
+    }
+    className="
+      bg-white
+      rounded-xl
+      shadow-md
+      overflow-hidden
+      hover:shadow-xl
+      transition-shadow
+      cursor-pointer
+    "
+  >
+
+                <div className="h-48 overflow-hidden">
+
                   <img
-                    src={alumnus.image}
-                    alt={alumnus.name}
-                    className="w-full h-full object-cover opacity-90"
+                    src={person.image}
+                    alt={person.name}
+                    className="w-full h-full object-cover"
                   />
+
                 </div>
+
                 <div className="p-6">
+
                   <h3 className="text-xl font-semibold text-gray-900 mb-1">
-                    {alumnus.name}
+                    {person.name}
                   </h3>
+
                   <p className="text-sm text-gray-600 mb-4">
-                    Class of {alumnus.year}
+                    Class of {person.year}
                   </p>
+
                   <p className="text-sm font-medium text-[#2563EB] mb-3">
-                    {alumnus.position}
+                    {person.position}
                   </p>
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    {alumnus.achievement}
+
+                  <p className="text-sm text-gray-700">
+                    {person.achievement}
                   </p>
+
                 </div>
+
               </div>
+
             ))}
+
           </div>
+
         </section>
 
-        {/* Call to Action */}
+        {/* CTA */}
+
         <div className="mt-12 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
+
           <h2 className="text-2xl font-semibold mb-3">
-            Be Part of Our Success Story
+            {pageContent.cta?.title}
           </h2>
+
           <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            Join our community of educators making a difference. Start your journey with COED today.
+            {pageContent.cta?.description}
           </p>
+
           <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            Apply Now
+            {pageContent.cta?.content}
           </button>
+
         </div>
+
       </div>
+{selectedAlumni && (
+  <div className="
+    fixed inset-0
+    bg-black/50
+    flex items-center justify-center
+    z-50
+  ">
+
+    <div className="
+      bg-white
+      rounded-xl
+      max-w-2xl
+      w-full
+      p-6
+      relative
+    ">
+
+      <button
+        onClick={() =>
+          setSelectedAlumni(null)
+        }
+        className="
+          absolute
+          top-4
+          right-4
+          text-gray-500
+        "
+      >
+        ✕
+      </button>
+
+      <img
+        src={selectedAlumni.image}
+        className="
+          w-full
+          h-72
+          object-cover
+          rounded-lg
+          mb-6
+        "
+      />
+
+      <h2 className="text-3xl font-bold mb-2">
+        {selectedAlumni.name}
+      </h2>
+
+      <p className="text-blue-600 font-semibold mb-4">
+        {selectedAlumni.position}
+      </p>
+
+      <p className="mb-3">
+        <strong>Batch:</strong>{' '}
+        {selectedAlumni.year}
+      </p>
+
+      <p className="text-gray-700">
+        {selectedAlumni.achievement}
+      </p>
+
+    </div>
+
+  </div>
+)}
     </div>
   );
 }
