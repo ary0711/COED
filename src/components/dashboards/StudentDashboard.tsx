@@ -22,6 +22,7 @@ import {
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
 const studentMenuItems = [
   { icon: Bell,         label: 'Dashboard',               id: 'dashboard'    },
@@ -34,19 +35,23 @@ const studentMenuItems = [
 
 // Available academic programs (BSIT intentionally excluded)
 const PROGRAM_OPTIONS = [
-  'Bachelor of Secondary Education - Mathematics',
-  'Bachelor of Secondary Education - English',
-  'Bachelor of Secondary Education - Science',
-  'Bachelor of Elementary Education',
-  'Bachelor of Science in Nursing',
-  'Bachelor of Science in Business Administration',
-  'Bachelor of Science in Accountancy',
-  'Bachelor of Science in Criminology',
-  'Bachelor of Science in Hospitality Management',
-  'Bachelor of Science in Psychology',
-  'Bachelor of Science in Civil Engineering',
-  'Bachelor of Science in Social Work',
+  'Bachelor of Science in Secondary Education - Mathematics',
+  'Bachelor of Science in Secondary Education - English',
+  'Bachelor of Science in Secondary Education - Science',
+  'Bachelor of Science in Elementary Education',
 ];
+
+// Shape of the row we read out of `student_profiles`
+interface StudentProfile {
+  student_id: string;
+  full_name: string;
+  student_no: string;
+  year_level: number;
+  program: string;
+  gpa: number | null;
+  academic_standing: string;
+  enrollment_status: string;
+}
 
 interface StudentDashboardProps {
   activeMenuItem: string;
@@ -59,6 +64,54 @@ interface StudentDashboardProps {
 export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
+
+  // ── Logged-in student's profile data ──
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+
+      const currentUser = authData?.user;
+      if (!currentUser) {
+        setProfileError('No authenticated user found.');
+        setProfileLoading(false);
+        return;
+      }
+
+      const { data: profileData, error: profileFetchError } = await supabase
+        .from('student_profiles')
+        .select('student_id, full_name, student_no, year_level, program, gpa, academic_standing, enrollment_status')
+        .eq('user_id', currentUser.id)
+        .single();
+
+      if (profileFetchError) throw profileFetchError;
+
+      setProfile(profileData as StudentProfile);
+      setUserEmail(currentUser.email ?? '');
+
+      // Keep the program selector in sync with the student's actual enrolled program
+      if (profileData?.program && PROGRAM_OPTIONS.includes(profileData.program)) {
+        setSelectedProgram(profileData.program);
+      }
+    } catch (err) {
+      console.error('Failed to load student profile:', err);
+      setProfileError('Unable to load your profile right now.');
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
@@ -102,14 +155,21 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
             <div className="flex-1">
               <DashboardHeader
                 userRole="Student"
-                userName={userName}
+                userName={profile?.full_name ?? userName}
               />
             </div>
           </div>
         </div>
 
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard'   && <StudentDashboardView selectedProgram={selectedProgram} />}
+          {activeMenuItem === 'dashboard'   && (
+            <StudentDashboardView
+              selectedProgram={selectedProgram}
+              profile={profile}
+              loading={profileLoading}
+              error={profileError}
+            />
+          )}
           {activeMenuItem === 'faculty'     && <FacultyDepartments />}
           {activeMenuItem === 'resources'   && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
@@ -118,6 +178,10 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
             <StudentSettings
               selectedProgram={selectedProgram}
               setSelectedProgram={setSelectedProgram}
+              profile={profile}
+              userEmail={userEmail}
+              loading={profileLoading}
+              onProfileUpdated={fetchProfile}
             />
           )}
         </main>
@@ -129,30 +193,50 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
 // ====================== STUDENT DASHBOARD VIEW ======================
 interface StudentDashboardViewProps {
   selectedProgram: string;
+  profile: StudentProfile | null;
+  loading: boolean;
+  error: string | null;
 }
 
-function StudentDashboardView({ selectedProgram }: StudentDashboardViewProps) {
+function StudentDashboardView({ selectedProgram, profile, loading, error }: StudentDashboardViewProps) {
   const announcements = [
     { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
     { id: 2, title: 'Faculty Evaluation Period Open',        date: 'Feb 10, 2026', type: 'info'      },
     { id: 3, title: 'College Foundation Day Activities',     date: 'Feb 8, 2026',  type: 'info'      },
   ];
 
+  const displayName = profile?.full_name ?? 'Student';
+  const displayId = profile?.student_no ?? '—';
+  const displayProgram = profile?.program ?? selectedProgram;
+  const displayYearLevel = profile?.year_level ?? '—';
+  const displayStanding = profile?.academic_standing ?? '—';
+
   return (
     <div>
       <div className="bg-[#1E3A8A] rounded-xl shadow-lg p-5 sm:p-6 text-white mb-6">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-            John Michael Cruz
-          </h2>
-          <p className="text-blue-100 mb-1">Student ID: 2023-00458</p>
-          <p className="text-blue-100">
-            {selectedProgram}
-          </p>
-          <p className="text-blue-100">
-            3rd Year, Second Semester
-          </p>
-        </div>
+        {loading ? (
+          <div className="animate-pulse space-y-2">
+            <div className="h-6 w-48 bg-blue-300/40 rounded" />
+            <div className="h-4 w-32 bg-blue-300/40 rounded" />
+            <div className="h-4 w-56 bg-blue-300/40 rounded" />
+          </div>
+        ) : (
+          <div>
+            <h2 className="text-xl sm:text-2xl font-semibold mb-2">
+              {displayName}
+            </h2>
+            <p className="text-blue-100 mb-1">Student ID: {displayId}</p>
+            <p className="text-blue-100">
+              {displayProgram}
+            </p>
+            <p className="text-blue-100">
+              {displayYearLevel} Year Level
+            </p>
+            {error && (
+              <p className="text-red-200 text-xs mt-2">{error}</p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6">
@@ -163,12 +247,12 @@ function StudentDashboardView({ selectedProgram }: StudentDashboardViewProps) {
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Calendar className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">3rd</div>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900">{displayYearLevel}</div>
           <div className="text-xs sm:text-sm text-gray-600">Year Level</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Award className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 mb-2" />
-          <div className="text-base sm:text-xl font-bold text-gray-900">Dean's List</div>
+          <div className="text-base sm:text-xl font-bold text-gray-900">{displayStanding}</div>
           <div className="text-xs sm:text-sm text-gray-600">Academic Standing</div>
         </div>
       </div>
@@ -261,7 +345,7 @@ function AcademicResources() {
     { title: 'Student Handbook',             type: 'PDF', size: '5.8 MB'  },
     { title: 'Registration Forms',           type: 'PDF', size: '890 KB'  },
     { title: 'Scholarship Application Form', type: 'PDF', size: '1.5 MB'  },
-  ];
+  ];      
 
   return (
     <div>
@@ -346,7 +430,6 @@ function AchievementsActivities() {
 
   const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
   
-  // Get first day of month and number of days
   const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   
@@ -431,9 +514,7 @@ function AchievementsActivities() {
         </div>
       </div>
 
-      {/* Calendar View */}
       <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-        {/* Calendar Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">College Calendar</h3>
@@ -449,16 +530,13 @@ function AchievementsActivities() {
           </div>
         </div>
 
-        {/* Calendar Grid */}
         <div className="grid grid-cols-7 gap-2">
-          {/* Day headers */}
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
             <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
               {day}
             </div>
           ))}
 
-          {/* Calendar days */}
           {days.map((day, index) => {
             const events = day ? getEventsForDay(day) : [];
             const isTodayDate = day ? isToday(day) : false;
@@ -507,7 +585,6 @@ function AchievementsActivities() {
           })}
         </div>
 
-        {/* Event Legend */}
         <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-blue-500 rounded"></div>
@@ -528,7 +605,6 @@ function AchievementsActivities() {
         </div>
       </div>
 
-      {/* Event Details Modal */}
       {selectedEvent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full animate-in">
@@ -566,7 +642,6 @@ function AchievementsActivities() {
         </div>
       )}
 
-      {/* Activities Section */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
         <div className="flex border-b border-gray-100">
           <button
@@ -674,11 +749,66 @@ function InquiryContact() {
 interface StudentSettingsProps {
   selectedProgram: string;
   setSelectedProgram: (program: string) => void;
+  profile: StudentProfile | null;
+  userEmail: string;
+  loading: boolean;
+  onProfileUpdated: () => void;
 }
 
-function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSettingsProps) {
+function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+
+  // Editable full name field, initialized from profile once loaded
+  const [fullNameInput, setFullNameInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (profile?.full_name) {
+      setFullNameInput(profile.full_name);
+    }
+  }, [profile?.full_name]);
+
+  const displayStudentNo = profile?.student_no ?? '';
+  const displayYearLevel = profile?.year_level ?? '—';
+  const displayStanding = profile?.academic_standing ?? '—';
+  const displayEnrollmentStatus = profile?.enrollment_status ?? '—';
+
+  const handleSaveChanges = async () => {
+    if (!profile?.student_id) return;
+
+    const trimmedName = fullNameInput.trim();
+    if (!trimmedName) {
+      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+      return;
+    }
+
+    setSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('student_profiles')
+        .update({ full_name: trimmedName })
+        .eq('student_id', profile.student_id);
+
+      if (error) throw error;
+
+      setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+      onProfileUpdated();
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      setSaveMessage({ type: 'error', text: 'Failed to save changes. Please try again.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFullNameInput(profile?.full_name ?? '');
+    setSaveMessage(null);
+  };
 
   return (
     <div>
@@ -693,20 +823,56 @@ function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSetting
         {/* Profile Information */}
         <div className="mb-8">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-              <input type="text" defaultValue="John Michael Cruz" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+
+          {loading ? (
+            <div className="animate-pulse space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="h-10 bg-gray-100 rounded-lg" />
+                <div className="h-10 bg-gray-100 rounded-lg" />
+              </div>
+              <div className="h-10 bg-gray-100 rounded-lg" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
-              <input type="text" defaultValue="2023-00458" disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-            <input type="email" defaultValue="john.cruz@university.edu" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-          </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    value={fullNameInput}
+                    onChange={(e) => setFullNameInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
+                  <input
+                    type="text"
+                    value={displayStudentNo}
+                    disabled
+                    readOnly
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                <input
+                  type="email"
+                  value={userEmail}
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                />
+              </div>
+            </>
+          )}
+
+          {saveMessage && (
+            <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+              {saveMessage.text}
+            </p>
+          )}
         </div>
 
         {/* Password / Security */}
@@ -732,7 +898,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSetting
         </h2>
 
         <div className="space-y-4">
-          {/* Email Notifications */}
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium text-gray-900">Email Notifications</p>
@@ -749,7 +914,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSetting
             </label>
           </div>
 
-          {/* Announcement Alerts */}
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div>
               <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
@@ -796,21 +960,18 @@ function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSetting
               Choose the program you are currently enrolled in.
             </p>
             <p className="text-xs text-gray-600 mt-3">
-              <span className="font-semibold">Year Level:</span> 3rd Year
+              <span className="font-semibold">Year Level:</span> {displayYearLevel}
             </p>
-            <p className="text-xs text-gray-600"><span className="font-semibold">Semester:</span> Second Semester</p>
           </div>
 
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <p className="text-xs text-green-600 uppercase font-semibold mb-1">Current Status</p>
-            <p className="text-sm font-medium text-gray-900">Active Enrollment</p>
-            <p className="text-xs text-gray-600 mt-2">Enrolled Subjects: 8</p>
+            <p className="text-sm font-medium text-gray-900">{displayEnrollmentStatus}</p>
           </div>
 
           <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
             <p className="text-xs text-purple-600 uppercase font-semibold mb-1">Academic Standing</p>
-            <p className="text-sm font-medium text-gray-900">Dean's List</p>
-            <p className="text-xs text-gray-600 mt-2">Excellent academic performance maintained</p>
+            <p className="text-sm font-medium text-gray-900">{displayStanding}</p>
           </div>
         </div>
       </div>
@@ -831,10 +992,18 @@ function StudentSettings({ selectedProgram, setSelectedProgram }: StudentSetting
 
       {/* Save Button */}
       <div className="mt-8 flex gap-3">
-        <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-          Save Changes
+        <button
+          onClick={handleSaveChanges}
+          disabled={saving || loading}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving...' : 'Save Changes'}
         </button>
-        <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+        <button
+          onClick={handleCancel}
+          disabled={saving}
+          className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
+        >
           Cancel
         </button>
       </div>
