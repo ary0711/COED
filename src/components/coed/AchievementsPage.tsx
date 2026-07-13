@@ -1,224 +1,216 @@
-import { Trophy, Award, TrendingUp, Medal, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import {Trophy,Award,TrendingUp,Medal,ChevronDown,} from 'lucide-react';
 
-export function AchievementsPage() {
+import {useState,useEffect,} from 'react';
+
+import { achievementsService } from '../../landing-page/services/achievementsService';
+interface Topnotcher {
+  id: string;
+  name: string;
+  rank: string;
+  exam: string;
+  exam_date: string;
+  rating: string;
+  year: string;
+  level: string;
+  display_order: number;
+}
+
+interface CollegeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  year: string;
+  category: string;
+  display_order: number;
+}
+
+interface Statistic {
+  id: string;
+  label: string;
+  value: string;
+  description: string;
+  color: string;
+  display_order: number;
+}
+interface AchievementBanner {
+  id: string;
+
+  title: string;
+  description: string;
+
+}
+interface BannerStat {
+  id: string;
+  title: string;
+  value: string;
+  display_order: number;
+}
+
+interface AchievementPageContent {
+  id: string;
+
+  page_title: string;
+  page_subtitle: string;
+
+  topnotchers_title: string;
+  topnotchers_filter_label: string;
+
+  college_achievements_title: string;
+
+  button_text: string;
+}
+interface AchievementPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewBanner?: any;
+  previewBannerStats?: any[];
+  previewStatistics?: any[];
+  previewTopnotchers?: any[];
+  previewCollegeAchievements?: any[];
+}
+
+export function AchievementsPage({
+  previewMode = false,
+  previewContent,
+  previewBanner,
+  previewBannerStats,
+  previewStatistics,
+  previewTopnotchers,
+  previewCollegeAchievements,
+}: AchievementPageProps) {
+
+  
+  
   const [selectedYear, setSelectedYear] = useState('2025');
+  const [pageContent, setPageContent] =
+  useState<AchievementPageContent | null>(
+    null
+  );
+  const [bannerStats, setBannerStats] =
+  useState<BannerStat[]>([]);
+  const [banner, setBanner] =
+  useState<AchievementBanner | null>(
+    null
+  );
+const [topnotchersData, setTopnotchersData] =
+  useState<Topnotcher[]>([]);
 
+const [
+  collegeAchievements,
+  setCollegeAchievements,
+] = useState<CollegeAchievement[]>([]);
+
+const [statistics, setStatistics] =
+  useState<Statistic[]>([]);
   // Complete topnotchers list (sourced from official college records table)
-  const topnotchersData = [
-    {
-      id: 1,
-      name: 'Jima S. Bejagan',
-      rank: '4th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary',
-      date: 'August 1998',
-      rating: '84.00%',
-      year: '1998',
-      level: 'Secondary',
-    },
-    {
-      id: 2,
-      name: 'Jerome L. Abregana',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2012',
-      rating: '86.40%',
-      year: '2012',
-      level: 'Elementary',
-    },
-    {
-      id: 3,
-      name: 'Marichu F. Abregana',
-      rank: '3rd Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2023',
-      rating: '94.00%',
-      year: '2023',
-      level: 'Elementary',
-    },
-    {
-      id: 4,
-      name: 'Era Zaira S. Lizardo',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2023',
-      rating: '92.60%',
-      year: '2023',
-      level: 'Elementary',
-    },
-    {
-      id: 5,
-      name: 'Rhea C. Pino',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2023',
-      rating: '92.60%',
-      year: '2023',
-      level: 'Elementary',
-    },
-    {
-      id: 6,
-      name: 'Fritzie Mae S. Unabia',
-      rank: '1st Place - National Topnotcher',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'March 2022',
-      rating: '92.22%',
-      year: '2022',
-      level: 'Elementary',
-    },
-    {
-      id: 7,
-      name: 'Rizalie Jan Cabrera',
-      rank: '7th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2024',
-      rating: '92.80%',
-      year: '2024',
-      level: 'Elementary',
-    },
-    {
-      id: 8,
-      name: 'Gleziel Jardin Ludovice',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2024',
-      rating: '92.20%',
-      year: '2024',
-      level: 'Elementary',
-    },
-    {
-      id: 9,
-      name: 'Diana Rose M. Ponce',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2024',
-      rating: '92.20%',
-      year: '2024',
-      level: 'Elementary',
-    },
-    {
-      id: 10,
-      name: 'Sheen S. Montezon',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary (BSEd Math)',
-      date: 'March 2025',
-      rating: '92.20%',
-      year: '2025',
-      level: 'Secondary',
-    },
-    {
-      id: 11,
-      name: 'Kassandra Cristina E. Amancio',
-      rank: '8th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary (BTLED)',
-      date: 'September 2025',
-      rating: '92.60%',
-      year: '2025',
-      level: 'Secondary',
-    },
-    {
-      id: 12,
-      name: 'Leendon S. Gelborion',
-      rank: '10th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary (BTLED)',
-      date: 'September 2025',
-      rating: '93.00%',
-      year: '2025',
-      level: 'Secondary',
-    },
-    {
-      id: 13,
-      name: 'Clyde Zeph F. Payusan',
-      rank: '9th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2025',
-      rating: '92.40%',
-      year: '2025',
-      level: 'Elementary',
-    },
-  ];
+const [loading, setLoading] =
+  useState(true);
+  useEffect(() => {
+  loadAchievements();
+}, []);
+  const displayPageContent = previewMode
+  ? previewContent
+  : pageContent;
 
-  const collegeAchievements = [
-    {
-      id: 1,
-      title: 'Level IV AACCUP Accreditation Status',
-      description: 'Highest level of program-level accreditation achieved',
-      year: '2025',
-      category: 'Accreditation',
-    },
-    {
-      id: 2,
-      title: 'Rank 2 Top Performing School (Elementary)',
-      description: 'National ranking with 97.10% passing rate',
-      year: '2025',
-      category: 'Academic Excellence',
-    },
-    {
-      id: 3,
-      title: '1st National Topnotcher',
-      description: 'Fritzie Mae S. Unabia - Elementary Level',
-      year: '2022',
-      category: 'Recognition',
-    },
-    {
-      id: 4,
-      title: 'Center of Excellence',
-      description: 'Designated by CHED for Teacher Education Programs',
-      year: '2023',
-      category: 'Recognition',
-    },
-    {
-      id: 5,
-      title: 'Consistent Top Performer Status',
-      description: 'Producing LET topnotchers across multiple decades',
-      year: '2025',
-      category: 'Excellence',
-    },
-  ];
+const displayBanner = previewMode
+  ? previewBanner
+  : banner;
 
-  const statistics = [
-    {
-      label: 'LET Passing Rate (Sept 2025)',
-      value: '97.10%',
-      description: 'Elementary Level',
-      color: 'from-[#10B981] to-[#34D399]',
-    },
-    {
-      label: 'Topnotchers Produced',
-      value: '13',
-      description: 'Since 1998',
-      color: 'from-[#F59E0B] to-[#FBBF24]',
-    },
-    {
-      label: 'Highest Ranking',
-      value: '1st',
-      description: 'National Topnotcher 2022',
-      color: 'from-[#8B5CF6] to-[#A78BFA]',
-    },
-    {
-      label: 'Years of Excellence',
-      value: '32+',
-      description: 'Since Inception',
-      color: 'from-[#2563EB] to-[#60A5FA]',
-    },
-  ];
+const displayBannerStats = previewMode
+  ? previewBannerStats
+  : bannerStats;
 
-  const getCategoryColor = (category) => {
-    switch (category) {
-      case 'Accreditation':
-        return 'bg-blue-100 text-blue-700';
-      case 'Academic Excellence':
-        return 'bg-green-100 text-green-700';
-      case 'Recognition':
-        return 'bg-purple-100 text-purple-700';
-      case 'Excellence':
-        return 'bg-pink-100 text-pink-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
+const displayStatistics = previewMode
+  ? previewStatistics
+  : statistics;
+
+const displayTopnotchers = previewMode
+  ? previewTopnotchers
+  : topnotchersData;
+
+const displayCollegeAchievements = previewMode
+  ? previewCollegeAchievements
+  : collegeAchievements;
+const loadAchievements =
+  async () => {
+    try {
+
+      const [
+        topnotchers,
+        achievements,
+        stats,
+         bannerData,
+         bannerStatsData,
+        pageContentData,
+      ] = await Promise.all([
+        achievementsService.getTopnotchers(),
+        achievementsService.getCollegeAchievements(),
+        achievementsService.getStatistics(),
+        achievementsService.getBanner(),
+        achievementsService.getBannerStats(),
+          achievementsService.getPageContent(),
+      ]);
+
+      setTopnotchersData(
+        topnotchers || []
+      );
+
+      setCollegeAchievements(
+        achievements || []
+      );
+
+      setStatistics(
+        stats || []
+      );
+      setBanner(bannerData);
+      setPageContent(pageContentData);
+      setBannerStats(
+  bannerStatsData || []
+);
+
+
+      if (
+        topnotchers &&
+        topnotchers.length > 0
+      ) {
+        setSelectedYear(
+          topnotchers[0].year
+        );
+
+      }
+
+    } catch (error) {
+      console.error(
+        'Failed loading achievements:',
+        error
+      );
+    } finally {
+      setLoading(false);
     }
   };
+const getCategoryColor = (
+  category: string
+) => {
+  switch (category) {
+    case 'Accreditation':
+      return 'bg-blue-100 text-blue-700';
 
-  const getRankColor = (rank) => {
+    case 'Academic Excellence':
+      return 'bg-green-100 text-green-700';
+
+    case 'Recognition':
+      return 'bg-purple-100 text-purple-700';
+
+    case 'Excellence':
+      return 'bg-pink-100 text-pink-700';
+
+    default:
+      return 'bg-gray-100 text-gray-700';
+  }
+};
+  const getRankColor = (
+  rank: string
+) => {
     if (rank.includes('1st') || rank.includes('National')) {
       return 'from-yellow-400 to-yellow-600';
     } else if (rank.includes('2') || rank.includes('3') || rank.includes('4')) {
@@ -228,28 +220,53 @@ export function AchievementsPage() {
   };
 
   // Years sorted most recent first
-  const years = Array.from(new Set(topnotchersData.map((t) => t.year))).sort(
-    (a, b) => Number(b) - Number(a)
-  );
+  const years = Array.from(
+  new Set(
+    (displayTopnotchers || []).map(
+      (t) => t.year
+    )
+  )
+).sort(
+  (a, b) =>
+    Number(b) - Number(a)
+);
 
-  const filteredTopnotchers = topnotchersData.filter(
-    (topnotcher) => topnotcher.year === selectedYear
+  const filteredTopnotchers =
+  (displayTopnotchers || []).filter(
+    (topnotcher) =>
+      topnotcher.year === selectedYear
   );
+if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
 
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading Achievements...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-12">
-          <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">Achievements</h1>
+          <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4"> {displayPageContent?.page_title}</h1>
           <p className="text-xl text-gray-600">
-            Celebrating excellence and success in education
+            {displayPageContent?.page_subtitle}
           </p>
         </div>
 
         {/* Statistics */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">
-          {statistics.map((stat, index) => (
+          {displayStatistics?.map((stat, index) => (
             <div
               key={index}
               className={`bg-gradient-to-br ${stat.color} rounded-xl shadow-lg p-6 text-white`}
@@ -269,14 +286,14 @@ export function AchievementsPage() {
                 <Trophy className="w-6 h-6 text-yellow-600" />
               </div>
               <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-                LET Topnotchers
+               {displayPageContent?.topnotchers_title}
               </h2>
             </div>
 
             {/* Year Filter Dropdown */}
             <div className="flex items-center gap-2">
               <label htmlFor="year-filter" className="text-sm font-medium text-gray-700">
-                Filter by Year:
+              {displayPageContent?.topnotchers_filter_label}
               </label>
               <div className="relative">
                 <select
@@ -333,7 +350,7 @@ export function AchievementsPage() {
                       <strong>Examination:</strong> {topnotcher.exam}
                     </p>
                     <p>
-                      <strong>Date:</strong> {topnotcher.date}
+                      <strong>Date:</strong> {topnotcher.exam_date}
                     </p>
                     <div className="mt-3 inline-block">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -364,11 +381,11 @@ export function AchievementsPage() {
               <Award className="w-6 h-6 text-[#2563EB]" />
             </div>
             <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              College Achievements
+             {displayPageContent?.college_achievements_title}
             </h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {collegeAchievements.map((achievement) => (
+            {displayCollegeAchievements?.map((achievement) => (
               <div
                 key={achievement.id}
                 className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-shadow"
@@ -400,37 +417,65 @@ export function AchievementsPage() {
             <div className="text-white">
               <Medal className="w-12 h-12 mb-4 opacity-90" />
               <h2 className="text-2xl font-semibold mb-3">
-                Excellence is Our Tradition
+               {displayBanner?.title}
               </h2>
               <p className="text-blue-100 mb-6 leading-relaxed">
-                For over 32 years, CTU-Argao's College of Education has been forging educators who excel in their profession and make significant contributions to the nation's educational landscape.
-              </p>
+ {displayBanner?.description}              </p>
               <button className="px-6 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-                Join Our Legacy
+              {displayPageContent?.button_text}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <TrendingUp className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">32+</div>
-                <div className="text-sm opacity-90">Years of Excellence</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Trophy className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">13</div>
-                <div className="text-sm opacity-90">Topnotchers (Since 1998)</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Award className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">97.10%</div>
-                <div className="text-sm opacity-90">Passing Rate 2025</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Medal className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">Level IV</div>
-                <div className="text-sm opacity-90">AACCUP Accreditation</div>
-              </div>
-            </div>
+
+  {displayBannerStats?.map(
+    (stat, index) => {
+
+      const icons = [
+        <TrendingUp
+          key="trend"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Trophy
+          key="trophy"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Award
+          key="award"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Medal
+          key="medal"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+      ];
+
+      return (
+        <div
+          key={stat.id}
+          className="
+            bg-white/10
+            backdrop-blur-sm
+            rounded-lg
+            p-4
+            text-center
+            text-white
+          "
+        >
+          {icons[index]}
+
+          <div className="text-2xl font-bold">
+            {stat.value}
+          </div>
+
+          <div className="text-sm opacity-90">
+            {stat.title}
+          </div>
+        </div>
+      );
+    }
+  )}
+
+</div>
           </div>
         </div>
       </div>

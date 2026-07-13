@@ -64,11 +64,23 @@ export function HomePage({
   const [announcements, setAnnouncements] =
   useState<Announcement[]>([]);
   useEffect(() => {
-  loadFeatures();
-  loadStats();
-  loadAnnouncements();
-  loadHomepageContent();
-}, []);
+  if (!previewMode) {
+    loadHomePage();
+  }
+}, [previewMode]);
+async function loadHomePage() {
+  setLoading(true);
+
+  await Promise.all([
+    loadFeatures(),
+    loadStats(),
+    loadAnnouncements(),
+    loadHomepageContent(),
+  ]);
+
+  setLoading(false);
+}
+const [loading, setLoading] = useState(true);
   const displayFeatures =
   previewMode && previewFeatures
     ? previewFeatures
@@ -125,6 +137,25 @@ async function loadAnnouncements() {
     .order('sort_order');
 
   setAnnouncements(data || []);
+}
+if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4" />
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading Home...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the homepage.
+        </p>
+
+      </div>
+    </div>
+  );
 }
   return (
     <div className="min-h-screen bg-white">

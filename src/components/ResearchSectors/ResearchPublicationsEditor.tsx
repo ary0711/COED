@@ -146,7 +146,7 @@ const confirmDeletePublication =
     <p className="text-sm text-gray-500">
       Research Publication Information
     </p>
-    </div>
+    </div> 
       <button
   onClick={() =>
     openDeleteModal(pub.id)

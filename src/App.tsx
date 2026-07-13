@@ -97,9 +97,14 @@ const handleLogin = (role: string) => {
   };
 
   const handleNavigate = (page: string) => {
-  console.log('Current page changing to:', page);
   setCurrentPage(page as PublicPage);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  setTimeout(() => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
+  }, 0);
 };
   
 
@@ -159,7 +164,7 @@ const handleLogin = (role: string) => {
 
        {currentPage !== 'login' &&
  currentPage !== 'forgot-password' && (
-  <Footer />
+  <Footer onNavigate={handleNavigate} />
 )}
       </div>
     );

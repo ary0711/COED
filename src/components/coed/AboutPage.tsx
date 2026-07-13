@@ -102,7 +102,7 @@ export function AboutPage({
     loadAboutPage();
   }
 }, [previewMode]);
-
+const [loading, setLoading] = useState(true);
 const [dean, setDean] =
   useState<FacultyMember | null>(null);
   const [aboutContent, setAboutContent] =
@@ -129,38 +129,40 @@ const [statistics, setStatistics] =
 const [coreValueCards, setCoreValueCards] =
   useState<CoreValueCard[]>([]);
 async function loadAboutPage() {
+
+  setLoading(true);
+
   const formatted: Record<string, any> = {};
+
   const [
-  contentRes,
-  deptRes,
-  facultyRes,
-  valuesRes,
-  statsRes,
-  coreValuesRes,
-  deanRes
-] = await Promise.all([
-  supabase.from('about_page_content').select('*'),
-  supabase.from('departments').select('*'),
-  supabase.from('faculty_members').select('*'),
-  supabase.from('premier_values').select('*'),
-  supabase.from('about_statistics').select('*'),
-  supabase
-  .from('core_values')
-  .select('*')
-  .order('display_order'),
-  supabase
-    .from('faculty_members')
-    .select('*')
-    .eq('member_type', 'dean')
-    .single()
-]);
-    
-   
+    contentRes,
+    deptRes,
+    facultyRes,
+    valuesRes,
+    statsRes,
+    coreValuesRes,
+    deanRes
+  ] = await Promise.all([
+    supabase.from('about_page_content').select('*'),
+    supabase.from('departments').select('*'),
+    supabase.from('faculty_members').select('*'),
+    supabase.from('premier_values').select('*'),
+    supabase.from('about_statistics').select('*'),
+    supabase
+      .from('core_values')
+      .select('*')
+      .order('display_order'),
+    supabase
+      .from('faculty_members')
+      .select('*')
+      .eq('member_type', 'dean')
+      .single()
+  ]);
 
   contentRes.data?.forEach((item: any) => {
     formatted[item.section_name] = item;
   });
-  
+
   setAboutContent(formatted);
 
   setDepartments(deptRes.data || []);
@@ -169,6 +171,8 @@ async function loadAboutPage() {
   setStatistics(statsRes.data || []);
   setCoreValueCards(coreValuesRes.data || []);
   setDean(deanRes.data || null);
+
+  setLoading(false);
 }
   
   const [currentPage, setCurrentPage] = useState<number>(0);
@@ -196,6 +200,23 @@ const teachers =
       member.department_id === teacherDepartment?.id &&
       member.member_type === 'teacher'
   );
+  if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading About...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

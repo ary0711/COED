@@ -5,6 +5,10 @@ import { AboutPage } from './coed/AboutPage';
 import { ClubsPage } from './coed/ClubsPage';
 import { ResearchPage } from './coed/ResearchPage';
 import { DepartmentsPage } from './coed/DepartmentsPage';
+import { AchievementsPage } from './coed/AchievementsPage';
+import { AccreditationPage } from './coed/AccreditationPage';
+import { ContactPage } from './coed/ContactPage';
+import { Footer } from './coed/Footer';
 import {HeroSectionEditor} from './HomePageSectors/HeroSectionEditor';
 import {AboutSectionEditor} from './HomePageSectors/AboutSectionEditor';
 import {FeaturesEditor} from './HomePageSectors/FeaturesEditor';
@@ -33,6 +37,24 @@ import { ResearchPublicationsEditor } from './ResearchSectors/ResearchPublicatio
 import { ResearchAwardsEditor } from './ResearchSectors/ResearchAwardsEditor';
 import { FeaturedAlumniEditor } from './ResearchSectors/FeaturedAlumniEditor';
 import { ResearchCTAEditor } from './ResearchSectors/ResearchCTAEditor';
+import { AchievementsBannerEditor } from './AchievementSectors/AchievementsBannerEditor';
+import { AchievementsBannerStatsEditor } from './AchievementSectors/AchievementsBannerStatsEditor';
+import { AchievementsCollegeEditor } from './AchievementSectors/AchievementsCollegeEditor';
+import { AchievementsPageContentEditor } from './AchievementSectors/AchievementsPageContentEditor';
+import { AchievementsStatisticsEditor } from './AchievementSectors/AchievementsStatisticsEditor';
+import { AchievementsTopnotchersEditor } from './AchievementSectors/AchievementsTopnotchersEditor';
+import { AccreditationCertificationsEditor } from './AccreditationSectors/AccreditationCertificationsEditor';
+import { AccreditationContentEditor } from './AccreditationSectors/AccreditationContentEditor';
+import { AccreditationLevelsEditor } from './AccreditationSectors/AccreditationLevelsEditor';
+import { AccreditationOverviewEditor } from './AccreditationSectors/AccreditationOverviewEditor';
+import { AccreditationProgramsEditor } from  './AccreditationSectors/AccreditationProgramsEditor'
+import { ContactContentEditor } from './ContactSectors/ContactContentEditor';
+import { ContactOfficeHoursEditor } from './ContactSectors/ContactOfficeHoursEditor';
+import { ContactSocialLinksEditor } from './ContactSectors/ContactSocialLinksEditor';
+import { FooterContentEditor } from './FooterSectors/FooterContentEditor';
+import { FooterQuickLinksEditor } from './FooterSectors/FooterQuickLinksEditor';
+import { FooterSocialLinksEditor } from './FooterSectors/FooterSocialLinksEditor';
+
 import {
   getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent}from '../landing-page/services/homepageService';
 
@@ -48,6 +70,10 @@ import type {
   CoreValue,FacultyMember,AboutStat,CoreValueCard,ClubStatistic,Organization,Committee,} from '../landing-page/services/landingPageTypes';
 import {
   loadResearchContent,loadResearchPublications,loadAwards,loadFeaturedAlumni,saveResearchPage} from '../landing-page/services/researchService';
+import { achievementsService} from '../landing-page/services/achievementsService';
+import { accreditationService } from '../landing-page/services/accreditationService';
+import { contactService } from '../landing-page/services/contactService';
+import { footerService } from '../landing-page/services/footerService';
 import {
   Users,
   GraduationCap,
@@ -1937,6 +1963,53 @@ function updateClubsField(
     },
   }));
 }
+const [footerContent, setFooterContent] =
+  useState<any>({});
+
+const [footerQuickLinks, setFooterQuickLinks] =
+  useState<any[]>([]);
+
+const [footerSocialLinks, setFooterSocialLinks] =
+  useState<any[]>([]);
+const [contactContent, setContactContent] =
+  useState<any>({});
+
+const [officeHours, setOfficeHours] =
+  useState<any[]>([]);
+
+const [socialLinks, setSocialLinks] =
+  useState<any[]>([]);
+const [accreditationContent, setAccreditationContent] =
+  useState<any>(null);
+
+const [overviewItems, setOverviewItems] =
+  useState<any[]>([]);
+
+const [levels, setLevels] =
+  useState<any[]>([]);
+
+const [programs, setPrograms] =
+  useState<any[]>([]);
+
+const [certifications, setCertifications] =
+  useState<any[]>([]);
+const [achievementPageContent, setAchievementPageContent] =
+  useState<any>(null);
+
+const [achievementBanner, setAchievementBanner] =
+  useState<any>(null);
+
+const [achievementBannerStats, setAchievementBannerStats] =
+  useState<any[]>([]);
+
+const [achievementStatistics, setAchievementStatistics] =
+  useState<any[]>([]);
+
+const [achievementTopnotchers, setAchievementTopnotchers] =
+  useState<any[]>([]);
+
+const [achievementCollegeAchievements, setAchievementCollegeAchievements] =
+  useState<any[]>([]);
 const [clubsContent, setClubsContent] =
   useState<any>({});
 
@@ -1987,7 +2060,11 @@ useState<
   'about' |
   'departments' |
   'clubs' |
-  'research'
+  'research' |
+    'achievements' |
+    'accreditation' |
+    'contact' |
+    'footer'
 >('homepage');
   const [modalMessage, setModalMessage] =
   useState('');
@@ -2009,7 +2086,10 @@ useState<
     loadOrganizations();
     loadCommittees();
     loadResearchPageData();
-    
+    loadAchievementsPage();
+    loadAccreditationData();
+    loadContactData();
+    loadFooterData();
 
   }, []);
   const pages = [
@@ -2033,6 +2113,22 @@ useState<
     key: 'research',
     label: 'Research Page',
   },
+  {
+  key: 'achievements',
+  label: 'Achievements Page',
+},
+{
+  key: 'accreditation',
+  label: 'Accreditation Page',
+},
+{
+  key: 'contact',
+  label: 'Contact Page',
+},
+{
+  key: 'footer',
+  label: 'Footer'
+},
 ];
   const pageTitles = {
   homepage: 'Homepage',
@@ -2040,6 +2136,10 @@ useState<
   departments: 'Departments Page',
   clubs: 'Clubs Page',
   research: 'Research Page',
+  achievements: 'Achievements Page',
+  accreditation: 'Accreditation Page',
+  contact: 'Contact Page',
+  footer: 'Footer',
 };
   const saveHandlers = {
   homepage: saveHomePage,
@@ -2047,7 +2147,226 @@ useState<
   departments: saveDepartmentsPage,
   clubs: saveClubsPage,
   research: handleSaveResearchPage,
+  achievements: saveAchievementsPage,
+  accreditation : saveAccreditationPage,
+  contact: saveContactPage,
+  footer: saveFooterPage,
 };
+async function loadFooterData() {
+
+  const [
+    content,
+    quickLinks,
+    socialLinks
+  ] = await Promise.all([
+
+    footerService.getFooterContent(),
+
+    footerService.getQuickLinks(),
+
+    footerService.getSocialLinks()
+
+  ]);
+
+  setFooterContent(content || {});
+
+  setFooterQuickLinks(quickLinks || []);
+
+  setFooterSocialLinks(socialLinks || []);
+}
+async function saveFooterPage() {
+
+  try {
+
+    await footerService.saveFooterContent(
+      footerContent
+    );
+
+    await footerService.saveQuickLinks(
+      footerQuickLinks
+    );
+
+    await footerService.saveSocialLinks(
+      footerSocialLinks
+    );
+
+    setModalMessage(
+      'Footer Updated Successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+  } catch (error) {
+
+    console.error(error);
+
+    setModalMessage(
+      'Failed to save footer'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
+async function loadContactData() {
+
+  const [
+    content,
+    hours,
+    socials
+  ] = await Promise.all([
+
+    contactService.getPageContent(),
+
+    contactService.getOfficeHours(),
+
+    contactService.getSocialLinks(),
+
+  ]);
+
+  setContactContent(content);
+
+  setOfficeHours(hours || []);
+
+  setSocialLinks(socials || []);
+}
+async function saveContactPage() {
+  try {
+
+    await contactService.savePageContent(
+      contactContent
+    );
+
+    await contactService.saveOfficeHours(
+      officeHours
+    );
+
+    await contactService.saveSocialLinks(
+      socialLinks
+    );
+
+    setModalMessage(
+      'Contact Page Updated Successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+  } catch (error) {
+
+    console.error(error);
+
+    setModalMessage(
+      'Failed to save contact page'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
+async function saveAccreditationPage() {
+  try {
+
+    await accreditationService.savePageContent(
+      accreditationContent
+    );
+
+    await accreditationService.saveOverview(
+      overviewItems
+    );
+
+    await accreditationService.saveLevels(
+      levels
+    );
+
+    await accreditationService.savePrograms(
+      programs
+    );
+
+    await accreditationService.saveCertifications(
+      certifications
+    );
+
+    setModalMessage(
+      'Accreditation Page Updated Successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+  } catch (error) {
+
+    console.error(error);
+
+    setModalMessage(
+      'Failed to save accreditation page'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
+async function saveAchievementsPage() {
+  try {
+    await achievementsService.savePageContent(
+      achievementPageContent
+    );
+
+    await achievementsService.saveBanner(
+      achievementBanner
+    );
+
+    await achievementsService.saveBannerStats(
+      achievementBannerStats
+    );
+
+    await achievementsService.saveStatistics(
+      achievementStatistics
+    );
+
+    await achievementsService.saveTopnotchers(
+      achievementTopnotchers
+    );
+
+    await achievementsService.saveCollegeAchievements(
+      achievementCollegeAchievements
+    );
+
+    setModalMessage(
+      'Achievements Page Updated Successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+  } catch (error) {
+    console.error(error);
+
+    setModalMessage(
+      'Failed to save achievements page'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
+async function loadAccreditationData() {
+  const [
+    content,
+    overview,
+    levelData,
+    programData,
+    certificationData
+  ] = await Promise.all([
+    accreditationService.getPageContent(),
+    accreditationService.getOverview(),
+    accreditationService.getLevels(),
+    accreditationService.getPrograms(),
+    accreditationService.getCertifications(),
+  ]);
+
+  setAccreditationContent(content);
+ setOverviewItems(overview || []);
+setLevels(levelData || []);
+setPrograms(programData || []);
+setCertifications(certificationData || []);
+}
+
+
+
 async function loadResearchPageData() {
   const content =
     await loadResearchContent();
@@ -2384,7 +2703,40 @@ function updateAboutField(
   }));
 }
   
+async function loadAchievementsPage() {
+  try {
+    const [
+      pageContent,
+      banner,
+      bannerStats,
+      statistics,
+      topnotchers,
+      collegeAchievements
+    ] = await Promise.all([
+      achievementsService.getPageContent(),
+      achievementsService.getBanner(),
+      achievementsService.getBannerStats(),
+      achievementsService.getStatistics(),
+      achievementsService.getTopnotchers(),
+      achievementsService.getCollegeAchievements(),
+    ]);
 
+    setAchievementPageContent(pageContent);
+    setAchievementBanner(banner);
+    setAchievementBannerStats(bannerStats || []);
+    setAchievementStatistics(statistics || []);
+    setAchievementTopnotchers(topnotchers || []);
+    setAchievementCollegeAchievements(
+      collegeAchievements || []
+    );
+
+  } catch (error) {
+    console.error(
+      'Failed loading achievements',
+      error
+    );
+  }
+}
   return (
     
     <div className="max-w-6xl mx-auto p-6">
@@ -2392,7 +2744,7 @@ function updateAboutField(
       <h1 className="text-3xl font-bold mb-6">
         Landing Page Management
       </h1>
-      <div className="flex gap-4 mb-8">
+    <div className="flex flex-wrap gap-3 mb-8">
   {pages.map((page) => (
     <button
       key={page.key}
@@ -2570,8 +2922,102 @@ function updateAboutField(
       />
     </>
   )
-}
+}{activePage === 'achievements' && (
+  <>
+    <AchievementsPageContentEditor
+      content={achievementPageContent}
+      setContent={setAchievementPageContent}
+    />
 
+    <AchievementsStatisticsEditor
+      statistics={achievementStatistics}
+      setStatistics={setAchievementStatistics}
+    />
+
+    <AchievementsTopnotchersEditor
+      topnotchers={achievementTopnotchers}
+      setTopnotchers={setAchievementTopnotchers}
+    />
+
+    <AchievementsCollegeEditor
+      achievements={achievementCollegeAchievements}
+      setAchievements={setAchievementCollegeAchievements}
+    />
+
+    <AchievementsBannerEditor
+      banner={achievementBanner}
+      setBanner={setAchievementBanner}
+    />
+
+    <AchievementsBannerStatsEditor
+      stats={achievementBannerStats}
+      setStats={setAchievementBannerStats}
+    />
+  </>
+)}{activePage === 'accreditation' && (
+  <>
+    <AccreditationContentEditor
+      content={accreditationContent}
+      setContent={setAccreditationContent}
+    />
+
+    <AccreditationOverviewEditor
+      overview={overviewItems}
+      setOverview={setOverviewItems}
+    />
+
+    <AccreditationLevelsEditor
+      levels={levels}
+      setLevels={setLevels}
+    />
+
+    <AccreditationProgramsEditor
+      programs={programs}
+      setPrograms={setPrograms}
+    />
+
+    <AccreditationCertificationsEditor
+      certifications={certifications}
+      setCertifications={setCertifications}
+    />
+  </>
+)}
+{activePage === 'contact' && (
+  <>
+   <ContactContentEditor
+  content={contactContent}
+  setContent={setContactContent}
+/>
+
+<ContactOfficeHoursEditor
+  officeHours={officeHours}
+  setOfficeHours={setOfficeHours}
+/>
+
+<ContactSocialLinksEditor
+  socialLinks={socialLinks}
+  setSocialLinks={setSocialLinks}
+/>
+  </>
+)}
+{activePage === 'footer' && (
+  <>
+    <FooterContentEditor
+      content={footerContent}
+      setContent={setFooterContent}
+    />
+
+    <FooterQuickLinksEditor
+      links={footerQuickLinks}
+      setLinks={setFooterQuickLinks}
+    />
+
+    <FooterSocialLinksEditor
+      socials={footerSocialLinks}
+      setSocials={setFooterSocialLinks}
+    />
+  </>
+)}
 
       <div className="flex gap-4">
 
@@ -2669,7 +3115,43 @@ function updateAboutField(
           previewAchievements={researchAwards}
           previewAlumni={featuredAlumni}
         />
-      ) : null}
+      ) : activePage === 'achievements' ? (
+  <AchievementsPage
+    previewMode
+    previewContent={achievementPageContent}
+    previewBanner={achievementBanner}
+    previewBannerStats={achievementBannerStats}
+    previewStatistics={achievementStatistics}
+    previewTopnotchers={achievementTopnotchers}
+    previewCollegeAchievements={
+      achievementCollegeAchievements
+    }
+  />
+) : activePage === 'accreditation' ? (
+  <AccreditationPage
+    previewMode
+    previewContent={accreditationContent}
+    previewOverview={overviewItems}
+    previewLevels={levels}
+    previewPrograms={programs}
+    previewCertifications={certifications}
+  />
+)  : activePage === 'footer' ? (
+<Footer
+    previewMode
+    previewContent={footerContent}
+    previewQuickLinks={footerQuickLinks}
+    previewSocialLinks={footerSocialLinks}
+  />
+) : activePage === 'contact' ? (
+  <ContactPage
+    previewMode
+  previewContent={contactContent}
+  previewOfficeHours={officeHours}
+  previewSocialLinks={socialLinks}
+  />
+) : null}
+
 
     </div>
   </div>
