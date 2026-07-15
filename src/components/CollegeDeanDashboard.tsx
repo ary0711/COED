@@ -249,7 +249,6 @@ export function CollegeDeanDashboard({
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
-          {activeMenuItem === 'evaluation'    && <EvaluationManagement />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
           {activeMenuItem === 'reports'       && <ReportsAnalytics />}
           {activeMenuItem === 'announcements' && <AnnouncementsContent />}
@@ -1222,54 +1221,7 @@ function ResearchAchievements() {
   );
 }
 
-// ─── Evaluation Management ────────────────────────────────────────────────────
-function EvaluationManagement() {
-  return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Evaluation Management</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Total Evaluations</h3>
-          <p className="text-3xl font-bold text-blue-600">3,847</p>
-          <p className="text-sm text-gray-600 mt-1">Student responses</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Completion Rate</h3>
-          <p className="text-3xl font-bold text-green-600">94%</p>
-          <p className="text-sm text-gray-600 mt-1">Students completed</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Average Rating</h3>
-          <p className="text-3xl font-bold text-purple-600">4.6/5.0</p>
-          <p className="text-sm text-gray-600 mt-1">Overall faculty rating</p>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Performance Summary</h2>
-        <div className="space-y-3">
-          {[
-            { name: 'Dr. Sarah Johnson',     rating: 4.8, responses: 156 },
-            { name: 'Prof. Michael Chen',    rating: 4.7, responses: 142 },
-            { name: 'Dr. Patricia Williams', rating: 4.9, responses: 138 },
-          ].map((faculty, i) => (
-            <div key={i} className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">{faculty.name}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{faculty.responses} responses</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl sm:text-2xl font-bold text-blue-600">{faculty.rating}</div>
-                  <div className="text-xs text-gray-600">out of 5.0</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+
 
 // ─── Alumni Tracer ────────────────────────────────────────────────────────────
 function AlumniTracer() {

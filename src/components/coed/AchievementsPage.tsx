@@ -267,10 +267,15 @@ if (!previewMode && loading) {
         {/* Statistics */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">
           {displayStatistics?.map((stat, index) => (
-            <div
-              key={index}
-              className={`bg-gradient-to-br ${stat.color} rounded-xl shadow-lg p-6 text-white`}
-            >
+           <div
+  key={index}
+  className="rounded-xl shadow-lg p-6 text-white"
+  style={{
+    background: stat.color
+      ? `linear-gradient(135deg, ${stat.color.split(',')[0]}, ${stat.color.split(',')[1]})`
+      : '#2563EB'
+  }}
+>
               <div className="text-4xl font-bold mb-2">{stat.value}</div>
               <div className="text-lg font-semibold mb-1 opacity-90">{stat.label}</div>
               <div className="text-sm opacity-80">{stat.description}</div>

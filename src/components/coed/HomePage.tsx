@@ -1,4 +1,4 @@
-import { ChevronRight, Award, Users, BookOpen, TrendingUp, ArrowRight, Sparkles, GraduationCap, Trophy } from 'lucide-react';
+import { ChevronRight, ArrowRight, Sparkles, GraduationCap, Trophy } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 interface HomePageProps {
@@ -21,6 +21,7 @@ interface Stat {
   id: string;
   value: string;
   label: string;
+  image_url?: string;
 }
 
 interface Announcement {
@@ -231,8 +232,8 @@ if (!previewMode && loading) {
                 {about?.badge_text}
             </div>
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
-               {about?.heading}{' '}
-              <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              {about?.heading}{' '}
+              <span className="text-blue-600">
                 {about?.highlight_text}
               </span>
             </h2>
@@ -276,63 +277,38 @@ if (!previewMode && loading) {
       {/* ═══════════════════════════════════════
           STATS SECTION
       ═══════════════════════════════════════ */}
-      <section className="py-20 px-4 bg-gradient-to-br from-white via-blue-50/30 to-white relative">
-        <div className="absolute top-10 right-20 w-64 h-64 bg-blue-100/30 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 left-20 w-64 h-64 bg-purple-100/30 rounded-full blur-3xl" />
+      <section className="py-24 px-4 mt-12 bg-white relative overflow-hidden">
+          <div className="absolute top-10 right-20 w-64 h-64 bg-blue-100/30 rounded-full blur-3xl" />
+          <div className="absolute bottom-10 left-20 w-64 h-64 bg-purple-100/30 rounded-full blur-3xl" />
 
-        <div className="max-w-7xl mx-auto relative">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2"> {statsSection?.title}</h2>
-            <p className="text-gray-600">  {statsSection?.subtitle}
-</p>
+          <div className="max-w-7xl mx-auto relative">
+            <div className="text-center mb-12">
+              <h2 className="text-5xl font-bold text-blue-600 mb-2">{statsSection?.title}</h2>
+              <p className="text-gray-600">  {statsSection?.subtitle}</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {displayStats.map((stat) => (
+  <StatCard
+    key={stat.id}
+    value={stat.value}
+    label={stat.label}
+    image={stat.image_url}
+  />
+))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {displayStats.map((stat, index) => {
-  const styles = [
-    {
-      gradient: "from-blue-500 to-blue-600",
-      bgGradient: "from-blue-50 to-blue-100",
-    },
-    {
-      gradient: "from-purple-500 to-purple-600",
-      bgGradient: "from-purple-50 to-purple-100",
-    },
-    {
-      gradient: "from-pink-500 to-pink-600",
-      bgGradient: "from-pink-50 to-pink-100",
-    },
-    {
-      gradient: "from-green-500 to-green-600",
-      bgGradient: "from-green-50 to-green-100",
-    },
-  ];
-
-  return (
-    <StatCard
-      key={stat.id}
-      value={stat.value}
-      label={stat.label}
-      icon={Users}
-      gradient={styles[index % styles.length].gradient}
-      bgGradient={styles[index % styles.length].bgGradient}
-    />
-  );
-})}
-            
-          </div>
-        </div>
-      </section>
+        </section>
 
       {/* ═══════════════════════════════════════
           ANNOUNCEMENTS SECTION
       ═══════════════════════════════════════ */}
-      <section className="py-24 px-4 bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50/30 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-200/20 to-purple-200/20 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+      <section className="py-24 px-4 mt-12 bg-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
 
         <div className="max-w-7xl mx-auto relative">
           <div className="flex items-center justify-between mb-12">
             <div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-3">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-medium mb-3">
                  {announcementsSection?.badge_text}
               </div>
               <h2 className="text-4xl font-bold text-gray-900 mb-2"> {announcementsSection?.title}</h2>
@@ -396,15 +372,27 @@ if (!previewMode && loading) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StatCard({ value, label, icon: Icon, gradient, bgGradient }: any) {
+function StatCard({ value, label, image }: any) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${bgGradient} p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-white group hover:scale-105`}>
-      <div className="relative">
-        <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${gradient} shadow-lg mb-4`}>
-          <Icon className="w-6 h-6 text-white" />
+    <div className="relative overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 group hover:scale-105 aspect-[3/4] drop-shadow-lg">
+      {/* Background image */}
+      <img
+        src={image}
+        alt={label}
+        className="absolute inset-0 w-full h-full object-cover object-center"
+      />
+
+      {/* Blue gradient overlay - subtle, matching COED blue */}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#1E3A8A]/85 via-[#1E3A8A]/40 to-[#1E3A8A]/10" />
+
+      {/* Stat text */}
+      <div className="relative h-full flex flex-col justify-end p-5">
+        <div className="text-4xl lg:text-5xl font-extrabold text-white mb-2 drop-shadow-md">
+          {value}
         </div>
-        <div className="text-4xl font-bold text-gray-900 mb-2">{value}</div>
-        <div className="text-sm font-medium text-gray-600">{label}</div>
+        <div className="text-base font-semibold text-white drop-shadow-sm">
+          {label}
+        </div>
       </div>
     </div>
   );

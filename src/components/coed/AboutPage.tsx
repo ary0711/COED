@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User, PlayCircle, Sparkles } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 // --- TypeScript Interfaces ---
@@ -11,6 +11,15 @@ interface Person {
   experience: string;
   subject: string;
   image: string;
+}
+interface AboutContent {
+  id: string;
+  section_name: string;
+  title?: string;
+  description?: string;
+  content?: string;
+  image?: string;
+  badge_number?: string;
 }
 
 // --- Dummy Data ---
@@ -105,8 +114,8 @@ export function AboutPage({
 const [loading, setLoading] = useState(true);
 const [dean, setDean] =
   useState<FacultyMember | null>(null);
-  const [aboutContent, setAboutContent] =
-  useState<Record<string, any>>({});
+ const [aboutContent, setAboutContent] =
+  useState<Record<string, AboutContent>>({});
   const content = previewMode
   ? previewContent
   : aboutContent;
@@ -132,7 +141,10 @@ async function loadAboutPage() {
 
   setLoading(true);
 
-  const formatted: Record<string, any> = {};
+  const formatted: Record<
+  string,
+  AboutContent
+> = {};
 
   const [
     contentRes,
@@ -159,10 +171,10 @@ async function loadAboutPage() {
       .single()
   ]);
 
-  contentRes.data?.forEach((item: any) => {
-    formatted[item.section_name] = item;
-  });
-
+  contentRes.data?.forEach((item) => {
+  formatted[item.section_name] =
+    item as AboutContent;
+});
   setAboutContent(formatted);
 
   setDepartments(deptRes.data || []);
@@ -218,8 +230,8 @@ const teachers =
   );
 }
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white py-12 relative">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
         
         {/* Page Header */}
         <div className="mb-12 text-center">
@@ -227,55 +239,81 @@ const teachers =
             About Us
           </div>
           <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">  {content['header']?.title}</h1>
-          <p className="text-xl text-gray-600">  {content['header']?.description}</p>
+          <p className="text-xl text-gray-900">  {content['header']?.description}</p>
         </div>
 
-        {/* College History */}
-        <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2"> {content['history']?.title}</h2>
-          <p className="text-sm font-medium text-gray-500 italic mb-6">
-          {content['history']?.description}
-          </p>
-          <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
-            <div
-  className="prose max-w-none text-gray-700 leading-relaxed [&>p]:mb-6"
-  dangerouslySetInnerHTML={{
-    __html: content['history']?.content || ''
-  }}
+        {/* College History — text left, image right w/ floating badge (Xennada-style) */}
+        <div className="mb-8">
+          <div className="grid md:grid-cols-2 gap-10 items-center">
+            {/* Text side */}
+            <div>
+              <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A8A] mb-4 leading-tight">
+                Our History
+              </h2>
+              <div
+                className="prose max-w-none text-gray-900 leading-relaxed text-[17px] [&>p]:mb-5"
+                dangerouslySetInnerHTML={{
+                  __html: content['history']?.content || ''
+                }}
+              />
+            </div>
+
+            {/* Image side with floating badge */}
+            <div className="relative">
+              <div className="rounded-2xl overflow-hidden shadow-lg aspect-[4/3]">
+                <img
+  src={
+    content['history']?.image ||
+    '/bg.jpg'
+  }
+  alt="College of Education History"
+  className="w-full h-full object-cover"
+  loading="lazy"
 />
+              </div>
+              {/* Floating experience/stat badge */}
+              <div className="absolute -bottom-6 left-6 bg-white rounded-xl shadow-xl px-5 py-4 flex items-center gap-3 border border-gray-100">
+                <div className="w-11 h-11 rounded-full bg-[#1E3A8A] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                  {content['history']?.badge_number || '30+'}
+                </div>
+                <div className="text-xs font-semibold text-gray-700 leading-tight uppercase tracking-wide">
+                  Years of<br />Excellence
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Vision, Mission, Goals */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
-              <Eye className="w-7 h-7 text-[#2563EB]" />
+        {/* Vision, Mission, Goals — livened up cards */}
+        <div className="grid md:grid-cols-3 gap-9 mb-24 mt-14">
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Eye className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
-            <div className="text-gray-700 leading-relaxed">
-  {content['vision']?.description}
-</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Vision</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['vision']?.description}
+            </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4">
-              <Target className="w-7 h-7 text-green-600" />
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Target className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
-            <div className="text-gray-700 leading-relaxed">
-  {content['mission']?.description}
-</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Mission</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['mission']?.description}
+            </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
-              <Award className="w-7 h-7 text-purple-600" />
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Award className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
-            <div className="text-gray-700 leading-relaxed">
-  {content['goals']?.description}
-</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Goals</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['goals']?.description}
+            </div>
           </div>
         </div>
 

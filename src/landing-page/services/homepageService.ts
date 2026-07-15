@@ -50,4 +50,38 @@ export async function saveHomepageContent(
     .upsert(updates, {
       onConflict: 'section_name',
     });
+
+    
+}
+export async function uploadHomepageImage(
+  file: File,
+  folder: string = 'stats'
+) {
+  const fileExt = file.name.split('.').pop();
+
+  const fileName =
+    `${folder}/${Date.now()}.${fileExt}`;
+
+  const { error } = await supabase.storage
+    .from('homepage-images')
+    .upload(fileName, file, {
+      upsert: true,
+    });
+
+  if (error) throw error;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from('homepage-images')
+    .getPublicUrl(fileName);
+
+  return publicUrl;
+}
+export async function saveHomepageStats(
+  stats: any[]
+) {
+  return await supabase
+    .from('homepage_stats')
+    .upsert(stats);
 }

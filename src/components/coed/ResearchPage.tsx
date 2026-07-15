@@ -202,14 +202,14 @@ export function ResearchPage({
     border-transparent
   "
 >
-  <div className="mt-4">
+  <div className="mt-4 mb-4">
   <button
     onClick={(e) => {
       e.stopPropagation();
       window.open(research.link, '_blank');
     }}
     className="
-      px-4 py-2
+      px-4 py-3
       bg-blue-600
       text-white
       rounded-lg

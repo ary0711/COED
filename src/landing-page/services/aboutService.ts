@@ -52,12 +52,14 @@ export async function saveAboutContent(
     title: values.title,
     description: values.description,
     content: values.content,
+    image: values.image,
+    badge_number: values.badge_number
   }));
 
   return await supabase
     .from('about_page_content')
     .upsert(updates, {
-      onConflict: 'section_name',
+      onConflict: 'section_name'
     });
 }
 
@@ -91,4 +93,32 @@ export async function saveFacultyMembers(
   return await supabase
     .from('faculty_members')
     .upsert(facultyMembers);
+}
+
+export async function uploadAboutImage(
+  file: File,
+  folder: string = 'history'
+) {
+  const extension =
+    file.name.split('.').pop();
+
+  const fileName =
+    `${folder}/${Date.now()}.${extension}`;
+
+  const { error } =
+    await supabase.storage
+      .from('about-images')
+      .upload(fileName, file, {
+        upsert: true
+      });
+
+  if (error) throw error;
+
+  const {
+    data: { publicUrl }
+  } = supabase.storage
+    .from('about-images')
+    .getPublicUrl(fileName);
+
+  return publicUrl;
 }
