@@ -1,6 +1,12 @@
 
 import { useState } from 'react';
-import {Trash2,Plus,X} from 'lucide-react';
+import {
+  Trash2,
+  Plus,
+  X,
+  Pencil,
+   CheckCircle,
+} from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 interface Props {
   content: any;
@@ -19,19 +25,21 @@ export default function TeamStructureEditor({
   setFacultyMembers,
   departments,
 }: Props) {
+  const [isEditing, setIsEditing] =
+  useState(false);
+const [showUploadSuccessModal, setShowUploadSuccessModal] =
+  useState(false);
+const [editingIndex, setEditingIndex] =
+  useState<number | null>(null);
   const [showFacultyModal, setShowFacultyModal] =
   useState(false);
-
+const [searchTerm, setSearchTerm] =
+  useState('');
 const [showDeleteModal, setShowDeleteModal] =
   useState(false);
 
 const [facultyToDelete, setFacultyToDelete] =
   useState<number | null>(null);
-
-const [currentPage, setCurrentPage] =
-  useState(1);
-
-const itemsPerPage = 5;
 
 const [newFaculty, setNewFaculty] =
   useState({
@@ -59,85 +67,126 @@ const [newFaculty, setNewFaculty] =
 };
     setFacultyMembers(updated);
   };
-
-  async function uploadFacultyImage(
-  file: File,
+const editFaculty = (
+  member: any,
   index: number
+) => {
+  setNewFaculty({
+    name: member.name || '',
+    role: member.role || '',
+    academic_rank:
+      member.academic_rank || '',
+    education:
+      member.education || '',
+    experience:
+      member.experience || '',
+    department_id:
+      member.department_id || '',
+    member_type:
+      member.member_type || 'teacher',
+    image: member.image || '',
+  });
+
+  setEditingIndex(index);
+  setIsEditing(true);
+  setShowFacultyModal(true);
+};
+  
+const resetFacultyForm = () => {
+  setNewFaculty({
+    name: '',
+    role: '',
+    academic_rank: '',
+    education: '',
+    experience: '',
+    department_id: '',
+    member_type: 'teacher',
+    image: '',
+  });
+
+  setEditingIndex(null);
+  setIsEditing(false);
+};
+const saveFaculty = () => {
+  console.log(
+  "SAVE FACULTY IMAGE:",
+  newFaculty.image
+);
+  if (
+  !isEditing &&
+  newFaculty.member_type === 'dean'
 ) {
-  try {
-    const fileExt =
-      file.name.split('.').pop();
-
-    const fileName =
-      `faculty-${Date.now()}.${fileExt}`;
-
-    const filePath =
-      `faculty/${fileName}`;
-
-    const { error } =
-      await supabase.storage
-        .from('landing-page-images')
-        .upload(filePath, file);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    const { data } =
-      supabase.storage
-        .from('landing-page-images')
-        .getPublicUrl(filePath);
-
-    updateFaculty(
-      startIndex + index,
-      'image',
-      data.publicUrl
+  const existingDean =
+    facultyMembers.find(
+      member =>
+        member.member_type === 'dean'
     );
 
-    alert('Upload Successful');
-  } catch (error) {
-    console.error(error);
+  if (existingDean) {
+    alert(
+      'Only one Dean is allowed.'
+    );
+    return;
   }
 }
+  if (
+  newFaculty.member_type !== 'dean' &&
+  !newFaculty.department_id
+) {
+  alert('Please select a department.');
+  return;
+}
 
-  const startIndex =
-  (currentPage - 1) *
-  itemsPerPage;
+  if (
+    isEditing &&
+    editingIndex !== null
+  ) {
+    const updated = [
+      ...facultyMembers,
+    ];
 
-const paginatedFaculty =
-  facultyMembers.slice(
-    startIndex,
-    startIndex + itemsPerPage
-  );
-
-const totalPages =
-  Math.ceil(
-    facultyMembers.length /
-    itemsPerPage
-  );
-const saveFaculty = () => {
-  setFacultyMembers([
-    ...facultyMembers,
-    {
-      id: crypto.randomUUID(),
+    updated[editingIndex] = {
+      ...updated[editingIndex],
       ...newFaculty,
-      display_order:
-        facultyMembers.length + 1,
-    },
-  ]);
+
+      
+    };
+   console.log(
+  "EDITING FACULTY",
+  facultyMembers[editingIndex]
+);
+
+console.log(
+  "NEW FACULTY",
+  newFaculty
+);
+
+    setFacultyMembers(updated);
+  } else {
+    setFacultyMembers([
+      ...facultyMembers,
+      {
+        id: crypto.randomUUID(),
+        ...newFaculty,
+        display_order:
+          facultyMembers.length + 1,
+      },
+    ]);
+  }
 
   setNewFaculty({
     name: '',
     role: '',
+    academic_rank: '',
     education: '',
     experience: '',
-    academic_rank: '',
-    image: '',
     department_id: '',
     member_type: 'teacher',
+    image: '',
   });
 
+  setEditingIndex(null);
+  setIsEditing(false);
   setShowFacultyModal(false);
 };
 const openDeleteModal = (
@@ -164,6 +213,25 @@ const confirmDeleteFaculty =
     setShowDeleteModal(false);
     setFacultyToDelete(null);
   };
+const dean =
+  facultyMembers.find(
+    member =>
+      member.member_type === 'dean'
+  );
+  const groupedFaculty =
+  departments.map((dept) => ({
+    ...dept,
+    members: facultyMembers.filter(
+      (member) =>
+        member.department_id === dept.id &&
+        member.member_type !== 'dean' &&
+        member.name
+          ?.toLowerCase()
+          .includes(
+            searchTerm.toLowerCase()
+          )
+    ),
+  }));
   return (
     <div className="space-y-8">
 
@@ -276,315 +344,504 @@ const confirmDeleteFaculty =
         </div>
 
       </div>
+{/* DEAN MANAGEMENT */}
 
+<div className="bg-white rounded-2xl shadow-md border p-8 mb-8">
+
+  <div className="flex justify-between items-center mb-6">
+
+    <div>
+      <h2 className="text-2xl font-bold text-gray-800">
+        Dean Information
+      </h2>
+
+      <p className="text-gray-500 mt-2">
+        Manage the current College Dean.
+      </p>
+    </div>
+
+    {dean && (
+      <button
+        onClick={() => {
+          const deanIndex =
+            facultyMembers.findIndex(
+              (member) =>
+                member.member_type === 'dean'
+            );
+
+          editFaculty(
+            dean,
+            deanIndex
+          );
+        }}
+        className="
+          bg-blue-600
+          text-white
+          px-4
+          py-2
+          rounded-xl
+          flex
+          items-center
+          gap-2
+          hover:bg-blue-700
+        "
+      >
+        <Pencil size={16} />
+        Edit Dean
+      </button>
+    )}
+
+  </div>
+
+  {!dean ? (
+
+    <div className="text-center py-10">
+
+      <p className="text-gray-500 mb-4">
+        No Dean has been assigned yet.
+      </p>
+
+      <button
+        onClick={() => {
+
+          setNewFaculty({
+            name: '',
+            role: '',
+            academic_rank: '',
+            education: '',
+            experience: '',
+            department_id: '',
+            member_type: 'dean',
+            image: '',
+          });
+
+          setEditingIndex(null);
+          setIsEditing(false);
+          setShowFacultyModal(true);
+        }}
+        className="
+          bg-gradient-to-r
+          from-blue-700
+          to-blue-500
+          text-white
+          px-6
+          py-3
+          rounded-xl
+        "
+      >
+        Add Dean
+      </button>
+
+    </div>
+
+  ) : (
+
+    <div
+      className="
+        flex
+        flex-col
+        md:flex-row
+        gap-8
+        items-center
+      "
+    >
+
+      <img
+        src={
+          dean.image ||
+          'https://via.placeholder.com/150'
+        }
+        alt={dean.name}
+        className="
+          w-40
+          h-40
+          rounded-full
+          object-cover
+          border-4
+          border-blue-100
+        "
+      />
+
+      <div className="flex-1">
+
+        <h3 className="text-3xl font-bold text-gray-800">
+          {dean.name}
+        </h3>
+
+        <p className="text-blue-600 text-lg font-medium mt-1">
+          {dean.role}
+        </p>
+<p className="text-sm text-gray-500 mt-2">
+  {
+    departments.find(
+      d => d.id === dean.department_id
+    )?.name
+  }
+</p>
+        <p className="text-gray-500 mt-2">
+          {dean.academic_rank}
+        </p>
+
+        <p className="text-gray-500 mt-2">
+          {dean.experience}
+        </p>
+
+        <p className="text-gray-400 mt-3">
+          {dean.education}
+        </p>
+
+      </div>
+
+      <div className="flex gap-3">
+
+        <button
+          onClick={() => {
+            const deanIndex =
+              facultyMembers.findIndex(
+                (member) =>
+                  member.member_type ===
+                  'dean'
+              );
+
+            editFaculty(
+              dean,
+              deanIndex
+            );
+          }}
+          className="
+            p-3
+            rounded-lg
+            bg-blue-50
+            border
+            border-blue-200
+            hover:bg-blue-100
+          "
+        >
+          <Pencil
+            size={20}
+            className="text-blue-600"
+          />
+        </button>
+
+        <button
+          onClick={() => {
+            const deanIndex =
+              facultyMembers.findIndex(
+                (member) =>
+                  member.member_type ===
+                  'dean'
+              );
+
+            openDeleteModal(
+              deanIndex
+            );
+          }}
+          className="
+            p-3
+            rounded-lg
+            bg-red-50
+            border
+            border-red-200
+            hover:bg-red-100
+          "
+        >
+          <Trash2
+            size={20}
+            className="text-red-600"
+          />
+        </button>
+
+      </div>
+
+    </div>
+
+  )}
+
+</div>
       {/* FACULTY MEMBERS */}
 
       <div className="bg-white rounded-2xl shadow-md border p-8">
 
         <div className="flex justify-between items-center mb-8">
+          <div className="mb-8">
 
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">
-              Faculty Members
-            </h2>
+  <h2 className="text-2xl font-bold text-gray-800">
+    Faculty Members
+  </h2>
 
-            <p className="text-gray-500 mt-2">
-              Manage Dean, Chairmen and Teachers.
-            </p>
-          </div>
+  <p className="text-gray-500 mt-2">
+    Manage Dean, Chairmen and Teachers.
+  </p>
 
-          <button
-  onClick={() =>
-    setShowFacultyModal(true)
-  }
-  className="
-    flex items-center gap-2
-    bg-blue-600
-    text-white
-    px-5 py-3
-    rounded-xl
-  "
->
-  <Plus size={18} />
-  Add Faculty
-</button>
+  <input
+    type="text"
+    placeholder="Search Faculty..."
+    value={searchTerm}
+    onChange={(e) =>
+      setSearchTerm(e.target.value)
+    }
+    className="
+      mt-4
+      border
+      rounded-xl
+      px-4
+      py-2
+      w-full
+      md:w-96
+    "
+  />
 
+</div>
+
+          
         </div>
 
         <div className="space-y-6">
 
-          {paginatedFaculty.map(
-            (
-              member: any,
-              index: number
-            ) => (
-              <div
-                key={member.id}
-                className="
-                  border
-                  rounded-2xl
-                  p-6
-                  bg-gray-50
-                "
-              >
-
-                <div className="flex justify-between items-center mb-4">
-
-                  <h3 className="font-semibold text-lg">
-                    Faculty Member #
-                    {index + 1}
-                  </h3><div className="
-  flex
-  justify-center
-  items-center
-  gap-4
-  mt-8
-">
-  <button
-    disabled={currentPage === 1}
-    onClick={() =>
-      setCurrentPage(
-        currentPage - 1
-      )
-    }
-    className="
-      border
-      px-4
-      py-2
-      rounded-lg
-    "
+          {groupedFaculty.map((dept) => (
+  <div
+    key={dept.id}
+    className="border rounded-2xl overflow-hidden mb-8"
   >
-    Previous
-  </button>
+    {/* Department Header */}
+    <div
+      className="
+        bg-gradient-to-r
+        from-blue-700
+        to-blue-500
+        text-white
+        px-6
+        py-4
+        flex
+        justify-between
+        items-center
+      "
+    >
+      <div>
+        <h3 className="font-bold text-lg">
+          {dept.name}
+        </h3>
 
-  <span>
-    Page {currentPage} of{' '}
-    {totalPages}
-  </span>
+        <p className="text-blue-100 text-sm">
+          {dept.members.length} Faculty Members
+        </p>
+      </div>
 
-  <button
-    disabled={
-      currentPage === totalPages
-    }
-    onClick={() =>
-      setCurrentPage(
-        currentPage + 1
-      )
-    }
-    className="
-      border
-      px-4
-      py-2
-      rounded-lg
-    "
-  >
-    Next
-  </button>
-</div>
-                  <button
-  onClick={() =>
-    openDeleteModal(
-      startIndex + index
-    )
-  }
+      <button
+        onClick={() => {
+          setNewFaculty({
+  name: '',
+  role: '',
+  academic_rank: '',
+  education: '',
+  experience: '',
+  department_id: dept.id,
+  member_type: 'teacher',
+  image: '',
+});
+
+setEditingIndex(null);
+setIsEditing(false);
+setShowFacultyModal(true);
+        }}
+        className="
+          bg-white
+          text-blue-600
+          px-4
+          py-2
+          rounded-xl
+        "
+      >
+        Add Faculty
+      </button>
+    </div>
+
+    {/* Department Body */}
+    <div className="p-6">
+
+      {dept.members.length === 0 ? (
+
+        <div
+          className="
+            text-center
+            text-gray-400
+            py-10
+          "
+        >
+          No faculty members assigned.
+        </div>
+
+      ) : (
+
+        <div
+          className="
+            grid
+            md:grid-cols-2
+            lg:grid-cols-3
+            gap-6
+          "
+        >
+          {dept.members.map((member: any) => (
+
+            <div
+  key={member.id}
   className="
-    text-red-600
-    hover:text-red-800
+    bg-gray-50
+    border
+    rounded-xl
+    p-4
+    h-[450px]
+    flex
+    flex-col
+    transition-all
+    duration-300
+    hover:shadow-xl
+    hover:-translate-y-1
+    hover:border-blue-300
   "
 >
-  <Trash2 size={20} />
+              <img
+  src={
+    member.image
+      ? `${member.image}?t=${Date.now()}`
+      : 'https://via.placeholder.com/150'
+  }
+  alt={member.name}
+  className="
+    w-32
+    h-32
+    rounded-full
+    object-cover
+    mx-auto
+    border-4
+    border-blue-100
+  "
+/>
+
+              <h4
+  className="
+    text-center
+    font-bold
+    mt-3
+    min-h-[60px]
+  "
+>
+  {member.name}
+</h4>
+
+<p className="
+    text-center
+    line-clamp-2
+    min-h-[48px]
+  ">
+  {member.role}
+</p>
+
+<p
+  className="
+    text-center
+    text-sm
+    text-gray-500
+  "
+>
+  {member.academic_rank}
+</p>
+
+<p
+   className="
+    text-center
+    text-xs
+    text-gray-500
+    mt-2
+    min-h-[20px]
+  "
+>
+  {member.experience}
+</p>
+
+<p
+   className="
+    text-center
+    text-xs
+    text-gray-400
+    mt-1
+    line-clamp-3
+    min-h-[60px]
+  "
+  title={member.education}
+>
+  {member.education}
+</p>
+
+<div className="flex justify-center gap-3 mt-auto pt-4">
+
+                <button
+  onClick={() => {
+    const actualIndex =
+      facultyMembers.findIndex(
+        (f) => f.id === member.id
+      );
+
+    editFaculty(member, actualIndex);
+  }}
+  className="
+    p-2
+    rounded-lg
+    bg-blue-50
+    border
+    border-blue-200
+    hover:bg-blue-100
+    hover:scale-105
+    transition-all
+  "
+  title="Edit Faculty"
+>
+  <Pencil
+    size={18}
+    className="text-blue-600"
+  />
 </button>
 
-                </div>
+                 <button
+  onClick={() => {
+    const actualIndex =
+      facultyMembers.findIndex(
+        (f) => f.id === member.id
+      );
 
-                <div className="grid md:grid-cols-2 gap-4">
-
-                  <input
-                    value={member.name || ''}
-                    placeholder="Full Name"
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'name',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  />
-
-                  <input
-                    value={member.role || ''}
-                    placeholder="Role"
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'role',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  />
-
-                  <input
-                    value={
-                      member.academic_rank ||
-                      ''
-                    }
-                    placeholder="Academic Rank"
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'academic_rank',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  />
-
-                  <input
-                    value={
-                      member.experience || ''
-                    }
-                    placeholder="Years of Experience"
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'experience',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  />
-
-                  <select
-                    value={
-                      member.member_type ||
-                      'teacher'
-                    }
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'member_type',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  >
-                    <option value="dean">
-                      Dean
-                    </option>
-
-                    <option value="chairman">
-                      Chairman
-                    </option>
-
-                    <option value="teacher">
-                      Teacher
-                    </option>
-                  </select>
-
-                  <select
-                    value={
-                      member.department_id ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      updateFaculty(
-                        index,
-                        'department_id',
-                        e.target.value
-                      )
-                    }
-                    className="border rounded-lg p-3"
-                  >
-                    <option value="">
-                      Select Department
-                    </option>
-
-                    {departments.map(
-                      (dept: any) => (
-                        <option
-                          key={dept.id}
-                          value={dept.id}
-                        >
-                          {dept.name}
-                        </option>
-                      )
-                    )}
-                  </select>
-
-                </div>
-
-                <textarea
-                  rows={3}
-                  value={
-                    member.education || ''
-                  }
-                  placeholder="Educational Attainment"
-                  onChange={(e) =>
-                    updateFaculty(
-                      index,
-                      'education',
-                      e.target.value
-                    )
-                  }
-                  className="
-                    mt-4
-                    w-full
-                    border
-                    rounded-lg
-                    p-3
-                  "
-                />
-
-                <div className="mt-4">
-
-  <label className="block mb-2 font-semibold">
-    Faculty Photo
-  </label>
-
-  <input
-    type="file"
-    accept="image/*"
-    onChange={(e) => {
-      const file =
-        e.target.files?.[0];
-
-      if (file) {
-        uploadFacultyImage(
-          file,
-          index
-        );
-      }
-    }}
-    className="
-      w-full
-      border
-      rounded-lg
-      p-3
-    "
+    openDeleteModal(actualIndex);
+  }}
+  className="
+    p-2
+    rounded-lg
+    bg-red-50
+    border
+    border-red-200
+    hover:bg-red-100
+    hover:scale-105
+    transition-all
+  "
+  title="Delete Faculty"
+>
+  <Trash2
+    size={18}
+    className="text-red-600"
   />
-
-  {member.image && (
-    <img
-      src={member.image}
-      alt={member.name}
-      className="
-        mt-4
-        w-32
-        h-32
-        rounded-lg
-        object-cover
-        border
-      "
-    />
-  )}
-
-</div>
+</button>
 
               </div>
-            )
-          )}
+
+            </div>
+
+          ))}
+        </div>
+
+      )}
+
+    </div>
+
+  </div>
+))}
 
         </div>
 
@@ -596,13 +853,20 @@ const confirmDeleteFaculty =
 
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">
-          Add Faculty Member
-        </h2>
+  {newFaculty.member_type === 'dean'
+  ? isEditing
+    ? 'Edit Dean'
+    : 'Add Dean'
+  : isEditing
+    ? 'Edit Faculty Member'
+    : 'Add Faculty Member'}
+</h2>
 
         <button
-          onClick={() =>
-            setShowFacultyModal(false)
-          }
+          onClick={() => {
+  resetFacultyForm();
+  setShowFacultyModal(false);
+}}
         >
           <X />
         </button>
@@ -674,62 +938,35 @@ const confirmDeleteFaculty =
 
         {/* MEMBER TYPE */}
 
-        <select
-          value={
-            newFaculty.member_type
-          }
-          onChange={(e) =>
-            setNewFaculty({
-              ...newFaculty,
-              member_type:
-                e.target.value,
-            })
-          }
-          className="border rounded-lg p-3"
-        >
-          <option value="dean">
-            Dean
-          </option>
+        {newFaculty.member_type !== 'dean' && (
+  <select
+    value={newFaculty.department_id}
+    onChange={(e) =>
+      setNewFaculty({
+        ...newFaculty,
+        department_id: e.target.value,
+      })
+    }
+    className="border rounded-lg p-3"
+  >
+    <option value="">
+      Select Department
+    </option>
 
-          <option value="chairman">
-            Chairman
-          </option>
-
-          <option value="teacher">
-            Teacher
-          </option>
-        </select>
+    {departments.map((dept: any) => (
+      <option
+        key={dept.id}
+        value={dept.id}
+      >
+        {dept.name}
+      </option>
+    ))}
+  </select>
+)}
 
         {/* DEPARTMENT */}
 
-        <select
-          value={
-            newFaculty.department_id
-          }
-          onChange={(e) =>
-            setNewFaculty({
-              ...newFaculty,
-              department_id:
-                e.target.value,
-            })
-          }
-          className="border rounded-lg p-3"
-        >
-          <option value="">
-            Select Department
-          </option>
-
-          {departments.map(
-            (dept: any) => (
-              <option
-                key={dept.id}
-                value={dept.id}
-              >
-                {dept.name}
-              </option>
-            )
-          )}
-        </select>
+        
 
       </div>
 
@@ -789,7 +1026,7 @@ const confirmDeleteFaculty =
             const { error } =
               await supabase.storage
                 .from(
-                  'landing-page-images'
+                  'faculty_images'
                 )
                 .upload(
                   filePath,
@@ -806,17 +1043,18 @@ const confirmDeleteFaculty =
             const { data } =
               supabase.storage
                 .from(
-                  'landing-page-images'
+                  'faculty_images'
                 )
                 .getPublicUrl(
                   filePath
                 );
 
-            setNewFaculty({
-              ...newFaculty,
-              image:
-                data.publicUrl,
-            });
+            setNewFaculty(prev => ({
+  ...prev,
+  image: data.publicUrl,
+}));
+
+setShowUploadSuccessModal(true);
           }}
           className="
             w-full
@@ -827,20 +1065,18 @@ const confirmDeleteFaculty =
         />
 
         {newFaculty.image && (
-          <img
-            src={
-              newFaculty.image
-            }
-            alt="Preview"
-            className="
-              mt-4
-              w-32
-              h-32
-              rounded-lg
-              object-cover
-              border
-            "
-          />
+         <img
+    src={`${newFaculty.image}?t=${Date.now()}`}
+    alt="Preview"
+    className="
+      mt-4
+      w-32
+      h-32
+      rounded-lg
+      object-cover
+      border
+    "
+  />
         )}
 
       </div>
@@ -868,14 +1104,18 @@ const confirmDeleteFaculty =
         <button
           onClick={saveFaculty}
           className="
-            bg-blue-600
+           bg-gradient-to-r
+from-blue-700
+to-blue-500
             text-white
             px-4
             py-2
             rounded-lg
           "
         >
-          Save Faculty
+{isEditing
+  ? 'Update Faculty'
+  : 'Save Faculty'}
         </button>
 
       </div>
@@ -966,6 +1206,77 @@ const confirmDeleteFaculty =
           Delete
         </button>
       </div>
+    </div>
+  </div>
+)}
+{showUploadSuccessModal && (
+  <div
+    className="
+      fixed inset-0
+      bg-black/50
+      z-50
+      flex
+      items-center
+      justify-center
+    "
+  >
+    <div
+      className="
+        bg-white
+        rounded-2xl
+        p-8
+        w-full
+        max-w-md
+        text-center
+      "
+    >
+      <div className="flex justify-center mb-4">
+        <div
+          className="
+            bg-green-100
+            p-4
+            rounded-full
+          "
+        >
+          <CheckCircle
+            size={40}
+            className="text-green-600"
+          />
+        </div>
+      </div>
+
+      <h2
+        className="
+          text-xl
+          font-bold
+          mb-2
+        "
+      >
+        Upload Successful
+      </h2>
+
+      <p className="text-gray-500">
+        Faculty photo has been uploaded
+        successfully.
+      </p>
+
+      <button
+        onClick={() =>
+          setShowUploadSuccessModal(false)
+        }
+        className="
+          mt-6
+          px-6
+          py-2
+          bg-gradient-to-r
+          from-green-600
+          to-green-500
+          text-white
+          rounded-lg
+        "
+      >
+        OK
+      </button>
     </div>
   </div>
 )}

@@ -56,7 +56,7 @@ import { FooterQuickLinksEditor } from './FooterSectors/FooterQuickLinksEditor';
 import { FooterSocialLinksEditor } from './FooterSectors/FooterSocialLinksEditor';
 
 import {
-  getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent}from '../landing-page/services/homepageService';
+  getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent,saveHomepageStats}from '../landing-page/services/homepageService';
 
 import {
   getAboutContent,getAboutStats,getCoreValues,getCoreValueCards,getFacultyMembers,saveAboutContent,saveAboutStats,saveCoreValues,saveCoreValueCards,saveFacultyMembers} from '../landing-page/services/aboutService';
@@ -1983,7 +1983,8 @@ const [aboutStats, setAboutStats] =
   useState<FacultyMember[]>([]);
   const [departmentContent, setDepartmentContent] =
   useState<any>({});
-
+const [dean, setDean] =
+  useState<FacultyMember | null>(null);
   const [colleges, setColleges] =
   useState<any[]>([]);
   const [departments, setDepartments] =
@@ -2491,6 +2492,14 @@ async function loadFacultyMembers() {
     await getFacultyMembers();
 
   setFacultyMembers(data || []);
+
+  const deanMember =
+    data?.find(
+      member =>
+        member.member_type === 'dean'
+    );
+
+  setDean(deanMember || null);
 }
 
 async function loadDepartments() {
@@ -2547,6 +2556,8 @@ async function loadAboutContent() {
       title: item.title,
       description: item.description,
       content: item.content,
+      image: item.image,
+      badge_number: item.badge_number,
     };
   });
 
@@ -2554,18 +2565,17 @@ async function loadAboutContent() {
 }
 
 async function saveAboutPage() {
-
-  await saveCoreValues(
-    coreValues
-  );
-
-  await saveAboutStats(
-    aboutStats
-  );
-
-  await saveFacultyMembers(
+  console.log(
+    "FACULTY BEFORE SAVE",
     facultyMembers
   );
+  await saveCoreValues(coreValues);
+
+  await saveAboutStats(aboutStats);
+
+  await saveFacultyMembers(
+  facultyMembers
+);
 
   await saveCoreValueCards(
     coreValueCards
@@ -2577,12 +2587,8 @@ async function saveAboutPage() {
     );
 
   if (error) {
-    setModalMessage(
-      error.message
-    );
-
+    setModalMessage(error.message);
     setShowSuccessModal(true);
-
     return;
   }
 
@@ -2593,12 +2599,24 @@ async function saveAboutPage() {
   setShowSuccessModal(true);
 }
 async function saveHomePage() {
-  const { error } =
+  const { error: contentError } =
     await saveHomepageContent(homeContent);
 
-  if (error) {
+  if (contentError) {
     setModalMessage(
-      `Error: ${error.message}`
+      `Error: ${contentError.message}`
+    );
+
+    setShowSuccessModal(true);
+    return;
+  }
+
+  const { error: statsError } =
+    await saveHomepageStats(stats);
+
+  if (statsError) {
+    setModalMessage(
+      `Error: ${statsError.message}`
     );
 
     setShowSuccessModal(true);
@@ -2654,6 +2672,20 @@ function updateAboutField(
     },
   }));
 }
+
+function updateDean(
+  field: string,
+  value: any
+) {
+  setDean(prev => {
+    if (!prev) return prev;
+
+    return {
+      ...prev,
+      [field]: value
+    };
+  });
+}
   
 async function loadAchievementsPage() {
   try {
@@ -2693,23 +2725,32 @@ async function loadAchievementsPage() {
     
     <div className="max-w-6xl mx-auto p-6">
 
-      <h1 className="text-3xl font-bold mb-6">
-        Landing Page Management
-      </h1>
-    <div className="flex flex-wrap gap-3 mb-8">
+      <h1 className="text-3xl font-bold text-slate-800 mb-6">
+  Landing Page Management
+</h1>
+
+<div className="flex flex-wrap gap-3 mb-8">
   {pages.map((page) => (
     <button
       key={page.key}
-      onClick={() =>
-        setActivePage(
-          page.key as any
-        )
-      }
-      className={`px-6 py-3 rounded-lg ${
-        activePage === page.key
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-200'
-      }`}
+      onClick={() => setActivePage(page.key as any)}
+      className={`
+        min-w-[170px]
+        h-12
+        px-5
+        rounded-xl
+        font-medium
+        text-sm
+        transition-all
+        duration-200
+        shadow-sm
+        border
+        ${
+          activePage === page.key
+            ? "bg-blue-600 text-white border-blue-600 shadow-md"
+            : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-400 hover:text-blue-800"
+        }
+      `}
     >
       {page.label}
     </button>
@@ -3041,10 +3082,14 @@ async function loadAchievementsPage() {
         />
       ) : activePage === 'about' ? (
         <AboutPage
-          previewMode
-          previewContent={aboutContent}
-          previewStats={aboutStats}
-        />
+  previewMode
+  previewContent={aboutContent}
+  previewStats={aboutStats}
+  previewFacultyMembers={facultyMembers}
+  previewCoreValues={coreValues}
+  previewCoreValueCards={coreValueCards}
+  previewDepartments={departments}
+/>
       ) : activePage === 'departments' ? (
         <DepartmentsPage
           previewMode

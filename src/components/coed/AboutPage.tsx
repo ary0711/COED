@@ -56,6 +56,10 @@ interface AboutPageProps {
   previewMode?: boolean;
   previewContent?: any;
   previewStats?: any[];
+  previewFacultyMembers?: any[];
+  previewCoreValues?: any[];
+  previewCoreValueCards?: any[];
+  previewDepartments?:  any[];
 }
 interface CoreValueCard {
   id: string;
@@ -103,7 +107,11 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 export function AboutPage({
   previewMode = false,
   previewContent = {},
-  previewStats = []
+  previewStats = [],
+  previewFacultyMembers = [],
+  previewCoreValues = [],
+  previewCoreValueCards = [],
+  previewDepartments = []
 }: AboutPageProps) {
   
   useEffect(() => {
@@ -112,8 +120,16 @@ export function AboutPage({
   }
 }, [previewMode]);
 const [loading, setLoading] = useState(true);
+
 const [dean, setDean] =
   useState<FacultyMember | null>(null);
+const deanToDisplay =
+  previewMode
+    ? previewFacultyMembers.find(
+        member =>
+          member.member_type === 'dean'
+      )
+    : dean;
  const [aboutContent, setAboutContent] =
   useState<Record<string, AboutContent>>({});
   const content = previewMode
@@ -122,7 +138,10 @@ const [dean, setDean] =
   
 const [departments, setDepartments] =
   useState<Department[]>([]);
-
+const departmentsToDisplay =
+  previewMode
+    ? previewDepartments
+    : departments;
 const [facultyMembers, setFacultyMembers] =
   useState<FacultyMember[]>([]);
 
@@ -137,6 +156,21 @@ const [statistics, setStatistics] =
     : statistics;
 const [coreValueCards, setCoreValueCards] =
   useState<CoreValueCard[]>([]);
+
+const facultyToDisplay =
+  previewMode
+    ? previewFacultyMembers
+    : facultyMembers;
+
+const valuesToDisplay =
+  previewMode
+    ? previewCoreValues
+    : coreValues;
+
+const coreValueCardsToDisplay =
+  previewMode
+    ? previewCoreValueCards
+    : coreValueCards;
 async function loadAboutPage() {
 
   setLoading(true);
@@ -190,9 +224,9 @@ async function loadAboutPage() {
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
   const department =
-  departments[Math.floor((currentPage - 1) / 2)] || null;
+    departmentsToDisplay[Math.floor((currentPage - 1) / 2)] || null;
 
-const chairman = facultyMembers.find(
+const chairman = facultyToDisplay.find(
   member =>
     member.department_id === department?.id &&
     member.member_type === 'chairman'
@@ -200,14 +234,14 @@ const chairman = facultyMembers.find(
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   
   const totalPages =
-  1 + departments.length * 2; // 1 for Dean + 4 departments = 5 pages
+  1 + departmentsToDisplay.length * 2; // 1 for Dean + 4 departments = 5 pages
   const teacherDepartment =
-  departments[
+   departmentsToDisplay[
     Math.floor((currentPage - 2) / 2)
   ];
 
 const teachers =
-  facultyMembers.filter(
+  facultyToDisplay.filter(
     member =>
       member.department_id === teacherDepartment?.id &&
       member.member_type === 'teacher'
@@ -321,7 +355,7 @@ const teachers =
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
           <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
-            {coreValues.map((value) => (
+            {valuesToDisplay.map((value) => (
   <div
     key={value.id}
     className="flex flex-col items-center"
@@ -383,17 +417,17 @@ const teachers =
     <div className="mb-6 text-center">
       <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
     </div>
-    {dean && (
+    {deanToDisplay && (
   <ProfileCard
     person={{
-      id: dean.id,
-      name: dean.name,
-      role: dean.role,
-      education: dean.education,
-      experience: dean.experience,
-      subject: dean.academic_rank,
-      image: dean.image
-    }}
+  id: deanToDisplay.id,
+  name: deanToDisplay.name,
+  role: deanToDisplay.role,
+  education: deanToDisplay.education,
+  experience: deanToDisplay.experience,
+  subject: deanToDisplay.academic_rank,
+  image: deanToDisplay.image
+}}
     onClick={setSelectedPerson}
   />
 )}
@@ -403,7 +437,7 @@ const teachers =
   <div className="flex flex-col items-center animate-fade-in py-10">
     <div className="mb-6 text-center">
       <h3 className="text-2xl font-bold text-gray-800">
-        {departments[
+        { departmentsToDisplay[
  Math.floor((currentPage - 1) / 2)
 ].name}
       </h3>
@@ -481,7 +515,7 @@ const teachers =
        <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
           <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
-            {coreValueCards.map((value) => (
+            {coreValueCardsToDisplay.map((value) => (
                 <div key={value.id} className="text-center">
                   <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
                     <div className="text-lg md:text-xl font-medium">{value.value_name}</div>

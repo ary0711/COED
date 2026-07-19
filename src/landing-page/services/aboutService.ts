@@ -56,13 +56,15 @@ export async function saveAboutContent(
     badge_number: values.badge_number
   }));
 
+  console.log("ABOUT CONTENT", aboutContent);
+  console.log("UPDATES", updates);
+
   return await supabase
     .from('about_page_content')
     .upsert(updates, {
       onConflict: 'section_name'
     });
 }
-
 export async function saveAboutStats(
   aboutStats: any[]
 ) {
@@ -90,6 +92,10 @@ export async function saveCoreValueCards(
 export async function saveFacultyMembers(
   facultyMembers: any[]
 ) {
+  console.log(
+    'SAVING FACULTY:',
+    facultyMembers
+  );
   return await supabase
     .from('faculty_members')
     .upsert(facultyMembers);
@@ -105,19 +111,52 @@ export async function uploadAboutImage(
   const fileName =
     `${folder}/${Date.now()}.${extension}`;
 
-  const { error } =
+  const { data, error } =
     await supabase.storage
       .from('about-images')
       .upload(fileName, file, {
         upsert: true
       });
 
-  if (error) throw error;
+  console.log('UPLOAD DATA:', data);
+  console.log('UPLOAD ERROR:', error);
+
+  if (error) {
+    alert(error.message);
+    throw error;
+  }
 
   const {
     data: { publicUrl }
   } = supabase.storage
     .from('about-images')
+    .getPublicUrl(fileName);
+
+  return publicUrl;
+}
+export async function uploadFacultyImage(
+  file: File,
+  folder: string = 'faculty'
+) {
+  const extension =
+    file.name.split('.').pop();
+
+  const fileName =
+    `${folder}/${Date.now()}.${extension}`;
+
+  const { error } =
+    await supabase.storage
+      .from('faculty_images')
+      .upload(fileName, file, {
+        upsert: true,
+      });
+
+  if (error) throw error;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from('faculty_images')
     .getPublicUrl(fileName);
 
   return publicUrl;
