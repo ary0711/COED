@@ -101,10 +101,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
       if (profileData?.program && PROGRAM_OPTIONS.includes(profileData.program)) {
         setSelectedProgram(profileData.program);
       }
-    } catch (err) {
-      console.error('Failed to load student profile:', err);
-      setProfileError('Unable to load your profile right now.');
-    } finally {
+    }  finally {
       setProfileLoading(false);
     }
   };
@@ -191,6 +188,9 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
 }
 
 // ====================== STUDENT DASHBOARD VIEW ======================
+// Restyled to match the Faculty dashboard's layout: a plain header with a
+// bottom border (instead of a blue banner card), 4-column stat cards, and a
+// 2-column grid of Announcements / Upcoming Deadlines further down.
 interface StudentDashboardViewProps {
   selectedProgram: string;
   profile: StudentProfile | null;
@@ -213,37 +213,37 @@ function StudentDashboardView({ selectedProgram, profile, loading, error }: Stud
 
   return (
     <div>
-      <div className="bg-[#1E3A8A] rounded-xl shadow-lg p-5 sm:p-6 text-white mb-6">
+      {/* ── Header — matches Faculty's plain bordered header ── */}
+      <div className="mb-6 pb-6 border-b border-gray-200">
         {loading ? (
           <div className="animate-pulse space-y-2">
-            <div className="h-6 w-48 bg-blue-300/40 rounded" />
-            <div className="h-4 w-32 bg-blue-300/40 rounded" />
-            <div className="h-4 w-56 bg-blue-300/40 rounded" />
+            <div className="h-7 sm:h-8 w-56 sm:w-72 bg-gray-200 rounded" />
+            <div className="h-4 w-40 sm:w-52 bg-gray-200 rounded" />
           </div>
         ) : (
-          <div>
-            <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-              {displayName}
-            </h2>
-            <p className="text-blue-100 mb-1">Student ID: {displayId}</p>
-            <p className="text-blue-100">
-              {displayProgram}
+          <>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Student Dashboard</h1>
+            <p className="text-gray-600">
+              Welcome back, {displayName}
+              {displayProgram && (
+                <span className="hidden sm:inline"> · {displayProgram}</span>
+              )}
             </p>
-            <p className="text-blue-100">
-              {displayYearLevel} Year Level
-            </p>
-            {error && (
-              <p className="text-red-200 text-xs mt-2">{error}</p>
-            )}
-          </div>
+          </>
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6">
+      {/* ── Stat cards — 4-column like Faculty ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <BookOpen className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600 mb-2" />
           <div className="text-xl sm:text-2xl font-bold text-gray-900">8</div>
           <div className="text-xs sm:text-sm text-gray-600">Enrolled Subjects</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+          <Users className="w-7 h-7 sm:w-8 sm:h-8 text-green-600 mb-2" />
+          <div className="text-base sm:text-xl font-bold text-gray-900 truncate">{displayId}</div>
+          <div className="text-xs sm:text-sm text-gray-600">Student ID</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Calendar className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
@@ -257,11 +257,10 @@ function StudentDashboardView({ selectedProgram, profile, loading, error }: Stud
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* ── Announcements / Upcoming Deadlines — same lg:grid-cols-2 pattern as Faculty ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Bell className="w-5 h-5" /> Announcements
-          </h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Announcements</h2>
           <div className="space-y-3">
             {announcements.map((a) => (
               <div key={a.id} className={`p-4 rounded-lg border-l-4 ${a.type === 'important' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'}`}>
@@ -273,11 +272,28 @@ function StudentDashboardView({ selectedProgram, profile, loading, error }: Stud
         </div>
 
         <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Notifications</h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Upcoming Deadlines</h2>
           <div className="space-y-3">
-            <div className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Upcoming Examinations</div>
-              <div className="text-xs sm:text-sm text-gray-600 mt-1">Midterm exams start March 1, 2026</div>
+            <div className="flex items-center gap-3 p-4 bg-yellow-50 rounded-lg">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 flex-shrink-0" />
+              <div>
+                <div className="font-medium text-gray-900 text-sm sm:text-base">Midterm Examinations</div>
+                <div className="text-xs sm:text-sm text-gray-600">Starts: March 1, 2026</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" />
+              <div>
+                <div className="font-medium text-gray-900 text-sm sm:text-base">Enrollment Verification</div>
+                <div className="text-xs sm:text-sm text-gray-600">Due: February 28, 2026</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 flex-shrink-0" />
+              <div>
+                <div className="font-medium text-gray-900 text-sm sm:text-base">Scholarship Application Deadline</div>
+                <div className="text-xs sm:text-sm text-gray-600">Due: March 15, 2026</div>
+              </div>
             </div>
           </div>
         </div>

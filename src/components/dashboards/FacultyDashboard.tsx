@@ -376,6 +376,8 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     ];
 
     const approved = submissions.filter(s => s.status === 'Approved');
+    const pendingCount = submissions.filter(s => s.status === 'Pending').length;
+    const rejectedCount = submissions.filter(s => s.status === 'Rejected').length;
 
     const statusBadge = (status: string) => {
       const map: Record<string, string> = {
@@ -404,87 +406,131 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           ))}
         </div>
 
-        {tab === 'submit' && (
-          <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8 max-w-2xl">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
-                <div className="flex gap-3 sm:gap-4">
-                  <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
-                  <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
-                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
-                  <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
-                </label>
-                {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
-              </div>
-              <button onClick={() => alert('✅ Submission sent for approval!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
-                Submit for Approval
-              </button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'track' && (
-          <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-100">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {submissions.map((s, i) => (
-                <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                  <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                    {statusIcon(s.status)}
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                      <div className="text-xs sm:text-sm text-gray-500">{s.type} · Submitted {s.date}</div>
+        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2">
+            {tab === 'submit' && (
+              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
+                    <div className="flex gap-3 sm:gap-4">
+                      <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
+                      <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
                     </div>
                   </div>
-                  <div className="flex-shrink-0">{statusBadge(s.status)}</div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                    <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
+                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                      <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
+                      <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
+                    </label>
+                    {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
+                  </div>
+                  <button onClick={() => alert('✅ Submission sent for approval!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
+                    Submit for Approval
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {tab === 'approved' && (
-          <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-100">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
-            </div>
-            {approved.length === 0 ? (
-              <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {approved.map((s, i) => (
-                  <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                    <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                      <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                      <div className="min-w-0">
-                        <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">{s.type} · Approved on {s.date}</div>
+            {tab === 'track' && (
+              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+                <div className="p-4 sm:p-6 border-b border-gray-100">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {submissions.map((s, i) => (
+                    <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        {statusIcon(s.status)}
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{s.type} · Submitted {s.date}</div>
+                        </div>
                       </div>
+                      <div className="flex-shrink-0">{statusBadge(s.status)}</div>
                     </div>
-                    <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                      <Download size={14} /> Download
-                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tab === 'approved' && (
+              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+                <div className="p-4 sm:p-6 border-b border-gray-100">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
+                </div>
+                {approved.length === 0 ? (
+                  <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {approved.map((s, i) => (
+                      <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                            <div className="text-xs sm:text-sm text-gray-500">{s.type} · Approved on {s.date}</div>
+                          </div>
+                        </div>
+                        <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                          <Download size={14} /> Download
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
-        )}
+
+          {/* ── Side panel: fills the empty space on wide screens ── */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-md p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-600">Total Submitted</span>
+                  <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-md p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
+              </h3>
+              <ul className="space-y-3 text-sm text-gray-600">
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
