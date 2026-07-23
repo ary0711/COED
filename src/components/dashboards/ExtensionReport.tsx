@@ -201,18 +201,23 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
         <p className="text-sm font-semibold text-gray-700 mb-4">Prepared by:</p>
         <div className="border-b border-gray-400 w-48 mb-1" />
         <p className="text-xs text-gray-500">{userName}</p>
-        <p className="text-xs text-gray-500">Extension Faculty/Staff</p>
+        <p className="text-xs text-gray-500">Extension Chairperson</p>
       </div>
 
-       {/* Signature (Noted By) */}
-       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <p className="text-sm font-semibold text-gray-700 mb-4">Prepared by:</p>
-        <div className="border-b border-gray-400 w-48 mb-1" />
-        <p className="text-xs text-gray-500">TERESITA CLEOPALDA B. SARILE</p>
-        <p className="text-xs text-gray-500">Extension Faculty/Staff</p>
+      {/* Noted By */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <p className="text-sm font-semibold text-gray-700 mb-4">Noted:</p>
+        <div className="flex flex-wrap gap-10">
+          <div>
+            <p className="text-xs font-bold text-gray-800 underline">TERESITA CLEOPOLDA B. SARILE</p>
+            <p className="text-xs text-gray-500">Chair, Extension Services</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-800 underline">EINGILBERT C. BENOLIRAO</p>
+            <p className="text-xs text-gray-500">Campus Director</p>
+          </div>
+        </div>
       </div>
-
-
 
       {/* Print Modal */}
       {showPrint && (
@@ -276,6 +281,23 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
                 <div className="border-b border-black w-48 mt-6 mb-1" />
                 <p className="text-xs">{userName}</p>
                 <p className="text-xs">Extension Chairperson</p>
+              </div>
+
+              {/* ── Noted By ── */}
+              <div className="mt-8 flex justify-between flex-wrap gap-6">
+                <div>
+                  <p className="text-sm font-bold mb-1">Noted:</p>
+                </div>
+              </div>
+              <div className="mt-2 flex justify-start gap-16 flex-wrap">
+                <div>
+                  <p className="text-xs font-bold underline">TERESITA CLEOPOLDA B. SARILE</p>
+                  <p className="text-xs">Chair, Extension Services</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold underline">EINGILBERT C. BENOLIRAO</p>
+                  <p className="text-xs">Campus Director</p>
+                </div>
               </div>
 
               {/* ── CTU Footer Image ── */}

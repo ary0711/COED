@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Send, Printer, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Trash2, Save, Send, Printer, X, ChevronDown, ChevronUp, Upload, ImageIcon, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 interface AccomplishmentReportProps {
@@ -9,6 +9,35 @@ interface AccomplishmentReportProps {
 }
 
 interface GenericRow { [key: string]: string; }
+
+interface PhotoItem {
+  path: string;
+  url: string;
+  caption: string;
+}
+
+interface DocEntry {
+  id: string;
+  category: string;
+  title: string;
+  venue: string;
+  date: string;
+  description: string;
+  photos: PhotoItem[];
+}
+
+const PHOTOS_BUCKET = 'accomplishment-photos';
+const MAX_PHOTOS_PER_ENTRY = 8;
+
+const DOC_CATEGORIES = [
+  { key: 'instruction', label: 'A. Instruction-Related Engagements' },
+  { key: 'research', label: 'B. Research' },
+  { key: 'research_utilization', label: 'C. Research Utilization' },
+  { key: 'extension', label: 'D. Extension' },
+  { key: 'other', label: 'E. Other Engagements' },
+];
+
+const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function Section({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -70,6 +99,12 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // ── Documentation (categorized activity entries with photos) ──
+  const [docEntries, setDocEntries] = useState<DocEntry[]>([]);
+  const [uploadingEntryId, setUploadingEntryId] = useState<string | null>(null);
+  const fileInputRefs = useRef<{ [id: string]: HTMLInputElement | null }>({});
 
   const emptyRow = (keys: string[]) => keys.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
 
@@ -124,12 +159,84 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         if (data.mfo4_pi2_data?.length) setMfo4pi2(data.mfo4_pi2_data);
         if (data.other_data?.length) setOtherInitiatives(data.other_data);
         if (data.awards_data?.length) setAwards(data.awards_data);
+        if (data.doc_entries_data?.length) setDocEntries(data.doc_entries_data);
       }
     };
     load();
   }, [userId]);
 
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
+  const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
+
+  // ── Documentation entry handlers ──
+  const addDocEntry = (category: string) => {
+    setDocEntries(prev => [...prev, { id: makeId(), category, title: '', venue: '', date: '', description: '', photos: [] }]);
+  };
+
+  const removeDocEntry = async (id: string) => {
+    const entry = docEntries.find(e => e.id === id);
+    setDocEntries(prev => prev.filter(e => e.id !== id));
+    if (entry?.photos?.length) {
+      await supabase.storage.from(PHOTOS_BUCKET).remove(entry.photos.map(p => p.path));
+    }
+  };
+
+  const updateDocEntryField = (id: string, field: keyof DocEntry, value: string) => {
+    setDocEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e));
+  };
+
+  const handleEntryFilesSelected = async (entryId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const entry = docEntries.find(en => en.id === entryId);
+    const currentCount = entry?.photos.length ?? 0;
+    const remainingSlots = MAX_PHOTOS_PER_ENTRY - currentCount;
+    if (remainingSlots <= 0) {
+      showError(`Maximum of ${MAX_PHOTOS_PER_ENTRY} photos per activity reached.`);
+      if (fileInputRefs.current[entryId]) fileInputRefs.current[entryId]!.value = '';
+      return;
+    }
+
+    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      showError(`Only ${remainingSlots} more photo(s) allowed for this activity (max ${MAX_PHOTOS_PER_ENTRY}).`);
+    }
+
+    setUploadingEntryId(entryId);
+    try {
+      const uploaded: PhotoItem[] = [];
+      for (const file of filesToUpload) {
+        if (!file.type.startsWith('image/')) continue;
+        const ext = file.name.split('.').pop();
+        const path = `${userId}/${entryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file);
+        if (uploadError) { showError(`Failed to upload ${file.name}`); continue; }
+        const { data: urlData } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
+        uploaded.push({ path, url: urlData.publicUrl, caption: '' });
+      }
+      if (uploaded.length > 0) {
+        setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: [...en.photos, ...uploaded] } : en));
+        showSuccess(`${uploaded.length} photo(s) added.`);
+      }
+    } finally {
+      setUploadingEntryId(null);
+      if (fileInputRefs.current[entryId]) fileInputRefs.current[entryId]!.value = '';
+    }
+  };
+
+  const removeEntryPhoto = async (entryId: string, photoIdx: number) => {
+    const entry = docEntries.find(e => e.id === entryId);
+    const photo = entry?.photos[photoIdx];
+    setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: en.photos.filter((_, i) => i !== photoIdx) } : en));
+    if (photo?.path) {
+      await supabase.storage.from(PHOTOS_BUCKET).remove([photo.path]);
+    }
+  };
+
+  const updateEntryPhotoCaption = (entryId: string, photoIdx: number, caption: string) => {
+    setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: en.photos.map((p, i) => i === photoIdx ? { ...p, caption } : p) } : en));
+  };
 
   const getPayload = (submitStatus: string) => ({
     submitted_by: userId, quarter, year, program_chair: programChair, program,
@@ -137,6 +244,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     pi5_data: pi5, pi6_data: pi6, pi7_data: pi7, pi8_data: pi8,
     mfo3_pi1_data: mfo3pi1, mfo3_pi2_data: mfo3pi2, mfo3_pi3_data: mfo3pi3, mfo3_pi4_data: mfo3pi4,
     mfo4_pi1_data: mfo4pi1, mfo4_pi2_data: mfo4pi2, other_data: otherInitiatives, awards_data: awards,
+    doc_entries_data: docEntries,
     other_accomplishments: otherAccomplishments, date_submitted: dateSubmitted,
     status: submitStatus, progress: submitStatus === 'submitted' ? 100 : computeProgress(),
     updated_at: new Date().toISOString(),
@@ -177,6 +285,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   return (
     <div className="space-y-4">
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{successMsg}</div>}
+      {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{errorMsg}</div>}
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -291,6 +400,78 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         <textarea value={otherAccomplishments} onChange={e => setOtherAccomplishments(e.target.value)} disabled={readOnly || status === 'submitted'} rows={4} placeholder="Policies created, external grants, etc." className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-50" />
       </Section>
 
+      {/* Documentation */}
+      <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">DOCUMENTATION</div>
+      {DOC_CATEGORIES.map(cat => {
+        const entries = docEntries.filter(e => e.category === cat.key);
+        return (
+          <Section key={cat.key} title={`${cat.label} (${entries.length})`} defaultOpen={entries.length > 0}>
+            <div className="space-y-4">
+              {entries.map(entry => (
+                <div key={entry.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1">
+                      <input value={entry.title} onChange={e => updateDocEntryField(entry.id, 'title', e.target.value)} disabled={readOnly || status === 'submitted'}
+                        placeholder="Activity Title" className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 sm:col-span-2" />
+                      <input value={entry.venue} onChange={e => updateDocEntryField(entry.id, 'venue', e.target.value)} disabled={readOnly || status === 'submitted'}
+                        placeholder="Venue" className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100" />
+                      <input value={entry.date} onChange={e => updateDocEntryField(entry.id, 'date', e.target.value)} disabled={readOnly || status === 'submitted'}
+                        placeholder="Inclusive Date(s)" className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100" />
+                    </div>
+                    {!readOnly && status !== 'submitted' && (
+                      <button onClick={() => removeDocEntry(entry.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    )}
+                  </div>
+
+                  <textarea value={entry.description} onChange={e => updateDocEntryField(entry.id, 'description', e.target.value)} disabled={readOnly || status === 'submitted'} rows={3}
+                    placeholder="Short narrative/description of the activity..." className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-100 mb-3" />
+
+                  {!readOnly && status !== 'submitted' && (
+                    <div className="mb-3">
+                      <input ref={el => { fileInputRefs.current[entry.id] = el; }} type="file" accept="image/*" multiple
+                        onChange={e => handleEntryFilesSelected(entry.id, e)} className="hidden" id={`photo-upload-${entry.id}`}
+                        disabled={uploadingEntryId === entry.id || entry.photos.length >= MAX_PHOTOS_PER_ENTRY} />
+                      <label htmlFor={`photo-upload-${entry.id}`} className={`inline-flex items-center gap-1.5 px-3 py-1.5 border border-dashed rounded-xl text-xs font-medium transition-colors ${entry.photos.length >= MAX_PHOTOS_PER_ENTRY ? 'border-gray-200 text-gray-400 cursor-not-allowed' : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 cursor-pointer'}`}>
+                        {uploadingEntryId === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                        {uploadingEntryId === entry.id ? 'Uploading...' : `Upload Photos (${entry.photos.length}/${MAX_PHOTOS_PER_ENTRY})`}
+                      </label>
+                    </div>
+                  )}
+
+                  {entry.photos.length === 0 ? (
+                    <div className="flex items-center gap-2 text-gray-400 py-3">
+                      <ImageIcon className="w-4 h-4" />
+                      <p className="text-xs">No photos yet.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {entry.photos.map((photo, idx) => (
+                        <div key={photo.path} className="relative group border border-gray-200 rounded-xl overflow-hidden bg-white">
+                          <img src={photo.url} alt={`${entry.title || 'Documentation'} ${idx + 1}`} className="w-full h-28 object-cover" />
+                          {!readOnly && status !== 'submitted' && (
+                            <button onClick={() => removeEntryPhoto(entry.id, idx)} className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-red-600 rounded-full transition-colors">
+                              <Trash2 className="w-3 h-3 text-white" />
+                            </button>
+                          )}
+                          <input value={photo.caption} onChange={e => updateEntryPhotoCaption(entry.id, idx, e.target.value)} disabled={readOnly || status === 'submitted'}
+                            placeholder="Caption (optional)" className="w-full px-2 py-1 text-[11px] border-t border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {!readOnly && status !== 'submitted' && (
+                <button onClick={() => addDocEntry(cat.key)} className="flex items-center gap-1.5 text-sm text-[#1E3A8A] hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors font-medium">
+                  <Plus className="w-4 h-4" /> Add Activity
+                </button>
+              )}
+            </div>
+          </Section>
+        );
+      })}
+
       {/* Signature */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <div className="flex flex-col sm:flex-row sm:justify-between gap-6">
@@ -309,8 +490,43 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
 
       {/* Print Modal */}
       {showPrint && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4 print-modal-overlay">
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #print-area, #print-area * { visibility: visible; }
+              .print-modal-overlay {
+                position: static !important;
+                overflow: visible !important;
+                background: none !important;
+                display: block !important;
+                padding: 0 !important;
+              }
+              .print-modal-inner {
+                position: static !important;
+                overflow: visible !important;
+                box-shadow: none !important;
+                width: 100% !important;
+                max-width: 100% !important;
+              }
+              #print-area {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                padding-bottom: 110px !important;
+              }
+              .print-footer-fixed {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                margin-top: 0 !important;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl print-modal-inner">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
               <h3 className="font-bold text-gray-900">Print Preview — Accomplishment Report</h3>
               <div className="flex gap-2">
@@ -372,6 +588,41 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
                 </div>
               )}
 
+              {/* Documentation */}
+              {docEntries.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-center font-bold text-base mb-4">DOCUMENTATION</p>
+                  {DOC_CATEGORIES.map(cat => {
+                    const entries = docEntries.filter(e => e.category === cat.key);
+                    if (entries.length === 0) return null;
+                    return (
+                      <div key={cat.key} className="mb-6">
+                        <p className="font-bold mb-3">{cat.label}</p>
+                        {entries.map(entry => (
+                          <div key={entry.id} className="mb-6 break-inside-avoid">
+                            {entry.title && <p className="text-center font-bold italic mb-0.5">{entry.title}</p>}
+                            {(entry.venue || entry.date) && (
+                              <p className="text-center font-semibold mb-2">
+                                {entry.venue}{entry.venue && entry.date ? ' | ' : ''}{entry.date}
+                              </p>
+                            )}
+                            {entry.description && <p className="mb-3 text-justify">{entry.description}</p>}
+                            <div className="flex flex-col items-center gap-3">
+                              {entry.photos.map((photo, idx) => (
+                                <div key={photo.path} className="border border-black w-2/3">
+                                  <img src={photo.url} alt={`${entry.title || 'Documentation'} ${idx + 1}`} className="w-full object-contain" />
+                                  {photo.caption && <p className="text-[10px] text-center px-1 py-0.5 border-t border-black">{photo.caption}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Signature */}
               <div className="mt-8 flex justify-between">
                 <div><p><strong>Date Submitted:</strong> {dateSubmitted}</p></div>
@@ -383,8 +634,8 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
                 </div>
               </div>
 
-              {/* ── CTU Footer Image ── */}
-              <div className="mt-8">
+              {/* ── CTU Footer Image (repeats on every printed page) ── */}
+              <div className="mt-8 print-footer-fixed">
                 <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain" />
               </div>
 
