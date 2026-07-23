@@ -198,7 +198,7 @@ interface StudentDashboardViewProps {
   error: string | null;
 }
 
-function StudentDashboardView({ selectedProgram, profile, loading, error }: StudentDashboardViewProps) {
+function StudentDashboardView({ selectedProgram, profile, loading }: StudentDashboardViewProps) {
   const announcements = [
     { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
     { id: 2, title: 'Faculty Evaluation Period Open',        date: 'Feb 10, 2026', type: 'info'      },
