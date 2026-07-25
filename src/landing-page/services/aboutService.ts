@@ -94,8 +94,13 @@ export async function saveFacultyMembers(
 ) {
   console.log(
     'SAVING FACULTY:',
-    facultyMembers
+    JSON.stringify(
+      facultyMembers,
+      null,
+      2
+    )
   );
+
   return await supabase
     .from('faculty_members')
     .upsert(facultyMembers);
