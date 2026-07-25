@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Calendar,
@@ -25,6 +25,8 @@ import {
   FileSpreadsheet,
   Trash2,
   Bell,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -38,6 +40,11 @@ import { FacultyMonitoringTable } from './FacultyMonitoringTable';
 // (e.g. '../faculty/AccomplishmentReport').
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
+
+// NOTE: adjust this path to match where supabaseClient.ts actually lives
+// relative to this file (per your project it's a named export `supabase`
+// from src/supabaseClient.ts).
+import { supabase } from '../supabaseClient';
 
 
 const chairMenuItems = [
@@ -59,13 +66,21 @@ interface DepartmentChairDashboardProps {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// Mirrors public.calendar_events exactly.
 interface CalendarEvent {
   id: string;
   title: string;
-  date: string;
-  program: string;
-  description: string;
-  color: string;
+  description: string | null;
+  event_date: string;   // timestamptz, stored/read as "YYYY-MM-DDTHH:mm:ss"
+  end_date: string | null;
+  location: string | null;
+  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
+  organizer_id: string | null;
+  department: string | null;
+  status: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface StudentApplicant {
@@ -84,7 +99,8 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Kuhaon ang userId gikan sa JWT token, susama sa Faculty Dashboard,
-  // para magamit sa Chair's own Reports (Accomplishment / Extension) tab.
+  // para magamit sa Chair's own Reports (Accomplishment / Extension) tab
+  // ug isip organizer_id sa calendar_events.
   const token = localStorage.getItem('token');
   const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
   const userName = 'Prof. James Anderson';
@@ -120,7 +136,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
 
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
           {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
-          {activeMenuItem === 'calendar'    && <DepartmentCalendar />}
+          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
@@ -206,27 +222,78 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
 }
 
 /* ─────────────────────────────────────────────
-   Department Calendar (full interactive)
+   Department Calendar (full interactive, backed by
+   public.calendar_events via Supabase)
 ───────────────────────────────────────────── */
-function DepartmentCalendar() {
+
+const PROGRAMS = ['BEED', 'BSED-ENGLISH', 'BSED-MATH', 'BTLEd-HE'];
+const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
+
+const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
+
+// calendar_events.event_type is constrained to meeting/activity/deadline/holiday/exam
+// (nullable). The modal's color swatches are kept exactly as-is, so each color is
+// mapped to the closest matching type for storage; the one swatch with no natural
+// match (#1E3A8A) is simply stored with a null event_type and falls back to that
+// same color on redraw, so nothing is visually lost.
+const TYPE_TO_COLOR: Record<string, string> = {
+  meeting: '#3B82F6',
+  activity: '#10B981',
+  holiday: '#8B5CF6',
+  deadline: '#F59E0B',
+  exam: '#EF4444',
+};
+const DEFAULT_EVENT_COLOR = '#1E3A8A';
+
+function eventTypeForColor(color: string): CalendarEvent['event_type'] | null {
+  const entry = Object.entries(TYPE_TO_COLOR).find(([, c]) => c === color);
+  return entry ? (entry[0] as CalendarEvent['event_type']) : null;
+}
+
+function colorForEvent(ev: CalendarEvent): string {
+  return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
+}
+
+// Writes (insert/delete) go through the Express backend so the request is
+// authenticated with the chair's JWT and the insert runs with the service
+// role, bypassing RLS. Reads still go straight through Supabase since the
+// calendar is open for anyone to view.
+// Adjust this if your Express server runs on a different host/port.
+const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+
+// event_date / end_date are stored as "YYYY-MM-DDTHH:mm:ss" (no timezone
+// suffix), so Postgres interprets them using the column/session timezone
+// instead of shifting the calendar date around the browser's local offset.
+// We always pull the date portion back out the same way, via string slicing,
+// so the day a user picks is always the day it lands on and shows up on.
+function dateOnly(isoLike: string): string {
+  return isoLike.split('T')[0];
+}
+
+function toTimestamp(dateStr: string): string {
+  return `${dateStr}T00:00:00`;
+}
+
+interface DepartmentCalendarProps {
+  organizerId: string;
+}
+
+function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  const PROGRAMS = ['BEED', 'BSED-ENGLISH', 'BSED-MATH', 'BTLEd-HE'];
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const [events, setEvents] = useState<CalendarEvent[]>([
-    { id: '1', title: 'Faculty Development Seminar', date: '2026-05-15', program: 'All Programs', description: 'Annual faculty upskilling seminar.', color: '#3B82F6' },
-    { id: '2', title: 'Department Meeting',           date: '2026-05-18', program: 'BSED-MATH',    description: 'Monthly department coordination.', color: '#10B981' },
-    { id: '3', title: 'College Foundation Day',       date: '2026-05-25', program: 'All Programs', description: 'Celebration of college founding.', color: '#8B5CF6' },
-    { id: '4', title: 'Graduation Rehearsal',         date: '2026-03-10', program: 'BEED',         description: 'Practice run for graduation ceremony.', color: '#F59E0B' },
-    { id: '5', title: 'Alumni Homecoming',            date: '2026-04-05', program: 'All Programs', description: 'Annual alumni gathering.', color: '#EF4444' },
-  ]);
-
-  const programOptions = ['All Programs', ...PROGRAMS];
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
-  const [form, setForm] = useState({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' });
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const emptyForm = { title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' };
+  const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
   const monthName    = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -236,32 +303,116 @@ function DepartmentCalendar() {
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
-  const getEventsForDay = (day: number) => {
-    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter(e => e.date === dateStr);
+  // ── Fetch events from Supabase ──
+  const fetchEvents = async () => {
+    setLoading(true);
+    setLoadError('');
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('*')
+      .order('event_date', { ascending: true });
+
+    if (error) {
+      setLoadError('Failed to load events: ' + error.message);
+      setEvents([]);
+    } else {
+      setEvents((data ?? []) as CalendarEvent[]);
+    }
+    setLoading(false);
   };
 
-  const upcomingEvents = events.filter(e => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date));
-  const historyEvents  = events.filter(e => e.date < todayStr).sort((a, b) => b.date.localeCompare(a.date));
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleAddEvent = () => {
+  const getEventsForDay = (day: number) => {
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return events.filter(e => dateOnly(e.event_date) === dateStr);
+  };
+
+  const upcomingEvents = events
+    .filter(e => dateOnly(e.event_date) >= todayStr)
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const historyEvents = events
+    .filter(e => dateOnly(e.event_date) < todayStr)
+    .sort((a, b) => b.event_date.localeCompare(a.event_date));
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setFormError('');
+  };
+
+  const handleAddEvent = async () => {
     setFormError('');
     if (!form.title.trim()) { setFormError('Event title is required.'); return; }
     if (!form.date)          { setFormError('Please select a date.'); return; }
-    const newEvent: CalendarEvent = {
-      id: Date.now().toString(),
+
+    setSubmitting(true);
+
+    const payload = {
       title: form.title.trim(),
-      date: form.date,
-      program: form.program,
-      description: form.description.trim(),
-      color: form.color,
+      description: form.description.trim() || null,
+      event_date: toTimestamp(form.date),
+      department: form.program,
+      event_type: eventTypeForColor(form.color),
+      status: 'upcoming',
     };
-    setEvents(prev => [...prev, newEvent]);
-    setForm({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' });
+
+    const token = localStorage.getItem('token');
+    let res: Response;
+    try {
+      res = await fetch(CALENDAR_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      setSubmitting(false);
+      setFormError('Could not reach the server. Please try again.');
+      return;
+    }
+
+    setSubmitting(false);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setFormError('Failed to save event: ' + (err.error || res.statusText));
+      return;
+    }
+
+    const data = await res.json();
+    setEvents(prev => [...prev, data as CalendarEvent]);
+    resetForm();
     setShowModal(false);
   };
 
-  const deleteEvent = (id: string) => setEvents(prev => prev.filter(e => e.id !== id));
+  const deleteEvent = async (id: string) => {
+    setDeletingId(id);
+    const token = localStorage.getItem('token');
+    let res: Response;
+    try {
+      res = await fetch(`${CALENDAR_API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      setDeletingId(null);
+      setLoadError('Could not reach the server. Please try again.');
+      return;
+    }
+    setDeletingId(null);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setLoadError('Failed to delete event: ' + (err.error || res.statusText));
+      return;
+    }
+    setEvents(prev => prev.filter(e => e.id !== id));
+  };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -280,7 +431,7 @@ function DepartmentCalendar() {
           <p className="text-gray-500 text-sm mt-1">Manage events and track activity history</p>
         </div>
         <button
-          onClick={() => { setForm({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' }); setFormError(''); setShowModal(true); }}
+          onClick={() => { resetForm(); setShowModal(true); }}
           className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -288,6 +439,13 @@ function DepartmentCalendar() {
           <span className="sm:hidden">Add</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {loadError}
+        </div>
+      )}
 
       {/* Calendar Grid */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -313,49 +471,56 @@ function DepartmentCalendar() {
         </div>
 
         {/* Day cells */}
-        <div className="grid grid-cols-7">
-          {Array.from({ length: firstDay }).map((_, i) => (
-            <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
-          ))}
-          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-            const dateStr  = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = getEventsForDay(day);
-            const isToday  = dateStr === todayStr;
-            const isPast   = dateStr < todayStr;
-            return (
-              <div key={day} className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${isPast ? 'bg-gray-50/60' : 'bg-white'}`}>
-                <div className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                  isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
-                }`}>
-                  {day}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading events…</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-7">
+            {Array.from({ length: firstDay }).map((_, i) => (
+              <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+              const dateStr  = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const dayEvents = getEventsForDay(day);
+              const isToday  = dateStr === todayStr;
+              const isPast   = dateStr < todayStr;
+              return (
+                <div key={day} className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${isPast ? 'bg-gray-50/60' : 'bg-white'}`}>
+                  <div className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
+                    isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
+                  }`}>
+                    {day}
+                  </div>
+                  <div className="space-y-0.5">
+                    {dayEvents.slice(0, 1).map(ev => (
+                      <div
+                        key={ev.id}
+                        className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block"
+                        style={{ backgroundColor: colorForEvent(ev) }}
+                        title={ev.title}
+                      >
+                        {ev.title}
+                      </div>
+                    ))}
+                    {/* Mobile: colored dots */}
+                    {dayEvents.length > 0 && (
+                      <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
+                        {dayEvents.slice(0, 3).map(ev => (
+                          <span key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorForEvent(ev) }} />
+                        ))}
+                      </div>
+                    )}
+                    {dayEvents.length > 1 && (
+                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">+{dayEvents.length - 1} more</div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  {dayEvents.slice(0, 1).map(ev => (
-                    <div
-                      key={ev.id}
-                      className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block"
-                      style={{ backgroundColor: ev.color }}
-                      title={ev.title}
-                    >
-                      {ev.title}
-                    </div>
-                  ))}
-                  {/* Mobile: colored dots */}
-                  {dayEvents.length > 0 && (
-                    <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
-                      {dayEvents.slice(0, 3).map(ev => (
-                        <span key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.color }} />
-                      ))}
-                    </div>
-                  )}
-                  {dayEvents.length > 1 && (
-                    <div className="text-[9px] text-gray-400 px-1 hidden sm:block">+{dayEvents.length - 1} more</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Upcoming / History Tabs */}
@@ -377,26 +542,29 @@ function DepartmentCalendar() {
         </div>
 
         <div className="p-4 sm:p-6 space-y-3">
-          {(activeTab === 'upcoming' ? upcomingEvents : historyEvents).length === 0 ? (
+          {loading ? (
+            <p className="text-center text-gray-400 text-sm py-6">Loading…</p>
+          ) : (activeTab === 'upcoming' ? upcomingEvents : historyEvents).length === 0 ? (
             <p className="text-center text-gray-400 text-sm py-6">No events found.</p>
           ) : (
             (activeTab === 'upcoming' ? upcomingEvents : historyEvents).map(ev => (
               <div
                 key={ev.id}
                 className="flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-100 hover:shadow-sm transition-shadow"
-                style={{ borderLeftWidth: 4, borderLeftColor: ev.color }}
+                style={{ borderLeftWidth: 4, borderLeftColor: colorForEvent(ev) }}
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {ev.department}</div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
                   onClick={() => deleteEvent(ev.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                  disabled={deletingId === ev.id}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0 disabled:opacity-40"
                   title="Remove event"
                 >
-                  <X className="w-4 h-4" />
+                  {deletingId === ev.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                 </button>
               </div>
             ))
@@ -407,7 +575,7 @@ function DepartmentCalendar() {
       {/* Add Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">Add New Event</h2>
               <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
@@ -448,7 +616,7 @@ function DepartmentCalendar() {
                   onChange={e => setForm({ ...form, program: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A]"
                 >
-                  {programOptions.map(p => <option key={p}>{p}</option>)}
+                  {PROGRAM_OPTIONS.map(p => <option key={p}>{p}</option>)}
                 </select>
               </div>
 
@@ -466,9 +634,10 @@ function DepartmentCalendar() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Event Color</label>
                 <div className="flex gap-2">
-                  {['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'].map(c => (
+                  {COLOR_OPTIONS.map(c => (
                     <button
                       key={c}
+                      type="button"
                       onClick={() => setForm({ ...form, color: c })}
                       className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : 'hover:scale-110'}`}
                       style={{ backgroundColor: c }}
@@ -481,15 +650,18 @@ function DepartmentCalendar() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                disabled={submitting}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddEvent}
-                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors"
+                disabled={submitting}
+                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                Add Event
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Saving…' : 'Add Event'}
               </button>
             </div>
           </div>
