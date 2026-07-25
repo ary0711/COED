@@ -9,52 +9,15 @@ import { AchievementsPage } from './coed/AchievementsPage';
 import { AccreditationPage } from './coed/AccreditationPage';
 import { ContactPage } from './coed/ContactPage';
 import { Footer } from './coed/Footer';
-import {HeroSectionEditor} from './HomePageSectors/HeroSectionEditor';
-import {AboutSectionEditor} from './HomePageSectors/AboutSectionEditor';
-import {FeaturesEditor} from './HomePageSectors/FeaturesEditor';
-import {StatsEditor} from './HomePageSectors/StatsEditor';
-import {AnnouncementsEditor} from './HomePageSectors/AnnouncementsEditor';
-import {CTASectionEditor} from './HomePageSectors/CTASectionEditor';
-import  AboutHeaderEditor  from './AboutPageSectors/AboutHeaderEditor';
-import  HistoryEditor  from './AboutPageSectors/HistoryEditor';
-import  VisionMissionGoalsEditor  from './AboutPageSectors/VisionMissionGoalsEditor';
-import  TeamStructureEditor  from './AboutPageSectors/TeamStructureEditor';
-import  AboutStatsEditor from './AboutPageSectors/AboutStatsEditor';
-import  CoreValuesEditor  from './AboutPageSectors/CoreValuesEditor';
-import  AboutOurCoreValuesEditor  from './AboutPageSectors/AboutOurCoreValuesEditor';
-import  {DepartmentHeaderEditor}  from './DepartmentSectors/DepartmentHeaderEditor';
-import  {CollegeEditor} from './DepartmentSectors/CollegeEditor';
-import  {DepartmentCTAEditor} from './DepartmentSectors/DepartmentCTAEditor';
-import  {ProgramEditor} from './DepartmentSectors/ProgramEditor';
-import  {ProgramFacultyEditor} from './DepartmentSectors/ProgramFacultyEditor';
-import  {ClubsCTAEditor} from './ClubSectors/ClubsCTAEditor';
-import  {ClubsHeaderEditor} from './ClubSectors/ClubsHeaderEditor';
-import  {ClubsStatisticsEditor} from './ClubSectors/ClubsStatisticsEditor';
-import  {CommitteeEditor} from './ClubSectors/CommitteeEditor';
-import  {OrganizationEditor} from './ClubSectors/OrganizationEditor';
-import { ResearchHeaderEditor } from './ResearchSectors/ResearchHeaderEditor';
-import { ResearchPublicationsEditor } from './ResearchSectors/ResearchPublicationsEditor';
-import { ResearchAwardsEditor } from './ResearchSectors/ResearchAwardsEditor';
-import { FeaturedAlumniEditor } from './ResearchSectors/FeaturedAlumniEditor';
-import { ResearchCTAEditor } from './ResearchSectors/ResearchCTAEditor';
-import { AchievementsBannerEditor } from './AchievementSectors/AchievementsBannerEditor';
-import { AchievementsBannerStatsEditor } from './AchievementSectors/AchievementsBannerStatsEditor';
-import { AchievementsCollegeEditor } from './AchievementSectors/AchievementsCollegeEditor';
-import { AchievementsPageContentEditor } from './AchievementSectors/AchievementsPageContentEditor';
-import { AchievementsStatisticsEditor } from './AchievementSectors/AchievementsStatisticsEditor';
-import { AchievementsTopnotchersEditor } from './AchievementSectors/AchievementsTopnotchersEditor';
-import { AccreditationCertificationsEditor } from './AccreditationSectors/AccreditationCertificationsEditor';
-import { AccreditationContentEditor } from './AccreditationSectors/AccreditationContentEditor';
-import { AccreditationLevelsEditor } from './AccreditationSectors/AccreditationLevelsEditor';
-import { AccreditationOverviewEditor } from './AccreditationSectors/AccreditationOverviewEditor';
-import { AccreditationProgramsEditor } from  './AccreditationSectors/AccreditationProgramsEditor'
-import { ContactContentEditor } from './ContactSectors/ContactContentEditor';
-import { ContactOfficeHoursEditor } from './ContactSectors/ContactOfficeHoursEditor';
-import { ContactSocialLinksEditor } from './ContactSectors/ContactSocialLinksEditor';
-import { FooterContentEditor } from './FooterSectors/FooterContentEditor';
-import { FooterQuickLinksEditor } from './FooterSectors/FooterQuickLinksEditor';
-import { FooterSocialLinksEditor } from './FooterSectors/FooterSocialLinksEditor';
-
+import  HomePageEditor from './pages/HomePageEditor';
+import AboutPageEditor from './pages/AboutPageEditor';
+import DepartmentsPageEditor from './pages/DepartmentsPageEditor';
+import ClubsPageEditor from './pages/ClubsPageEditor';
+import ResearchPageEditor from './pages/ResearchPageEditor';
+import AchievementsPageEditor from './pages/AchievementsPageEditor';
+import AccreditationPageEditor from './pages/AccreditationPageEditor';
+import ContactPageEditor from './pages/ContactPageEditor';
+import FooterPageEditor from './pages/FooterPageEditor';
 import {
   getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent,saveHomepageStats}from '../landing-page/services/homepageService';
 
@@ -2723,32 +2686,48 @@ async function loadAchievementsPage() {
 }
   return (
     
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="w-full max-w-screen-2xl mx-auto px-8 py-6">
 
       <h1 className="text-3xl font-bold text-slate-800 mb-6">
   Landing Page Management
 </h1>
 
-<div className="flex flex-wrap gap-3 mb-8">
+<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mb-8">
   {pages.map((page) => (
     <button
       key={page.key}
       onClick={() => setActivePage(page.key as any)}
       className={`
-        min-w-[170px]
-        h-12
-        px-5
-        rounded-xl
-        font-medium
+        h-14
+        w-full
+        rounded-2xl
+        flex
+        items-center
+        justify-center
+        font-semibold
         text-sm
         transition-all
-        duration-200
-        shadow-sm
+        duration-300
         border
+        shadow-sm
+
         ${
           activePage === page.key
-            ? "bg-blue-600 text-white border-blue-600 shadow-md"
-            : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-400 hover:text-blue-800"
+            ? `
+              bg-[#27469C]
+              text-white
+              border-[#27469C]
+              shadow-lg
+              scale-[1.02]
+            `
+            : `
+              bg-[#F8FBFF]
+              text-[#2563EB]
+              border-[#D6E4FF]
+              hover:bg-[#EEF5FF]
+              hover:border-[#7BA8FF]
+              hover:shadow-md
+            `
         }
       `}
     >
@@ -2756,260 +2735,116 @@ async function loadAchievementsPage() {
     </button>
   ))}
 </div>
-      {activePage === 'homepage' && (
-  <>
-    <HeroSectionEditor
-      content={homeContent}
-      updateField={updateHomepageField}
-    />
-
-    <AboutSectionEditor
-      content={homeContent}
-      updateField={updateHomepageField}
-    />
-
-    <FeaturesEditor
-      features={features}
-      setFeatures={setFeatures}
-    />
-
-    <StatsEditor
-      stats={stats}
-      setStats={setStats}
-    />
-
-    <AnnouncementsEditor
-      announcements={announcements}
-      setAnnouncements={setAnnouncements}
-    />
-
-
-    <CTASectionEditor
-      content={homeContent}
-      updateField={updateHomepageField}
-    />
-  </>
+      {activePage === "homepage" && (
+  <HomePageEditor
+    homeContent={homeContent}
+    updateHomepageField={updateHomepageField}
+    features={features}
+    setFeatures={setFeatures}
+    stats={stats}
+    setStats={setStats}
+    announcements={announcements}
+    setAnnouncements={setAnnouncements}
+  />
 )}
-{activePage === 'about' && (
-  <>
-    <AboutHeaderEditor
-  content={aboutContent}
-  updateField={updateAboutField}
-/>
-
-<HistoryEditor
-  content={aboutContent}
-  updateField={updateAboutField}
-/>
-
-<VisionMissionGoalsEditor
-  content={aboutContent}
-  updateField={updateAboutField}
-/>
-
- <CoreValuesEditor
-  values={coreValues}
-  setValues={setCoreValues}
-/>
-
-<TeamStructureEditor
-  content={aboutContent}
-  updateField={updateAboutField}
-  facultyMembers={facultyMembers}
-  setFacultyMembers={setFacultyMembers}
-  departments={departments}
-/>
-
-<AboutStatsEditor
-  stats={aboutStats}
-  setStats={setAboutStats}
-/>
-<AboutOurCoreValuesEditor
-  values={coreValueCards}
-  setValues={setCoreValueCards}
-/>
-  </>
+{activePage === "about" && (
+  <AboutPageEditor
+    aboutContent={aboutContent}
+    updateAboutField={updateAboutField}
+    coreValues={coreValues}
+    setCoreValues={setCoreValues}
+    facultyMembers={facultyMembers}
+    setFacultyMembers={setFacultyMembers}
+    departments={departments}
+    aboutStats={aboutStats}
+    setAboutStats={setAboutStats}
+    coreValueCards={coreValueCards}
+    setCoreValueCards={setCoreValueCards}
+  />
 )}
-  {activePage === 'departments' && (
-  <>
-    <DepartmentHeaderEditor
-      content={departmentContent}
-      updateField={updateDepartmentField}
-    />
-
-    <CollegeEditor
-      colleges={colleges}
-      setColleges={setColleges}
-    />
-
-    <ProgramEditor
-  colleges={colleges}
-  setColleges={setColleges}
-/>
-
-    <ProgramFacultyEditor
-      colleges={colleges}
-      setColleges={setColleges}
-    />
-
-    <DepartmentCTAEditor
-      content={departmentContent}
-      updateField={updateDepartmentField}
-    />
-  </>
+  {activePage === "departments" && (
+  <DepartmentsPageEditor
+    departmentContent={departmentContent}
+    updateDepartmentField={updateDepartmentField}
+    colleges={colleges}
+    setColleges={setColleges}
+  />
 )}
-{activePage === 'clubs' && (
-  <>
-    <ClubsHeaderEditor
-      content={clubsContent}
-      updateField={updateClubsField}
-    />
 
-    <ClubsStatisticsEditor
-      statistics={clubsStatistics}
-      setStatistics={setClubsStatistics}
-    />
-
-    <OrganizationEditor
-      organizations={organizations}
-      setOrganizations={setOrganizations}
-    />
-
-    <CommitteeEditor
-      committees={committees}
-      setCommittees={setCommittees}
-    />
-
-    <ClubsCTAEditor
-      content={clubsContent}
-      updateField={updateClubsField}
-    />
-  </>
+{activePage === "clubs" && (
+  <ClubsPageEditor
+    clubsContent={clubsContent}
+    updateClubsField={updateClubsField}
+    statistics={clubsStatistics}
+    setStatistics={setClubsStatistics}
+    organizations={organizations}
+    setOrganizations={setOrganizations}
+    committees={committees}
+    setCommittees={setCommittees}
+  />
 )}
-{
-  activePage === 'research' && (
-    <>
-      <ResearchHeaderEditor
-        content={researchContent}
-        updateField={updateResearchField}
-      />
 
-      <ResearchPublicationsEditor
-        publications={researchPublications}
-        setPublications={setResearchPublications}
-      />
-
-      <ResearchAwardsEditor
-  awards={researchAwards}
-  setAwards={setResearchAwards}
-/>
-
-      <FeaturedAlumniEditor
-        alumni={featuredAlumni}
-        setAlumni={setFeaturedAlumni}
-      />
-
-      <ResearchCTAEditor
-        content={researchContent}
-        updateField={updateResearchField}
-      />
-    </>
-  )
-}{activePage === 'achievements' && (
-  <>
-    <AchievementsPageContentEditor
-      content={achievementPageContent}
-      setContent={setAchievementPageContent}
-    />
-
-    <AchievementsStatisticsEditor
-      statistics={achievementStatistics}
-      setStatistics={setAchievementStatistics}
-    />
-
-    <AchievementsTopnotchersEditor
-      topnotchers={achievementTopnotchers}
-      setTopnotchers={setAchievementTopnotchers}
-    />
-
-    <AchievementsCollegeEditor
-      achievements={achievementCollegeAchievements}
-      setAchievements={setAchievementCollegeAchievements}
-    />
-
-    <AchievementsBannerEditor
-      banner={achievementBanner}
-      setBanner={setAchievementBanner}
-    />
-
-    <AchievementsBannerStatsEditor
-      stats={achievementBannerStats}
-      setStats={setAchievementBannerStats}
-    />
-  </>
-)}{activePage === 'accreditation' && (
-  <>
-    <AccreditationContentEditor
-      content={accreditationContent}
-      setContent={setAccreditationContent}
-    />
-
-    <AccreditationOverviewEditor
-      overview={overviewItems}
-      setOverview={setOverviewItems}
-    />
-
-    <AccreditationLevelsEditor
-      levels={levels}
-      setLevels={setLevels}
-    />
-
-    <AccreditationProgramsEditor
-      programs={programs}
-      setPrograms={setPrograms}
-    />
-
-    <AccreditationCertificationsEditor
-      certifications={certifications}
-      setCertifications={setCertifications}
-    />
-  </>
+{activePage === "research" && (
+  <ResearchPageEditor
+    researchContent={researchContent}
+    updateResearchField={updateResearchField}
+    publications={researchPublications}
+    setPublications={setResearchPublications}
+    awards={researchAwards}
+    setAwards={setResearchAwards}
+    alumni={featuredAlumni}
+    setAlumni={setFeaturedAlumni}
+  />
 )}
-{activePage === 'contact' && (
-  <>
-   <ContactContentEditor
-  content={contactContent}
-  setContent={setContactContent}
-/>
-
-<ContactOfficeHoursEditor
-  officeHours={officeHours}
-  setOfficeHours={setOfficeHours}
-/>
-
-<ContactSocialLinksEditor
-  socialLinks={socialLinks}
-  setSocialLinks={setSocialLinks}
-/>
-  </>
+{activePage === "achievements" && (
+  <AchievementsPageEditor
+    content={achievementPageContent}
+    setContent={setAchievementPageContent}
+    statistics={achievementStatistics}
+    setStatistics={setAchievementStatistics}
+    topnotchers={achievementTopnotchers}
+    setTopnotchers={setAchievementTopnotchers}
+    achievements={achievementCollegeAchievements}
+    setAchievements={setAchievementCollegeAchievements}
+    banner={achievementBanner}
+    setBanner={setAchievementBanner}
+    bannerStats={achievementBannerStats}
+    setBannerStats={setAchievementBannerStats}
+  />
 )}
-{activePage === 'footer' && (
-  <>
-    <FooterContentEditor
-      content={footerContent}
-      setContent={setFooterContent}
-    />
-
-    <FooterQuickLinksEditor
-      links={footerQuickLinks}
-      setLinks={setFooterQuickLinks}
-    />
-
-    <FooterSocialLinksEditor
-      socials={footerSocialLinks}
-      setSocials={setFooterSocialLinks}
-    />
-  </>
+{activePage === "accreditation" && (
+  <AccreditationPageEditor
+    content={accreditationContent}
+    setContent={setAccreditationContent}
+    overview={overviewItems}
+    setOverview={setOverviewItems}
+    levels={levels}
+    setLevels={setLevels}
+    programs={programs}
+    setPrograms={setPrograms}
+    certifications={certifications}
+    setCertifications={setCertifications}
+  />
+)}
+{activePage === "contact" && (
+  <ContactPageEditor
+    content={contactContent}
+    setContent={setContactContent}
+    officeHours={officeHours}
+    setOfficeHours={setOfficeHours}
+    socialLinks={socialLinks}
+    setSocialLinks={setSocialLinks}
+  />
+)}
+{activePage === "footer" && (
+  <FooterPageEditor
+    content={footerContent}
+    setContent={setFooterContent}
+    quickLinks={footerQuickLinks}
+    setQuickLinks={setFooterQuickLinks}
+    socialLinks={footerSocialLinks}
+    setSocialLinks={setFooterSocialLinks}
+  />
 )}
 
       <div className="flex gap-4">
