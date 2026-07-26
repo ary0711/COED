@@ -32,4 +32,7 @@ app.listen(PORT, () => {
 
 // Calendar events
 const calendarEventsRoutes = require('./routes/calendarEvents');
-app.use('/api/calendar-events', calendarEventsRoutes);
+app.use('/api/calendar-events', calendarEventsRoutes); 
+
+const announcementsRoutes = require('./routes/announcements');
+   app.use('/api/announcements', announcementsRoutes);

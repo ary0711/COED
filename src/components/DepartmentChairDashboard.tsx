@@ -1269,57 +1269,126 @@ function AcademicRecordsView() {
 /* ─────────────────────────────────────────────
    Announcements
 ───────────────────────────────────────────── */
+// Mirrors public.announcements. "Scheduled Date" in the UI maps to
+// expires_at — the schema has no separate "date this announcement is
+// about" column, so expires_at (closest available fit) drives the
+// Upcoming/Past badge instead.
 interface Announcement {
-  id: number;
+  id: string;
   title: string;
-  description: string;
-  scheduledDate: string;
-  createdAt: string;
+  content: string;
+  author_id: string | null;
+  target_role: string[] | null;
+  is_pinned: boolean | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
+const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
+
 function AnnouncementsView() {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    {
-      id: 1,
-      title: 'Faculty Seminar',
-      description: 'All faculty members are required to attend the annual professional development seminar on July 10, 2026 at the AVR.',
-      scheduledDate: '2026-07-10',
-      createdAt: 'June 25, 2026',
-    },
-    {
-      id: 2,
-      title: 'Report Submission Deadline',
-      description: 'Please submit your Q2 2026 performance reports no later than July 5, 2026. Late submissions will not be accepted.',
-      scheduledDate: '2026-07-05',
-      createdAt: 'June 26, 2026',
-    },
-  ]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [showModal, setShowModal]         = useState(false);
-  const [expandedId, setExpandedId]       = useState<number | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [expandedId, setExpandedId]       = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [submitting, setSubmitting]       = useState(false);
+  const [deletingId, setDeletingId]       = useState<string | null>(null);
   const [form, setForm] = useState({ title: '', description: '', scheduledDate: '' });
   const [formError, setFormError] = useState('');
 
-  const handleCreate = () => {
+  const fetchAnnouncements = async () => {
+    setLoading(true);
+    setLoadError('');
+    const { data, error } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      setLoadError('Failed to load announcements: ' + error.message);
+      setAnnouncements([]);
+    } else {
+      setAnnouncements((data ?? []) as Announcement[]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchAnnouncements();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCreate = async () => {
     setFormError('');
     if (!form.title.trim())       { setFormError('Title is required.'); return; }
     if (!form.description.trim()) { setFormError('Description is required.'); return; }
     if (!form.scheduledDate)      { setFormError('Please select a scheduled date.'); return; }
-    const now = new Date();
-    const newAnn: Announcement = {
-      id: Date.now(),
+
+    setSubmitting(true);
+
+    const payload = {
       title: form.title.trim(),
-      description: form.description.trim(),
-      scheduledDate: form.scheduledDate,
-      createdAt: now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      content: form.description.trim(),
+      expires_at: toTimestamp(form.scheduledDate),
     };
-    setAnnouncements(prev => [newAnn, ...prev]);
+
+    const token = localStorage.getItem('token');
+    let res: Response;
+    try {
+      res = await fetch(ANNOUNCEMENTS_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      setSubmitting(false);
+      setFormError('Could not reach the server. Please try again.');
+      return;
+    }
+
+    setSubmitting(false);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setFormError('Failed to post announcement: ' + (err.error || res.statusText));
+      return;
+    }
+
+    const data = await res.json();
+    setAnnouncements(prev => [data as Announcement, ...prev]);
     setForm({ title: '', description: '', scheduledDate: '' });
     setShowModal(false);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    const token = localStorage.getItem('token');
+    let res: Response;
+    try {
+      res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      setDeletingId(null);
+      setLoadError('Could not reach the server. Please try again.');
+      return;
+    }
+    setDeletingId(null);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setLoadError('Failed to delete announcement: ' + (err.error || res.statusText));
+      return;
+    }
+
     setAnnouncements(prev => prev.filter(a => a.id !== id));
     setDeleteConfirm(null);
     if (expandedId === id) setExpandedId(null);
@@ -1330,9 +1399,10 @@ function AnnouncementsView() {
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
 
-  const isUpcoming = (dateStr: string) => {
+  const isUpcoming = (expiresAt: string | null) => {
+    if (!expiresAt) return true;
     const today = new Date().toISOString().split('T')[0];
-    return dateStr >= today;
+    return dateOnly(expiresAt) >= today;
   };
 
   return (
@@ -1352,8 +1422,20 @@ function AnnouncementsView() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {loadError}
+        </div>
+      )}
+
       {/* List */}
-      {announcements.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading announcements…</span>
+        </div>
+      ) : announcements.length === 0 ? (
         <div className="py-20 text-center text-gray-400">
           <Megaphone className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">No announcements yet. Create one to get started.</p>
@@ -1373,19 +1455,21 @@ function AnnouncementsView() {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      isUpcoming(ann.scheduledDate)
+                      isUpcoming(ann.expires_at)
                         ? 'bg-blue-100 text-blue-700'
                         : 'bg-gray-100 text-gray-500'
                     }`}>
-                      {isUpcoming(ann.scheduledDate) ? 'Upcoming' : 'Past'}
+                      {isUpcoming(ann.expires_at) ? 'Upcoming' : 'Past'}
                     </span>
-                    <span className="text-xs text-gray-400">Posted {ann.createdAt}</span>
+                    <span className="text-xs text-gray-400">Posted {formatDate(dateOnly(ann.created_at))}</span>
                   </div>
                   <h3 className="font-semibold text-gray-900 text-base leading-snug">{ann.title}</h3>
-                  <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                    <Calendar className="w-3.5 h-3.5" />
-                    Scheduled: {formatDate(ann.scheduledDate)}
-                  </div>
+                  {ann.expires_at && (
+                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
+                      <Calendar className="w-3.5 h-3.5" />
+                      Scheduled: {formatDate(dateOnly(ann.expires_at))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
@@ -1399,10 +1483,11 @@ function AnnouncementsView() {
                   </button>
                   <button
                     onClick={() => setDeleteConfirm(ann.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    disabled={deletingId === ann.id}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
                     title="Delete announcement"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {deletingId === ann.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
@@ -1410,7 +1495,7 @@ function AnnouncementsView() {
               {/* Expandable description */}
               {expandedId === ann.id && (
                 <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50">
-                  <p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.description}</p>
+                  <p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p>
                 </div>
               )}
             </div>
@@ -1485,15 +1570,18 @@ function AnnouncementsView() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                disabled={submitting}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
-                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors"
+                disabled={submitting}
+                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                Post Announcement
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Posting…' : 'Post Announcement'}
               </button>
             </div>
           </div>
