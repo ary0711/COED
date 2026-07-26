@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Save, Send, Printer, X, ChevronDown, ChevronUp, Upload, ImageIcon, Loader2 } from 'lucide-react';
-import { supabase } from '../../supabaseClient';
 
 interface AccomplishmentReportProps {
   userId: string;
@@ -26,8 +25,17 @@ interface DocEntry {
   photos: PhotoItem[];
 }
 
-const PHOTOS_BUCKET = 'accomplishment-photos';
 const MAX_PHOTOS_PER_ENTRY = 8;
+
+// All reads/writes go through the Express API (JWT-authenticated),
+// not straight to Supabase — mirrors the calendar_events/announcements
+// setup. Photo uploads/deletes are also routed through here now instead
+// of hitting Supabase Storage directly from the browser.
+const REPORTS_API_URL = 'http://localhost:5000/api/accomplishment-reports';
+
+function getToken() {
+  return localStorage.getItem('token');
+}
 
 const DOC_CATEGORIES = [
   { key: 'instruction', label: 'A. Instruction-Related Engagements' },
@@ -135,49 +143,73 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
 
   const progress = computeProgress();
 
+  const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
+  const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
+
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from('accomplishment_reports').select('*').eq('submitted_by', userId).eq('status', 'draft').order('created_at', { ascending: false }).limit(1).single();
-      if (data) {
-        setReportId(data.id); setQuarter(data.quarter); setYear(data.year);
-        setProgramChair(data.program_chair ?? userName); setProgram(data.program ?? '');
-        setOtherAccomplishments(data.other_accomplishments ?? ''); setDateSubmitted(data.date_submitted ?? '');
-        setStatus(data.status);
-        if (data.pi1_data?.length) setPi1(data.pi1_data);
-        if (data.pi2_data?.length) setPi2(data.pi2_data);
-        if (data.pi3_data?.length) setPi3(data.pi3_data);
-        if (data.pi4_data?.length) setPi4(data.pi4_data);
-        if (data.pi5_data?.length) setPi5(data.pi5_data);
-        if (data.pi6_data?.length) setPi6(data.pi6_data);
-        if (data.pi7_data?.length) setPi7(data.pi7_data);
-        if (data.pi8_data?.length) setPi8(data.pi8_data);
-        if (data.mfo3_pi1_data?.length) setMfo3pi1(data.mfo3_pi1_data);
-        if (data.mfo3_pi2_data?.length) setMfo3pi2(data.mfo3_pi2_data);
-        if (data.mfo3_pi3_data?.length) setMfo3pi3(data.mfo3_pi3_data);
-        if (data.mfo3_pi4_data?.length) setMfo3pi4(data.mfo3_pi4_data);
-        if (data.mfo4_pi1_data?.length) setMfo4pi1(data.mfo4_pi1_data);
-        if (data.mfo4_pi2_data?.length) setMfo4pi2(data.mfo4_pi2_data);
-        if (data.other_data?.length) setOtherInitiatives(data.other_data);
-        if (data.awards_data?.length) setAwards(data.awards_data);
-        if (data.doc_entries_data?.length) setDocEntries(data.doc_entries_data);
+      try {
+        const res = await fetch(`${REPORTS_API_URL}/my-draft`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data) {
+          setReportId(data.id); setQuarter(data.quarter); setYear(data.year);
+          setProgramChair(data.program_chair ?? userName); setProgram(data.program ?? '');
+          setOtherAccomplishments(data.other_accomplishments ?? ''); setDateSubmitted(data.date_submitted ?? '');
+          setStatus(data.status);
+          if (data.pi1_data?.length) setPi1(data.pi1_data);
+          if (data.pi2_data?.length) setPi2(data.pi2_data);
+          if (data.pi3_data?.length) setPi3(data.pi3_data);
+          if (data.pi4_data?.length) setPi4(data.pi4_data);
+          if (data.pi5_data?.length) setPi5(data.pi5_data);
+          if (data.pi6_data?.length) setPi6(data.pi6_data);
+          if (data.pi7_data?.length) setPi7(data.pi7_data);
+          if (data.pi8_data?.length) setPi8(data.pi8_data);
+          if (data.mfo3_pi1_data?.length) setMfo3pi1(data.mfo3_pi1_data);
+          if (data.mfo3_pi2_data?.length) setMfo3pi2(data.mfo3_pi2_data);
+          if (data.mfo3_pi3_data?.length) setMfo3pi3(data.mfo3_pi3_data);
+          if (data.mfo3_pi4_data?.length) setMfo3pi4(data.mfo3_pi4_data);
+          if (data.mfo4_pi1_data?.length) setMfo4pi1(data.mfo4_pi1_data);
+          if (data.mfo4_pi2_data?.length) setMfo4pi2(data.mfo4_pi2_data);
+          if (data.other_data?.length) setOtherInitiatives(data.other_data);
+          if (data.awards_data?.length) setAwards(data.awards_data);
+          if (data.doc_entries_data?.length) setDocEntries(data.doc_entries_data);
+        }
+      } catch {
+        // silent — same as the previous behavior of not surfacing load errors
       }
     };
     load();
   }, [userId]);
-
-  const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
-  const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
 
   // ── Documentation entry handlers ──
   const addDocEntry = (category: string) => {
     setDocEntries(prev => [...prev, { id: makeId(), category, title: '', venue: '', date: '', description: '', photos: [] }]);
   };
 
+  const deletePhotosOnServer = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      await fetch(`${REPORTS_API_URL}/photos`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ paths }),
+      });
+    } catch {
+      // best-effort cleanup — same as the previous fire-and-forget behavior
+    }
+  };
+
   const removeDocEntry = async (id: string) => {
     const entry = docEntries.find(e => e.id === id);
     setDocEntries(prev => prev.filter(e => e.id !== id));
     if (entry?.photos?.length) {
-      await supabase.storage.from(PHOTOS_BUCKET).remove(entry.photos.map(p => p.path));
+      await deletePhotosOnServer(entry.photos.map(p => p.path));
     }
   };
 
@@ -198,27 +230,43 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
       return;
     }
 
-    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+    const filesToUpload = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, remainingSlots);
     if (files.length > remainingSlots) {
       showError(`Only ${remainingSlots} more photo(s) allowed for this activity (max ${MAX_PHOTOS_PER_ENTRY}).`);
     }
 
+    if (filesToUpload.length === 0) {
+      if (fileInputRefs.current[entryId]) fileInputRefs.current[entryId]!.value = '';
+      return;
+    }
+
     setUploadingEntryId(entryId);
     try {
-      const uploaded: PhotoItem[] = [];
-      for (const file of filesToUpload) {
-        if (!file.type.startsWith('image/')) continue;
-        const ext = file.name.split('.').pop();
-        const path = `${userId}/${entryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file);
-        if (uploadError) { showError(`Failed to upload ${file.name}`); continue; }
-        const { data: urlData } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-        uploaded.push({ path, url: urlData.publicUrl, caption: '' });
+      const formData = new FormData();
+      formData.append('entryId', entryId);
+      filesToUpload.forEach(file => formData.append('files', file));
+
+      const res = await fetch(`${REPORTS_API_URL}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showError('Failed to upload photo(s): ' + (err.error || res.statusText));
+        return;
       }
+
+      const uploaded: { path: string; url: string }[] = await res.json();
       if (uploaded.length > 0) {
-        setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: [...en.photos, ...uploaded] } : en));
+        setDocEntries(prev => prev.map(en => en.id === entryId
+          ? { ...en, photos: [...en.photos, ...uploaded.map(u => ({ ...u, caption: '' }))] }
+          : en));
         showSuccess(`${uploaded.length} photo(s) added.`);
       }
+    } catch {
+      showError('Could not reach the server. Please try again.');
     } finally {
       setUploadingEntryId(null);
       if (fileInputRefs.current[entryId]) fileInputRefs.current[entryId]!.value = '';
@@ -230,7 +278,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     const photo = entry?.photos[photoIdx];
     setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: en.photos.filter((_, i) => i !== photoIdx) } : en));
     if (photo?.path) {
-      await supabase.storage.from(PHOTOS_BUCKET).remove([photo.path]);
+      await deletePhotosOnServer([photo.path]);
     }
   };
 
@@ -239,7 +287,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   };
 
   const getPayload = (submitStatus: string) => ({
-    submitted_by: userId, quarter, year, program_chair: programChair, program,
+    quarter, year, program_chair: programChair, program,
     pi1_data: pi1, pi2_data: pi2, pi3_data: pi3, pi4_data: pi4,
     pi5_data: pi5, pi6_data: pi6, pi7_data: pi7, pi8_data: pi8,
     mfo3_pi1_data: mfo3pi1, mfo3_pi2_data: mfo3pi2, mfo3_pi3_data: mfo3pi3, mfo3_pi4_data: mfo3pi4,
@@ -247,28 +295,56 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     doc_entries_data: docEntries,
     other_accomplishments: otherAccomplishments, date_submitted: dateSubmitted,
     status: submitStatus, progress: submitStatus === 'submitted' ? 100 : computeProgress(),
-    updated_at: new Date().toISOString(),
   });
+
+  const persist = async (payload: Record<string, unknown>) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    };
+
+    if (reportId) {
+      const res = await fetch(`${REPORTS_API_URL}/${reportId}`, { method: 'PUT', headers, body: JSON.stringify(payload) });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      return res.json();
+    }
+
+    const res = await fetch(REPORTS_API_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+  };
 
   const saveDraft = async () => {
     setSaving(true);
     try {
-      const payload = getPayload('draft');
-      if (reportId) { await supabase.from('accomplishment_reports').update(payload).eq('id', reportId); }
-      else { const { data } = await supabase.from('accomplishment_reports').insert(payload).select().single(); if (data) setReportId(data.id); }
+      const data = await persist(getPayload('draft'));
+      if (!reportId && data?.id) setReportId(data.id);
       showSuccess('Draft saved!');
-    } finally { setSaving(false); }
+    } catch (err: any) {
+      showError('Failed to save draft: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submitReport = async () => {
     setSaving(true);
     try {
-      const payload = getPayload('submitted');
-      if (reportId) { await supabase.from('accomplishment_reports').update(payload).eq('id', reportId); }
-      else { const { data } = await supabase.from('accomplishment_reports').insert(payload).select().single(); if (data) setReportId(data.id); }
+      const data = await persist(getPayload('submitted'));
+      if (!reportId && data?.id) setReportId(data.id);
       setStatus('submitted');
       showSuccess('Report submitted to Dean!');
-    } finally { setSaving(false); }
+    } catch (err: any) {
+      showError('Failed to submit report: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Reusable print table ──

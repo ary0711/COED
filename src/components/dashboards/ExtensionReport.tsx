@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Send, Printer, X } from 'lucide-react';
-import { supabase } from '../../supabaseClient';
 
 interface ReportRow {
   extension_project: string;
@@ -26,6 +25,14 @@ const EMPTY_ROW: ReportRow = {
   inclusive_date: '',
 };
 
+// All reads/writes go through the Express API (JWT-authenticated),
+// not straight to Supabase — mirrors the calendar_events/announcements setup.
+const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
+
+function getToken() {
+  return localStorage.getItem('token');
+}
+
 export function ExtensionReport({ userId, userName, readOnly = false }: ExtensionReportProps) {
   const [quarter, setQuarter] = useState('1st');
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -35,6 +42,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const computeProgress = () => {
     const total = rows.length * 6;
@@ -46,21 +54,21 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from('extension_reports')
-        .select('*')
-        .eq('submitted_by', userId)
-        .eq('status', 'draft')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (data) {
-        setReportId(data.id);
-        setQuarter(data.quarter);
-        setYear(data.year);
-        setRows(data.rows.length > 0 ? data.rows : [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
-        setStatus(data.status);
+      try {
+        const res = await fetch(`${EXTENSION_API_URL}/my-draft`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data) {
+          setReportId(data.id);
+          setQuarter(data.quarter);
+          setYear(data.year);
+          setRows(data.rows?.length > 0 ? data.rows : [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
+          setStatus(data.status);
+        }
+      } catch {
+        // silent — same as the previous behavior of not surfacing load errors
       }
     };
     load();
@@ -73,31 +81,64 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   };
 
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
+  const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
+
+  const persist = async (payload: Record<string, unknown>) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    };
+
+    if (reportId) {
+      const res = await fetch(`${EXTENSION_API_URL}/${reportId}`, { method: 'PUT', headers, body: JSON.stringify(payload) });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      return res.json();
+    }
+
+    const res = await fetch(EXTENSION_API_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
+    return res.json();
+  };
 
   const saveDraft = async () => {
     setSaving(true);
     try {
-      const payload = { submitted_by: userId, quarter, year, rows, status: 'draft', progress: computeProgress(), updated_at: new Date().toISOString() };
-      if (reportId) { await supabase.from('extension_reports').update(payload).eq('id', reportId); }
-      else { const { data } = await supabase.from('extension_reports').insert(payload).select().single(); if (data) setReportId(data.id); }
+      const payload = { quarter, year, rows, status: 'draft', progress: computeProgress() };
+      const data = await persist(payload);
+      if (!reportId && data?.id) setReportId(data.id);
       showSuccess('Draft saved!');
-    } finally { setSaving(false); }
+    } catch (err: any) {
+      showError('Failed to save draft: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submitReport = async () => {
     setSaving(true);
     try {
-      const payload = { submitted_by: userId, quarter, year, rows, status: 'submitted', progress: 100, updated_at: new Date().toISOString() };
-      if (reportId) { await supabase.from('extension_reports').update(payload).eq('id', reportId); }
-      else { const { data } = await supabase.from('extension_reports').insert(payload).select().single(); if (data) setReportId(data.id); }
+      const payload = { quarter, year, rows, status: 'submitted', progress: 100 };
+      const data = await persist(payload);
+      if (!reportId && data?.id) setReportId(data.id);
       setStatus('submitted');
       showSuccess('Report submitted to Dean!');
-    } finally { setSaving(false); }
+    } catch (err: any) {
+      showError('Failed to submit report: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg">{successMsg}</div>}
+      {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg">{errorMsg}</div>}
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
