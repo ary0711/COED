@@ -212,7 +212,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       onLogin(uiRole);
 
     } catch (err) {
-      setError('Cannot connect to server. Please try again.');
+      setError("Incorrect username or password. Verify your details and try again.");
       console.error(err);
     } finally {
       setLoading(false);
