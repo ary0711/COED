@@ -67,7 +67,11 @@ import {
   BookOpen,
   History,
   Menu,
-  Bell,
+  MessageCircle,
+  Send,
+  Inbox,
+  CircleDot,
+  ArrowRight,
 } from 'lucide-react';
 
 import { supabase } from '../supabaseClient';
@@ -75,7 +79,6 @@ import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { ChartsSection } from './ChartsSection';
-import { NotificationsPanel } from './NotificationsPanel';
 import { QuarterlyReportTracker } from './QuarterlyReportTracker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -97,6 +100,19 @@ interface CalendarEvent {
   program: string;
   description: string;
   color: string;
+}
+
+interface Inquiry {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: 'student' | 'alumni';
+  subject: string;
+  message: string;
+  reply: string | null;
+  status: 'pending' | 'answered';
+  created_at: string;
+  replied_at: string | null;
 }
 
 // ─── Role & Status Config ─────────────────────────────────────────────────────
@@ -129,6 +145,9 @@ const PAGE_SIZE = 10;
 const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 
 // ─── Menu Items ───────────────────────────────────────────────────────────────
+// Order: core operational items first, then Landing Page → Announcements →
+// Reports & Analytics → Settings as the closing group (per request).
+// Evaluation Management has been removed; Inquiries (student/alumni Q&A) added.
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
   { icon: Users,           label: 'User Management',         id: 'users' },
@@ -136,11 +155,11 @@ const deanMenuItems = [
   { icon: GraduationCap,   label: 'Faculty & Staff',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
-  { icon: ClipboardCheck,  label: 'Evaluation Management',   id: 'evaluation' },
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
-  { icon: BarChart3,       label: 'Reports & Analytics',     id: 'reports' },
-  { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
+  { icon: MessageCircle,   label: 'Inquiries',               id: 'inquiries' },
   { icon: Edit,            label: 'Landing Page Management', id: 'landing' },
+  { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
+  { icon: BarChart3,       label: 'Reports & Analytics',     id: 'reports' },
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
 
@@ -206,16 +225,17 @@ export function CollegeDeanDashboard({
 
         {/* ── Page content ── */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {activeMenuItem === 'dashboard'     && <DashboardView />}
+          {activeMenuItem === 'dashboard'     && <DashboardView onGoToInquiries={() => setActiveMenuItem('inquiries')} />}
           {activeMenuItem === 'users'         && <UserManagement />}
           {activeMenuItem === 'records'       && <AcademicRecords />}
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
-          {activeMenuItem === 'reports'       && <ReportsAnalytics />}
-          {activeMenuItem === 'announcements' && <AnnouncementsContent />}
+          {activeMenuItem === 'inquiries'     && <InquiriesManagement />}
           {activeMenuItem === 'landing'       && <LandingPageManagement />}
+          {activeMenuItem === 'announcements' && <AnnouncementsContent />}
+          {activeMenuItem === 'reports'       && <ReportsAnalytics />}
           {activeMenuItem === 'settings'      && <SystemSettings />}
         </main>
       </div>
@@ -223,8 +243,116 @@ export function CollegeDeanDashboard({
   );
 }
 
+// ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
+// Sits in the same slot the Notifications panel used to occupy, sized to
+// match the Evaluation Trends card in ChartsSection. Shows how many student
+// and alumni inquiries are still unanswered, with a shortcut to the full
+// Inquiries page.
+function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
+  const [studentPending, setStudentPending] = useState(0);
+  const [alumniPending, setAlumniPending]   = useState(0);
+  const [recent, setRecent]                 = useState<Inquiry[]>([]);
+  const [loading, setLoading]               = useState(true);
+
+  const fetchSummary = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setStudentPending(data.filter((i: Inquiry) => i.sender_role === 'student' && i.status === 'pending').length);
+      setAlumniPending(data.filter((i: Inquiry) => i.sender_role === 'alumni' && i.status === 'pending').length);
+      setRecent(data.filter((i: Inquiry) => i.status === 'pending').slice(0, 4));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  useEffect(() => {
+    const channelName = `dashboard-inquiries-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => fetchSummary())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchSummary]);
+
+  const totalPending = studentPending + alumniPending;
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="w-4 h-4 text-[#1E3A8A]" />
+          <span className="text-sm font-semibold text-gray-800">Inquiries</span>
+        </div>
+        {totalPending > 0 && (
+          <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
+            <CircleDot className="w-3 h-3" /> {totalPending} unreplied
+          </span>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col">
+        {/* Unreplied count breakdown */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="rounded-xl p-3" style={{ backgroundColor: '#DBEAFE' }}>
+            <p className="text-xs font-medium mb-1" style={{ color: '#1D4ED8', opacity: 0.8 }}>Student</p>
+            <p className="text-2xl font-bold leading-none" style={{ color: '#1D4ED8' }}>{loading ? '—' : studentPending}</p>
+            <p className="text-[11px] mt-1" style={{ color: '#1D4ED8', opacity: 0.65 }}>unreplied</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ backgroundColor: '#FCE7F3' }}>
+            <p className="text-xs font-medium mb-1" style={{ color: '#BE185D', opacity: 0.8 }}>Alumni</p>
+            <p className="text-2xl font-bold leading-none" style={{ color: '#BE185D' }}>{loading ? '—' : alumniPending}</p>
+            <p className="text-[11px] mt-1" style={{ color: '#BE185D', opacity: 0.65 }}>unreplied</p>
+          </div>
+        </div>
+
+        {/* Recent pending list */}
+        <div className="flex-1 space-y-2 min-h-0 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-24 text-gray-400 text-xs">Loading...</div>
+          ) : recent.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-24 text-gray-300">
+              <Inbox className="w-8 h-8 mb-1 opacity-40" />
+              <p className="text-xs text-gray-400">All inquiries answered</p>
+            </div>
+          ) : (
+            recent.map(inquiry => (
+              <div key={inquiry.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{inquiry.sender_name}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{inquiry.subject}</p>
+                </div>
+                <span
+                  className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full capitalize"
+                  style={inquiry.sender_role === 'alumni'
+                    ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
+                    : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }}
+                >
+                  {inquiry.sender_role}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        <button
+          onClick={onViewAll}
+          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1E3A8A] hover:bg-blue-50 py-2 rounded-lg transition-colors flex-shrink-0"
+        >
+          View all inquiries <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard View ───────────────────────────────────────────────────────────
-function DashboardView() {
+function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
   // Mobile-only metric cards (charts replaced on small screens)
   const mobileMetrics = [
@@ -306,33 +434,15 @@ function DashboardView() {
         </div>
 
         <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
-<NotificationsPanel userType="dean" />
-<QuarterlyReportTracker />
-            </div>
-          </div>
+          {/* Inquiries summary — sized to match the Evaluation Trends card */}
+          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
         </div>
       </div>
 
-      {/* ── MOBILE: Notifications + Quarterly stacked separately ── */}
+      {/* ── MOBILE: Inquiries summary ── */}
       <div className="lg:hidden flex flex-col gap-4">
-        {/* Notifications */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-            <Bell className="w-4 h-4 text-[#1E3A8A]" />
-            <span className="text-sm font-semibold text-gray-800">Notifications</span>
-          </div>
-          <NotificationsPanel userType="dean" />
-        </div>
-
-        {/* Quarterly Report */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-            <BarChart3 className="w-4 h-4 text-[#1E3A8A]" />
-            <span className="text-sm font-semibold text-gray-800">Quarterly Report</span>
-          </div>
-          <QuarterlyReportTracker />
+        <div className="h-80">
+          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
         </div>
       </div>
     </div>
@@ -1132,6 +1242,42 @@ function AcademicRecords() {
 
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
+  const [facultyList, setFacultyList] = useState<Profile[]>([]);
+  const [staffList, setStaffList]     = useState<Profile[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [viewModal, setViewModal]     = useState<'faculty' | 'staff' | null>(null);
+  const [search, setSearch]           = useState('');
+
+  const openList = async (type: 'faculty' | 'staff') => {
+    setViewModal(type);
+    setSearch('');
+    setLoadingList(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', type)
+      .order('full_name', { ascending: true });
+
+    if (!error && data) {
+      if (type === 'faculty') setFacultyList(data);
+      else setStaffList(data);
+    }
+    setLoadingList(false);
+  };
+
+  const closeList = () => setViewModal(null);
+
+  const activeList = viewModal === 'faculty' ? facultyList : viewModal === 'staff' ? staffList : [];
+  const filteredList = search.trim()
+    ? activeList.filter(p =>
+        p.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.department ?? '').toLowerCase().includes(search.toLowerCase())
+      )
+    : activeList;
+
+  const accent = viewModal === 'faculty' ? '#2563EB' : '#16A34A';
+  const accentBg = viewModal === 'faculty' ? '#DBEAFE' : '#D1FAE5';
+
   return (
     <div>
       <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
@@ -1140,15 +1286,71 @@ function FacultyStaffManagement() {
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
           <p className="text-3xl font-bold text-blue-600 mb-2">142</p>
           <p className="text-gray-600 mb-4 text-sm sm:text-base">Total Faculty Members</p>
-          <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View All Faculty</button>
+          <button onClick={() => openList('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View All Faculty</button>
         </div>
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
           <p className="text-3xl font-bold text-green-600 mb-2">28</p>
           <p className="text-gray-600 mb-4 text-sm sm:text-base">Total Staff Members</p>
-          <button className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">View All Staff</button>
+          <button onClick={() => openList('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">View All Staff</button>
         </div>
       </div>
+
+      {/* View All Faculty / Staff Modal — lists each person's name with department (falls back to role) */}
+      {viewModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeList} />
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                {viewModal === 'faculty' ? 'All Faculty' : 'All Staff'}
+                <span className="ml-2 text-sm font-semibold text-gray-400">({filteredList.length})</span>
+              </h2>
+              <button onClick={closeList} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+
+            <div className="relative mb-4 flex-shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name or department..."
+                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 -mx-1 px-1">
+              {loadingList ? (
+                <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Loading...</div>
+              ) : filteredList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+                  <Users className="w-10 h-10 mb-2 opacity-40" />
+                  <p className="text-sm text-gray-400">No {viewModal} found</p>
+                </div>
+              ) : (
+                filteredList.map(person => (
+                  <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
+                      {person.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 text-sm truncate">{person.full_name}</p>
+                      <p className="text-xs text-gray-500 truncate">{person.department || (viewModal === 'faculty' ? 'Faculty' : 'Staff')}</p>
+                    </div>
+                    <span
+                      className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize"
+                      style={{ backgroundColor: accentBg, color: accent }}
+                    >
+                      {viewModal}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1184,8 +1386,6 @@ function ResearchAchievements() {
   );
 }
 
-
-
 // ─── Alumni Tracer ────────────────────────────────────────────────────────────
 function AlumniTracer() {
   return (
@@ -1208,6 +1408,274 @@ function AlumniTracer() {
           <BarChart3 className="w-12 sm:w-16 h-12 sm:h-16 text-gray-400" />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
+// Two-column layout: Alumni inquiries on the LEFT, Student inquiries on the
+// RIGHT, as requested. Each column is its own scrollable panel so the dean
+// can browse and reply to both groups without switching pages.
+function InquiriesManagement() {
+  const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
+  const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [studentFilter, setStudentFilter]       = useState<'all' | 'pending' | 'answered'>('all');
+  const [alumniFilter, setAlumniFilter]         = useState<'all' | 'pending' | 'answered'>('all');
+
+  const [activeInquiry, setActiveInquiry] = useState<Inquiry | null>(null);
+  const [replyText, setReplyText]         = useState('');
+  const [sending, setSending]             = useState(false);
+
+  const fetchInquiries = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setStudentInquiries(data.filter((i: Inquiry) => i.sender_role === 'student'));
+      setAlumniInquiries(data.filter((i: Inquiry) => i.sender_role === 'alumni'));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
+
+  // Realtime updates so new inquiries show up without a manual refresh
+  useEffect(() => {
+    const channelName = `inquiries-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => {
+        fetchInquiries();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchInquiries]);
+
+  const openInquiry = (inquiry: Inquiry) => {
+    setActiveInquiry(inquiry);
+    setReplyText(inquiry.reply ?? '');
+  };
+  const closeInquiry = () => { setActiveInquiry(null); setReplyText(''); };
+
+  const sendReply = async () => {
+    if (!activeInquiry || !replyText.trim()) return;
+    setSending(true);
+    try {
+      const { error } = await supabase
+        .from('inquiries')
+        .update({
+          reply: replyText.trim(),
+          status: 'answered',
+          replied_at: new Date().toISOString(),
+        })
+        .eq('id', activeInquiry.id);
+
+      if (!error) {
+        await notifyRole(activeInquiry.sender_role, 'Your inquiry has been answered', replyText.trim());
+        closeInquiry();
+        fetchInquiries();
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+
+  const filterList = (list: Inquiry[], filter: 'all' | 'pending' | 'answered') =>
+    filter === 'all' ? list : list.filter(i => i.status === filter);
+
+  const pendingStudentCount = studentInquiries.filter(i => i.status === 'pending').length;
+  const pendingAlumniCount  = alumniInquiries.filter(i => i.status === 'pending').length;
+
+  // Reusable column so both sides stay visually identical and easy to scan
+  const InquiryColumn = ({
+    title, accentColor, accentBg, list, filter, setFilter, pendingCount, emptyIcon: EmptyIcon,
+  }: {
+    title: string;
+    accentColor: string;
+    accentBg: string;
+    list: Inquiry[];
+    filter: 'all' | 'pending' | 'answered';
+    setFilter: (f: 'all' | 'pending' | 'answered') => void;
+    pendingCount: number;
+    emptyIcon: React.ComponentType<{ className?: string }>;
+  }) => {
+    const shown = filterList(list, filter);
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+        {/* Column header */}
+        <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3" style={{ backgroundColor: accentBg }}>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
+            <h2 className="font-bold text-gray-900 text-sm sm:text-base">{title}</h2>
+            <span className="text-xs font-semibold text-gray-500 bg-white/70 px-2 py-0.5 rounded-full">{list.length}</span>
+          </div>
+          {pendingCount > 0 && (
+            <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full text-white flex-shrink-0" style={{ backgroundColor: accentColor }}>
+              <CircleDot className="w-3 h-3" /> {pendingCount} new
+            </span>
+          )}
+        </div>
+
+        {/* Filter tabs */}
+        <div className="flex gap-1 px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50">
+          {(['all', 'pending', 'answered'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
+                filter === f ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
+              }`}
+              style={filter === f ? { backgroundColor: accentColor } : undefined}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+              <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2" />
+              <p className="text-xs">Loading inquiries...</p>
+            </div>
+          ) : shown.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
+              <EmptyIcon className="w-10 h-10 mb-2 opacity-40" />
+              <p className="text-sm text-gray-400">No {filter !== 'all' ? filter : ''} inquiries</p>
+            </div>
+          ) : (
+            shown.map(inquiry => (
+              <button
+                key={inquiry.id}
+                onClick={() => openInquiry(inquiry)}
+                className="w-full text-left p-3 sm:p-3.5 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors group"
+              >
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="font-semibold text-gray-900 text-sm truncate">{inquiry.sender_name}</span>
+                  {inquiry.status === 'pending' ? (
+                    <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                  ) : (
+                    <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
+                  )}
+                </div>
+                <p className="text-xs font-medium text-gray-700 truncate mb-0.5">{inquiry.subject}</p>
+                <p className="text-xs text-gray-400 truncate">{inquiry.message}</p>
+                <p className="text-[10px] text-gray-300 mt-1.5">{formatDate(inquiry.created_at)}</p>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="mb-4 pb-4 border-b border-gray-200 flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Inquiries</h1>
+          <p className="text-gray-500 text-sm mt-1">Answer questions from students and alumni in one place</p>
+        </div>
+        <button onClick={fetchInquiries} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Two-column layout: Alumni (left) / Student (right) — full height, scrollable independently */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
+        <div className="min-h-[420px] lg:min-h-0">
+          <InquiryColumn
+            title="Alumni Inquiries"
+            accentColor="#BE185D"
+            accentBg="#FCE7F3"
+            list={alumniInquiries}
+            filter={alumniFilter}
+            setFilter={setAlumniFilter}
+            pendingCount={pendingAlumniCount}
+            emptyIcon={Inbox}
+          />
+        </div>
+        <div className="min-h-[420px] lg:min-h-0">
+          <InquiryColumn
+            title="Student Inquiries"
+            accentColor="#1D4ED8"
+            accentBg="#DBEAFE"
+            list={studentInquiries}
+            filter={studentFilter}
+            setFilter={setStudentFilter}
+            pendingCount={pendingStudentCount}
+            emptyIcon={Inbox}
+          />
+        </div>
+      </div>
+
+      {/* Reply modal */}
+      {activeInquiry && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeInquiry} />
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-4 gap-3">
+              <div className="min-w-0">
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold mb-2"
+                  style={activeInquiry.sender_role === 'alumni'
+                    ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
+                    : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }}
+                >
+                  {activeInquiry.sender_role === 'alumni' ? 'Alumni' : 'Student'}
+                </span>
+                <h2 className="text-lg font-bold text-gray-900 truncate">{activeInquiry.subject}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">From {activeInquiry.sender_name} · {formatDate(activeInquiry.created_at)}</p>
+              </div>
+              <button onClick={closeInquiry} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeInquiry.message}</p>
+            </div>
+
+            {activeInquiry.reply && (
+              <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100">
+                <p className="text-xs font-semibold text-blue-700 mb-1">Previous reply</p>
+                <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeInquiry.reply}</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Your Reply</label>
+              <textarea
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                rows={5}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Type your response here..."
+              />
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={closeInquiry} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
+              <button
+                onClick={sendReply}
+                disabled={sending || !replyText.trim()}
+                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? 'Sending...' : 'Send Reply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1431,8 +1899,9 @@ function AnnouncementsContent() {
   
   useEffect(() => {
      loadAnnouncements();
+  const channelName = `announcements-channel-${Math.random().toString(36).slice(2)}`;
   const channel = supabase
-    .channel('announcements-channel')
+    .channel(channelName)
     .on(
       'postgres_changes',
       {
@@ -1656,7 +2125,6 @@ if (notificationError)
   }
 }
 
-if (!confirm) return;
   return (
     
     <div>
@@ -1794,75 +2262,6 @@ if (!confirm) return;
   
 }
 
-interface SectionEditorProps {
-  section: string;
-  content: any;
-  updateField: (
-    section: string,
-    field: string,
-    value: string
-  ) => void;
-}
-
-function SectionEditor({
-  section,
-  content,
-  updateField,
-}: SectionEditorProps) {
-  return (
-    <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
-
-      <h2 className="text-xl font-bold text-gray-800 mb-4">
-        {section}
-      </h2>
-
-      <div className="space-y-4">
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Title
-          </label>
-
-          <input
-            type="text"
-            value={content[section]?.title || ''}
-            onChange={(e) =>
-              updateField(
-                section,
-                'title',
-                e.target.value
-              )
-            }
-            placeholder="Enter title"
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Description
-          </label>
-
-          <textarea
-            rows={4}
-            value={content[section]?.description || ''}
-            onChange={(e) =>
-              updateField(
-                section,
-                'description',
-                e.target.value
-              )
-            }
-            placeholder="Enter description"
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-          />
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
 function updateClubsField(
