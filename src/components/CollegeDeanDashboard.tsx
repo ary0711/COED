@@ -159,7 +159,7 @@ const deanMenuItems = [
   { icon: MessageCircle,   label: 'Inquiries',               id: 'inquiries' },
   { icon: Edit,            label: 'Landing Page Management', id: 'landing' },
   { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
-  { icon: BarChart3,       label: 'Reports & Analytics',     id: 'reports' },
+  { icon: BarChart3,       label: 'Quarterly Reports',       id: 'reports' },
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
 
@@ -1681,194 +1681,436 @@ function InquiriesManagement() {
 }
 
 // ─── Reports & Analytics ──────────────────────────────────────────────────────
-function ReportsAnalytics() {
-  const [deadlineTitle, setDeadlineTitle] =
-  useState('');
-
-const [deadlineDescription, setDeadlineDescription] =
-  useState('');
-
-const [deadlineDate, setDeadlineDate] =
-  useState('');
-
-const [showModal, setShowModal] =
-  useState(false);
-
-const [modalTitle, setModalTitle] =
-  useState('');
-
-const [modalMessage, setModalMessage] =
-  useState('');
-
-  async function createDeadline() {
-  try {
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setModalTitle('Error');
-      setModalMessage('User not found.');
-      setShowModal(true);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('report_deadlines')
-      .insert([
-        {
-          title: deadlineTitle,
-          description: deadlineDescription,
-          due_date: deadlineDate,
-          created_by: user.id
-        }
-      ])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await notifyRole(
-      'faculty',
-      deadlineTitle,
-      `Report Deadline: ${deadlineDescription}`
-    );
-
-    await notifyRole(
-      'department_chair',
-      deadlineTitle,
-      `Report Deadline: ${deadlineDescription}`
-    );
-
-    setDeadlineTitle('');
-    setDeadlineDescription('');
-    setDeadlineDate('');
-
-    setModalTitle('Success');
-    setModalMessage(
-      'Deadline posted successfully.'
-    );
-    setShowModal(true);
-
-  } catch (error: any) {
-
-    setModalTitle('Error');
-    setModalMessage(
-      error.message
-    );
-    setShowModal(true);
-
-  }
+// Quarterly Report tracker: the dean sets a deadline, watches per-faculty
+// submission progress, sends bulk or individual reminders, and opens each
+// faculty member's uploaded document once they submit.
+interface QuarterlyReport {
+  id: string;
+  faculty_id: string;
+  quarter: string;
+  status: 'not_started' | 'in_progress' | 'submitted';
+  progress: number;
+  file_url: string | null;
+  file_name: string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
 }
+
+interface FacultyReportRow {
+  faculty: Profile;
+  report: QuarterlyReport | null;
+}
+
+function ReportsAnalytics() {
+  const [facultyRows, setFacultyRows]     = useState<FacultyReportRow[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [quarter, setQuarter]             = useState('Q1 2026');
+  const [statusFilter, setStatusFilter]   = useState<'all' | 'not_started' | 'in_progress' | 'submitted'>('all');
+  const [search, setSearch]               = useState('');
+
+  const [deadline, setDeadlineState]      = useState<{ id: string; due_date: string } | null>(null);
+  const [deadlineInput, setDeadlineInput] = useState('');
+  const [savingDeadline, setSavingDeadline] = useState(false);
+
+  const [sendingBulk, setSendingBulk]     = useState(false);
+  const [remindingId, setRemindingId]     = useState<string | null>(null);
+
+  const [docModal, setDocModal]           = useState<FacultyReportRow | null>(null);
+  const [modalTitle, setModalTitle]       = useState('');
+  const [modalMessage, setModalMessage]   = useState('');
+  const [showInfoModal, setShowInfoModal] = useState(false);
+
+  const showInfo = (title: string, message: string) => {
+    setModalTitle(title);
+    setModalMessage(message);
+    setShowInfoModal(true);
+  };
+
+  const fetchDeadline = useCallback(async () => {
+    const { data } = await supabase
+      .from('report_deadlines')
+      .select('*')
+      .eq('title', `Quarterly Report – ${quarter}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setDeadlineState({ id: data.id, due_date: data.due_date });
+      setDeadlineInput(data.due_date ? data.due_date.slice(0, 16) : '');
+    } else {
+      setDeadlineState(null);
+      setDeadlineInput('');
+    }
+  }, [quarter]);
+
+  const fetchFacultyReports = useCallback(async () => {
+    setLoading(true);
+    const { data: faculty } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'faculty')
+      .order('full_name', { ascending: true });
+
+    const { data: reports } = await supabase
+      .from('quarterly_reports')
+      .select('*')
+      .eq('quarter', quarter);
+
+    const rows: FacultyReportRow[] = (faculty ?? []).map((f: Profile) => ({
+      faculty: f,
+      report: (reports ?? []).find((r: QuarterlyReport) => r.faculty_id === f.id) ?? null,
+    }));
+
+    setFacultyRows(rows);
+    setLoading(false);
+  }, [quarter]);
+
+  useEffect(() => { fetchDeadline(); fetchFacultyReports(); }, [fetchDeadline, fetchFacultyReports]);
+
+  // Realtime — reflect faculty submissions as they happen
+  useEffect(() => {
+    const channelName = `quarterly-reports-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quarterly_reports' }, () => fetchFacultyReports())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchFacultyReports]);
+
+  const getStatus = (row: FacultyReportRow): 'not_started' | 'in_progress' | 'submitted' =>
+    row.report?.status ?? 'not_started';
+  const getProgress = (row: FacultyReportRow): number =>
+    row.report?.status === 'submitted' ? 100 : (row.report?.progress ?? 0);
+
+  const filteredRows = facultyRows.filter(row => {
+    if (statusFilter !== 'all' && getStatus(row) !== statusFilter) return false;
+    if (search.trim() && !row.faculty.full_name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const submittedCount   = facultyRows.filter(r => getStatus(r) === 'submitted').length;
+  const inProgressCount  = facultyRows.filter(r => getStatus(r) === 'in_progress').length;
+  const notStartedCount  = facultyRows.filter(r => getStatus(r) === 'not_started').length;
+  const overallProgress  = facultyRows.length
+    ? Math.round(facultyRows.reduce((sum, r) => sum + getProgress(r), 0) / facultyRows.length)
+    : 0;
+
+  const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+    not_started: { label: 'Not Started', color: '#991B1B', bg: '#FEE2E2' },
+    in_progress: { label: 'In Progress', color: '#92400E', bg: '#FEF3C7' },
+    submitted:   { label: 'Submitted',   color: '#065F46', bg: '#D1FAE5' },
+  };
+
+  // ── Deadline ──
+  const saveDeadline = async () => {
+    if (!deadlineInput) { showInfo('Error', 'Please choose a deadline date and time.'); return; }
+    setSavingDeadline(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const title = `Quarterly Report – ${quarter}`;
+      const { error } = await supabase.from('report_deadlines').upsert(
+        deadline
+          ? { id: deadline.id, title, description: `Submit your ${quarter} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
+          : { title, description: `Submit your ${quarter} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
+      );
+      if (error) throw error;
+
+      await notifyRole('faculty', title, `The deadline for the ${quarter} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`);
+
+      await fetchDeadline();
+      showInfo('Success', 'Deadline saved and faculty notified.');
+    } catch (err: any) {
+      showInfo('Error', err.message || 'Failed to save deadline.');
+    } finally {
+      setSavingDeadline(false);
+    }
+  };
+
+  // ── Reminders ──
+  const sendBulkReminder = async () => {
+    const pending = facultyRows.filter(r => getStatus(r) !== 'submitted');
+    if (pending.length === 0) { showInfo('All Done', 'Every faculty member has already submitted this quarter\'s report.'); return; }
+    setSendingBulk(true);
+    try {
+      const dueText = deadline ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.` : '';
+      await notifyRole('faculty', `Reminder: ${quarter} Quarterly Report`, `Please complete and submit your ${quarter} quarterly report.${dueText}`);
+      showInfo('Reminder Sent', `Sent a reminder to ${pending.length} faculty member${pending.length !== 1 ? 's' : ''} who haven't submitted yet.`);
+    } catch (err: any) {
+      showInfo('Error', err.message || 'Failed to send reminders.');
+    } finally {
+      setSendingBulk(false);
+    }
+  };
+
+  const sendIndividualReminder = async (row: FacultyReportRow) => {
+    setRemindingId(row.faculty.id);
+    try {
+      const dueText = deadline ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.` : '';
+      const { error } = await supabase.from('notifications').insert({
+        user_id: row.faculty.id,
+        title: `Reminder: ${quarter} Quarterly Report`,
+        message: `Hi ${row.faculty.full_name}, please complete and submit your ${quarter} quarterly report.${dueText}`,
+        type: 'announcement',
+        is_read: false,
+      });
+      if (error) throw error;
+      showInfo('Reminder Sent', `Sent a reminder to ${row.faculty.full_name}.`);
+    } catch (err: any) {
+      showInfo('Error', err.message || 'Failed to send reminder.');
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
+  const formatDateTime = (dateStr: string) =>
+    new Date(dateStr).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+
   return (
-    
     <div>
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Quarterly Report Tracker</h1>
+          <p className="text-gray-500 text-sm mt-1">Monitor faculty submission progress and manage deadlines</p>
+        </div>
+        <select
+          value={quarter}
+          onChange={e => setQuarter(e.target.value)}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          {['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'].map(q => <option key={q} value={q}>{q}</option>)}
+        </select>
+      </div>
 
-  <h2 className="text-xl font-semibold mb-4">
-    Create Report Deadline
-  </h2>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
+          <p className="text-xs font-medium text-gray-500 mb-1">Overall Progress</p>
+          <p className="text-2xl sm:text-3xl font-bold text-[#1E3A8A]">{overallProgress}%</p>
+        </div>
+        <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#D1FAE5' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#065F46', opacity: 0.8 }}>Submitted</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#065F46' }}>{submittedCount}</p>
+        </div>
+        <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEF3C7' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#92400E', opacity: 0.8 }}>In Progress</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#92400E' }}>{inProgressCount}</p>
+        </div>
+        <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEE2E2' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#991B1B', opacity: 0.8 }}>Not Started</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#991B1B' }}>{notStartedCount}</p>
+        </div>
+      </div>
 
-  <div className="space-y-4">
-
-    <input
-      type="text"
-      value={deadlineTitle}
-      onChange={(e) =>
-        setDeadlineTitle(e.target.value)
-      }
-      placeholder="Deadline Title"
-      className="w-full border rounded-lg p-3"
-    />
-
-    <textarea
-      value={deadlineDescription}
-      onChange={(e) =>
-        setDeadlineDescription(
-          e.target.value
-        )
-      }
-      placeholder="Deadline Description"
-      className="w-full border rounded-lg p-3"
-    />
-
-    <input
-      type="datetime-local"
-      value={deadlineDate}
-      onChange={(e) =>
-        setDeadlineDate(e.target.value)
-      }
-      className="w-full border rounded-lg p-3"
-    />
-
-    <button
-      onClick={createDeadline}
-      className="px-6 py-3 bg-blue-600 text-white rounded-lg"
-    >
-      Post Deadline
-    </button>
-
-  </div>
-
-</div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports & Analytics</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        {['Institutional Report', 'Faculty Performance', 'Student Analytics'].map((report, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">{report}</h3>
-            <div className="space-y-2">
+      {/* Deadline + Bulk reminder */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Set Deadline for {quarter}</label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="datetime-local"
+                value={deadlineInput}
+                onChange={e => setDeadlineInput(e.target.value)}
+                className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
               <button
-  onClick={() => window.open('http://localhost:5000/api/reports/pdf', '_blank')}
-  className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm">
-  <Download className="w-4 h-4" /> Export PDF
-</button>
-<button
-  onClick={() => window.open('http://localhost:5000/api/reports/excel', '_blank')}
-  className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm">
-  <Download className="w-4 h-4" /> Export Excel
-</button>
+                onClick={saveDeadline}
+                disabled={savingDeadline}
+                className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
+              >
+                {savingDeadline ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Calendar className="w-4 h-4" />}
+                {savingDeadline ? 'Saving...' : deadline ? 'Update Deadline' : 'Set Deadline'}
+              </button>
+            </div>
+            {deadline && (
+              <p className="text-xs text-gray-500 mt-2">Current deadline: <span className="font-semibold text-gray-700">{formatDateTime(deadline.due_date)}</span></p>
+            )}
+          </div>
+          <button
+            onClick={sendBulkReminder}
+            disabled={sendingBulk}
+            className="px-4 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
+          >
+            {sendingBulk ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Megaphone className="w-4 h-4" />}
+            {sendingBulk ? 'Sending...' : 'Send Bulk Reminder'}
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search faculty name..."
+              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+          >
+            <option value="all">All Status</option>
+            <option value="not_started">Not Started</option>
+            <option value="in_progress">In Progress</option>
+            <option value="submitted">Submitted</option>
+          </select>
+          <button onClick={fetchFacultyReports} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Faculty progress table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
+              <p className="text-sm text-gray-500">Loading faculty reports...</p>
             </div>
           </div>
-        ))}
+        ) : filteredRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+            <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
+            <p className="font-medium">No faculty found</p>
+            <p className="text-sm mt-1">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px]">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Faculty</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Submitted</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredRows.map(row => {
+                  const status   = getStatus(row);
+                  const progress = getProgress(row);
+                  const cfg      = STATUS_LABEL[status];
+                  return (
+                    <tr key={row.faculty.id} className="hover:bg-blue-50/30 transition-colors">
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: '#D1FAE5', color: '#065F46' }}>
+                            {row.faculty.full_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-gray-900 text-sm truncate max-w-[140px] sm:max-w-none">{row.faculty.full_name}</div>
+                            <div className="text-xs text-gray-400 truncate max-w-[140px] sm:max-w-none">{row.faculty.department ?? 'Faculty'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${progress}%`, backgroundColor: status === 'submitted' ? '#10B981' : progress > 0 ? '#F59E0B' : '#D1D5DB' }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600 w-9 text-right">{progress}%</span>
+                        </div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6 hidden md:table-cell">
+                        <span className="text-sm text-gray-600">{row.report?.submitted_at ? formatDateTime(row.report.submitted_at) : '—'}</span>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center justify-center gap-1">
+                          {row.report?.file_url ? (
+                            <button onClick={() => setDocModal(row)} className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="View submitted document">
+                              <FileText className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">View</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => sendIndividualReminder(row)}
+                              disabled={remindingId === row.faculty.id}
+                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-60"
+                              title="Send individual reminder"
+                            >
+                              {remindingId === row.faculty.id ? <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
+                              <span className="hidden sm:inline">{remindingId === row.faculty.id ? 'Sending…' : 'Remind'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Analytics Dashboard</h2>
-        <div className="h-64 sm:h-96 bg-gray-100 rounded-lg flex items-center justify-center"><BarChart3 className="w-12 sm:w-16 h-12 sm:h-16 text-gray-400" /></div>
-      </div>
-      {showModal && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
 
-    <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+      {/* Document viewer modal */}
+      {docModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDocModal(null)} />
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-10">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Submitted Report</h2>
+              <button onClick={() => setDocModal(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-900 text-sm truncate">{docModal.faculty.full_name}</p>
+                <p className="text-xs text-gray-500 truncate">{docModal.report?.file_name || `${quarter} Quarterly Report`}</p>
+                {docModal.report?.submitted_at && (
+                  <p className="text-xs text-gray-400 mt-0.5">Submitted {formatDateTime(docModal.report.submitted_at)}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDocModal(null)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Close</button>
+              {docModal.report?.file_url && (
+                <a
+                  href={docModal.report.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4" /> Open Document
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <div className="p-6">
-
-        <h3 className="text-xl font-semibold">
-          {modalTitle}
-        </h3>
-
-        <p className="mt-2 text-gray-600">
-          {modalMessage}
-        </p>
-
-      </div>
-
-      <div className="border-t p-4 flex justify-end">
-
-        <button
-          onClick={() =>
-            setShowModal(false)
-          }
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg"
-        >
-          OK
-        </button>
-
-      </div>
-
-    </div>
-
-  </div>
-)}
+      {/* Info modal (success / error) */}
+      {showInfoModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <h3 className="text-xl font-semibold text-gray-900">{modalTitle}</h3>
+              <p className="mt-2 text-gray-600">{modalMessage}</p>
+            </div>
+            <div className="border-t p-4 flex justify-end">
+              <button onClick={() => setShowInfoModal(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg">OK</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
