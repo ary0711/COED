@@ -188,9 +188,8 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
 }
 
 // ====================== STUDENT DASHBOARD VIEW ======================
-// Restyled to match the Faculty dashboard's layout: a plain header with a
-// bottom border (instead of a blue banner card), 4-column stat cards, and a
-// 2-column grid of Announcements / Upcoming Deadlines further down.
+// Header/welcome banner and the "Enrolled Subjects" stat card have been
+// removed per request. The remaining stat cards now span 3 columns.
 interface StudentDashboardViewProps {
   selectedProgram: string;
   profile: StudentProfile | null;
@@ -205,54 +204,33 @@ function StudentDashboardView({ selectedProgram, profile, loading }: StudentDash
     { id: 3, title: 'College Foundation Day Activities',     date: 'Feb 8, 2026',  type: 'info'      },
   ];
 
-  const displayName = profile?.full_name ?? 'Student';
   const displayId = profile?.student_no ?? '—';
-  const displayProgram = profile?.program ?? selectedProgram;
   const displayYearLevel = profile?.year_level ?? '—';
   const displayStanding = profile?.academic_standing ?? '—';
 
   return (
     <div>
-      {/* ── Header — matches Faculty's plain bordered header ── */}
-      <div className="mb-6 pb-6 border-b border-gray-200">
-        {loading ? (
-          <div className="animate-pulse space-y-2">
-            <div className="h-7 sm:h-8 w-56 sm:w-72 bg-gray-200 rounded" />
-            <div className="h-4 w-40 sm:w-52 bg-gray-200 rounded" />
-          </div>
-        ) : (
-          <>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Student Dashboard</h1>
-            <p className="text-gray-600">
-              Welcome back, {displayName}
-              {displayProgram && (
-                <span className="hidden sm:inline"> · {displayProgram}</span>
-              )}
-            </p>
-          </>
-        )}
-      </div>
-
-      {/* ── Stat cards — 4-column like Faculty ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <BookOpen className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">8</div>
-          <div className="text-xs sm:text-sm text-gray-600">Enrolled Subjects</div>
-        </div>
+      {/* ── Stat cards — 3-column now that Enrolled Subjects has been removed ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Users className="w-7 h-7 sm:w-8 sm:h-8 text-green-600 mb-2" />
-          <div className="text-base sm:text-xl font-bold text-gray-900 truncate">{displayId}</div>
+          <div className="text-base sm:text-xl font-bold text-gray-900 truncate">
+            {loading ? <span className="inline-block h-5 w-16 bg-gray-200 rounded animate-pulse" /> : displayId}
+          </div>
           <div className="text-xs sm:text-sm text-gray-600">Student ID</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Calendar className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">{displayYearLevel}</div>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900">
+            {loading ? <span className="inline-block h-6 w-8 bg-gray-200 rounded animate-pulse" /> : displayYearLevel}
+          </div>
           <div className="text-xs sm:text-sm text-gray-600">Year Level</div>
         </div>
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           <Award className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 mb-2" />
-          <div className="text-base sm:text-xl font-bold text-gray-900">{displayStanding}</div>
+          <div className="text-base sm:text-xl font-bold text-gray-900">
+            {loading ? <span className="inline-block h-5 w-20 bg-gray-200 rounded animate-pulse" /> : displayStanding}
+          </div>
           <div className="text-xs sm:text-sm text-gray-600">Academic Standing</div>
         </div>
       </div>
@@ -353,64 +331,72 @@ function FacultyDepartments() {
 }
 
 // ====================== ACADEMIC RESOURCES ======================
+// The standalone "Academic Calendar" card has been removed per request.
+// The downloadable resources list now follows the Faculty "Academic
+// Records" design language (category filter pills + list rows), but with
+// student-appropriate categories/content — not the faculty's own files.
 function AcademicResources() {
   const handleDownload = (title: string) => alert(`📥 Downloading: ${title}`);
+  const [activeCategory, setActiveCategory] = useState('All');
 
   const resources = [
-    { title: 'Academic Calendar 2025-2026',  type: 'PDF', size: '2.5 MB'  },
-    { title: 'Student Handbook',             type: 'PDF', size: '5.8 MB'  },
-    { title: 'Registration Forms',           type: 'PDF', size: '890 KB'  },
-    { title: 'Scholarship Application Form', type: 'PDF', size: '1.5 MB'  },
-  ];      
+    { title: 'Student Handbook 2025–2026',        category: 'Handbook', size: '5.8 MB' },
+    { title: 'Enrollment & Registration Guide',    category: 'Policy',   size: '1.2 MB' },
+    { title: 'Grading & Academic Policies',        category: 'Policy',   size: '980 KB' },
+    { title: 'Scholarship Application Form',       category: 'Form',     size: '1.5 MB' },
+    { title: 'Change of Program Form',             category: 'Form',     size: '210 KB' },
+    { title: 'Leave of Absence Request Form',      category: 'Form',     size: '150 KB' },
+    { title: 'Advisory No. 2026-02 — Class Suspensions', category: 'Memorandum', size: '190 KB' },
+  ];
+
+  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
+  const filtered = activeCategory === 'All' ? resources : resources.filter(r => r.category === activeCategory);
+
+  const categoryColor: Record<string, string> = {
+    Handbook:   'bg-blue-100 text-blue-700',
+    Policy:     'bg-purple-100 text-purple-700',
+    Memorandum: 'bg-orange-100 text-orange-700',
+    Form:       'bg-green-100 text-green-700',
+  };
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Resources</h1>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Academic Calendar</h2>
-        <div className="p-4 sm:p-6 bg-blue-50 rounded-lg">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-xs sm:text-sm text-gray-600 mb-1">Second Semester</div>
-              <div className="font-medium text-gray-900 text-sm sm:text-base">January 6 - May 15, 2026</div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm text-gray-600 mb-1">Midterm Examinations</div>
-              <div className="font-medium text-gray-900 text-sm sm:text-base">March 1-7, 2026</div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm text-gray-600 mb-1">Final Examinations</div>
-              <div className="font-medium text-gray-900 text-sm sm:text-base">May 8-14, 2026</div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm text-gray-600 mb-1">Summer Term</div>
-              <div className="font-medium text-gray-900 text-sm sm:text-base">June 1 - July 31, 2026</div>
-            </div>
-          </div>
-        </div>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {categories.map(c => (
+          <button
+            key={c}
+            onClick={() => setActiveCategory(c)}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+          >
+            {c}
+          </button>
+        ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Downloadable Resources</h2>
-        <div className="space-y-3">
-          {resources.map((resource, index) => (
-            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{resource.title}</div>
-                    <div className="text-xs sm:text-sm text-gray-600">{resource.type} • {resource.size}</div>
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="divide-y divide-gray-100">
+          {filtered.map((resource, index) => (
+            <div key={index} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{resource.title}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[resource.category]}`}>{resource.category}</span>
+                    <span className="text-xs text-gray-400">{resource.size}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDownload(resource.title)}
-                  className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm flex-shrink-0"
-                >
-                  Download
-                </button>
               </div>
+              <button
+                onClick={() => handleDownload(resource.title)}
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
+              >
+                Download
+              </button>
             </div>
           ))}
         </div>
@@ -775,8 +761,10 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
-  // Editable full name field, initialized from profile once loaded
+  // Editable fields, initialized from profile/auth once loaded
   const [fullNameInput, setFullNameInput] = useState('');
+  const [studentNoInput, setStudentNoInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -784,9 +772,15 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     if (profile?.full_name) {
       setFullNameInput(profile.full_name);
     }
-  }, [profile?.full_name]);
+    if (profile?.student_no) {
+      setStudentNoInput(profile.student_no);
+    }
+  }, [profile?.full_name, profile?.student_no]);
 
-  const displayStudentNo = profile?.student_no ?? '';
+  useEffect(() => {
+    setEmailInput(userEmail);
+  }, [userEmail]);
+
   const displayYearLevel = profile?.year_level ?? '—';
   const displayStanding = profile?.academic_standing ?? '—';
   const displayEnrollmentStatus = profile?.enrollment_status ?? '—';
@@ -795,8 +789,19 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     if (!profile?.student_id) return;
 
     const trimmedName = fullNameInput.trim();
+    const trimmedStudentNo = studentNoInput.trim();
+    const trimmedEmail = emailInput.trim();
+
     if (!trimmedName) {
       setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+      return;
+    }
+    if (!trimmedStudentNo) {
+      setSaveMessage({ type: 'error', text: 'Student ID cannot be empty.' });
+      return;
+    }
+    if (!trimmedEmail) {
+      setSaveMessage({ type: 'error', text: 'Email address cannot be empty.' });
       return;
     }
 
@@ -804,14 +809,22 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     setSaveMessage(null);
 
     try {
-      const { error } = await supabase
+      const { error: profileUpdateError } = await supabase
         .from('student_profiles')
-        .update({ full_name: trimmedName })
+        .update({ full_name: trimmedName, student_no: trimmedStudentNo })
         .eq('student_id', profile.student_id);
 
-      if (error) throw error;
+      if (profileUpdateError) throw profileUpdateError;
 
-      setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+      // Only touch auth email if it actually changed
+      if (trimmedEmail !== userEmail) {
+        const { error: emailUpdateError } = await supabase.auth.updateUser({ email: trimmedEmail });
+        if (emailUpdateError) throw emailUpdateError;
+        setSaveMessage({ type: 'success', text: 'Changes saved. Check your inbox to confirm your new email address.' });
+      } else {
+        setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+      }
+
       onProfileUpdated();
     } catch (err) {
       console.error('Failed to update profile:', err);
@@ -823,6 +836,8 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
 
   const handleCancel = () => {
     setFullNameInput(profile?.full_name ?? '');
+    setStudentNoInput(profile?.student_no ?? '');
+    setEmailInput(userEmail);
     setSaveMessage(null);
   };
 
@@ -864,10 +879,9 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
                   <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
                   <input
                     type="text"
-                    value={displayStudentNo}
-                    disabled
-                    readOnly
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                    value={studentNoInput}
+                    onChange={(e) => setStudentNoInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
                 </div>
               </div>
@@ -875,10 +889,9 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
                 <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                 <input
                   type="email"
-                  value={userEmail}
-                  disabled
-                  readOnly
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
             </>

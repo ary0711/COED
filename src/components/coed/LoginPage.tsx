@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Lock, ArrowLeft, Mail, IdCard, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, ArrowLeft, Mail, IdCard, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 const DB_TO_UI_ROLE: Record<string, string> = {
@@ -127,6 +127,18 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     return true;
   };
 
+  // Small inline status icon shown next to a field once it has a value —
+  // a green check when the current value passes validation, a red X when it
+  // doesn't. Hidden while empty (nothing to judge yet) or while an async
+  // check (e.g. username availability) is in flight.
+  const renderStatusIcon = (value: string, hasError: boolean, checking?: boolean) => {
+    if (checking) return null;
+    if (!value.trim()) return null;
+    return hasError
+      ? <XCircle className="w-4 h-4 text-red-500" />
+      : <CheckCircle className="w-4 h-4 text-green-500" />;
+  };
+
   const checkUsernameAvailability = async (username: string) => {
     const trimmed = username.trim();
     if (!trimmed) return;
@@ -149,9 +161,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       setCheckingUsername(false);
     }
   };
-
-  // The rest of the registration form stays locked until the full name is valid
-  const isFullNameValid = regFullName.trim() !== '' && isValidFullName(regFullName);
 
   const handleLogin = async () => {
     setError('');
@@ -441,7 +450,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         </div>
 
         <div className="flex-1 flex flex-col justify-center px-10 lg:px-16 py-4">
-          <div className="w-full max-w-md mx-auto">
+          <div className={mode === 'signup' ? 'w-full max-w-2xl mx-auto' : 'w-full max-w-md mx-auto'}>
 
             {error && (
               <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
@@ -516,39 +525,58 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
             )}
 
             {mode === 'signup' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div>
                   <h3 className="text-3xl font-bold text-gray-900">Create Account</h3>
                   <p className="text-gray-500 text-sm mt-1">Fill in your details to get started</p>
                 </div>
 
+                {/* Full Name — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input type="text" placeholder="Juan Dela Cruz" value={regFullName}
                       onChange={(e) => {
-                        setRegFullName(e.target.value);
-                        if (fieldErrors.fullName) setFieldErrors((p) => ({ ...p, fullName: undefined }));
+                        const value = e.target.value;
+                        setRegFullName(value);
+                        if (!value.trim()) {
+                          setFieldErrors((p) => ({ ...p, fullName: undefined }));
+                        } else if (!isValidFullName(value)) {
+                          setFieldErrors((p) => ({ ...p, fullName: 'Please enter your first and last name.' }));
+                        } else {
+                          setFieldErrors((p) => ({ ...p, fullName: undefined }));
+                        }
                       }}
                       onBlur={() => {
                         if (!regFullName.trim()) setFieldErrors((p) => ({ ...p, fullName: 'Please enter your full name.' }));
                         else if (!isValidFullName(regFullName)) setFieldErrors((p) => ({ ...p, fullName: 'Please enter your first and last name.' }));
                       }}
-                      className={`w-full pl-10 pr-4 py-3 rounded-xl border ${fieldErrors.fullName ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                      className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.fullName ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                      {renderStatusIcon(regFullName, !!fieldErrors.fullName)}
+                    </span>
                   </div>
                   {fieldErrors.fullName && <p className="text-red-500 text-xs mt-1">{fieldErrors.fullName}</p>}
                 </div>
 
+                {/* Email — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input type="text" placeholder="your.email@example.com" value={regEmail}
-                      disabled={!isFullNameValid}
                       onChange={(e) => {
-                        setRegEmail(e.target.value);
-                        if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: undefined }));
+                        const value = e.target.value;
+                        setRegEmail(value);
+                        if (!value.trim()) {
+                          setFieldErrors((p) => ({ ...p, email: undefined }));
+                        } else if (!isValidEmail(value)) {
+                          setFieldErrors((p) => ({ ...p, email: 'Please enter a valid email address.' }));
+                        } else {
+                          const suggestion = getEmailTypoSuggestion(value);
+                          setFieldErrors((p) => ({ ...p, email: suggestion ? `This looks like a typo. Did you mean "${suggestion}"?` : undefined }));
+                        }
                       }}
                       onBlur={() => {
                         const suggestion = getEmailTypoSuggestion(regEmail);
@@ -556,20 +584,21 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                         else if (!isValidEmail(regEmail)) setFieldErrors((p) => ({ ...p, email: 'Please enter a valid email address.' }));
                         else if (suggestion) setFieldErrors((p) => ({ ...p, email: `This looks like a typo. Did you mean "${suggestion}"?` }));
                       }}
-                      className={`w-full pl-10 pr-4 py-3 rounded-xl border ${fieldErrors.email ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400`} />
+                      className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.email ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                      {renderStatusIcon(regEmail, !!fieldErrors.email)}
+                    </span>
                   </div>
                   {fieldErrors.email && <p className="text-red-500 text-xs mt-1">{fieldErrors.email}</p>}
-                  {!isFullNameValid && !fieldErrors.email && (
-                    <p className="text-gray-400 text-xs mt-1">Complete your full name first.</p>
-                  )}
                 </div>
 
+                {/* User Type — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">User Type <span className="text-red-500">*</span></label>
                   <div className="grid grid-cols-3 gap-2">
                     {userTypes.map((type) => (
-                      <button key={type.id} type="button" disabled={!isFullNameValid} onClick={() => setRegUserType(type.id)}
-                        className={`py-2.5 rounded-xl border-2 transition-all text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-transparent ${
+                      <button key={type.id} type="button" onClick={() => setRegUserType(type.id)}
+                        className={`py-2.5 rounded-xl border-2 transition-all text-center ${
                           regUserType === type.id ? 'border-[#1d4ed8] bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
                         }`}>
                         <div className="text-xl mb-0.5">{type.icon}</div>
@@ -577,18 +606,15 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                       </button>
                     ))}
                   </div>
-                  {!isFullNameValid && (
-                    <p className="text-gray-400 text-xs mt-1">Complete your full name first.</p>
-                  )}
                 </div>
 
+                {/* Program — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Program <span className="text-red-500">*</span></label>
                   <select
                     value={regProgram}
-                    disabled={!isFullNameValid}
                     onChange={(e) => setRegProgram(e.target.value)}
-                    className="w-full px-3.5 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm bg-white text-gray-700 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400">
+                    className="w-full px-3.5 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm bg-white text-gray-700">
                     <option value="" disabled>Select your program</option>
                     {programs.map((p) => (
                       <option key={p.id} value={p.id}>{p.label}</option>
@@ -596,59 +622,72 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">ID Number <span className="text-red-500">*</span></label>
-                  <div className="relative">
-                    <IdCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text"
-                      inputMode={regUserType === 'student' ? 'numeric' : 'text'}
-                      disabled={!isFullNameValid}
-                      placeholder={
-                        regUserType === 'student' ? 'e.g., 202412345 (numbers only)' :
-                        regUserType === 'faculty' ? 'e.g., EMP-001' :
-                        regUserType === 'alumni'  ? 'e.g., ALU-001' : 'Your ID Number'
-                      }
-                      value={regIdNumber}
-                      onChange={(e) => {
-                        let v = e.target.value;
-                        // Students: strip out anything that isn't a digit as they type
-                        if (regUserType === 'student') v = v.replace(/\D/g, '');
-                        setRegIdNumber(v);
-                        if (fieldErrors.idNumber) setFieldErrors((p) => ({ ...p, idNumber: undefined }));
-                      }}
-                      onBlur={() => {
-                        if (!regIdNumber.trim()) setFieldErrors((p) => ({ ...p, idNumber: 'Please enter your ID number.' }));
-                        else if (!isValidIdNumber(regIdNumber, regUserType)) setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
-                      }}
-                      className={`w-full pl-10 pr-4 py-3 rounded-xl border ${fieldErrors.idNumber ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400`} />
-                  </div>
-                  {fieldErrors.idNumber && <p className="text-red-500 text-xs mt-1">{fieldErrors.idNumber}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Username <span className="text-red-500">*</span></label>
-                  <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" placeholder="e.g., juan.delacruz"
-                      disabled={!isFullNameValid}
-                      value={regUsername}
-                      onChange={(e) => {
-                        setRegUsername(e.target.value);
-                        if (fieldErrors.username) setFieldErrors((p) => ({ ...p, username: undefined }));
-                      }}
-                      onBlur={() => {
-                        if (!regUsername.trim()) {
-                          setFieldErrors((p) => ({ ...p, username: 'Please enter a username.' }));
-                          return;
+                {/* ID Number + Username — paired side by side to use the space better */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">ID Number <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="text"
+                        inputMode={regUserType === 'student' ? 'numeric' : 'text'}
+                        placeholder={
+                          regUserType === 'student' ? '202412345' :
+                          regUserType === 'faculty' ? 'EMP-001' :
+                          regUserType === 'alumni'  ? 'ALU-001' : 'ID Number'
                         }
-                        checkUsernameAvailability(regUsername);
-                      }}
-                      className={`w-full pl-10 pr-4 py-3 rounded-xl border ${fieldErrors.username ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400`} />
+                        value={regIdNumber}
+                        onChange={(e) => {
+                          let v = e.target.value;
+                          // Students: strip out anything that isn't a digit as they type
+                          if (regUserType === 'student') v = v.replace(/\D/g, '');
+                          setRegIdNumber(v);
+                          if (!v.trim()) {
+                            setFieldErrors((p) => ({ ...p, idNumber: undefined }));
+                          } else if (!isValidIdNumber(v, regUserType)) {
+                            setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
+                          } else {
+                            setFieldErrors((p) => ({ ...p, idNumber: undefined }));
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!regIdNumber.trim()) setFieldErrors((p) => ({ ...p, idNumber: 'Please enter your ID number.' }));
+                          else if (!isValidIdNumber(regIdNumber, regUserType)) setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
+                        }}
+                        className={`w-full pl-9 pr-8 py-3 rounded-xl border ${fieldErrors.idNumber ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        {renderStatusIcon(regIdNumber, !!fieldErrors.idNumber)}
+                      </span>
+                    </div>
+                    {fieldErrors.idNumber && <p className="text-red-500 text-xs mt-1">{fieldErrors.idNumber}</p>}
                   </div>
-                  {checkingUsername && !fieldErrors.username && (
-                    <p className="text-gray-400 text-xs mt-1">Checking availability…</p>
-                  )}
-                  {fieldErrors.username && <p className="text-red-500 text-xs mt-1">{fieldErrors.username}</p>}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Username <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="text" placeholder="juan.delacruz"
+                        value={regUsername}
+                        onChange={(e) => {
+                          setRegUsername(e.target.value);
+                          if (fieldErrors.username) setFieldErrors((p) => ({ ...p, username: undefined }));
+                        }}
+                        onBlur={() => {
+                          if (!regUsername.trim()) {
+                            setFieldErrors((p) => ({ ...p, username: 'Please enter a username.' }));
+                            return;
+                          }
+                          checkUsernameAvailability(regUsername);
+                        }}
+                        className={`w-full pl-9 pr-8 py-3 rounded-xl border ${fieldErrors.username ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        {renderStatusIcon(regUsername, !!fieldErrors.username, checkingUsername)}
+                      </span>
+                    </div>
+                    {checkingUsername && !fieldErrors.username && (
+                      <p className="text-gray-400 text-xs mt-1">Checking availability…</p>
+                    )}
+                    {fieldErrors.username && <p className="text-red-500 text-xs mt-1">{fieldErrors.username}</p>}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -660,16 +699,15 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                         type={showPassword ? 'text' : 'password'}
                         placeholder="Min 8 chars, Aa1@"
                         value={regPassword}
-                        disabled={!isFullNameValid}
                         onChange={(e) => {
                           setRegPassword(e.target.value);
                           if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
                         }}
                         onFocus={() => setPasswordFocused(true)}
                         onBlur={() => setTimeout(() => setPasswordFocused(false), 150)}
-                        className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.password ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400`} />
-                      <button type="button" disabled={!isFullNameValid} onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed">
+                        className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.password ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
@@ -702,10 +740,9 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                         type={showConfirmPassword ? 'text' : 'password'}
                         placeholder="Confirm"
                         value={regConfirmPassword}
-                        disabled={!isFullNameValid}
                         onChange={(e) => setRegConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-9 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400" />
-                      <button type="button" disabled={!isFullNameValid} onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="w-full pl-10 pr-9 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm" />
+                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -713,7 +750,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                   </div>
                 </div>
 
-                <button onClick={handleRegister} disabled={loading || checkingUsername || !isFullNameValid}
+                <button onClick={handleRegister} disabled={loading || checkingUsername}
                   className="w-full py-3.5 bg-[#1d4ed8] text-white rounded-xl font-semibold text-sm hover:bg-[#1e40af] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-blue-200">
                   {loading ? 'Creating account…' : checkingUsername ? 'Checking username…' : 'Create Account →'}
                 </button>
