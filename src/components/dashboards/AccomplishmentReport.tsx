@@ -108,6 +108,8 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [draftStatus, setDraftStatus] = useState<'loading' | 'loaded' | 'none' | 'error'>('loading');
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
   // ── Documentation (categorized activity entries with photos) ──
   const [docEntries, setDocEntries] = useState<DocEntry[]>([]);
@@ -152,7 +154,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         const res = await fetch(`${REPORTS_API_URL}/my-draft`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
-        if (!res.ok) return;
+        if (!res.ok) { setDraftStatus('error'); return; }
         const data = await res.json();
         if (data) {
           setReportId(data.id); setQuarter(data.quarter); setYear(data.year);
@@ -176,9 +178,13 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
           if (data.other_data?.length) setOtherInitiatives(data.other_data);
           if (data.awards_data?.length) setAwards(data.awards_data);
           if (data.doc_entries_data?.length) setDocEntries(data.doc_entries_data);
+          setLastSavedAt(data.updated_at ?? data.created_at ?? null);
+          setDraftStatus('loaded');
+        } else {
+          setDraftStatus('none');
         }
       } catch {
-        // silent — same as the previous behavior of not surfacing load errors
+        setDraftStatus('error');
       }
     };
     load();
@@ -325,6 +331,8 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     try {
       const data = await persist(getPayload('draft'));
       if (!reportId && data?.id) setReportId(data.id);
+      setLastSavedAt(data?.updated_at ?? new Date().toISOString());
+      setDraftStatus('loaded');
       showSuccess('Draft saved!');
     } catch (err: any) {
       showError('Failed to save draft: ' + (err?.message || 'Unknown error'));
@@ -338,6 +346,8 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     try {
       const data = await persist(getPayload('submitted'));
       if (!reportId && data?.id) setReportId(data.id);
+      setLastSavedAt(data?.updated_at ?? new Date().toISOString());
+      setDraftStatus('loaded');
       setStatus('submitted');
       showSuccess('Report submitted to Dean!');
     } catch (err: any) {
@@ -345,6 +355,11 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     } finally {
       setSaving(false);
     }
+  };
+
+  const formatSavedAt = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
   // ── Reusable print table ──
@@ -368,6 +383,14 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         <div>
           <h2 className="text-xl font-bold text-gray-900">Accomplishment Report</h2>
           <p className="text-sm text-gray-500 mt-0.5">For the Program Chairperson · SY {year}</p>
+          <p className="text-xs mt-1">
+            {draftStatus === 'loading' && <span className="text-gray-400">Checking for a saved draft…</span>}
+            {draftStatus === 'loaded' && lastSavedAt && (
+              <span className="text-gray-500">Continuing your saved draft — last saved {formatSavedAt(lastSavedAt)}</span>
+            )}
+            {draftStatus === 'none' && <span className="text-gray-500">No draft yet — this is a new report.</span>}
+            {draftStatus === 'error' && <span className="text-red-500">Couldn't load your saved draft — please refresh or contact support.</span>}
+          </p>
         </div>
         {!readOnly && (
           <div className="flex gap-2 flex-wrap">

@@ -43,6 +43,8 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [draftStatus, setDraftStatus] = useState<'loading' | 'loaded' | 'none' | 'error'>('loading');
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
   const computeProgress = () => {
     const total = rows.length * 6;
@@ -58,7 +60,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
         const res = await fetch(`${EXTENSION_API_URL}/my-draft`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
-        if (!res.ok) return;
+        if (!res.ok) { setDraftStatus('error'); return; }
         const data = await res.json();
         if (data) {
           setReportId(data.id);
@@ -66,9 +68,13 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
           setYear(data.year);
           setRows(data.rows?.length > 0 ? data.rows : [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
           setStatus(data.status);
+          setLastSavedAt(data.updated_at ?? data.created_at ?? null);
+          setDraftStatus('loaded');
+        } else {
+          setDraftStatus('none');
         }
       } catch {
-        // silent — same as the previous behavior of not surfacing load errors
+        setDraftStatus('error');
       }
     };
     load();
@@ -112,6 +118,8 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
       const payload = { quarter, year, rows, status: 'draft', progress: computeProgress() };
       const data = await persist(payload);
       if (!reportId && data?.id) setReportId(data.id);
+      setLastSavedAt(data?.updated_at ?? new Date().toISOString());
+      setDraftStatus('loaded');
       showSuccess('Draft saved!');
     } catch (err: any) {
       showError('Failed to save draft: ' + (err?.message || 'Unknown error'));
@@ -126,6 +134,8 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
       const payload = { quarter, year, rows, status: 'submitted', progress: 100 };
       const data = await persist(payload);
       if (!reportId && data?.id) setReportId(data.id);
+      setLastSavedAt(data?.updated_at ?? new Date().toISOString());
+      setDraftStatus('loaded');
       setStatus('submitted');
       showSuccess('Report submitted to Dean!');
     } catch (err: any) {
@@ -133,6 +143,11 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
     } finally {
       setSaving(false);
     }
+  };
+
+  const formatSavedAt = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
   return (
@@ -145,6 +160,14 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
         <div>
           <h2 className="text-xl font-bold text-gray-900">Extension Accomplishment Report</h2>
           <p className="text-sm text-gray-500 mt-0.5">Fill up all fields then submit to Dean</p>
+          <p className="text-xs mt-1">
+            {draftStatus === 'loading' && <span className="text-gray-400">Checking for a saved draft…</span>}
+            {draftStatus === 'loaded' && lastSavedAt && (
+              <span className="text-gray-500">Continuing your saved draft — last saved {formatSavedAt(lastSavedAt)}</span>
+            )}
+            {draftStatus === 'none' && <span className="text-gray-500">No draft yet — this is a new report.</span>}
+            {draftStatus === 'error' && <span className="text-red-500">Couldn't load your saved draft — please refresh or contact support.</span>}
+          </p>
         </div>
         {!readOnly && (
           <div className="flex gap-2 flex-wrap">
