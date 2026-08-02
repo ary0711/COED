@@ -60,6 +60,13 @@ export function ContactPage({
   previewOfficeHours,
   previewSocialLinks,
 }: ContactPageProps) {
+  const [showModal, setShowModal] = useState(false);
+
+  const [modalTitle, setModalTitle] = useState("");
+
+  const [modalMessage, setModalMessage] = useState("");
+
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] =
   useState(true);
   const [content, setContent] =
@@ -78,11 +85,65 @@ export function ContactPage({
     message: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (
+    e: React.FormEvent
+) => {
+
     e.preventDefault();
-    alert('Thank you for your inquiry! We will get back to you soon.');
-    setFormData({ name: '', email: '', subject: '', message: '' });
-  };
+
+    try {
+
+        setSending(true);
+
+        const { error } = await supabase
+            .from("contact_messages")
+            .insert({
+
+                full_name: formData.name,
+                email: formData.email,
+                subject: formData.subject,
+                message: formData.message
+
+            });
+
+        if (error)
+            throw error;
+
+        setModalTitle("Message Sent");
+
+        setModalMessage(
+            "Thank you for contacting us. Your inquiry has been submitted successfully."
+        );
+
+        setShowModal(true);
+
+        setFormData({
+
+            name: "",
+            email: "",
+            subject: "",
+            message: ""
+
+        });
+
+    } catch (error: any) {
+
+        setModalTitle("Submission Failed");
+
+        setModalMessage(
+            error.message ||
+            "Unable to send your message."
+        );
+
+        setShowModal(true);
+
+    } finally {
+
+        setSending(false);
+
+    }
+
+};
 useEffect(() => {
   if (!previewMode) {
     loadContactPage();
@@ -90,7 +151,6 @@ useEffect(() => {
     setLoading(false);
   }
 }, [previewMode]);
-
 async function loadContactPage() {
   try {
     setLoading(true);
@@ -348,14 +408,21 @@ const displaySocialLinks =
                 />
 
                 <button
-                  type="submit"
-                  className="w-full py-3 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E40AF] transition font-semibold flex items-center justify-center gap-2 shadow-md"
-                >
-                  <Send className="w-5 h-5" />
-                  Submit
-                </button>
+  type="submit"
+  disabled={sending}
+  className={`w-full py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-md transition ${
+    sending
+      ? "bg-gray-400 cursor-not-allowed"
+      : "bg-[#2563EB] hover:bg-[#1E40AF] text-white"
+  }`}
+>
+  <Send className="w-5 h-5" />
+
+  {sending ? "Sending..." : "Submit"}
+</button>
 
               </form>
+
             </div>
           </div>
 
@@ -383,6 +450,27 @@ const displaySocialLinks =
         </div>
 
       </div>
+      {showModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="bg-white rounded-2xl shadow-2xl p-6 w-[90%] max-w-md">
+      <h2 className="text-2xl font-bold text-[#1E3A8A] mb-3">
+        {modalTitle}
+      </h2>
+
+      <p className="text-gray-600 mb-6">
+        {modalMessage}
+      </p>
+
+      <button
+        onClick={() => setShowModal(false)}
+        className="w-full py-3 rounded-lg bg-[#2563EB] text-white hover:bg-[#1E40AF] transition"
+      >
+        OK
+      </button>
     </div>
+  </div>
+)}
+    </div>
+    
   );
 }
