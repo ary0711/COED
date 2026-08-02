@@ -23,20 +23,24 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  LayoutDashboard,
+  GraduationCap,
+  Info,
 } from 'lucide-react';
   import { Sidebar } from '../Sidebar';
   import { DashboardHeader } from '../DashboardHeader';
   import { useState, useEffect } from 'react';
   import { AccomplishmentReport } from './AccomplishmentReport';
   import { ExtensionReport } from './ExtensionReport';
+  import { DeansListGenerator } from './DeansListGenerator';
 
   const facultyMenuItems = [
-  { icon: BarChart3,   label: 'Dashboard',          id: 'dashboard' },
+  { icon: LayoutDashboard, label: 'Dashboard',          id: 'dashboard' },
   { icon: BookOpen,    label: 'Teaching Load',       id: 'teaching-load' },
   { icon: FileText,    label: 'Research & Extension',id: 'research' },
   { icon: Award,       label: 'Achievements',        id: 'achievements' },
   { icon: FileText,    label: 'Academic Records',    id: 'records' },
-  { icon: BarChart3,   label: 'Evaluation Results',  id: 'evaluation' },
+  { icon: GraduationCap, label: "Dean's List",       id: 'deans-list' },
   { icon: FileText,    label: 'Reports',             id: 'reports' },
   { icon: Calendar,    label: 'Calendar',            id: 'calendar' },
   { icon: Settings,    label: 'Settings',            id: 'settings' },
@@ -108,7 +112,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             {activeMenuItem === 'research'      && <ResearchExtension />}
             {activeMenuItem === 'achievements'  && <FacultyAchievements />}
             {activeMenuItem === 'records'       && <AcademicRecordsView />}
-            {activeMenuItem === 'evaluation'    && <EvaluationResults />}
+            {activeMenuItem === 'deans-list'    && <DeansListGenerator userId={userId} userName={userName} />}
             {activeMenuItem === 'reports' && <ReportsView userId={userId} userName={userName} />}
             {activeMenuItem === 'calendar'      && <FacultyCalendar />}
             {activeMenuItem === 'settings'          && <FacultySettings />}
@@ -134,21 +138,11 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
     return (
       <div>
-        <div className="mb-6 pb-6 border-b border-gray-200">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Faculty Dashboard</h1>
-          <p className="text-gray-600">Welcome back, Prof. Sarah Johnson</p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
             <BookOpen className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600 mb-2" />
             <div className="text-xl sm:text-2xl font-bold text-gray-900">12</div>
             <div className="text-xs sm:text-sm text-gray-600">Teaching Units</div>
-          </div>
-          <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-            <Users className="w-7 h-7 sm:w-8 sm:h-8 text-green-600 mb-2" />
-            <div className="text-xl sm:text-2xl font-bold text-gray-900">156</div>
-            <div className="text-xs sm:text-sm text-gray-600">Total Students</div>
           </div>
           <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
             <FileText className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
@@ -550,6 +544,8 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     ];
 
     const approved = achievements.filter(a => a.status === 'Approved');
+    const pendingCount = achievements.filter(a => a.status === 'Pending').length;
+    const rejectedCount = achievements.filter(a => a.status === 'Rejected').length;
 
     return (
       <div>
@@ -563,106 +559,150 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           ))}
         </div>
 
-        {tab === 'submit' && (
-          <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8 max-w-2xl">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
-                <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
-                <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
-                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                  <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
-                </label>
-                {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
-              </div>
-              <button onClick={() => alert('✅ Achievement submitted for review!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
-                Submit for Review
-              </button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'approved' && (
-          <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
-              <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {approved.map((a, i) => (
-                <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                  <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                      <div className="text-xs sm:text-sm text-gray-500">{a.category} · {a.date}</div>
-                    </div>
+        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2">
+            {tab === 'submit' && (
+              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
+                    <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
                   </div>
-                  <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                    <Download size={14} /> Download
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
+                    <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
+                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                      <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                      <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
+                    </label>
+                    {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
+                  </div>
+                  <button onClick={() => alert('✅ Achievement submitted for review!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
+                    Submit for Review
                   </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {tab === 'history' && (
-          <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-gray-100">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
-            </div>
-            <div className="divide-y divide-gray-100 sm:hidden">
-              {achievements.map((a, i) => (
-                <div key={i} className="p-4 space-y-1">
-                  <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                  <div className="text-xs text-gray-500">{a.category} · {a.date}</div>
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {a.status}
-                  </span>
+            {tab === 'approved' && (
+              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+                <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
+                  <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
                 </div>
-              ))}
-            </div>
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left min-w-[480px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
-                    <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
-                    <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
-                    <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {achievements.map((a, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
-                      <td className="py-4 px-6 text-gray-600">{a.category}</td>
-                      <td className="py-4 px-6 text-gray-600">{a.date}</td>
-                      <td className="py-4 px-6 text-center">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {a.status}
-                        </span>
-                      </td>
-                    </tr>
+                <div className="divide-y divide-gray-100">
+                  {approved.map((a, i) => (
+                    <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{a.category} · {a.date}</div>
+                        </div>
+                      </div>
+                      <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                        <Download size={14} /> Download
+                      </button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
+            )}
+
+            {tab === 'history' && (
+              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+                <div className="p-4 sm:p-6 border-b border-gray-100">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
+                </div>
+                <div className="divide-y divide-gray-100 sm:hidden">
+                  {achievements.map((a, i) => (
+                    <div key={i} className="p-4 space-y-1">
+                      <div className="font-medium text-gray-900 text-sm">{a.title}</div>
+                      <div className="text-xs text-gray-500">{a.category} · {a.date}</div>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {a.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-left min-w-[480px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
+                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
+                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
+                        <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {achievements.map((a, i) => (
+                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                          <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
+                          <td className="py-4 px-6 text-gray-600">{a.category}</td>
+                          <td className="py-4 px-6 text-gray-600">{a.date}</td>
+                          <td className="py-4 px-6 text-center">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {a.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Side panel: fills the empty space on wide screens ── */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-md p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-600">Total Submitted</span>
+                  <span className="text-lg font-bold text-gray-900">{achievements.length}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-md p-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
+              </h3>
+              <ul className="space-y-3 text-sm text-gray-600">
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
+                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+              </ul>
             </div>
           </div>
-        )}
+        </div>
       </div>
     );
   }
@@ -725,130 +765,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 </button>
               </div>
             ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ====================== 5.5 EVALUATION RESULTS ======================
-  function EvaluationResults() {
-    const [selectedSemester, setSelectedSemester] = useState('2nd Sem AY 2025–2026');
-
-    const semesters = ['2nd Sem AY 2025–2026', '1st Sem AY 2025–2026', '2nd Sem AY 2024–2025'];
-
-    const semesterData: Record<string, { overall: number; metrics: { label: string; score: number; icon: any }[] }> = {
-      '2nd Sem AY 2025–2026': {
-        overall: 4.8,
-        metrics: [
-          { label: 'Teaching Effectiveness', score: 4.9, icon: TrendingUp    },
-          { label: 'Communication Skills',   score: 4.7, icon: MessageSquare },
-          { label: 'Student Engagement',     score: 4.8, icon: Users         },
-          { label: 'Course Content Quality', score: 4.8, icon: BookOpen      },
-        ],
-      },
-      '1st Sem AY 2025–2026': {
-        overall: 4.6,
-        metrics: [
-          { label: 'Teaching Effectiveness', score: 4.7, icon: TrendingUp    },
-          { label: 'Communication Skills',   score: 4.5, icon: MessageSquare },
-          { label: 'Student Engagement',     score: 4.6, icon: Users         },
-          { label: 'Course Content Quality', score: 4.6, icon: BookOpen      },
-        ],
-      },
-      '2nd Sem AY 2024–2025': {
-        overall: 4.5,
-        metrics: [
-          { label: 'Teaching Effectiveness', score: 4.6, icon: TrendingUp    },
-          { label: 'Communication Skills',   score: 4.4, icon: MessageSquare },
-          { label: 'Student Engagement',     score: 4.5, icon: Users         },
-          { label: 'Course Content Quality', score: 4.5, icon: BookOpen      },
-        ],
-      },
-    };
-
-    const current = semesterData[selectedSemester];
-
-    const ratingLabel = (score: number) => {
-      if (score >= 4.8) return { label: 'Outstanding',       color: 'text-green-600' };
-      if (score >= 4.5) return { label: 'Very Satisfactory', color: 'text-blue-600'  };
-      return               { label: 'Satisfactory',          color: 'text-yellow-600' };
-    };
-
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Evaluation Results</h1>
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {semesters.map(s => (
-            <button key={s} onClick={() => setSelectedSemester(s)}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${selectedSemester === s ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-              {s}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 flex flex-col items-center justify-center">
-            <div className="text-5xl sm:text-6xl font-bold text-blue-600 mb-2">{current.overall}</div>
-            <div className="text-gray-500 mb-1 text-sm sm:text-base">Overall Rating (out of 5.0)</div>
-            <div className={`font-semibold text-base sm:text-lg ${ratingLabel(current.overall).color}`}>{ratingLabel(current.overall).label}</div>
-            <div className="mt-4 text-xs sm:text-sm text-gray-400 text-center">{selectedSemester}</div>
-          </div>
-
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-md p-6 sm:p-8">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-6">Performance Metrics</h2>
-            <div className="space-y-5 sm:space-y-6">
-              {current.metrics.map((m, i) => {
-                const Icon = m.icon;
-                return (
-                  <div key={i}>
-                    <div className="flex justify-between items-center mb-2 gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Icon className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-medium text-gray-700 truncate">{m.label}</span>
-                      </div>
-                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                        <span className="text-xs sm:text-sm font-bold text-gray-900">{m.score}/5.0</span>
-                        <span className={`text-xs font-semibold hidden sm:inline ${ratingLabel(m.score).color}`}>{ratingLabel(m.score).label}</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-gray-200 h-2.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${(m.score / 5) * 100}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 bg-white rounded-2xl shadow-md overflow-hidden">
-          <div className="p-4 sm:p-6 border-b border-gray-100">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900">Semester Evaluation Records</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[400px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Semester</th>
-                  <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Overall Rating</th>
-                  <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {semesters.map((s, i) => {
-                  const d = semesterData[s];
-                  const r = ratingLabel(d.overall);
-                  return (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{s}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-center font-bold text-blue-600 text-sm">{d.overall}/5.0</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-center"><span className={`font-semibold text-xs sm:text-sm ${r.color}`}>{r.label}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
