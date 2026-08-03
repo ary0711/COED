@@ -102,17 +102,50 @@ interface CalendarEvent {
   color: string;
 }
 
+// Categories a student can file an inquiry under. Kept in sync with the
+// student-side dashboard so the labels/badges line up.
+const STUDENT_INQUIRY_CATEGORIES = [
+  'Academic',
+  'Enrollment',
+  'Documents',
+  'Faculty',
+  'System',
+  'Account',
+  'Suggestion',
+  'Other',
+];
+
+// Categories an alumnus can file an inquiry under. Kept in sync with the
+// alumni-side dashboard so the labels/badges line up.
+const ALUMNI_INQUIRY_CATEGORIES = [
+  'Documents',
+  'Employment',
+  'Alumni Records',
+  'Events',
+  'System',
+  'Account',
+  'Suggestion',
+  'Other',
+];
+
 interface Inquiry {
   id: string;
+  student_id: string;
   sender_id: string;
   sender_name: string;
   sender_role: 'student' | 'alumni';
   subject: string;
+  category: string | null;
   message: string;
   reply: string | null;
   status: 'pending' | 'answered';
   created_at: string;
   replied_at: string | null;
+  // Embedded via the student_id -> profiles(id) foreign key
+  profiles: {
+    full_name: string;
+    id_number: string;
+  } | null;
 }
 
 // ─── Role & Status Config ─────────────────────────────────────────────────────
@@ -258,7 +291,7 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
     setLoading(true);
     const { data, error } = await supabase
       .from('inquiries')
-      .select('*')
+      .select('*, profiles(full_name, id_number)')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -324,7 +357,12 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
             recent.map(inquiry => (
               <div key={inquiry.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{inquiry.sender_name}</p>
+                  <p className="text-xs font-semibold text-gray-800 truncate">
+                    {inquiry.profiles?.full_name ?? inquiry.sender_name}
+                    {inquiry.profiles?.id_number && (
+                      <span className="font-normal text-gray-400"> · {inquiry.profiles.id_number}</span>
+                    )}
+                  </p>
                   <p className="text-[11px] text-gray-400 truncate">{inquiry.subject}</p>
                 </div>
                 <span
@@ -1415,13 +1453,17 @@ function AlumniTracer() {
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
 // Two-column layout: Alumni inquiries on the LEFT, Student inquiries on the
 // RIGHT, as requested. Each column is its own scrollable panel so the dean
-// can browse and reply to both groups without switching pages.
+// can browse and reply to both groups without switching pages. Each
+// inquiry now carries a `category` (set by the sender) shown as a badge
+// in the list and a category filter dropdown per column.
 function InquiriesManagement() {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
   const [loading, setLoading]                   = useState(true);
   const [studentFilter, setStudentFilter]       = useState<'all' | 'pending' | 'answered'>('all');
   const [alumniFilter, setAlumniFilter]         = useState<'all' | 'pending' | 'answered'>('all');
+  const [studentCategoryFilter, setStudentCategoryFilter] = useState('all');
+  const [alumniCategoryFilter, setAlumniCategoryFilter]   = useState('all');
 
   const [activeInquiry, setActiveInquiry] = useState<Inquiry | null>(null);
   const [replyText, setReplyText]         = useState('');
@@ -1431,7 +1473,7 @@ function InquiriesManagement() {
     setLoading(true);
     const { data, error } = await supabase
       .from('inquiries')
-      .select('*')
+      .select('*, profiles(full_name, id_number)')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -1489,26 +1531,38 @@ function InquiriesManagement() {
       timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
     });
 
-  const filterList = (list: Inquiry[], filter: 'all' | 'pending' | 'answered') =>
-    filter === 'all' ? list : list.filter(i => i.status === filter);
+  const filterList = (
+    list: Inquiry[],
+    statusF: 'all' | 'pending' | 'answered',
+    categoryF: string,
+  ) => {
+    let result = list;
+    if (statusF !== 'all') result = result.filter(i => i.status === statusF);
+    if (categoryF !== 'all') result = result.filter(i => (i.category ?? 'Other') === categoryF);
+    return result;
+  };
 
   const pendingStudentCount = studentInquiries.filter(i => i.status === 'pending').length;
   const pendingAlumniCount  = alumniInquiries.filter(i => i.status === 'pending').length;
 
   // Reusable column so both sides stay visually identical and easy to scan
   const InquiryColumn = ({
-    title, accentColor, accentBg, list, filter, setFilter, pendingCount, emptyIcon: EmptyIcon,
+    title, accentColor, accentBg, list, statusFilter, setStatusFilter,
+    categoryFilter, setCategoryFilter, categories, pendingCount, emptyIcon: EmptyIcon,
   }: {
     title: string;
     accentColor: string;
     accentBg: string;
     list: Inquiry[];
-    filter: 'all' | 'pending' | 'answered';
-    setFilter: (f: 'all' | 'pending' | 'answered') => void;
+    statusFilter: 'all' | 'pending' | 'answered';
+    setStatusFilter: (f: 'all' | 'pending' | 'answered') => void;
+    categoryFilter: string;
+    setCategoryFilter: (c: string) => void;
+    categories: string[];
     pendingCount: number;
     emptyIcon: React.ComponentType<{ className?: string }>;
   }) => {
-    const shown = filterList(list, filter);
+    const shown = filterList(list, statusFilter, categoryFilter);
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
         {/* Column header */}
@@ -1525,20 +1579,30 @@ function InquiriesManagement() {
           )}
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex gap-1 px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50">
-          {(['all', 'pending', 'answered'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                filter === f ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
-              }`}
-              style={filter === f ? { backgroundColor: accentColor } : undefined}
-            >
-              {f}
-            </button>
-          ))}
+        {/* Filter tabs + category dropdown */}
+        <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50 space-y-2">
+          <div className="flex gap-1">
+            {(['all', 'pending', 'answered'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setStatusFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
+                  statusFilter === f ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+                style={statusFilter === f ? { backgroundColor: accentColor } : undefined}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <select
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+          >
+            <option value="all">All Categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
 
         {/* List */}
@@ -1551,7 +1615,7 @@ function InquiriesManagement() {
           ) : shown.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
               <EmptyIcon className="w-10 h-10 mb-2 opacity-40" />
-              <p className="text-sm text-gray-400">No {filter !== 'all' ? filter : ''} inquiries</p>
+              <p className="text-sm text-gray-400">No matching inquiries</p>
             </div>
           ) : (
             shown.map(inquiry => (
@@ -1561,11 +1625,21 @@ function InquiriesManagement() {
                 className="w-full text-left p-3 sm:p-3.5 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors group"
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="font-semibold text-gray-900 text-sm truncate">{inquiry.sender_name}</span>
+                  <span className="font-semibold text-gray-900 text-sm truncate">
+                    {inquiry.profiles?.full_name ?? inquiry.sender_name}
+                  </span>
                   {inquiry.status === 'pending' ? (
                     <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
                   ) : (
                     <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                    {inquiry.category || 'Other'}
+                  </span>
+                  {inquiry.profiles?.id_number && (
+                    <span className="text-[10px] font-mono text-gray-400">{inquiry.profiles.id_number}</span>
                   )}
                 </div>
                 <p className="text-xs font-medium text-gray-700 truncate mb-0.5">{inquiry.subject}</p>
@@ -1599,8 +1673,11 @@ function InquiriesManagement() {
             accentColor="#BE185D"
             accentBg="#FCE7F3"
             list={alumniInquiries}
-            filter={alumniFilter}
-            setFilter={setAlumniFilter}
+            statusFilter={alumniFilter}
+            setStatusFilter={setAlumniFilter}
+            categoryFilter={alumniCategoryFilter}
+            setCategoryFilter={setAlumniCategoryFilter}
+            categories={ALUMNI_INQUIRY_CATEGORIES}
             pendingCount={pendingAlumniCount}
             emptyIcon={Inbox}
           />
@@ -1611,8 +1688,11 @@ function InquiriesManagement() {
             accentColor="#1D4ED8"
             accentBg="#DBEAFE"
             list={studentInquiries}
-            filter={studentFilter}
-            setFilter={setStudentFilter}
+            statusFilter={studentFilter}
+            setStatusFilter={setStudentFilter}
+            categoryFilter={studentCategoryFilter}
+            setCategoryFilter={setStudentCategoryFilter}
+            categories={STUDENT_INQUIRY_CATEGORIES}
             pendingCount={pendingStudentCount}
             emptyIcon={Inbox}
           />
@@ -1626,16 +1706,25 @@ function InquiriesManagement() {
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-4 gap-3">
               <div className="min-w-0">
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold mb-2"
-                  style={activeInquiry.sender_role === 'alumni'
-                    ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
-                    : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }}
-                >
-                  {activeInquiry.sender_role === 'alumni' ? 'Alumni' : 'Student'}
-                </span>
+                <div className="flex items-center gap-2 mb-2">
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                    style={activeInquiry.sender_role === 'alumni'
+                      ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
+                      : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }}
+                  >
+                    {activeInquiry.sender_role === 'alumni' ? 'Alumni' : 'Student'}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
+                    {activeInquiry.category || 'Other'}
+                  </span>
+                </div>
                 <h2 className="text-lg font-bold text-gray-900 truncate">{activeInquiry.subject}</h2>
-                <p className="text-xs text-gray-400 mt-0.5">From {activeInquiry.sender_name} · {formatDate(activeInquiry.created_at)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  From {activeInquiry.profiles?.full_name ?? activeInquiry.sender_name}
+                  {activeInquiry.profiles?.id_number && <> · {activeInquiry.profiles.id_number}</>}
+                  {' '}· {formatDate(activeInquiry.created_at)}
+                </p>
               </div>
               <button onClick={closeInquiry} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
             </div>

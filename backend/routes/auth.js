@@ -6,6 +6,9 @@ const supabase = require('../supabaseClient');
 const router = express.Router();
 
 // REGISTER
+// (unchanged — the frontend creates the `profiles` row directly via
+// Supabase during signup, and this table is linked to it via matching
+// `email`. No changes needed here for the login fix below.)
 router.post('/register', async (req, res) => {
   const { username, password, role, email } = req.body;
 
@@ -40,18 +43,24 @@ router.post('/login', async (req, res) => {
   if (!isMatch)
     return res.status(401).json({ error: 'Invalid username or password' });
 
-  // Step 3: Fetch full_name ug id_number gikan sa profiles gamit EMAIL
+  // Step 3: Fetch profiles.id, full_name, and id_number via EMAIL.
+  // profiles.id is the UUID every other table (student_profiles,
+  // inquiries, etc.) actually uses — users.id is a separate, unrelated
+  // identifier used only for login. We now pass profiles.id through so
+  // the frontend has the correct ID to work with everywhere else.
   let fullName = username;
   let idNumber = '';
+  let profileId = null;
 
   if (user.email) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name, id_number')
+      .select('id, full_name, id_number')
       .eq('email', user.email)
       .single();
 
     if (profile) {
+      profileId = profile.id;
       fullName = profile.full_name ?? username;
       idNumber = profile.id_number ?? '';
     }
@@ -61,6 +70,7 @@ router.post('/login', async (req, res) => {
   const token = jwt.sign(
     {
       userId: user.id,
+      profileId,
       username: user.username,
       role: user.role,
       fullName,
@@ -75,10 +85,12 @@ router.post('/login', async (req, res) => {
     token,
     user: {
       id: user.id,
+      profileId,
       username: user.username,
       role: user.role,
       fullName,
       idNumber,
+      email: user.email,
     }
   });
 });

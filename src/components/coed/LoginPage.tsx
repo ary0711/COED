@@ -38,6 +38,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regGraduationYear, setRegGraduationYear] = useState('');
   const [passwordFocused, setPasswordFocused] = useState(false);
 
   const [fieldErrors, setFieldErrors] = useState<{
@@ -46,6 +47,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     idNumber?: string;
     username?: string;
     password?: string;
+    graduationYear?: string;
   }>({});
   const [checkingUsername, setCheckingUsername] = useState(false);
 
@@ -127,6 +129,15 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     return true;
   };
 
+  const isValidGraduationYear = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    const year = parseInt(trimmed, 10);
+    if (isNaN(year)) return false;
+    const maxYear = new Date().getFullYear() + 1;
+    return year >= 1900 && year <= maxYear;
+  };
+
   // Small inline status icon shown next to a field once it has a value —
   // a green check when the current value passes validation, a red X when it
   // doesn't. Hidden while empty (nothing to judge yet) or while an async
@@ -182,42 +193,26 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       if (!res.ok) { setError(data.error || 'Invalid username or password.'); return; }
 
       localStorage.setItem('token', data.token);
-      const payload = JSON.parse(atob(data.token.split('.')[1]));
-      const uiRole = DB_TO_UI_ROLE[payload.role] ?? 'faculty';
 
-      const { data: userRecord } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', payload.username)
-        .single();
+      // The backend now resolves and returns the real profiles.id (via a
+      // reliable server-side email match), plus full_name/id_number/email.
+      // This replaces the old frontend-side lookup-by-email-guessing logic,
+      // which could silently attach the wrong person's data.
+      const { profileId, fullName, idNumber, email, role } = data.user ?? {};
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, id_number, email')
-        .eq('email', payload.username)
-        .single();
-
-      if (!profile && userRecord) {
-        const { data: profileByUsername } = await supabase
-          .from('profiles')
-          .select('full_name, id_number, email')
-          .limit(1)
-          .single();
-
-        if (profileByUsername) {
-          localStorage.setItem('userFullName', profileByUsername.full_name ?? payload.username);
-          localStorage.setItem('userIdNumber', profileByUsername.id_number ?? '');
-          localStorage.setItem('userEmail', profileByUsername.email ?? '');
-        }
-      } else if (profile) {
-        localStorage.setItem('userFullName', profile.full_name ?? payload.username);
-        localStorage.setItem('userIdNumber', profile.id_number ?? '');
-        localStorage.setItem('userEmail', profile.email ?? '');
+      if (profileId) {
+        localStorage.setItem('userId', profileId);
       } else {
-        localStorage.setItem('userFullName', payload.username);
-        localStorage.setItem('userIdNumber', '');
+        // No matching profiles row found for this account — clear any
+        // stale id from a previous session so we don't show someone else's
+        // data by mistake.
+        localStorage.removeItem('userId');
       }
+      localStorage.setItem('userFullName', fullName ?? loginUsername.trim());
+      localStorage.setItem('userIdNumber', idNumber ?? '');
+      localStorage.setItem('userEmail', email ?? '');
 
+      const uiRole = DB_TO_UI_ROLE[role] ?? 'faculty';
       onLogin(uiRole);
 
     } catch (err) {
@@ -261,6 +256,14 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     } else if (fieldErrors.username) {
       // Keep an already-detected "username taken" error until it's fixed
       newFieldErrors.username = fieldErrors.username;
+    }
+
+    if (regUserType === 'alumni') {
+      if (!regGraduationYear.trim()) {
+        newFieldErrors.graduationYear = 'Please enter your graduation year.';
+      } else if (!isValidGraduationYear(regGraduationYear)) {
+        newFieldErrors.graduationYear = `Please enter a valid year (1900–${new Date().getFullYear() + 1}).`;
+      }
     }
 
     setFieldErrors(newFieldErrors);
@@ -352,6 +355,74 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         return;
       }
 
+      // Students also need a matching row in student_profiles — without
+      // this, their dashboard has nothing to display after logging in.
+      // (user_id here is the same UUID as profiles.id / auth.users.id.)
+      if (regUserType === 'student') {
+        const { error: studentProfileError } = await supabase.from('student_profiles').insert({
+          user_id: userId,
+          full_name: regFullName.trim(),
+          student_no: regIdNumber.trim(),
+          year_level: 1,
+          program: regProgram,
+        });
+
+        if (studentProfileError) {
+          await supabase.auth.signOut();
+          const msg = studentProfileError.message.toLowerCase();
+          if (msg.includes('student_profiles_student_no_key')) {
+            setFieldErrors((prev) => ({ ...prev, idNumber: 'This student number is already registered.' }));
+          } else {
+            console.error(studentProfileError.message);
+            setError('Something went wrong setting up your student profile. Please try again.');
+          }
+          return;
+        }
+      }
+
+      // Faculty need a matching row in faculty_profiles.
+      if (regUserType === 'faculty') {
+        const { error: facultyProfileError } = await supabase.from('faculty_profiles').insert({
+          user_id: userId,
+          full_name: regFullName.trim(),
+          contact_email: regEmail.trim(),
+          status: 'Active',
+        });
+
+        if (facultyProfileError) {
+          await supabase.auth.signOut();
+          console.error(facultyProfileError.message);
+          setError('Something went wrong setting up your faculty profile. Please try again.');
+          return;
+        }
+      }
+
+      // Alumni need a matching row in alumni_profiles, including their
+      // graduation year (required field on that table).
+      if (regUserType === 'alumni') {
+        const { error: alumniProfileError } = await supabase.from('alumni_profiles').insert({
+          user_id: userId,
+          full_name: regFullName.trim(),
+          graduation_year: parseInt(regGraduationYear.trim(), 10),
+          program: regProgram,
+          contact_email: regEmail.trim(),
+        });
+
+        if (alumniProfileError) {
+          await supabase.auth.signOut();
+          const msg = alumniProfileError.message.toLowerCase();
+          if (msg.includes('graduation_year')) {
+            setFieldErrors((prev) => ({ ...prev, graduationYear: 'Please enter a valid graduation year.' }));
+          } else if (msg.includes('contact_email')) {
+            setFieldErrors((prev) => ({ ...prev, email: 'Please enter a valid email address.' }));
+          } else {
+            console.error(alumniProfileError.message);
+            setError('Something went wrong setting up your alumni profile. Please try again.');
+          }
+          return;
+        }
+      }
+
       const res = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,7 +459,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       setMode('signin');
       setError('');
-      setSuccessMsg('Account created! Please wait for admin approval before signing in.');
+      setSuccessMsg('Account created! Please wait for your department chairman to review and approve your account before you can sign in.');
     } catch (err) {
       console.error(err);
       setError('Something went wrong. Please try again.');
@@ -621,6 +692,37 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                     ))}
                   </select>
                 </div>
+
+                {/* Graduation Year — alumni only, full width row */}
+                {regUserType === 'alumni' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Graduation Year <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="2020"
+                      value={regGraduationYear}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setRegGraduationYear(value);
+                        if (!value.trim()) {
+                          setFieldErrors((p) => ({ ...p, graduationYear: undefined }));
+                        } else if (!isValidGraduationYear(value)) {
+                          setFieldErrors((p) => ({ ...p, graduationYear: `Please enter a valid year (1900–${new Date().getFullYear() + 1}).` }));
+                        } else {
+                          setFieldErrors((p) => ({ ...p, graduationYear: undefined }));
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!regGraduationYear.trim()) setFieldErrors((p) => ({ ...p, graduationYear: 'Please enter your graduation year.' }));
+                        else if (!isValidGraduationYear(regGraduationYear)) setFieldErrors((p) => ({ ...p, graduationYear: `Please enter a valid year (1900–${new Date().getFullYear() + 1}).` }));
+                      }}
+                      className={`w-full px-3.5 py-3 rounded-xl border ${fieldErrors.graduationYear ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
+                    />
+                    {fieldErrors.graduationYear && <p className="text-red-500 text-xs mt-1">{fieldErrors.graduationYear}</p>}
+                  </div>
+                )}
 
                 {/* ID Number + Username — paired side by side to use the space better */}
                 <div className="grid grid-cols-2 gap-3">
