@@ -18,6 +18,7 @@ import {
   Lock,
   LogOut,
   GraduationCap,
+  RefreshCw,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -41,6 +42,19 @@ const PROGRAM_OPTIONS = [
   'Bachelor of Science in Elementary Education',
 ];
 
+// Categories available when a student files an inquiry/concern.
+// Kept in sync with the dean-side dashboard so category badges match.
+const INQUIRY_CATEGORIES = [
+  'Academic',
+  'Enrollment',
+  'Documents',
+  'Faculty',
+  'System',
+  'Account',
+  'Suggestion',
+  'Other',
+];
+
 // Shape of the row we read out of `student_profiles`
 interface StudentProfile {
   student_id: string;
@@ -51,6 +65,18 @@ interface StudentProfile {
   gpa: number | null;
   academic_standing: string;
   enrollment_status: string;
+}
+
+// Shape of a row from the shared `inquiries` table, scoped to this student
+interface StudentInquiry {
+  id: string;
+  subject: string;
+  category: string | null;
+  message: string;
+  reply: string | null;
+  status: 'pending' | 'answered';
+  created_at: string;
+  replied_at: string | null;
 }
 
 interface StudentDashboardProps {
@@ -76,12 +102,12 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
     setProfileError(null);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError) throw authError;
-
-      const currentUser = authData?.user;
-      if (!currentUser) {
-        setProfileError('No authenticated user found.');
+      // This app uses a custom username/password login (not Supabase Auth),
+      // so there's no supabase.auth session to read. The logged-in user's
+      // profiles.id is stored in localStorage at login time instead.
+      const currentUserId = localStorage.getItem('userId');
+      if (!currentUserId) {
+        setProfileError('No logged-in user found. Please sign in again.');
         setProfileLoading(false);
         return;
       }
@@ -89,13 +115,13 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
       const { data: profileData, error: profileFetchError } = await supabase
         .from('student_profiles')
         .select('student_id, full_name, student_no, year_level, program, gpa, academic_standing, enrollment_status')
-        .eq('user_id', currentUser.id)
+        .eq('user_id', currentUserId)
         .single();
 
       if (profileFetchError) throw profileFetchError;
 
       setProfile(profileData as StudentProfile);
-      setUserEmail(currentUser.email ?? '');
+      setUserEmail(localStorage.getItem('userEmail') ?? '');
 
       // Keep the program selector in sync with the student's actual enrolled program
       if (profileData?.program && PROGRAM_OPTIONS.includes(profileData.program)) {
@@ -713,36 +739,261 @@ function AchievementsActivities() {
 }
 
 // ====================== INQUIRY / CONTACT ======================
+// Category dropdown + inquiry history (with the dean's reply, if any).
+// Submitting inserts into the shared `inquiries` table with
+// sender_role: 'student', so it shows up in the dean's Inquiries page.
 function InquiryContact() {
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert('✅ Your inquiry has been submitted successfully!');
+  const [subject, setSubject] = useState('');
+  const [category, setCategory] = useState(INQUIRY_CATEGORIES[0]);
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  const [inquiries, setInquiries] = useState<StudentInquiry[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [selectedInquiry, setSelectedInquiry] = useState<StudentInquiry | null>(null);
+
+  const fetchInquiries = async () => {
+    setLoadingHistory(true);
+    try {
+      const currentUserId = localStorage.getItem('userId');
+      if (!currentUserId) { setLoadingHistory(false); return; }
+
+      const { data, error } = await supabase
+        .from('inquiries')
+        .select('id, subject, category, message, reply, status, created_at, replied_at')
+        .eq('student_id', currentUserId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) setInquiries(data as StudentInquiry[]);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
+
+  useEffect(() => {
+    fetchInquiries();
+  }, []);
+
+  // Realtime — reflect the dean's reply as soon as it's saved
+  useEffect(() => {
+    const channelName = `student-inquiries-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => fetchInquiries())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    if (!subject.trim() || !message.trim()) {
+      setSubmitError('Please fill in the subject and message.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const currentUserId = localStorage.getItem('userId');
+      if (!currentUserId) {
+        setSubmitError('No logged-in user found. Please sign in again.');
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from('student_profiles')
+        .select('full_name')
+        .eq('user_id', currentUserId)
+        .single();
+
+      const { error: insertError } = await supabase.from('inquiries').insert({
+        student_id: currentUserId,
+        sender_id: currentUserId,
+        sender_name: profileData?.full_name ?? localStorage.getItem('userFullName') ?? 'Student',
+        sender_role: 'student',
+        subject: subject.trim(),
+        category,
+        message: message.trim(),
+        status: 'pending',
+      });
+
+      if (insertError) throw insertError;
+
+      setSubject('');
+      setCategory(INQUIRY_CATEGORIES[0]);
+      setMessage('');
+      setSubmitSuccess(true);
+      fetchInquiries();
+    } catch (err) {
+      console.error('Failed to submit inquiry:', err);
+      setSubmitError('Failed to submit your inquiry. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
 
+      {/* ── Submit form ── */}
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Submit a Concern or Question</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-            <input type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" required />
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              required
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <textarea rows={3} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm" required />
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+            >
+              {INQUIRY_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-            <textarea rows={6} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm" required />
+            <textarea
+              rows={6}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+              required
+            />
           </div>
-          <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-            Submit Inquiry
+
+          {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+          {submitSuccess && <p className="text-sm text-green-600">Your inquiry has been submitted successfully!</p>}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Submitting...' : 'Submit Inquiry'}
           </button>
         </form>
       </div>
+
+      {/* ── History of past inquiries ── */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Your Inquiry History</h2>
+          <button onClick={fetchInquiries} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loadingHistory ? (
+          <div className="flex items-center justify-center py-10 text-gray-400 text-sm">Loading history...</div>
+        ) : inquiries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+            <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
+            <p className="text-sm text-gray-400">You haven't submitted any inquiries yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {inquiries.map((inq) => (
+              <button
+                key={inq.id}
+                onClick={() => setSelectedInquiry(inq)}
+                className="w-full text-left p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <span className="font-medium text-gray-900 text-sm sm:text-base truncate">{inq.subject}</span>
+                  {inq.status === 'pending' ? (
+                    <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                  ) : (
+                    <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  {inq.category && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{inq.category}</span>
+                  )}
+                  <span className="text-xs text-gray-400">{formatDate(inq.created_at)}</span>
+                </div>
+                <p className="text-xs sm:text-sm text-gray-500 truncate">{inq.message}</p>
+                {inq.status === 'answered' && (
+                  <p className="text-xs text-blue-600 mt-1.5 truncate">Dean replied — tap to view</p>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Detail modal (shows the dean's reply, if any) ── */}
+      {selectedInquiry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="min-w-0">
+                {selectedInquiry.category && (
+                  <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 mb-2">
+                    {selectedInquiry.category}
+                  </span>
+                )}
+                <h3 className="text-lg font-semibold text-gray-900 truncate">{selectedInquiry.subject}</h3>
+                <p className="text-xs text-gray-400 mt-1">Submitted {formatDate(selectedInquiry.created_at)}</p>
+              </div>
+              <button
+                onClick={() => setSelectedInquiry(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Your Message</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedInquiry.message}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Status</p>
+                {selectedInquiry.status === 'pending' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                    Awaiting reply from the Dean
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    Answered
+                  </span>
+                )}
+              </div>
+              {selectedInquiry.reply && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-blue-700 mb-1">Dean's Reply</p>
+                  <p className="text-sm text-blue-900 whitespace-pre-wrap">{selectedInquiry.reply}</p>
+                  {selectedInquiry.replied_at && (
+                    <p className="text-xs text-blue-400 mt-2">{formatDate(selectedInquiry.replied_at)}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
