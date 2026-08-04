@@ -37,6 +37,9 @@ app.use('/api/calendar-events', calendarEventsRoutes);
 const announcementsRoutes = require('./routes/announcements');
    app.use('/api/announcements', announcementsRoutes);
 
+const studentsRoutes = require('./routes/students');
+app.use('/api/students', studentsRoutes);
+
 const accomplishmentReportsRoutes = require('./routes/accomplishmentReports');
 app.use('/api/accomplishment-reports', accomplishmentReportsRoutes);
 

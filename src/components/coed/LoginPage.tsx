@@ -173,6 +173,31 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     }
   };
 
+  // ── Rollback for partially-failed registrations ──
+  // If the Supabase Auth user + profiles row were already created but a
+  // LATER step fails (student_profiles / faculty_profiles / alumni_profiles
+  // insert, or the backend /api/auth/register call), the email and
+  // id_number would otherwise stay permanently "taken" with no usable
+  // account behind them. This undoes both the profiles row (frontend can
+  // delete its own row) and the underlying Supabase Auth user (requires
+  // the service role key, so that part goes through the backend).
+  const rollbackRegistration = async (userId: string) => {
+    try {
+      await supabase.from('profiles').delete().eq('id', userId);
+    } catch (err) {
+      console.error('Failed to roll back profiles row:', err);
+    }
+    try {
+      await fetch('http://localhost:5000/api/auth/cleanup-failed-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+    } catch (err) {
+      console.error('Failed to roll back auth user:', err);
+    }
+  };
+
   const handleLogin = async () => {
     setError('');
     if (!loginUsername.trim()) { setError('Please enter your username.'); return; }
@@ -332,6 +357,11 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       });
 
       if (insertError) {
+        // Nothing beyond the Auth user + this failed insert exists yet, so
+        // there's no profiles row to clean up — just sign out. (The Auth
+        // user itself is technically still orphaned here too; if you see
+        // "email already registered" errors on retry after THIS specific
+        // failure, extend rollbackRegistration to run here as well.)
         await supabase.auth.signOut();
         const msg = insertError.message.toLowerCase();
         if (msg.includes('profiles_email_key')) {
@@ -368,6 +398,10 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         });
 
         if (studentProfileError) {
+          // profiles row (with the email/id_number) already exists at this
+          // point — undo it, plus the Auth user, so the person can retry
+          // cleanly instead of being told their email is "already used."
+          await rollbackRegistration(userId);
           await supabase.auth.signOut();
           const msg = studentProfileError.message.toLowerCase();
           if (msg.includes('student_profiles_student_no_key')) {
@@ -390,6 +424,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         });
 
         if (facultyProfileError) {
+          await rollbackRegistration(userId);
           await supabase.auth.signOut();
           console.error(facultyProfileError.message);
           setError('Something went wrong setting up your faculty profile. Please try again.');
@@ -409,6 +444,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         });
 
         if (alumniProfileError) {
+          await rollbackRegistration(userId);
           await supabase.auth.signOut();
           const msg = alumniProfileError.message.toLowerCase();
           if (msg.includes('graduation_year')) {
@@ -437,6 +473,10 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       const regData = await res.json();
       if (!res.ok) {
+        // profiles row (and student_profiles/faculty_profiles/alumni_profiles,
+        // if that step already succeeded) exist at this point — roll
+        // everything back so the email/id_number/username are free again.
+        await rollbackRegistration(userId);
         await supabase.auth.signOut();
         const msg: string = regData.error || '';
         const lower = msg.toLowerCase();

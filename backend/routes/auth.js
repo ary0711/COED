@@ -6,9 +6,6 @@ const supabase = require('../supabaseClient');
 const router = express.Router();
 
 // REGISTER
-// (unchanged — the frontend creates the `profiles` row directly via
-// Supabase during signup, and this table is linked to it via matching
-// `email`. No changes needed here for the login fix below.)
 router.post('/register', async (req, res) => {
   const { username, password, role, email } = req.body;
 
@@ -22,6 +19,23 @@ router.post('/register', async (req, res) => {
 
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'User created!', user: data });
+});
+
+// CLEANUP FAILED REGISTRATION
+// Called by the frontend if a later step (student_profiles, faculty_profiles,
+// alumni_profiles, or the users-table register call) fails after the
+// Supabase Auth user + profiles row were already created. Deletes the
+// orphaned auth user so the email is free to register again.
+router.post('/cleanup-failed-registration', async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) {
+    console.error('Cleanup failed:', error.message);
+    return res.status(400).json({ error: error.message });
+  }
+  res.json({ message: 'Cleaned up' });
 });
 
 // LOGIN
@@ -43,19 +57,16 @@ router.post('/login', async (req, res) => {
   if (!isMatch)
     return res.status(401).json({ error: 'Invalid username or password' });
 
-  // Step 3: Fetch profiles.id, full_name, and id_number via EMAIL.
-  // profiles.id is the UUID every other table (student_profiles,
-  // inquiries, etc.) actually uses — users.id is a separate, unrelated
-  // identifier used only for login. We now pass profiles.id through so
-  // the frontend has the correct ID to work with everywhere else.
+  // Step 3: Fetch profiles.id, full_name, id_number, and status via EMAIL.
   let fullName = username;
   let idNumber = '';
   let profileId = null;
+  let profileStatus = null;
 
   if (user.email) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, full_name, id_number')
+      .select('id, full_name, id_number, status')
       .eq('email', user.email)
       .single();
 
@@ -63,7 +74,20 @@ router.post('/login', async (req, res) => {
       profileId = profile.id;
       fullName = profile.full_name ?? username;
       idNumber = profile.id_number ?? '';
+      profileStatus = profile.status;
     }
+  }
+
+  // Step 3.5: Block login if the account hasn't been approved yet.
+  if (profileStatus === 'pending') {
+    return res.status(403).json({
+      error: 'Your account is pending approval from your department chair.',
+    });
+  }
+  if (profileStatus === 'rejected') {
+    return res.status(403).json({
+      error: 'Your registration was not approved. Please contact your department chair.',
+    });
   }
 
   // Step 4: Generate JWT

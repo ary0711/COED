@@ -83,15 +83,19 @@ interface CalendarEvent {
   updated_at: string;
 }
 
+// Mirrors public.profiles (role='student') joined with public.student_profiles.
+// NOTE: profiles.status uses 'pending' / 'active' / 'rejected' in the DB.
+// The UI labels 'active' as "Approved" for readability, but the value we
+// read/write is always 'active', never 'approved'.
 interface StudentApplicant {
-  id: number;
+  id: string;              // profiles.id (uuid)
   name: string;
   email: string;
   studentId: string;
   program: string;
   yearLevel: string;
   registeredAt: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'active' | 'rejected';
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
@@ -673,19 +677,22 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
 
 /* ─────────────────────────────────────────────
    Student Approvals
+   — Real data: fetched from GET /api/students (profiles + student_profiles)
+   — Approve/Reject write via PATCH /api/students/:id/status
+   — Batch approve via file is still UI-only (marked below)
 ───────────────────────────────────────────── */
-function StudentApprovalsView() {
-  const [students, setStudents] = useState<StudentApplicant[]>([
-    { id: 1, name: 'Maria Santos',   email: 'maria.santos@ctu.edu.ph',   studentId: '2024-00123', program: 'BEED',         yearLevel: '1st Year', registeredAt: 'June 28, 2026', status: 'pending'  },
-    { id: 2, name: 'John Dela Cruz', email: 'john.delacruz@ctu.edu.ph',  studentId: '2024-00456', program: 'BSED-MATH',    yearLevel: '2nd Year', registeredAt: 'June 28, 2026', status: 'pending'  },
-    { id: 3, name: 'Ana Reyes',      email: 'ana.reyes@ctu.edu.ph',      studentId: '2024-00789', program: 'BSED-ENGLISH', yearLevel: '1st Year', registeredAt: 'June 27, 2026', status: 'pending'  },
-    { id: 4, name: 'Carlo Mendoza',  email: 'carlo.mendoza@ctu.edu.ph',  studentId: '2023-00321', program: 'BTLEd-HE',     yearLevel: '3rd Year', registeredAt: 'June 26, 2026', status: 'approved' },
-    { id: 5, name: 'Liza Fernandez', email: 'liza.fernandez@ctu.edu.ph', studentId: '2023-00654', program: 'BEED',         yearLevel: '4th Year', registeredAt: 'June 25, 2026', status: 'rejected' },
-  ]);
 
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+const STUDENTS_API_URL = 'http://localhost:5000/api/students';
+
+function StudentApprovalsView() {
+  const [students, setStudents] = useState<StudentApplicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'active' | 'rejected'>('pending');
   const [search, setSearch] = useState('');
-  const [confirmModal, setConfirmModal] = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   // ── Batch upload state ──
   const [showUploadModal, setShowUploadModal]   = useState(false);
@@ -701,6 +708,52 @@ function StudentApprovalsView() {
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   ];
   const ACCEPTED_EXT = ['.pdf', '.xls', '.xlsx'];
+
+  // ── Fetch real students from the backend ──
+  const fetchStudents = async () => {
+    setLoading(true);
+    setLoadError('');
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(STUDENTS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load students: ' + (err.error || res.statusText));
+        setStudents([]);
+        return;
+      }
+      const data = await res.json();
+      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
+        const yl = p.student_profiles?.year_level ?? 1;
+        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+        return {
+          id: p.id,
+          name: p.full_name ?? '—',
+          email: p.email ?? '—',
+          studentId: p.student_profiles?.student_no ?? '—',
+          program: p.student_profiles?.program ?? '—',
+          yearLevel: `${yl}${suffix} Year`,
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
+            month: 'long', day: 'numeric', year: 'numeric',
+          }),
+          status: p.status,
+        };
+      });
+      setStudents(mapped);
+    } catch (err) {
+      setLoadError('Could not reach the server. Please try again.');
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validateFile = (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type) && !ACCEPTED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
@@ -725,9 +778,11 @@ function StudentApprovalsView() {
     if (file) validateFile(file);
   };
 
+  // NOTE: still UI-only. Wiring this to real matching means parsing the
+  // uploaded PDF/Excel on the backend, matching rows against `profiles`,
+  // and looping matched ids through the same PATCH /api/students/:id/status
+  // route used below. Left as a separate follow-up task.
   const handleBatchApprove = () => {
-    // UI-only: mark all current pending students as approved
-    setStudents(prev => prev.map(s => s.status === 'pending' ? { ...s, status: 'approved' } : s));
     setBatchConfirmOpen(false);
     setUploadedFile(null);
     setUploadSuccess(true);
@@ -735,8 +790,34 @@ function StudentApprovalsView() {
     setTimeout(() => setUploadSuccess(false), 4000);
   };
 
-  const approve = (id: number) => setStudents(prev => prev.map(s => s.id === id ? { ...s, status: 'approved' } : s));
-  const reject  = (id: number) => setStudents(prev => prev.map(s => s.id === id ? { ...s, status: 'rejected' } : s));
+  // ── Real approve/reject, backed by the PATCH endpoint ──
+  const updateStatus = async (id: string, status: 'active' | 'rejected') => {
+    setUpdatingId(id);
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${STUDENTS_API_URL}/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to update status: ' + (err.error || res.statusText));
+        return;
+      }
+      setStudents(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+    } catch (err) {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const approve = (id: string) => updateStatus(id, 'active');
+  const reject  = (id: string) => updateStatus(id, 'rejected');
 
   const handleConfirm = () => {
     if (!confirmModal) return;
@@ -754,15 +835,18 @@ function StudentApprovalsView() {
 
   const counts = {
     pending:  students.filter(s => s.status === 'pending').length,
-    approved: students.filter(s => s.status === 'approved').length,
+    approved: students.filter(s => s.status === 'active').length,
     rejected: students.filter(s => s.status === 'rejected').length,
   };
 
   const statusBadge = (status: StudentApplicant['status']) => ({
     pending:  'bg-amber-100 text-amber-700',
-    approved: 'bg-green-100 text-green-700',
+    active:   'bg-green-100 text-green-700',
     rejected: 'bg-red-100 text-red-700',
   }[status]);
+
+  const statusLabel = (status: StudentApplicant['status']) =>
+    status === 'active' ? 'approved' : status;
 
   const fileIcon = (file: File) =>
     file.name.toLowerCase().endsWith('.pdf')
@@ -786,11 +870,17 @@ function StudentApprovalsView() {
         </button>
       </div>
 
-      {/* Success toast */}
       {uploadSuccess && (
         <div className="mb-4 flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium">
           <CheckCircle className="w-5 h-5 flex-shrink-0" />
           Batch approval processed successfully. All matched pending students have been approved.
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {loadError}
         </div>
       )}
 
@@ -821,7 +911,7 @@ function StudentApprovalsView() {
           />
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 flex-shrink-0">
-          {(['all', 'pending', 'approved', 'rejected'] as const).map(f => (
+          {(['all', 'pending', 'active', 'rejected'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilterStatus(f)}
@@ -829,7 +919,7 @@ function StudentApprovalsView() {
                 filterStatus === f ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {f}
+              {f === 'active' ? 'approved' : f}
             </button>
           ))}
         </div>
@@ -837,7 +927,12 @@ function StudentApprovalsView() {
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading students…</span>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-gray-400">
             <UserCheck className="w-10 h-10 mx-auto mb-3 opacity-40" />
             <p className="text-sm">No students match your filter.</p>
@@ -877,7 +972,7 @@ function StudentApprovalsView() {
                     <td className="py-4 px-4 sm:px-6 text-sm text-gray-500 whitespace-nowrap">{student.registeredAt}</td>
                     <td className="py-4 px-4 sm:px-6 text-center">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusBadge(student.status)}`}>
-                        {student.status}
+                        {statusLabel(student.status)}
                       </span>
                     </td>
                     <td className="py-4 px-4 sm:px-6">
@@ -885,20 +980,22 @@ function StudentApprovalsView() {
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => setConfirmModal({ id: student.id, action: 'approve' })}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-semibold whitespace-nowrap"
+                            disabled={updatingId === student.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-semibold whitespace-nowrap disabled:opacity-50"
                           >
-                            <Check className="w-3.5 h-3.5" /> Accept
+                            {updatingId === student.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Accept
                           </button>
                           <button
                             onClick={() => setConfirmModal({ id: student.id, action: 'reject' })}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-xs font-semibold whitespace-nowrap"
+                            disabled={updatingId === student.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-xs font-semibold whitespace-nowrap disabled:opacity-50"
                           >
                             <X className="w-3.5 h-3.5" /> Reject
                           </button>
                         </div>
                       ) : (
                         <div className="text-center text-xs text-gray-400 italic">
-                          {student.status === 'approved' ? 'Access granted' : 'Access denied'}
+                          {student.status === 'active' ? 'Access granted' : 'Access denied'}
                         </div>
                       )}
                     </td>
