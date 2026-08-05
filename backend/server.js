@@ -37,11 +37,14 @@ app.use('/api/calendar-events', calendarEventsRoutes);
 const announcementsRoutes = require('./routes/announcements');
    app.use('/api/announcements', announcementsRoutes);
 
-const studentsRoutes = require('./routes/students');
-app.use('/api/students', studentsRoutes);
+const studentsRoutes = require('./routes/student');
+app.use('/api/student', studentsRoutes);
 
 const accomplishmentReportsRoutes = require('./routes/accomplishmentReports');
 app.use('/api/accomplishment-reports', accomplishmentReportsRoutes);
 
 const extensionReportsRoutes = require('./routes/extensionReports');
 app.use('/api/extension-reports', extensionReportsRoutes);
+
+const researchRoutes = require('./routes/research');
+app.use('/api/research', researchRoutes);
