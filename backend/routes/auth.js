@@ -99,6 +99,7 @@ router.post('/login', async (req, res) => {
       role: user.role,
       fullName,
       idNumber,
+      alumniId: user.alumni_id ?? null,
     },
     process.env.JWT_SECRET,
     { expiresIn: '8h' }

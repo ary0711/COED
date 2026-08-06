@@ -90,9 +90,9 @@ export function AlumniDashboard({
             </button>
             <div className="flex-1">
               <DashboardHeader
-                userRole="Alumni"
-                userName="Maria Gabriela Santos"
-              />
+                 userRole="Alumni"
+                 userName={userName ?? 'Alumni'}
+                />
             </div>
           </div>
         </div>

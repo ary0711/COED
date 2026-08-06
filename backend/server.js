@@ -48,3 +48,6 @@ app.use('/api/extension-reports', extensionReportsRoutes);
 
 const researchSubmissionsRoutes = require('./routes/researchSubmissions');
 app.use('/api/research-submissions', researchSubmissionsRoutes);
+
+const tracerSurveyRoutes = require('./routes/tracerSurvey');
+app.use('/api/tracer-survey', tracerSurveyRoutes);

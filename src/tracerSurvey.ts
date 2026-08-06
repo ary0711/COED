@@ -1,5 +1,3 @@
-import { supabase } from './supabaseClient';
-
 export interface TracerSurveyData {
   alumni_id: string;
   employment_status: string;
@@ -11,29 +9,54 @@ export interface TracerSurveyData {
   updated_at?: string;
 }
 
-export async function getTracerSurvey(alumniId: string) {
-  const { data, error } = await supabase
-    .from('graduate_tracer_survey')
-    .select('*')
-    .eq('alumni_id', alumniId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+// All reads/writes go through the Express API (JWT-authenticated) now,
+// not straight to Supabase. The server derives the alumnus's own
+// alumni_id from the token — alumniId parameters below are only used
+// for the existing function signatures (kept so AlumniDashboard.tsx
+// doesn't need to change); the server never trusts them.
+const TRACER_API_URL = 'http://localhost:5000/api/tracer-survey';
+
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+async function parseErrorOrThrow(res: Response) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(err.error || res.statusText);
+}
+
+export async function getTracerSurvey(_alumniId: string) {
+  const res = await fetch(`${TRACER_API_URL}/mine`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+  return res.json();
 }
 
 export async function saveTracerSurvey(data: TracerSurveyData) {
-  const { error } = await supabase
-    .from('graduate_tracer_survey')
-    .insert([{ ...data, is_completed: true }]);
-  if (error) throw error;
+  const { alumni_id, ...payload } = data; // alumni_id is derived server-side, not sent
+  const res = await fetch(TRACER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
 }
 
-export async function updateTracerSurvey(alumniId: string, data: Partial<TracerSurveyData>) {
-  const { error } = await supabase
-    .from('graduate_tracer_survey')
-    .update(data)
-    .eq('alumni_id', alumniId);
-  if (error) throw error;
+export async function updateTracerSurvey(_alumniId: string, data: Partial<TracerSurveyData>) {
+  const { alumni_id, ...payload } = data as TracerSurveyData;
+  const res = await fetch(TRACER_API_URL, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
 }
 
 export function validateTracerSurvey(data: Partial<TracerSurveyData>): string[] {
@@ -46,21 +69,10 @@ export function validateTracerSurvey(data: Partial<TracerSurveyData>): string[] 
   return errors;
 }
 
-export async function getDashboardStats(alumniId: string) {
-  const { data, error } = await supabase
-    .from('graduate_tracer_survey')
-    .select('employment_status, is_completed, updated_at')
-    .eq('alumni_id', alumniId)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return {
-    surveyStatus: data?.is_completed ? 'Completed' : 'Not Started',
-    employmentStatus: data?.employment_status
-      ? data.employment_status.charAt(0).toUpperCase() + data.employment_status.slice(1)
-      : 'Not Set',
-    lastUpdated: data?.updated_at || null,
-    membershipStatus: 'Active',
-  };
+export async function getDashboardStats(_alumniId: string) {
+  const res = await fetch(`${TRACER_API_URL}/dashboard-stats`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+  return res.json();
 }
