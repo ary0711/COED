@@ -109,7 +109,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
             {activeMenuItem === 'dashboard'     && <FacultyDashboardView />}
             {activeMenuItem === 'teaching-load' && <TeachingLoad />}
-            {activeMenuItem === 'research'      && <ResearchExtension />}
+            {activeMenuItem === 'research'      && <ResearchExtension userId={userId} />}
             {activeMenuItem === 'achievements'  && <FacultyAchievements />}
             {activeMenuItem === 'records'       && <AcademicRecordsView />}
             {activeMenuItem === 'deans-list'    && <DeansListGenerator userId={userId} userName={userName} />}
@@ -357,35 +357,120 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
   }
 
   // ====================== 5.2 RESEARCH & EXTENSION ======================
-  function ResearchExtension() {
+  // All reads/writes go through the Express API (JWT-authenticated),
+  // matching the accomplishment/extension reports setup — no direct
+  // Supabase calls from the browser.
+  const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
+
+  function getResearchToken() {
+    return localStorage.getItem('token');
+  }
+
+  interface ResearchSubmission {
+    id: string;
+    title: string;
+    type: 'research' | 'extension';
+    file_name: string | null;
+    file_url: string | null;
+    status: 'pending' | 'approved' | 'rejected';
+    created_at: string;
+    updated_at: string;
+  }
+
+  function ResearchExtension({ userId }: { userId: string }) {
     const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
     const [researchTitle, setResearchTitle] = useState('');
     const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
-    const [fileName, setFileName] = useState('');
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
 
-    const submissions = [
-      { title: 'AI in Philippine Education',        type: 'Research',  date: 'Jan 15, 2026', status: 'Approved' },
-      { title: 'Community Literacy Program',         type: 'Extension', date: 'Feb 2, 2026',  status: 'Pending'  },
-      { title: 'Blockchain in Records Management',   type: 'Research',  date: 'Feb 10, 2026', status: 'Rejected' },
-    ];
+    useEffect(() => {
+      const load = async () => {
+        try {
+          const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+            headers: { Authorization: `Bearer ${getResearchToken()}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setSubmissions(data ?? []);
+          }
+        } catch {
+          // silent — same as the reports components' load-error behavior
+        } finally {
+          setLoading(false);
+        }
+      };
+      load();
+    }, [userId]);
 
-    const approved = submissions.filter(s => s.status === 'Approved');
-    const pendingCount = submissions.filter(s => s.status === 'Pending').length;
-    const rejectedCount = submissions.filter(s => s.status === 'Rejected').length;
+    const approved = submissions.filter(s => s.status === 'approved');
+    const pendingCount = submissions.filter(s => s.status === 'pending').length;
+    const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
+
+    const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
+    const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
+    const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
     const statusBadge = (status: string) => {
       const map: Record<string, string> = {
-        Pending:  'bg-yellow-100 text-yellow-700',
-        Approved: 'bg-green-100 text-green-700',
-        Rejected: 'bg-red-100 text-red-700',
+        pending:  'bg-yellow-100 text-yellow-700',
+        approved: 'bg-green-100 text-green-700',
+        rejected: 'bg-red-100 text-red-700',
       };
-      return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{status}</span>;
+      return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
     };
 
     const statusIcon = (status: string) => {
-      if (status === 'Approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
-      if (status === 'Rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
+      if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
+      if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
       return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+    };
+
+    const handleSubmit = async () => {
+      if (!researchTitle.trim()) {
+        alert('Please enter a title.');
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const formData = new FormData();
+        formData.append('title', researchTitle.trim());
+        formData.append('type', researchType);
+        if (selectedFile) formData.append('file', selectedFile);
+
+        const res = await fetch(RESEARCH_API_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getResearchToken()}` },
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert('❌ Failed to submit: ' + (err.error || res.statusText));
+          return;
+        }
+
+        const data: ResearchSubmission = await res.json();
+        setSubmissions(prev => [data, ...prev]);
+        setResearchTitle('');
+        setSelectedFile(null);
+        alert('✅ Submission sent for approval!');
+      } catch {
+        alert('❌ Could not reach the server. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    const handleDownload = (s: ResearchSubmission) => {
+      if (s.file_url) {
+        window.open(s.file_url, '_blank');
+      } else {
+        alert('No file was attached to this submission.');
+      }
     };
 
     return (
@@ -424,12 +509,12 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                       <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                       <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
                       <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
-                      <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
+                      <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
                     </label>
-                    {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
+                    {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
                   </div>
-                  <button onClick={() => alert('✅ Submission sent for approval!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
-                    Submit for Approval
+                  <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+                    {submitting ? 'Submitting...' : 'Submit for Approval'}
                   </button>
                 </div>
               </div>
@@ -440,20 +525,26 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <div className="p-4 sm:p-6 border-b border-gray-100">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
                 </div>
-                <div className="divide-y divide-gray-100">
-                  {submissions.map((s, i) => (
-                    <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                        {statusIcon(s.status)}
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{s.type} · Submitted {s.date}</div>
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400">Loading…</div>
+                ) : submissions.length === 0 ? (
+                  <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {submissions.map((s) => (
+                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                          {statusIcon(s.status)}
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
+                          </div>
                         </div>
+                        <div className="flex-shrink-0">{statusBadge(s.status)}</div>
                       </div>
-                      <div className="flex-shrink-0">{statusBadge(s.status)}</div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -462,20 +553,22 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <div className="p-4 sm:p-6 border-b border-gray-100">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
                 </div>
-                {approved.length === 0 ? (
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400">Loading…</div>
+                ) : approved.length === 0 ? (
                   <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {approved.map((s, i) => (
-                      <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                    {approved.map((s) => (
+                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
                         <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
                           <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
                           <div className="min-w-0">
                             <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                            <div className="text-xs sm:text-sm text-gray-500">{s.type} · Approved on {s.date}</div>
+                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
                           </div>
                         </div>
-                        <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                        <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
                           <Download size={14} /> Download
                         </button>
                       </div>
@@ -528,6 +621,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
       </div>
     );
   }
+
 
   // ====================== 5.3 ACHIEVEMENTS ======================
   function FacultyAchievements() {

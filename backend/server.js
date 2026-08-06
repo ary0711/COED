@@ -46,5 +46,5 @@ app.use('/api/accomplishment-reports', accomplishmentReportsRoutes);
 const extensionReportsRoutes = require('./routes/extensionReports');
 app.use('/api/extension-reports', extensionReportsRoutes);
 
-const researchRoutes = require('./routes/research');
-app.use('/api/research', researchRoutes);
+const researchSubmissionsRoutes = require('./routes/researchSubmissions');
+app.use('/api/research-submissions', researchSubmissionsRoutes);
