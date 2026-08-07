@@ -12,6 +12,15 @@ const DB_TO_UI_ROLE: Record<string, string> = {
   admin: 'dean',
 };
 
+// Maps each program code to its exact department name in the `departments`
+// table (college of education — 4 programs, 4 matching departments).
+const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
+  'BEEd':         'Bachelor of Elementary Education Program',
+  'BTLEd':        'Bachelor of Technology and Livelihood Education Program',
+  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics Program',
+  'BSEd-English': 'Bachelor of Secondary Education Major in English Program',
+};
+
 interface LoginPageProps {
   onLogin: (role: string) => void;
   onBack?: () => void;
@@ -76,8 +85,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-  // Catches obvious typos in well-known email domains (e.g. gmail.comd, yaho.com)
-  // so they don't slip through as "valid" just because they match the basic @...  . pattern.
   const COMMON_EMAIL_DOMAINS = [
     'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
     'icloud.com', 'aol.com', 'protonmail.com', 'live.com',
@@ -114,7 +121,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
   const isValidFullName = (value: string) => {
     const trimmed = value.trim().replace(/\s+/g, ' ');
-    // Needs at least a first and last name, letters only (accents, hyphens, apostrophes, periods allowed)
     return /^[A-Za-zÀ-ÖØ-öø-ÿ.'-]+(\s[A-Za-zÀ-ÖØ-öø-ÿ.'-]+)+$/.test(trimmed);
   };
 
@@ -122,10 +128,8 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     const trimmed = value.trim();
     if (!trimmed) return false;
     if (userType === 'student') {
-      // Students: digits only, no letters
       return /^\d+$/.test(trimmed);
     }
-    // Faculty/Alumni keep their existing ID format (e.g., EMP-001, ALU-001)
     return true;
   };
 
@@ -138,10 +142,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     return year >= 1900 && year <= maxYear;
   };
 
-  // Small inline status icon shown next to a field once it has a value —
-  // a green check when the current value passes validation, a red X when it
-  // doesn't. Hidden while empty (nothing to judge yet) or while an async
-  // check (e.g. username availability) is in flight.
   const renderStatusIcon = (value: string, hasError: boolean, checking?: boolean) => {
     if (checking) return null;
     if (!value.trim()) return null;
@@ -173,14 +173,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     }
   };
 
-  // ── Rollback for partially-failed registrations ──
-  // If the Supabase Auth user + profiles row were already created but a
-  // LATER step fails (student_profiles / faculty_profiles / alumni_profiles
-  // insert, or the backend /api/auth/register call), the email and
-  // id_number would otherwise stay permanently "taken" with no usable
-  // account behind them. This undoes both the profiles row (frontend can
-  // delete its own row) and the underlying Supabase Auth user (requires
-  // the service role key, so that part goes through the backend).
   const rollbackRegistration = async (userId: string) => {
     try {
       await supabase.from('profiles').delete().eq('id', userId);
@@ -219,18 +211,11 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       localStorage.setItem('token', data.token);
 
-      // The backend now resolves and returns the real profiles.id (via a
-      // reliable server-side email match), plus full_name/id_number/email.
-      // This replaces the old frontend-side lookup-by-email-guessing logic,
-      // which could silently attach the wrong person's data.
       const { profileId, fullName, idNumber, email, role } = data.user ?? {};
 
       if (profileId) {
         localStorage.setItem('userId', profileId);
       } else {
-        // No matching profiles row found for this account — clear any
-        // stale id from a previous session so we don't show someone else's
-        // data by mistake.
         localStorage.removeItem('userId');
       }
       localStorage.setItem('userFullName', fullName ?? loginUsername.trim());
@@ -279,7 +264,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     if (!regUsername.trim()) {
       newFieldErrors.username = 'Please enter a username.';
     } else if (fieldErrors.username) {
-      // Keep an already-detected "username taken" error until it's fixed
       newFieldErrors.username = fieldErrors.username;
     }
 
@@ -306,8 +290,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     }
     if (regPassword !== regConfirmPassword) { setError('Passwords do not match.'); return; }
 
-    // One last check right before creating the account, in case someone else
-    // just took this username in the meantime.
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
@@ -357,11 +339,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       });
 
       if (insertError) {
-        // Nothing beyond the Auth user + this failed insert exists yet, so
-        // there's no profiles row to clean up — just sign out. (The Auth
-        // user itself is technically still orphaned here too; if you see
-        // "email already registered" errors on retry after THIS specific
-        // failure, extend rollbackRegistration to run here as well.)
         await supabase.auth.signOut();
         const msg = insertError.message.toLowerCase();
         if (msg.includes('profiles_email_key')) {
@@ -385,12 +362,30 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         return;
       }
 
-      // Students also need a matching row in student_profiles — without
-      // this, their dashboard has nothing to display after logging in.
-      // (user_id here is the same UUID as profiles.id / auth.users.id.)
+      // Students also need a matching row in student_profiles. Department
+      // is derived automatically from the selected program (each program
+      // in this college maps to exactly one department) — there is no
+      // separate department field for the student to fill in.
       if (regUserType === 'student') {
+        const departmentName = PROGRAM_TO_DEPARTMENT[regProgram];
+
+        const { data: deptRow, error: deptError } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('name', departmentName)
+          .maybeSingle();
+
+        if (deptError || !deptRow) {
+          await rollbackRegistration(userId);
+          await supabase.auth.signOut();
+          console.error(deptError?.message ?? 'No matching department found for program: ' + regProgram);
+          setError('Could not match your selected program to a department. Please contact the registrar.');
+          return;
+        }
+
         const { error: studentProfileError } = await supabase.from('student_profiles').insert({
           user_id: userId,
+          department_id: deptRow.id,
           full_name: regFullName.trim(),
           student_no: regIdNumber.trim(),
           year_level: 1,
@@ -398,9 +393,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         });
 
         if (studentProfileError) {
-          // profiles row (with the email/id_number) already exists at this
-          // point — undo it, plus the Auth user, so the person can retry
-          // cleanly instead of being told their email is "already used."
           await rollbackRegistration(userId);
           await supabase.auth.signOut();
           const msg = studentProfileError.message.toLowerCase();
@@ -414,7 +406,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         }
       }
 
-      // Faculty need a matching row in faculty_profiles.
       if (regUserType === 'faculty') {
         const { error: facultyProfileError } = await supabase.from('faculty_profiles').insert({
           user_id: userId,
@@ -432,8 +423,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         }
       }
 
-      // Alumni need a matching row in alumni_profiles, including their
-      // graduation year (required field on that table).
       if (regUserType === 'alumni') {
         const { error: alumniProfileError } = await supabase.from('alumni_profiles').insert({
           user_id: userId,
@@ -473,9 +462,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       const regData = await res.json();
       if (!res.ok) {
-        // profiles row (and student_profiles/faculty_profiles/alumni_profiles,
-        // if that step already succeeded) exist at this point — roll
-        // everything back so the email/id_number/username are free again.
         await rollbackRegistration(userId);
         await supabase.auth.signOut();
         const msg: string = regData.error || '';
@@ -489,7 +475,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         } else if (lower.includes('role') || lower.includes('program')) {
           setError('Please check your user type and program selections and try again.');
         } else if (msg) {
-          // The backend already wrote this message for people, so show it as-is
           setError(msg);
         } else {
           setError('Something went wrong creating your account. Please try again.');
@@ -780,7 +765,6 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                         value={regIdNumber}
                         onChange={(e) => {
                           let v = e.target.value;
-                          // Students: strip out anything that isn't a digit as they type
                           if (regUserType === 'student') v = v.replace(/\D/g, '');
                           setRegIdNumber(v);
                           if (!v.trim()) {

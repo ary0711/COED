@@ -1,5 +1,5 @@
 const express = require('express');
-const cors = require('cors');        
+const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 dotenv.config();
@@ -7,17 +7,20 @@ dotenv.config();
 require('./cron');
 
 const app = express();
-app.use(cors());                  
+app.use(cors());
 app.use(express.json());
 app.use(helmet());
 
-// Routes
-const authRoutes = require('./routes/auth');
-app.use('/api/auth', authRoutes);
-
-//Reports
-const reportsRoutes = require('./routes/reports');
-app.use('/api/reports', reportsRoutes);
+// ── Routes ──
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/calendar-events', require('./routes/calendarEvents'));
+app.use('/api/announcements', require('./routes/announcements'));
+app.use('/api/students', require('./routes/student')); // matches your existing file: routes/student.js
+app.use('/api/accomplishment-reports', require('./routes/accomplishmentReports'));
+app.use('/api/extension-reports', require('./routes/extensionReports'));
+app.use('/api/research-submissions', require('./routes/researchSubmissions'));
+app.use('/api/tracer-survey', require('./routes/tracerSurvey'));
 
 // Protected route test
 const authenticate = require('./middleware/authenticate');
@@ -29,25 +32,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// Calendar events
-const calendarEventsRoutes = require('./routes/calendarEvents');
-app.use('/api/calendar-events', calendarEventsRoutes); 
-
-const announcementsRoutes = require('./routes/announcements');
-   app.use('/api/announcements', announcementsRoutes);
-
-const studentsRoutes = require('./routes/student');
-app.use('/api/student', studentsRoutes);
-
-const accomplishmentReportsRoutes = require('./routes/accomplishmentReports');
-app.use('/api/accomplishment-reports', accomplishmentReportsRoutes);
-
-const extensionReportsRoutes = require('./routes/extensionReports');
-app.use('/api/extension-reports', extensionReportsRoutes);
-
-const researchSubmissionsRoutes = require('./routes/researchSubmissions');
-app.use('/api/research-submissions', researchSubmissionsRoutes);
-
-const tracerSurveyRoutes = require('./routes/tracerSurvey');
-app.use('/api/tracer-survey', tracerSurveyRoutes);

@@ -230,7 +230,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
    public.calendar_events via Supabase)
 ───────────────────────────────────────────── */
 
-const PROGRAMS = ['BEED', 'BSED-ENGLISH', 'BSED-MATH', 'BTLEd-HE'];
+const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd-Math', 'BSEd-English'];
 const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
