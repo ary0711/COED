@@ -9,19 +9,29 @@ import {
   Menu,
   History,
   Download,
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect } from 'react';
 import { getTracerSurvey, saveTracerSurvey, updateTracerSurvey, validateTracerSurvey, getDashboardStats } from '../../tracerSurvey';
-import { getAlumniNews, getSingleNewsArticle, type AlumniNewsItem } from '../../alumniNews';
+// NOTE: getAlumniNews/getSingleNewsArticle removed — Alumni News tab replaced by Alumni Calendar.
 import { submitInquiry, getInquiryHistory, type InquiryItem } from '../../alumniInquiry';
 import { getDocuments, downloadDocument, type DocumentItem } from '../../alumniDocuments';
+// NOTE: Alumni Calendar currently uses local hardcoded event data (matching the
+// Student dashboard's Achievements & Activities calendar pattern). Wire this up
+// to a Supabase table the Dean's dashboard writes to once that table exists.
 
 const alumniMenuItems = [
   { icon: Bell,         label: 'Dashboard',              id: 'dashboard'   },
   { icon: FileText,     label: 'Graduate Tracer Survey',  id: 'tracer'      },
-  { icon: Bell,         label: 'Alumni News',             id: 'news'        },
+  { icon: CalendarIcon, label: 'Alumni Calendar',         id: 'calendar'    },
   { icon: BookOpen,     label: 'College Information',     id: 'college-info'},
   { icon: Award,        label: 'Achievements',            id: 'achievements'},
   { icon: FileText,     label: 'Documents & Resources',   id: 'documents'   },
@@ -100,7 +110,7 @@ export function AlumniDashboard({
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
           {activeMenuItem === 'dashboard'    && <AlumniDashboardView setActiveMenuItem={setActiveMenuItem} alumniId={idNumber || 'ALU-2020-0458'} />}
           {activeMenuItem === 'tracer'       && <TracerSurvey alumniId={idNumber || 'ALU-2020-0458'} />}
-          {activeMenuItem === 'news'         && <AlumniNews />}
+          {activeMenuItem === 'calendar'     && <AlumniCalendar />}
           {activeMenuItem === 'college-info' && <CollegeInformation />}
           {activeMenuItem === 'achievements' && <AlumniAchievements />}
           {activeMenuItem === 'documents'    && <DocumentsResources />}
@@ -404,100 +414,295 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   );
 }
 
-// ====================== ALUMNI NEWS ======================
-function AlumniNews() {
-  const [news, setNews] = useState<AlumniNewsItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedArticle, setSelectedArticle] = useState<AlumniNewsItem | null>(null);
+// ====================== ALUMNI CALENDAR ======================
+function AlumniCalendar() {
+  interface CalendarEvent {
+    id: string;
+    title: string;
+    date: number;
+    type: 'homecoming' | 'mentorship' | 'meeting' | 'seminar' | 'other';
+    description?: string;
+    location?: string;
+    color?: string;
+  }
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await getAlumniNews();
-        setNews(data);
-      } catch (err) {
-        console.error('Failed to load news:', err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // NOTE: hardcoded for now — wire this up to a Supabase `alumni_calendar_events`
+  // table (e.g. getAlumniCalendarEvents) the same way TracerSurvey reads from
+  // its table, once the Dean's dashboard can write events to it.
+  const calendarEventsData: CalendarEvent[] = [
+    { id: '1', title: 'Alumni Homecoming 2026',       date: 30, type: 'homecoming', description: 'Annual alumni homecoming celebration', location: 'College Grounds', color: '#3B82F6' },
+    { id: '2', title: 'Career Mentorship Kickoff',     date: 8,  type: 'mentorship', description: "Orientation for this year's mentorship program", location: 'COED Conference Hall', color: '#10B981' },
+    { id: '3', title: 'Alumni Association Meeting',    date: 15, type: 'meeting',    description: 'Quarterly officers meeting', location: "Dean's Office", color: '#A855F7' },
+    { id: '4', title: 'Continuing Education Seminar',  date: 22, type: 'seminar',    description: 'Professional development seminar for licensed teachers', location: 'AVR', color: '#F97316' },
+  ];
 
-  const handleReadMore = async (newsId: string) => {
-    try {
-      const article = await getSingleNewsArticle(newsId);
-      setSelectedArticle(article);
-    } catch (err) {
-      console.error('Failed to load article:', err);
+  const today = new Date();
+  const [currentDate] = useState(new Date(today.getFullYear(), today.getMonth()));
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+
+  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+
+  const days = Array.from({ length: 42 }, (_, i) => {
+    const dayNumber = i - firstDay + 1;
+    return dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null;
+  });
+
+  const getEventColor = (type: string) => {
+    switch (type) {
+      case 'homecoming':
+        return 'bg-blue-500';
+      case 'mentorship':
+        return 'bg-green-500';
+      case 'meeting':
+        return 'bg-purple-500';
+      case 'seminar':
+        return 'bg-orange-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
-  if (loading) {
-    return <p className="text-gray-600">Loading news...</p>;
-  }
+  const getEventsForDay = (day: number) => {
+    return calendarEventsData.filter(event => event.date === day);
+  };
 
-  if (selectedArticle) {
+  const formatDate = (day: number) => {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const upcomingEvents = calendarEventsData.filter(event => {
+    const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return eventDate >= todayDate;
+  }).sort((a, b) => a.date - b.date);
+
+  const historyEvents = calendarEventsData.filter(event => {
+    const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return eventDate < todayDate;
+  }).sort((a, b) => b.date - a.date);
+
+  const isPastDay = (day: number) => {
+    if (!day) return false;
+    const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return dateToCheck < todayDate;
+  };
+
+  const isToday = (day: number) => {
+    if (!day) return false;
     return (
-      <div>
-        <button
-          onClick={() => setSelectedArticle(null)}
-          className="text-blue-600 hover:text-blue-700 font-medium text-sm mb-4"
-        >
-          ← Back to News
-        </button>
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
-          {selectedArticle.image_url && (
-            <div className="w-full h-64 bg-gray-200">
-              <img src={selectedArticle.image_url} alt={selectedArticle.title} className="w-full h-full object-cover" />
-            </div>
-          )}
-          <div className="p-6">
-            <div className="text-sm text-blue-600 font-medium mb-2">
-              {new Date(selectedArticle.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-            </div>
-            <h1 className="text-2xl font-semibold text-gray-900 mb-4">{selectedArticle.title}</h1>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-              {selectedArticle.content || selectedArticle.excerpt}
-            </p>
-          </div>
-        </div>
-      </div>
+      day === today.getDate() &&
+      currentDate.getMonth() === today.getMonth() &&
+      currentDate.getFullYear() === today.getFullYear()
     );
-  }
+  };
 
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Alumni News</h1>
-      {news.length === 0 ? (
-        <p className="text-gray-600">No news articles yet.</p>
-      ) : (
-        <div className="space-y-5 sm:space-y-6">
-          {news.map((item) => (
-            <div key={item.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-              <div className="flex flex-col md:flex-row">
-                {item.image_url && (
-                  <div className="w-full md:w-64 h-48 bg-gray-200 flex-shrink-0">
-                    <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
-                  </div>
-                )}
-                <div className="p-5 sm:p-6 flex-1">
-                  <div className="text-xs sm:text-sm text-blue-600 font-medium mb-2">
-                    {new Date(item.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                  </div>
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3">{item.title}</h2>
-                  <p className="text-gray-600 mb-4 text-sm sm:text-base">{item.excerpt}</p>
-                  <button onClick={() => handleReadMore(item.id)} className="text-blue-600 hover:text-blue-700 font-medium text-sm sm:text-base">
-                    Read More →
-                  </button>
-                </div>
-              </div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Alumni Calendar</h1>
+
+      <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Alumni Activities</h3>
+            <p className="text-sm text-gray-500">{monthName}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <button className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-2">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+            <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
+              {day}
             </div>
           ))}
+
+          {days.map((day, index) => {
+            const events = day ? getEventsForDay(day) : [];
+            const isTodayDate = day ? isToday(day) : false;
+            const isPast = day ? isPastDay(day) : false;
+
+            return (
+              <div
+                key={index}
+                className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
+                  !day
+                    ? 'bg-gray-50'
+                    : isPast
+                      ? 'bg-gray-200 opacity-60 hover:bg-gray-300'
+                      : 'bg-white hover:bg-[#F8FAFC] cursor-pointer'
+                } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
+              >
+                {day && (
+                  <>
+                    <div className={`text-sm font-medium mb-1 ${
+                      isPast
+                        ? 'text-gray-600'
+                        : isTodayDate
+                          ? 'text-[#2563EB]'
+                          : 'text-gray-900'
+                    }`}>
+                      {day}
+                    </div>
+                    <div className="space-y-1">
+                      {events.map((event) => (
+                        <div
+                          key={event.id}
+                          onClick={() => setSelectedEvent(event)}
+                          className={`text-xs ${getEventColor(event.type)} text-white px-1 py-0.5 rounded truncate ${
+                            isPast ? 'opacity-70' : ''
+                          } cursor-pointer hover:shadow-md transition-all`}
+                          title={event.title}
+                        >
+                          {event.title}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-blue-500 rounded"></div>
+            <span className="text-xs text-gray-600">Homecoming</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-500 rounded"></div>
+            <span className="text-xs text-gray-600">Mentorship</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-purple-500 rounded"></div>
+            <span className="text-xs text-gray-600">Meeting</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-orange-500 rounded"></div>
+            <span className="text-xs text-gray-600">Seminar</span>
+          </div>
+        </div>
+      </div>
+
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full animate-in">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: selectedEvent.color }} />
+                <h3 className="text-lg font-semibold text-gray-900">{selectedEvent.title}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Date</p>
+                <p className="text-sm text-gray-900">{formatDate(selectedEvent.date)}</p>
+              </div>
+              {selectedEvent.location && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Location</p>
+                  <p className="text-sm text-gray-900">{selectedEvent.location}</p>
+                </div>
+              )}
+              {selectedEvent.description && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Description</p>
+                  <p className="text-sm text-gray-700">{selectedEvent.description}</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+        <div className="flex border-b border-gray-100">
+          <button
+            onClick={() => setActiveTab('upcoming')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'upcoming' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <CalendarIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Upcoming Activities</span>
+            <span className="sm:hidden">Upcoming</span>
+            {upcomingEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{upcomingEvents.length}</span>}
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'history' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <History className="w-4 h-4" />
+            <span className="hidden sm:inline">Activity History</span>
+            <span className="sm:hidden">History</span>
+            {historyEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{historyEvents.length}</span>}
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-6">
+          {activeTab === 'upcoming' && (
+            <div className="space-y-3">
+              {upcomingEvents.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <CalendarIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No upcoming events</p>
+                </div>
+              ) : upcomingEvents.map(ev => (
+                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.date)}{ev.location ? ` · ${ev.location}` : ''}</div>
+                    {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {activeTab === 'history' && (
+            <div className="space-y-3">
+              {historyEvents.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No past events</p>
+                </div>
+              ) : historyEvents.map(ev => (
+                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: ev.color }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{formatDate(ev.date)}{ev.location ? ` · ${ev.location}` : ''}</div>
+                    {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+                  </div>
+                  <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
 
 // ====================== DOCUMENTS & RESOURCES ======================
 function DocumentsResources() {
@@ -816,32 +1021,191 @@ function CollegeInformation() {
 }
 
 // ====================== ALUMNI ACHIEVEMENTS ======================
+interface AwardItem {
+  id: string;
+  title: string;
+  org: string;
+  year: string;
+}
+
+const DEFAULT_AWARDS: AwardItem[] = [
+  { id: 'a1', title: 'Excellence in Teacher Education Award', org: 'National Commission', year: '2025' },
+  { id: 'a2', title: 'Level III Accreditation Status', org: 'AACCUP', year: '2025' },
+];
+
 function AlumniAchievements() {
+  // NOTE: awards are local state for now — wire this up to a Supabase
+  // `achievements` table (e.g. getAwards/saveAward/updateAward/deleteAward)
+  // the same way TracerSurvey and AlumniInquiry are, once that table exists.
+  const [awards, setAwards] = useState<AwardItem[]>(DEFAULT_AWARDS);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [draft, setDraft] = useState<{ title: string; org: string; year: string }>({ title: '', org: '', year: '' });
+
+  const startEdit = (award: AwardItem) => {
+    setEditingId(award.id);
+    setShowAddForm(false);
+    setDraft({ title: award.title, org: award.org, year: award.year });
+  };
+
+  const startAdd = () => {
+    setShowAddForm(true);
+    setEditingId(null);
+    setDraft({ title: '', org: '', year: '' });
+  };
+
+  const cancelForm = () => {
+    setEditingId(null);
+    setShowAddForm(false);
+    setDraft({ title: '', org: '', year: '' });
+  };
+
+  const saveEdit = () => {
+    if (!draft.title.trim()) return;
+    setAwards((prev) => prev.map((a) => (a.id === editingId ? { ...a, ...draft } : a)));
+    cancelForm();
+  };
+
+  const saveNew = () => {
+    if (!draft.title.trim()) return;
+    setAwards((prev) => [...prev, { id: `a-${Date.now()}`, ...draft }]);
+    cancelForm();
+  };
+
+  const removeAward = (id: string) => {
+    if (!confirm('Remove this award?')) return;
+    setAwards((prev) => prev.filter((a) => a.id !== id));
+    if (editingId === id) cancelForm();
+  };
+
+  const rowColors = ['bg-yellow-50 border-yellow-500', 'bg-blue-50 border-blue-500', 'bg-purple-50 border-purple-500', 'bg-green-50 border-green-500'];
+
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">College Achievements</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Awards</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Recent Awards</h2>
+            <button
+              onClick={startAdd}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <Plus size={14} /> Add
+            </button>
+          </div>
+
           <div className="space-y-3">
-            <div className="p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded-lg">
-              <div className="flex items-start gap-3">
-                <Award className="w-5 h-5 text-yellow-600 mt-1 flex-shrink-0" />
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">Excellence in Teacher Education Award</div>
-                  <div className="text-xs sm:text-sm text-gray-600">National Commission - 2025</div>
+            {awards.map((award, i) => {
+              const [bg, border] = rowColors[i % rowColors.length].split(' ');
+              const isEditingThis = editingId === award.id;
+
+              if (isEditingThis) {
+                return (
+                  <div key={award.id} className={`p-4 rounded-lg border-l-4 ${bg} border-gray-300`}>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={draft.title}
+                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                        placeholder="Award title"
+                        className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={draft.org}
+                          onChange={(e) => setDraft({ ...draft, org: e.target.value })}
+                          placeholder="Awarding body"
+                          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="text"
+                          value={draft.year}
+                          onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                          placeholder="Year"
+                          className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={saveEdit} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs sm:text-sm hover:bg-blue-700">Save</button>
+                        <button onClick={cancelForm} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs sm:text-sm hover:bg-gray-300">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={award.id} className={`group p-4 ${bg} border-l-4 ${border} rounded-lg`}>
+                  <div className="flex items-start gap-3">
+                    <Award className={`w-5 h-5 mt-1 flex-shrink-0 ${border.replace('border-', 'text-')}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base">{award.title}</div>
+                      <div className="text-xs sm:text-sm text-gray-600">{award.org}{award.year ? ` - ${award.year}` : ''}</div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        onClick={() => startEdit(award)}
+                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-white rounded-md"
+                        aria-label="Edit award"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => removeAward(award.id)}
+                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-white rounded-md"
+                        aria-label="Delete award"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {showAddForm && (
+              <div className="p-4 bg-gray-50 border-l-4 border-gray-300 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-500">New award</span>
+                  <button onClick={cancelForm} className="text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={draft.title}
+                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    placeholder="Award title"
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={draft.org}
+                      onChange={(e) => setDraft({ ...draft, org: e.target.value })}
+                      placeholder="Awarding body"
+                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="text"
+                      value={draft.year}
+                      onChange={(e) => setDraft({ ...draft, year: e.target.value })}
+                      placeholder="Year"
+                      className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button onClick={saveNew} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs sm:text-sm hover:bg-blue-700">Add Award</button>
                 </div>
               </div>
-            </div>
-            <div className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
-              <div className="flex items-start gap-3">
-                <Award className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">Level III Accreditation Status</div>
-                  <div className="text-xs sm:text-sm text-gray-600">AACCUP - 2025</div>
-                </div>
-              </div>
-            </div>
+            )}
+
+            {awards.length === 0 && !showAddForm && (
+              <p className="text-sm text-gray-500 text-center py-4">No awards yet. Click "Add" to create one.</p>
+            )}
           </div>
         </div>
 
@@ -862,5 +1226,3 @@ function AlumniAchievements() {
     </div>
   );
 }
-
-
