@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback,  } from 'react';
 import { notifyRole, } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -72,6 +72,8 @@ import {
   Inbox,
   CircleDot,
   ArrowRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 import { supabase } from '../supabaseClient';
@@ -489,6 +491,8 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
 // ─── User Management ──────────────────────────────────────────────────────────
 function UserManagement() {
+  const [showPassword, setShowPassword] =
+  useState(false);
   const [users, setUsers]               = useState<Profile[]>([]);
   const [filtered, setFiltered]         = useState<Profile[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -559,72 +563,352 @@ function UserManagement() {
     setModal('edit');
   };
   const openDelete = (user: Profile) => { setSelected(user); setModal('delete'); };
-
   const handleAdd = async () => {
-    setFormError('');
-    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
-    if (!form.email.trim())     { setFormError('Email is required.'); return; }
-    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
-    if (!form.password || form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
-    setSaving(true);
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email.trim(), password: form.password });
-      if (authError) { setFormError(authError.message); return; }
-      const userId = authData.user?.id;
-      if (!userId) { setFormError('Failed to create user.'); return; }
-      const { error: insertError } = await supabase.from('profiles').insert({
-        id: userId, full_name: form.full_name.trim(), email: form.email.trim(),
-        role: form.role, id_number: form.id_number.trim(),
-        department: form.department.trim() || null, status: form.status,
-      });
-      if (insertError) { await supabase.auth.signOut(); setFormError(insertError.message); return; }
-      setModal(null);
-      fetchUsers();
-    } finally { setSaving(false); }
-  };
+  setFormError('');
+
+  // ================================
+  // VALIDATION
+  // ================================
+
+  if (!form.full_name.trim()) {
+    setFormError('Full name is required.');
+    return;
+  }
+
+  if (!form.email.trim()) {
+    setFormError('Email is required.');
+    return;
+  }
+
+  if (!form.id_number.trim()) {
+    setFormError('ID number is required.');
+    return;
+  }
+
+  if (!form.password || form.password.length < 6) {
+    setFormError('Password must be at least 6 characters.');
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+    // ================================
+    // CREATE USER THROUGH BACKEND
+    // ================================
+
+    const response = await fetch(
+      'http://localhost:5000/api/auth/register',
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+
+        body: JSON.stringify({
+          username: form.email.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: form.role,
+
+          full_name: form.full_name.trim(),
+
+          id_number: form.id_number.trim(),
+
+          department:
+            form.department.trim() || null,
+
+          status: form.status,
+        }),
+      }
+    );
+
+    // ================================
+    // READ RESPONSE
+    // ================================
+
+    const result = await response.json();
+
+    // ================================
+    // BACKEND ERROR
+    // ================================
+
+    if (!response.ok) {
+      setFormError(
+        result.error ||
+        result.message ||
+        'Failed to create account.'
+      );
+
+      return;
+    }
+
+    // ================================
+    // SUCCESS
+    // ================================
+
+    setModal(null);
+
+    setSelected(null);
+
+    setForm({
+      full_name: '',
+      email: '',
+      role: 'student',
+      id_number: '',
+      department: '',
+      status: 'active',
+      password: '',
+    });
+
+    // Refresh users table
+    await fetchUsers();
+
+  } catch (error: any) {
+
+    console.error(
+      'Create user error:',
+      error
+    );
+
+    setFormError(
+      error.message ||
+      'Unable to connect to the backend.'
+    );
+
+  } finally {
+
+    setSaving(false);
+  }
+};
+
 
   const handleEdit = async () => {
-    setFormError('');
-    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
-    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
-    if (!selected) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('profiles').update({
-        full_name: form.full_name.trim(), role: form.role,
+  setFormError('');
+
+  // =====================================
+  // VALIDATION
+  // =====================================
+
+  if (!form.full_name.trim()) {
+    setFormError('Full name is required.');
+    return;
+  }
+
+  if (!form.id_number.trim()) {
+    setFormError('ID number is required.');
+    return;
+  }
+
+  if (!selected) {
+    setFormError('No user selected.');
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+
+    // =====================================
+    // STEP 1: UPDATE PROFILE
+    // =====================================
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: form.full_name.trim(),
+        role: form.role,
         id_number: form.id_number.trim(),
-        department: form.department.trim() || null, status: form.status,
-      }).eq('id', selected.id);
-      if (error) { setFormError(error.message); return; }
-      setModal(null);
-      fetchUsers();
-    } finally { setSaving(false); }
-  };
+        department: form.department.trim() || null,
+        status: form.status,
+      })
+      .eq('id', selected.id);
 
-  const handleDelete = async () => {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      // Step 1: I-delete sa users table gamit email as username
-      const { data: userRecord } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', selected.email)
-        .single();
+    if (profileError) {
+      console.error(
+        'Profile update error:',
+        profileError
+      );
 
-      if (userRecord) {
-        await supabase.from('users').delete().eq('username', selected.email);
+      setFormError(
+        profileError.message ||
+        'Failed to update profile.'
+      );
+
+      return;
+    }
+
+    // =====================================
+    // STEP 2: UPDATE LOGIN ACCOUNT
+    // =====================================
+
+    const response = await fetch(
+      `http://localhost:5000/api/auth/users/${selected.id}`,
+      {
+        method: 'PUT',
+
+        headers: {
+          'Content-Type': 'application/json',
+        },
+
+        body: JSON.stringify({
+          role: form.role,
+
+          // Only update password if user entered one
+          ...(form.password.trim()
+            ? {
+                password: form.password.trim(),
+              }
+            : {}),
+        }),
       }
+    );
 
-      // Step 2: I-delete sa profiles
-      const { error } = await supabase.from('profiles').delete().eq('id', selected.id);
-      if (error) { setFormError(error.message); return; }
+    const result = await response.json();
 
-      setModal(null);
-      fetchUsers();
-    } finally { setSaving(false); }
-  };
+    if (!response.ok) {
+      console.error(
+        'Backend update error:',
+        result
+      );
 
+      setFormError(
+        result.error ||
+        result.message ||
+        'Failed to update login account.'
+      );
+
+      return;
+    }
+
+    // =====================================
+    // SUCCESS
+    // =====================================
+
+    setModal(null);
+    setSelected(null);
+
+    setForm({
+      full_name: '',
+      email: '',
+      role: 'student',
+      id_number: '',
+      department: '',
+      status: 'active',
+      password: '',
+    });
+
+    await fetchUsers();
+
+  } catch (error: any) {
+
+    console.error(
+      'Edit user error:',
+      error
+    );
+
+    setFormError(
+      error.message ||
+      'Unable to connect to the backend.'
+    );
+
+  } finally {
+    setSaving(false);
+  }
+};
+
+ const handleDelete = async () => {
+  if (!selected) {
+    setFormError('No user selected.');
+    return;
+  }
+
+  setFormError('');
+  setSaving(true);
+
+  try {
+    console.log('Deleting user:', selected);
+    console.log('Profile ID:', selected.id);
+    console.log('Email:', selected.email);
+
+    const response = await fetch(
+      `http://localhost:5000/api/auth/users/${selected.id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    // -------------------------------------
+    // READ RESPONSE SAFELY
+    // -------------------------------------
+
+    const text = await response.text();
+
+    let result: any = {};
+
+    try {
+      result = text ? JSON.parse(text) : {};
+    } catch {
+      result = {
+        error: text || 'Server returned an invalid response.',
+      };
+    }
+
+    console.log('Delete response:', response.status, result);
+
+    // -------------------------------------
+    // BACKEND ERROR
+    // -------------------------------------
+
+    if (!response.ok) {
+      setFormError(
+        result.error ||
+        result.message ||
+        `Failed to delete user. Server returned ${response.status}.`
+      );
+
+      return;
+    }
+
+    // -------------------------------------
+    // SUCCESS
+    // -------------------------------------
+
+    console.log('User deleted successfully.');
+
+    setModal(null);
+    setSelected(null);
+    setFormError('');
+
+    setForm({
+      full_name: '',
+      email: '',
+      role: 'student',
+      id_number: '',
+      department: '',
+      status: 'active',
+      password: '',
+    });
+
+    await fetchUsers();
+
+  } catch (error: any) {
+
+    console.error('Delete user error:', error);
+
+    setFormError(
+      error?.message ||
+      'Unable to connect to the backend server.'
+    );
+
+  } finally {
+    setSaving(false);
+  }
+};
   const activatePending = async (user: Profile) => {
     setActivating(user.id);
     try {
@@ -923,12 +1207,50 @@ function UserManagement() {
                   </select>
                 </div>
                 {modal === 'add' && (
-                  <div className="col-span-1 sm:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Password *</label>
-                    <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Min. 6 characters" />
-                  </div>
-                )}
+  <div className="col-span-1 sm:col-span-2">
+    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+      Password *
+    </label>
+
+    <div className="relative">
+      <input
+        type={showPassword ? 'text' : 'password'}
+        value={form.password}
+        onChange={e =>
+          setForm({
+            ...form,
+            password: e.target.value
+          })
+        }
+        className="w-full px-3 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Min. 6 characters"
+      />
+
+      <button
+        type="button"
+        onClick={() =>
+          setShowPassword(prev => !prev)
+        }
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+        title={
+          showPassword
+            ? 'Hide password'
+            : 'Show password'
+        }
+      >
+        {showPassword ? (
+          <EyeOff className="w-5 h-5" />
+        ) : (
+          <Eye className="w-5 h-5" />
+        )}
+      </button>
+    </div>
+
+    <p className="text-xs text-gray-400 mt-1.5">
+      Password must be at least 6 characters.
+    </p>
+  </div>
+)}
               </div>
             </div>
             <div className="flex gap-3 mt-6">
@@ -944,33 +1266,113 @@ function UserManagement() {
       )}
 
       {/* Delete Modal */}
-      {modal === 'delete' && selected && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModal(null)} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 z-10">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0"><Trash2 className="w-6 h-6 text-red-600" /></div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Delete User</h2>
-                <p className="text-sm text-gray-500">This action cannot be undone.</p>
-              </div>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4 mb-6">
-              <p className="font-semibold text-gray-900">{selected.full_name}</p>
-              <p className="text-sm text-gray-500">{selected.email}</p>
-              <p className="text-xs text-gray-400 mt-1">{selected.id_number}</p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setModal(null)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleDelete} disabled={saving}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                {saving ? 'Deleting...' : 'Delete User'}
-              </button>
-            </div>
-          </div>
+{modal === 'delete' && selected && (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+
+    {/* Overlay */}
+    <div
+      className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+      onClick={() => {
+        if (!saving) {
+          setModal(null);
+          setFormError('');
+        }
+      }}
+    />
+
+    {/* Modal */}
+    <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 z-10">
+
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-4">
+
+        <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+          <Trash2 className="w-6 h-6 text-red-600" />
+        </div>
+
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">
+            Delete User
+          </h2>
+
+          <p className="text-sm text-gray-500">
+            This action cannot be undone.
+          </p>
+        </div>
+
+      </div>
+
+      {/* ERROR MESSAGE */}
+      {formError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+          <p className="text-sm text-red-700">
+            {formError}
+          </p>
         </div>
       )}
+
+      {/* User Information */}
+      <div className="bg-gray-50 rounded-xl p-4 mb-6">
+
+        <p className="font-semibold text-gray-900">
+          {selected.full_name}
+        </p>
+
+        <p className="text-sm text-gray-500">
+          {selected.email}
+        </p>
+
+        <p className="text-xs text-gray-400 mt-1">
+          {selected.id_number}
+        </p>
+
+      </div>
+
+      {/* Buttons */}
+      <div className="flex gap-3">
+
+        {/* Cancel */}
+        <button
+          type="button"
+          onClick={() => {
+            if (!saving) {
+              setModal(null);
+              setFormError('');
+            }
+          }}
+          disabled={saving}
+          className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        {/* Delete */}
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={saving}
+          className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+
+          {saving ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Deleting...
+            </>
+          ) : (
+            <>
+              <Trash2 className="w-4 h-4" />
+              Delete User
+            </>
+          )}
+
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+)}
     </div>
   );
 }
@@ -3416,9 +3818,9 @@ async function loadAchievementsPage() {
 }
   return (
     
-    <div className="w-full max-w-screen-2xl mx-auto px-8 py-6">
+    <div>
 
-      <h1 className="text-3xl font-bold text-slate-800 mb-6">
+      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">
   Landing Page Management
 </h1>
 
