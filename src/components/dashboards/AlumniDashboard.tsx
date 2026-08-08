@@ -52,8 +52,6 @@ interface AlumniDashboardProps {
 export function AlumniDashboard({
   activeMenuItem,
   setActiveMenuItem,
-  onRoleChange,
-  onLogout,
   userName,
   idNumber,
 }: AlumniDashboardProps) {
