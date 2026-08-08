@@ -79,6 +79,18 @@ interface StudentInquiry {
   replied_at: string | null;
 }
 
+// Shape of a row from the shared `notifications` table
+interface NotificationRow {
+  id: string;
+  title: string;
+  message: string;
+  type: string | null;
+  reference_id: string | null;
+  reference_table: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 interface StudentDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
@@ -181,6 +193,10 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 userName={profile?.full_name ?? userName}
               />
             </div>
+            {/* Notification bell — shows replies to this student's inquiries */}
+            <div className="px-2 lg:pr-4">
+              <NotificationBell onGoToInquiries={() => setActiveMenuItem('inquiry')} />
+            </div>
           </div>
         </div>
 
@@ -209,6 +225,132 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+// ====================== NOTIFICATION BELL ======================
+// Self-contained: reads/writes the shared `notifications` table, scoped
+// to the logged-in user via localStorage('userId') (this app uses a
+// custom JWT login, not Supabase Auth, so there's no auth session to
+// read the user from). Updates live via a realtime subscription.
+function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) { setLoading(false); return; }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, title, message, type, reference_id, reference_table, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!error && data) setNotifications(data as NotificationRow[]);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) return;
+    const channelName = `student-notif-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        () => fetchNotifications()
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const markAsRead = async (n: NotificationRow) => {
+    if (!n.is_read) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', n.id);
+      fetchNotifications();
+    }
+    if (n.reference_table === 'inquiries' || n.type === 'inquiry_reply') {
+      setOpen(false);
+      onGoToInquiries();
+    }
+  };
+
+  const markAllRead = async () => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) return;
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false);
+    fetchNotifications();
+  };
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+        aria-label="Notifications"
+      >
+        <Bell className="w-5 h-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-100 z-40 max-h-96 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
+              <span className="font-semibold text-gray-900 text-sm">Notifications</span>
+              {unreadCount > 0 && (
+                <button onClick={markAllRead} className="text-xs text-blue-600 hover:underline">
+                  Mark all as read
+                </button>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {loading ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Loading...</div>
+              ) : notifications.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">No notifications yet</div>
+              ) : (
+                notifications.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => markAsRead(n)}
+                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!n.is_read && <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                        <p className="text-[10px] text-gray-400 mt-1">{formatDate(n.created_at)}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
