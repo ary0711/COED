@@ -7,53 +7,6 @@ const supabase = require('../supabaseClient');
 
 const router = express.Router();
 
-/*
-=========================================================
-REGISTER
-=========================================================
-
-FULL REGISTRATION
------------------
-
-Used by Dean/User Management.
-
-Creates:
-
-1. users
-2. profiles
-
-The same UUID is used for users.id and profiles.id.
-
-Required:
-
-username
-password
-role
-email
-full_name
-id_number
-
-Optional:
-
-department
-status
-
-
-LEGACY REGISTRATION
--------------------
-
-Your existing activatePending() function sends only:
-
-username
-password
-role
-
-That is still supported below so existing
-student/faculty/alumni activation does not
-immediately break.
-=========================================================
-*/
-
 router.post('/register', async (req, res) => {
   try {
     const {
@@ -67,11 +20,6 @@ router.post('/register', async (req, res) => {
       status
     } = req.body;
 
-    /*
-    =====================================================
-    BASIC VALIDATION
-    =====================================================
-    */
 
     if (!username || !password || !role) {
       return res.status(400).json({

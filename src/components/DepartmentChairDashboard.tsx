@@ -107,7 +107,37 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
   // ug isip organizer_id sa calendar_events.
   const token = localStorage.getItem('token');
   const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
-  const userName = 'Prof. James Anderson';
+
+  // The logged-in chair's own identity, pulled from their `profiles` row —
+  // NOT hardcoded. `department` holds the program code this chair owns
+  // ('BEEd' | 'BTLEd' | 'BSEd'), which is what scopes Student Approvals
+  // to only the students registered under that same program.
+  const [chairName, setChairName] = useState('Department Chair');
+  const [chairDepartment, setChairDepartment] = useState<string | null>(null);
+  const [chairLoading, setChairLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) { setChairLoading(false); return; }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name, department')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!cancelled) {
+        if (!error && data) {
+          setChairName(data.full_name ?? 'Department Chair');
+          setChairDepartment(data.department ?? null);
+        }
+        setChairLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [userId]);
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -133,7 +163,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={userName} />
+              <DashboardHeader userRole="Department Chair" userName={chairName} />
             </div>
           </div>
         </div>
@@ -142,11 +172,26 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
           {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
           {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
-          {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
+          {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={chairName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
-          {activeMenuItem === 'approvals'   && <StudentApprovalsView />}
+          {activeMenuItem === 'approvals'   && (
+            chairLoading ? (
+              <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading your department…</span>
+              </div>
+            ) : !chairDepartment ? (
+              <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-sm">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                Your account isn't linked to a program yet, so student approvals can't be scoped to your department.
+                Please contact the registrar to have your <code>department</code> value set.
+              </div>
+            ) : (
+              <StudentApprovalsView chairDepartment={chairDepartment} />
+            )
+          )}
         </main>
       </div>
     </div>
@@ -207,7 +252,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
               className="w-full p-4 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-left"
             >
               <div className="font-medium text-gray-900">Review Student Registrations</div>
-              <div className="text-sm text-gray-600">3 pending approvals</div>
+              <div className="text-sm text-gray-600">Pending approvals for your program</div>
             </button>
             <button
               onClick={() => setActiveMenuItem('calendar')}
@@ -230,7 +275,8 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
    public.calendar_events via Supabase)
 ───────────────────────────────────────────── */
 
-const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd-Math', 'BSEd-English'];
+// BSEd-Math and BSEd-English were merged into a single BSEd program.
+const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd'];
 const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
@@ -678,13 +724,21 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
 /* ─────────────────────────────────────────────
    Student Approvals
    — Real data: fetched from GET /api/students (profiles + student_profiles)
+   — Scoped to the logged-in chair's own program (chairDepartment)
    — Approve/Reject write via PATCH /api/students/:id/status
    — Batch approve via file is still UI-only (marked below)
 ───────────────────────────────────────────── */
 
 const STUDENTS_API_URL = 'http://localhost:5000/api/students';
 
-function StudentApprovalsView() {
+interface StudentApprovalsViewProps {
+  // The logged-in chair's own program code ('BEEd' | 'BTLEd' | 'BSEd'),
+  // taken from their profiles.department value. Only students whose
+  // `program` matches this are shown or actionable here.
+  chairDepartment: string;
+}
+
+function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
   const [students, setStudents] = useState<StudentApplicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -709,7 +763,12 @@ function StudentApprovalsView() {
   ];
   const ACCEPTED_EXT = ['.pdf', '.xls', '.xlsx'];
 
-  // ── Fetch real students from the backend ──
+  // ── Fetch real students from the backend, then scope to this chair's program ──
+  // The /api/students endpoint currently returns every pending/active/rejected
+  // student system-wide — it has no department awareness. Until that endpoint
+  // is updated to accept a program filter server-side, we filter on the client
+  // right after the fetch so a chair can never see (or approve/reject) a
+  // student outside their own program, no matter what the backend returns.
   const fetchStudents = async () => {
     setLoading(true);
     setLoadError('');
@@ -725,22 +784,24 @@ function StudentApprovalsView() {
         return;
       }
       const data = await res.json();
-      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
-        const yl = p.student_profiles?.year_level ?? 1;
-        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-        return {
-          id: p.id,
-          name: p.full_name ?? '—',
-          email: p.email ?? '—',
-          studentId: p.student_profiles?.student_no ?? '—',
-          program: p.student_profiles?.program ?? '—',
-          yearLevel: `${yl}${suffix} Year`,
-          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
-            month: 'long', day: 'numeric', year: 'numeric',
-          }),
-          status: p.status,
-        };
-      });
+      const mapped: StudentApplicant[] = (data ?? [])
+        .map((p: any) => {
+          const yl = p.student_profiles?.year_level ?? 1;
+          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            studentId: p.student_profiles?.student_no ?? '—',
+            program: p.student_profiles?.program ?? '—',
+            yearLevel: `${yl}${suffix} Year`,
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
+              month: 'long', day: 'numeric', year: 'numeric',
+            }),
+            status: p.status,
+          };
+        })
+        .filter((s: StudentApplicant) => s.program === chairDepartment);
       setStudents(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -753,7 +814,7 @@ function StudentApprovalsView() {
   useEffect(() => {
     fetchStudents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [chairDepartment]);
 
   const validateFile = (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type) && !ACCEPTED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
@@ -779,9 +840,10 @@ function StudentApprovalsView() {
   };
 
   // NOTE: still UI-only. Wiring this to real matching means parsing the
-  // uploaded PDF/Excel on the backend, matching rows against `profiles`,
-  // and looping matched ids through the same PATCH /api/students/:id/status
-  // route used below. Left as a separate follow-up task.
+  // uploaded PDF/Excel on the backend, matching rows against `profiles`
+  // (scoped to chairDepartment as well), and looping matched ids through
+  // the same PATCH /api/students/:id/status route used below. Left as a
+  // separate follow-up task.
   const handleBatchApprove = () => {
     setBatchConfirmOpen(false);
     setUploadedFile(null);
@@ -859,7 +921,9 @@ function StudentApprovalsView() {
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Student Account Approvals</h1>
-          <p className="text-gray-500 text-sm">Review and manage student registration requests before they can access the portal.</p>
+          <p className="text-gray-500 text-sm">
+            Review and manage registration requests for <span className="font-semibold text-gray-700">{chairDepartment}</span> before students can access the portal.
+          </p>
         </div>
         <button
           onClick={() => { setUploadedFile(null); setUploadError(''); setUploadSuccess(false); setShowUploadModal(true); }}
