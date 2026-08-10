@@ -108,36 +108,31 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
   const token = localStorage.getItem('token');
   const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
 
-  // The logged-in chair's own identity, pulled from their `profiles` row —
-  // NOT hardcoded. `department` holds the program code this chair owns
+  // The logged-in chair's own identity, decoded straight from the JWT
+  // issued at login. `department` holds the program code this chair owns
   // ('BEEd' | 'BTLEd' | 'BSEd'), which is what scopes Student Approvals
   // to only the students registered under that same program.
-  const [chairName, setChairName] = useState('Department Chair');
-  const [chairDepartment, setChairDepartment] = useState<string | null>(null);
-  const [chairLoading, setChairLoading] = useState(true);
-
-  useEffect(() => {
-    if (!userId) { setChairLoading(false); return; }
-
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name, department')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (!cancelled) {
-        if (!error && data) {
-          setChairName(data.full_name ?? 'Department Chair');
-          setChairDepartment(data.department ?? null);
-        }
-        setChairLoading(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [userId]);
+  //
+  // NOTE: this used to be fetched via a direct `supabase.from('profiles')`
+  // call, but that table's RLS policies require a real Supabase Auth
+  // session (auth.uid() / auth.jwt()) — and this app authenticates through
+  // the custom Express /api/auth/login endpoint instead, which never
+  // creates one. That request was silently blocked by RLS and always
+  // returned nothing. The backend's login route already puts `department`
+  // and `fullName` into the JWT payload itself, so we just read it from
+  // there instead — no extra request, and no RLS to fight.
+  let chairName = 'Department Chair';
+  let chairDepartment: string | null = null;
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      chairName = payload.fullName || 'Department Chair';
+      chairDepartment = payload.department || null;
+    } catch (err) {
+      console.error('Failed to decode token:', err);
+    }
+  }
+  const chairLoading = false;
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -786,14 +781,21 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
       const data = await res.json();
       const mapped: StudentApplicant[] = (data ?? [])
         .map((p: any) => {
-          const yl = p.student_profiles?.year_level ?? 1;
+          // The backend returns student_profiles as an ARRAY (Supabase's
+          // default nested-select shape), even though each student only
+          // ever has one. Reading it as p.student_profiles.program (like
+          // an object) silently returned undefined for every student,
+          // which is why program always fell back to '—' and no one ever
+          // matched a chair's department. Take the first (only) entry.
+          const sp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
+          const yl = sp?.year_level ?? 1;
           const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
           return {
             id: p.id,
             name: p.full_name ?? '—',
             email: p.email ?? '—',
-            studentId: p.student_profiles?.student_no ?? '—',
-            program: p.student_profiles?.program ?? '—',
+            studentId: sp?.student_no ?? '—',
+            program: sp?.program ?? '—',
             yearLevel: `${yl}${suffix} Year`,
             registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
               month: 'long', day: 'numeric', year: 'numeric',

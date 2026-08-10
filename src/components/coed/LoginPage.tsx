@@ -456,6 +456,15 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
           role: regUserType === 'faculty' ? 'faculty' : regUserType,
           program: regProgram,
           email: regEmail.trim(),
+          full_name: regFullName.trim(),
+          id_number: regIdNumber.trim(),
+          department: regProgram,
+          // The Supabase auth user (and profiles/student_profiles rows)
+          // were already created above via supabase.auth.signUp(). Pass
+          // this along so the backend reuses that same account instead
+          // of trying to create a second one for the same email, which
+          // always fails since the email is already registered by then.
+          userId,
         }),
       });
 

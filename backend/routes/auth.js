@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -6,6 +5,75 @@ const supabase = require('../supabaseClient');
 
 
 const router = express.Router();
+
+/*
+=========================================================
+REGISTER
+=========================================================
+
+FULL REGISTRATION
+-----------------
+
+Used by Dean/User Management (no `userId` in the body — this
+route creates a brand-new Supabase Auth user from scratch).
+
+Creates:
+
+1. auth user (via supabase.auth.admin.createUser)
+2. users
+3. profiles
+
+The same UUID is used for users.id and profiles.id.
+
+Required:
+
+username
+password
+role
+email
+full_name
+id_number
+
+Optional:
+
+department
+status
+
+
+SELF-SERVICE REGISTRATION (student/faculty/alumni via LoginPage)
+------------------------------------------------------------------
+
+The frontend's own signup form already calls
+supabase.auth.signUp() AND inserts the profiles /
+student_profiles / faculty_profiles / alumni_profiles rows
+directly via the Supabase client BEFORE hitting this route.
+That means by the time this endpoint runs, the auth user and
+the profiles row already exist.
+
+When the frontend includes `userId` in the request body, this
+route reuses that existing auth user instead of trying to
+create a second one for the same email (which always fails,
+since the email is already registered) and skips re-inserting
+`profiles` (already inserted by the frontend). It only needs
+to create the `users` table row here, since that table stores
+the bcrypt password hash used by the legacy username/password
+login flow and the frontend has no direct insert access to it.
+
+
+LEGACY REGISTRATION
+-------------------
+
+Your existing activatePending() function sends only:
+
+username
+password
+role
+
+That is still supported below so existing
+student/faculty/alumni activation does not
+immediately break.
+=========================================================
+*/
 
 router.post('/register', async (req, res) => {
   try {
@@ -17,9 +85,15 @@ router.post('/register', async (req, res) => {
       full_name,
       id_number,
       department,
-      status
+      status,
+      userId // present only when the frontend already ran supabase.auth.signUp()
     } = req.body;
 
+    /*
+    =====================================================
+    BASIC VALIDATION
+    =====================================================
+    */
 
     if (!username || !password || !role) {
       return res.status(400).json({
@@ -36,7 +110,7 @@ router.post('/register', async (req, res) => {
     if (!full_name || !id_number || !email) {
       return res.status(400).json({
         error:
-          'Email, full name, and ID number are required.'
+          'Full name, ID number, and email are required.'
       });
     }
 
@@ -83,33 +157,42 @@ router.post('/register', async (req, res) => {
     =====================================================
     CHECK EXISTING EMAIL IN public.users
     =====================================================
+
+    Skipped when `userId` is provided: in the self-service
+    flow the auth user for this email was JUST created by
+    the frontend's own signUp() call a moment ago, so a
+    "does this email already exist" check here would always
+    (correctly, but unhelpfully) say yes and block every
+    legitimate registration.
     */
 
-    const {
-      data: existingEmail,
-      error: existingEmailError
-    } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', normalizedEmail)
-      .maybeSingle();
+    if (!userId) {
+      const {
+        data: existingEmail,
+        error: existingEmailError
+      } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', normalizedEmail)
+        .maybeSingle();
 
-    if (existingEmailError) {
-      console.error(
-        'Existing email check error:',
-        existingEmailError
-      );
+      if (existingEmailError) {
+        console.error(
+          'Existing email check error:',
+          existingEmailError
+        );
 
-      return res.status(500).json({
-        error: existingEmailError.message
-      });
-    }
+        return res.status(500).json({
+          error: existingEmailError.message
+        });
+      }
 
-    if (existingEmail) {
-      return res.status(409).json({
-        error:
-          'An account with this email already exists.'
-      });
+      if (existingEmail) {
+        return res.status(409).json({
+          error:
+            'An account with this email already exists.'
+        });
+      }
     }
 
     /*
@@ -138,7 +221,11 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    if (existingProfile) {
+    // When userId is provided, the frontend's own registration flow already
+    // inserted this exact profiles row (same id_number) moments ago, so
+    // finding it here is expected, not a conflict — only block on a
+    // duplicate ID number that belongs to a DIFFERENT account.
+    if (existingProfile && existingProfile.id !== userId) {
       return res.status(409).json({
         error:
           'This ID number is already registered.'
@@ -148,50 +235,77 @@ router.post('/register', async (req, res) => {
     /*
     =====================================================
     STEP 1
-    CREATE SUPABASE AUTH USER
+    GET OR CREATE THE SUPABASE AUTH USER
     =====================================================
-
-    Supabase generates the UUID.
-
-    We will use this SAME UUID for:
-      auth.users
-      public.users
-      public.profiles
     */
 
-    const {
-      data: authData,
-      error: authError
-    } = await supabase.auth.admin.createUser({
-      email: normalizedEmail,
-      password: password,
-      email_confirm: true
-    });
+    let authUser;
 
-    if (authError) {
-      console.error(
-        'Supabase Auth user creation error:',
-        authError
+    if (userId) {
+      // Self-service flow: the frontend already created this auth user via
+      // supabase.auth.signUp(). Verify it exists and reuse it instead of
+      // creating a duplicate (which would fail with an "email already
+      // registered" error every time).
+      const {
+        data: verifyAuthUser,
+        error: verifyAuthError
+      } = await supabase.auth.admin.getUserById(userId);
+
+      if (verifyAuthError || !verifyAuthUser?.user) {
+        console.error(
+          'Could not verify pre-created auth user:',
+          verifyAuthError
+        );
+
+        return res.status(400).json({
+          error:
+            'Could not verify the account created during signup. Please try registering again.'
+        });
+      }
+
+      authUser = verifyAuthUser.user;
+
+      console.log(
+        'Reusing existing Supabase Auth user:',
+        authUser.id
       );
-
-      return res.status(400).json({
-        error: authError.message
+    } else {
+      // Full/admin registration flow: no prior signUp() call, so create
+      // the auth user here.
+      const {
+        data: authData,
+        error: authError
+      } = await supabase.auth.admin.createUser({
+        email: normalizedEmail,
+        password: password,
+        email_confirm: true
       });
+
+      if (authError) {
+        console.error(
+          'Supabase Auth user creation error:',
+          authError
+        );
+
+        return res.status(400).json({
+          error: authError.message
+        });
+      }
+
+      if (!authData?.user) {
+        return res.status(500).json({
+          error:
+            'Supabase Auth user was not created.'
+        });
+      }
+
+      authUser = authData.user;
+
+      console.log(
+        'Supabase Auth user created:',
+        authUser.id
+      );
     }
-
-    if (!authData?.user) {
-      return res.status(500).json({
-        error:
-          'Supabase Auth user was not created.'
-      });
-    }
-
-    const authUser = authData.user;
-
-    console.log(
-      'Supabase Auth user created:',
-      authUser.id
-    );
 
     /*
     =====================================================
@@ -244,12 +358,17 @@ router.post('/register', async (req, res) => {
       );
 
       /*
-      Roll back Auth account
+      Roll back Auth account — but only if we created it ourselves in
+      this request. If `userId` was passed in, that auth account (and
+      its profiles row) belong to the frontend's own signUp() flow, and
+      that flow already has its own rollback path — deleting it here
+      too would be redundant and could race with it.
       */
-
-      await supabase.auth.admin.deleteUser(
-        authUser.id
-      );
+      if (!userId) {
+        await supabase.auth.admin.deleteUser(
+          authUser.id
+        );
+      }
 
       return res.status(400).json({
         error: userError.message
@@ -264,99 +383,106 @@ router.post('/register', async (req, res) => {
     /*
     =====================================================
     STEP 4
-    CREATE PROFILE
+    GET OR CREATE PROFILE
     =====================================================
 
     profiles.id must match auth.users.id.
 
-    Because profiles.id has:
-
-      FOREIGN KEY (id)
-      REFERENCES auth.users(id)
-
-    this will now satisfy the constraint.
+    When `userId` was provided, the frontend already inserted this
+    profiles row directly via the Supabase client — inserting it again
+    here would just fail on the primary key. Fetch it instead so the
+    response payload still includes it. Otherwise (admin/legacy flow),
+    create it as before.
     */
 
-    const {
-      data: profile,
-      error: profileError
-    } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          id: authUser.id,
-          full_name: full_name.trim(),
-          email: normalizedEmail,
-          role,
-          id_number: id_number.trim(),
-          department:
-            department?.trim() || null,
-          status:
-            status || 'active'
-        }
-      ])
-      .select()
-      .single();
+    let profile = null;
 
-    /*
-    =====================================================
-    PROFILE CREATION FAILED
-    =====================================================
-    */
+    if (userId) {
+      const {
+        data: existingProfileRow,
+        error: fetchProfileError
+      } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
 
-    if (profileError) {
-  console.error(
-    'Profile insert error:',
-    profileError
-  );
+      if (fetchProfileError) {
+        console.error(
+          'Fetching existing profile error:',
+          fetchProfileError
+        );
+      }
 
-  console.error(
-    'AUTH USER ID:',
-    authUser.id
-  );
+      profile = existingProfileRow || null;
+    } else {
+      const {
+        data: newProfile,
+        error: profileError
+      } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: authUser.id,
+            full_name: full_name.trim(),
+            email: normalizedEmail,
+            role,
+            id_number: id_number.trim(),
+            department:
+              department?.trim() || null,
+            status:
+              status || 'active'
+          }
+        ])
+        .select()
+        .single();
 
-  console.error(
-    'AUTH USER EMAIL:',
-    authUser.email
-  );
+      if (profileError) {
+        console.error(
+          'Profile insert error:',
+          profileError
+        );
 
-  /*
-  =====================================================
-  DEBUG: CHECK IF AUTH USER REALLY EXISTS
-  =====================================================
-  */
+        console.error(
+          'AUTH USER ID:',
+          authUser.id
+        );
 
-  const {
-    data: verifyAuthUser,
-    error: verifyAuthError
-  } = await supabase.auth.admin.getUserById(
-    authUser.id
-  );
+        console.error(
+          'AUTH USER EMAIL:',
+          authUser.email
+        );
 
-  console.log(
-    'VERIFY AUTH USER:',
-    verifyAuthUser?.user
-  );
+        const {
+          data: verifyAuthUser,
+          error: verifyAuthError
+        } = await supabase.auth.admin.getUserById(
+          authUser.id
+        );
 
-  console.log(
-    'VERIFY AUTH ERROR:',
-    verifyAuthError
-  );
+        console.log(
+          'VERIFY AUTH USER:',
+          verifyAuthUser?.user
+        );
 
-  /*
-  DO NOT DELETE ANYTHING YET.
-  */
+        console.log(
+          'VERIFY AUTH ERROR:',
+          verifyAuthError
+        );
 
-  return res.status(400).json({
-    error: profileError.message,
+        return res.status(400).json({
+          error: profileError.message,
 
-    debug: {
-      authUserId: authUser.id,
-      authUserExists: !!verifyAuthUser?.user,
-      authError: verifyAuthError?.message || null
+          debug: {
+            authUserId: authUser.id,
+            authUserExists: !!verifyAuthUser?.user,
+            authError: verifyAuthError?.message || null
+          }
+        });
+      }
+
+      profile = newProfile;
     }
-  });
-}
 
     /*
     =====================================================
@@ -365,8 +491,8 @@ router.post('/register', async (req, res) => {
     */
 
     console.log(
-      'Profile created:',
-      profile.id
+      'Registration complete for profile:',
+      profile?.id
     );
 
     return res.status(201).json({
@@ -1113,4 +1239,3 @@ router.delete('/users/:id', async (req, res) => {
 });
 
 module.exports = router;
-
