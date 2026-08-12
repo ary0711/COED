@@ -576,7 +576,15 @@ function UserManagement() {
   }
 
   if (!form.email.trim()) {
-    setFormError('Email is required.');
+    setFormError('Email address is required.');
+    return;
+  }
+
+  // Basic email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailRegex.test(form.email.trim())) {
+    setFormError('Please enter a valid email address.');
     return;
   }
 
@@ -585,7 +593,12 @@ function UserManagement() {
     return;
   }
 
-  if (!form.password || form.password.length < 6) {
+  if (!form.password) {
+    setFormError('Password is required.');
+    return;
+  }
+
+  if (form.password.length < 6) {
     setFormError('Password must be at least 6 characters.');
     return;
   }
@@ -625,20 +638,89 @@ function UserManagement() {
     );
 
     // ================================
-    // READ RESPONSE
+    // READ RESPONSE SAFELY
     // ================================
 
-    const result = await response.json();
+    const responseText = await response.text();
+
+    let result: any = {};
+
+    try {
+      result = responseText
+        ? JSON.parse(responseText)
+        : {};
+    } catch {
+      result = {
+        error:
+          responseText ||
+          'The server returned an invalid response.',
+      };
+    }
+
+    console.log(
+      'Add user response:',
+      response.status,
+      result
+    );
 
     // ================================
     // BACKEND ERROR
     // ================================
 
     if (!response.ok) {
-      setFormError(
+      let errorMessage =
         result.error ||
         result.message ||
-        'Failed to create account.'
+        result.details ||
+        result.hint;
+
+      // Handle common HTTP errors
+      if (!errorMessage) {
+        switch (response.status) {
+          case 400:
+            errorMessage =
+              'Invalid user information. Please check the form and try again.';
+            break;
+
+          case 401:
+            errorMessage =
+              'You are not authorized to create this account.';
+            break;
+
+          case 403:
+            errorMessage =
+              'You do not have permission to create users.';
+            break;
+
+          case 409:
+            errorMessage =
+              'A user with this email or ID number already exists.';
+            break;
+
+          case 500:
+            errorMessage =
+              'The server encountered an error while creating the account.';
+            break;
+
+          default:
+            errorMessage =
+              `Failed to create account. Server returned ${response.status}.`;
+        }
+      }
+
+      setFormError(errorMessage);
+      return;
+    }
+
+    // ================================
+    // CHECK FOR BACKEND SUCCESS
+    // ================================
+
+    if (!result || result.success === false) {
+      setFormError(
+        result?.error ||
+        result?.message ||
+        'The account could not be created.'
       );
 
       return;
@@ -648,10 +730,18 @@ function UserManagement() {
     // SUCCESS
     // ================================
 
+    console.log(
+      'User created successfully:',
+      result
+    );
+
+    // Close modal
     setModal(null);
 
+    // Clear selected user
     setSelected(null);
 
+    // Reset form
     setForm({
       full_name: '',
       email: '',
@@ -661,6 +751,12 @@ function UserManagement() {
       status: 'active',
       password: '',
     });
+
+    // Reset password visibility
+    setShowPassword(false);
+
+    // Clear error
+    setFormError('');
 
     // Refresh users table
     await fetchUsers();
@@ -672,13 +768,25 @@ function UserManagement() {
       error
     );
 
-    setFormError(
-      error.message ||
-      'Unable to connect to the backend.'
-    );
+    // ================================
+    // CONNECTION / NETWORK ERROR
+    // ================================
+
+    if (
+      error?.name === 'TypeError' &&
+      error?.message?.toLowerCase().includes('fetch')
+    ) {
+      setFormError(
+        'Unable to connect to the backend server. Please make sure your backend is running on http://localhost:5000.'
+      );
+    } else {
+      setFormError(
+        error?.message ||
+        'Something went wrong while creating the account. Please try again.'
+      );
+    }
 
   } finally {
-
     setSaving(false);
   }
 };

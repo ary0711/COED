@@ -270,42 +270,116 @@ router.post('/register', async (req, res) => {
         authUser.id
       );
     } else {
-      // Full/admin registration flow: no prior signUp() call, so create
-      // the auth user here.
-      const {
-        data: authData,
-        error: authError
-      } = await supabase.auth.admin.createUser({
-        email: normalizedEmail,
-        password: password,
-        email_confirm: true
+  // =========================================
+  // ADMIN / DEAN REGISTRATION
+  // =========================================
+
+  console.log(
+    'Creating new Supabase Auth user:',
+    normalizedEmail
+  );
+
+  const {
+    data: authData,
+    error: authError
+  } = await supabase.auth.admin.createUser({
+    email: normalizedEmail,
+    password: password,
+    email_confirm: true
+  });
+
+  // =========================================
+  // HANDLE SUPABASE AUTH ERROR
+  // =========================================
+
+  if (authError) {
+    console.error(
+      'Supabase Auth user creation error:',
+      authError
+    );
+
+    const authMessage =
+      authError.message?.toLowerCase() || '';
+
+    // -----------------------------------------
+    // EMAIL ALREADY EXISTS IN SUPABASE AUTH
+    // -----------------------------------------
+
+    if (
+      authMessage.includes('already registered') ||
+      authMessage.includes('already exists') ||
+      authMessage.includes('user already')
+    ) {
+      return res.status(409).json({
+        error:
+          'This email address is already registered in Supabase Authentication. If this account was previously deleted from User Management, remove the old authentication account before registering this email again.'
       });
-
-      if (authError) {
-        console.error(
-          'Supabase Auth user creation error:',
-          authError
-        );
-
-        return res.status(400).json({
-          error: authError.message
-        });
-      }
-
-      if (!authData?.user) {
-        return res.status(500).json({
-          error:
-            'Supabase Auth user was not created.'
-        });
-      }
-
-      authUser = authData.user;
-
-      console.log(
-        'Supabase Auth user created:',
-        authUser.id
-      );
     }
+
+    // -----------------------------------------
+    // INVALID EMAIL
+    // -----------------------------------------
+
+    if (
+      authMessage.includes('invalid email')
+    ) {
+      return res.status(400).json({
+        error:
+          'The email address provided is invalid. Please enter a valid email address.'
+      });
+    }
+
+    // -----------------------------------------
+    // WEAK PASSWORD
+    // -----------------------------------------
+
+    if (
+      authMessage.includes('password') &&
+      (
+        authMessage.includes('weak') ||
+        authMessage.includes('short') ||
+        authMessage.includes('characters')
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'The password does not meet the required security requirements.'
+      });
+    }
+
+    // -----------------------------------------
+    // OTHER AUTH ERROR
+    // -----------------------------------------
+
+    return res.status(400).json({
+      error:
+        authError.message ||
+        'Unable to create the authentication account.'
+    });
+  }
+
+  // =========================================
+  // VERIFY AUTH USER WAS CREATED
+  // =========================================
+
+  if (!authData?.user) {
+    console.error(
+      'Supabase Auth returned no user after creation.'
+    );
+
+    return res.status(500).json({
+      error:
+        'The authentication account could not be created. Please try again.'
+    });
+  }
+
+  authUser = authData.user;
+
+  console.log(
+    'Supabase Auth user created:',
+    authUser.id
+  );
+}
 
     /*
     =====================================================
@@ -1091,43 +1165,71 @@ router.delete('/users/:id', async (req, res) => {
 
     if (loginUser) {
 
-      console.log(
-        'Login account found:',
-        loginUser.id
-      );
+  console.log(
+    'Login account found:',
+    loginUser.id
+  );
 
-      /*
-      ---------------------------------------------------
-      DELETE LOGIN ACCOUNT
-      ---------------------------------------------------
-      */
+  // =========================================
+  // STEP 3A: DELETE SUPABASE AUTH USER
+  // =========================================
 
-      const {
-        error: deleteUserError
-      } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', loginUser.id);
+  const {
+    error: deleteAuthError
+  } = await supabase.auth.admin.deleteUser(
+    loginUser.id
+  );
 
-      if (deleteUserError) {
+  if (deleteAuthError) {
 
-        console.error(
-          'Delete users table error:',
-          deleteUserError
-        );
+    console.error(
+      'Delete Supabase Auth user error:',
+      deleteAuthError
+    );
 
-        return res.status(500).json({
-          error:
-            deleteUserError.message ||
-            'Failed to delete login account.'
-        });
-      }
+    return res.status(500).json({
+      error:
+        deleteAuthError.message ||
+        'Failed to delete the authentication account. The user was not deleted from the system.'
+    });
+  }
 
-      console.log(
-        'Login account deleted:',
-        loginUser.id
-      );
-    } else {
+  console.log(
+    'Supabase Auth user deleted:',
+    loginUser.id
+  );
+
+  // =========================================
+  // STEP 3B: DELETE public.users
+  // =========================================
+
+  const {
+    error: deleteUserError
+  } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', loginUser.id);
+
+  if (deleteUserError) {
+
+    console.error(
+      'Delete users table error:',
+      deleteUserError
+    );
+
+    return res.status(500).json({
+      error:
+        deleteUserError.message ||
+        'Authentication account was deleted, but the login record could not be removed.'
+    });
+  }
+
+  console.log(
+    'public.users record deleted:',
+    loginUser.id
+  );
+
+} else {
 
       console.warn(
         'No login account found for profile:',
