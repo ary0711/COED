@@ -20,13 +20,87 @@ import {
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect } from 'react';
-import { getTracerSurvey, saveTracerSurvey, updateTracerSurvey, validateTracerSurvey, getDashboardStats } from '../../tracerSurvey';
 // NOTE: getAlumniNews/getSingleNewsArticle removed — Alumni News tab replaced by Alumni Calendar.
 import { submitInquiry, getInquiryHistory, type InquiryItem } from '../../alumniInquiry';
-import { getDocuments, downloadDocument, type DocumentItem } from '../../alumniDocuments';
+import { supabase } from '../../supabaseClient';
 // NOTE: Alumni Calendar currently uses local hardcoded event data (matching the
 // Student dashboard's Achievements & Activities calendar pattern). Wire this up
 // to a Supabase table the Dean's dashboard writes to once that table exists.
+
+// ====================== TRACER SURVEY API HELPERS ======================
+interface TracerSurveyData {
+  alumni_id: string;
+  employment_status: string;
+  job_title: string;
+  employer: string;
+  years_employed: number;
+  monthly_salary: string;
+  relevance: string;
+  updated_at?: string;
+}
+
+const TRACER_API_URL = 'http://localhost:5000/api/tracer-survey';
+
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+async function parseErrorOrThrow(res: Response) {
+  const err = await res.json().catch(() => ({}));
+  throw new Error(err.error || res.statusText);
+}
+
+async function getTracerSurvey(_alumniId: string) {
+  const res = await fetch(`${TRACER_API_URL}/mine`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+  return res.json();
+}
+
+async function saveTracerSurvey(data: TracerSurveyData) {
+  const { alumni_id, ...payload } = data;
+  const res = await fetch(TRACER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+}
+
+async function updateTracerSurvey(_alumniId: string, data: Partial<TracerSurveyData>) {
+  const { alumni_id, ...payload } = data as TracerSurveyData;
+  const res = await fetch(TRACER_API_URL, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+}
+
+function validateTracerSurvey(data: Partial<TracerSurveyData>): string[] {
+  const errors: string[] = [];
+  if (!data.employment_status) errors.push('Employment status is required.');
+  if (data.employment_status === 'employed' || data.employment_status === 'self-employed') {
+    if (!data.job_title) errors.push('Job title is required.');
+    if (!data.employer) errors.push('Employer/company is required.');
+  }
+  return errors;
+}
+
+async function getDashboardStats(_alumniId: string) {
+  const res = await fetch(`${TRACER_API_URL}/dashboard-stats`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) await parseErrorOrThrow(res);
+  return res.json();
+}
 
 const alumniMenuItems = [
   { icon: Bell,         label: 'Dashboard',              id: 'dashboard'   },
@@ -701,8 +775,38 @@ function AlumniCalendar() {
   );
 }
 
-
 // ====================== DOCUMENTS & RESOURCES ======================
+interface DocumentItem {
+  id: string;
+  name: string;
+  category: string;
+  size_label: string;
+  file_url: string;
+  created_at: string;
+}
+
+// RETRIEVE — display downloadable files
+async function getDocuments() {
+  const { data, error } = await supabase
+    .from('alumni_documents')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as DocumentItem[];
+}
+
+// DOWNLOAD — handle secure file downloads (open the stored file URL)
+function downloadDocument(fileUrl: string, name: string) {
+  const link = document.createElement('a');
+  link.href = fileUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function DocumentsResources() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -748,11 +852,11 @@ function DocumentsResources() {
           <button
             key={c}
             onClick={() => setActiveCategory(c)}
-           className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all border ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all border ${
               activeCategory === c
                 ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700 '
-            }`}     
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
           >
             {c}
           </button>
