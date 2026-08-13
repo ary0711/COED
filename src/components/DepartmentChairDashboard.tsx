@@ -102,37 +102,15 @@ interface StudentApplicant {
 export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: DepartmentChairDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Kuhaon ang userId gikan sa JWT token, susama sa Faculty Dashboard,
-  // para magamit sa Chair's own Reports (Accomplishment / Extension) tab
-  // ug isip organizer_id sa calendar_events.
+  // Kuhaon ang userId, fullName, ug program gikan sa JWT token, susama sa
+  // Faculty Dashboard, para magamit sa Chair's own Reports (Accomplishment /
+  // Extension) tab, isip organizer_id sa calendar_events, ug para i-scope
+  // ang Student Approvals sa iyang kaugalingong program.
   const token = localStorage.getItem('token');
-  const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
-
-  // The logged-in chair's own identity, decoded straight from the JWT
-  // issued at login. `department` holds the program code this chair owns
-  // ('BEEd' | 'BTLEd' | 'BSEd'), which is what scopes Student Approvals
-  // to only the students registered under that same program.
-  //
-  // NOTE: this used to be fetched via a direct `supabase.from('profiles')`
-  // call, but that table's RLS policies require a real Supabase Auth
-  // session (auth.uid() / auth.jwt()) — and this app authenticates through
-  // the custom Express /api/auth/login endpoint instead, which never
-  // creates one. That request was silently blocked by RLS and always
-  // returned nothing. The backend's login route already puts `department`
-  // and `fullName` into the JWT payload itself, so we just read it from
-  // there instead — no extra request, and no RLS to fight.
-  let chairName = 'Department Chair';
-  let chairDepartment: string | null = null;
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      chairName = payload.fullName || 'Department Chair';
-      chairDepartment = payload.department || null;
-    } catch (err) {
-      console.error('Failed to decode token:', err);
-    }
-  }
-  const chairLoading = false;
+  const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
+  const userId = decoded?.userId ?? '';
+  const userName = decoded?.fullName || 'Department Chair';
+  const programs: string[] = decoded?.programs ?? [];
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -158,7 +136,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={chairName} />
+              <DashboardHeader userRole="Department Chair" userName={userName} />
             </div>
           </div>
         </div>
@@ -167,26 +145,11 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
           {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
           {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
-          {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={chairName} />}
+          {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
-          {activeMenuItem === 'approvals'   && (
-            chairLoading ? (
-              <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm">Loading your department…</span>
-              </div>
-            ) : !chairDepartment ? (
-              <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                Your account isn't linked to a program yet, so student approvals can't be scoped to your department.
-                Please contact the registrar to have your <code>department</code> value set.
-              </div>
-            ) : (
-              <StudentApprovalsView chairDepartment={chairDepartment} />
-            )
-          )}
+          {activeMenuItem === 'approvals'   && <StudentApprovalsView programs={programs} />}
         </main>
       </div>
     </div>
@@ -247,7 +210,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
               className="w-full p-4 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-left"
             >
               <div className="font-medium text-gray-900">Review Student Registrations</div>
-              <div className="text-sm text-gray-600">Pending approvals for your program</div>
+              <div className="text-sm text-gray-600">3 pending approvals</div>
             </button>
             <button
               onClick={() => setActiveMenuItem('calendar')}
@@ -270,8 +233,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
    public.calendar_events via Supabase)
 ───────────────────────────────────────────── */
 
-// BSEd-Math and BSEd-English were merged into a single BSEd program.
-const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd'];
+const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd-Math', 'BSEd-English'];
 const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
@@ -719,21 +681,20 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
 /* ─────────────────────────────────────────────
    Student Approvals
    — Real data: fetched from GET /api/students (profiles + student_profiles)
-   — Scoped to the logged-in chair's own program (chairDepartment)
    — Approve/Reject write via PATCH /api/students/:id/status
    — Batch approve via file is still UI-only (marked below)
 ───────────────────────────────────────────── */
 
 const STUDENTS_API_URL = 'http://localhost:5000/api/students';
 
-interface StudentApprovalsViewProps {
-  // The logged-in chair's own program code ('BEEd' | 'BTLEd' | 'BSEd'),
-  // taken from their profiles.department value. Only students whose
-  // `program` matches this are shown or actionable here.
-  chairDepartment: string;
-}
+const PROGRAM_LABELS: Record<string, string> = {
+  'BEED': 'Bachelor of Elementary Education',
+  'BTLEd-HE': 'Bachelor of Technology and Livelihood Education',
+  'BSED-ENGLISH': 'Bachelor of Secondary Education English',
+  'BSED-MATH': 'Bachelor of Secondary Education Mathematics',
+};
 
-function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
+function StudentApprovalsView({ programs }: { programs: string[] }) {
   const [students, setStudents] = useState<StudentApplicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -758,12 +719,7 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
   ];
   const ACCEPTED_EXT = ['.pdf', '.xls', '.xlsx'];
 
-  // ── Fetch real students from the backend, then scope to this chair's program ──
-  // The /api/students endpoint currently returns every pending/active/rejected
-  // student system-wide — it has no department awareness. Until that endpoint
-  // is updated to accept a program filter server-side, we filter on the client
-  // right after the fetch so a chair can never see (or approve/reject) a
-  // student outside their own program, no matter what the backend returns.
+  // ── Fetch real students from the backend ──
   const fetchStudents = async () => {
     setLoading(true);
     setLoadError('');
@@ -779,31 +735,22 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
         return;
       }
       const data = await res.json();
-      const mapped: StudentApplicant[] = (data ?? [])
-        .map((p: any) => {
-          // The backend returns student_profiles as an ARRAY (Supabase's
-          // default nested-select shape), even though each student only
-          // ever has one. Reading it as p.student_profiles.program (like
-          // an object) silently returned undefined for every student,
-          // which is why program always fell back to '—' and no one ever
-          // matched a chair's department. Take the first (only) entry.
-          const sp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
-          const yl = sp?.year_level ?? 1;
-          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-          return {
-            id: p.id,
-            name: p.full_name ?? '—',
-            email: p.email ?? '—',
-            studentId: sp?.student_no ?? '—',
-            program: sp?.program ?? '—',
-            yearLevel: `${yl}${suffix} Year`,
-            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
-              month: 'long', day: 'numeric', year: 'numeric',
-            }),
-            status: p.status,
-          };
-        })
-        .filter((s: StudentApplicant) => s.program === chairDepartment);
+      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
+        const yl = p.student_profiles?.year_level ?? 1;
+        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+        return {
+          id: p.id,
+          name: p.full_name ?? '—',
+          email: p.email ?? '—',
+          studentId: p.student_profiles?.student_no ?? '—',
+          program: p.student_profiles?.program ?? '—',
+          yearLevel: `${yl}${suffix} Year`,
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
+            month: 'long', day: 'numeric', year: 'numeric',
+          }),
+          status: p.status,
+        };
+      });
       setStudents(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -816,7 +763,7 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
   useEffect(() => {
     fetchStudents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chairDepartment]);
+  }, []);
 
   const validateFile = (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type) && !ACCEPTED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
@@ -842,10 +789,9 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
   };
 
   // NOTE: still UI-only. Wiring this to real matching means parsing the
-  // uploaded PDF/Excel on the backend, matching rows against `profiles`
-  // (scoped to chairDepartment as well), and looping matched ids through
-  // the same PATCH /api/students/:id/status route used below. Left as a
-  // separate follow-up task.
+  // uploaded PDF/Excel on the backend, matching rows against `profiles`,
+  // and looping matched ids through the same PATCH /api/students/:id/status
+  // route used below. Left as a separate follow-up task.
   const handleBatchApprove = () => {
     setBatchConfirmOpen(false);
     setUploadedFile(null);
@@ -923,9 +869,12 @@ function StudentApprovalsView({ chairDepartment }: StudentApprovalsViewProps) {
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Student Account Approvals</h1>
-          <p className="text-gray-500 text-sm">
-            Review and manage registration requests for <span className="font-semibold text-gray-700">{chairDepartment}</span> before students can access the portal.
-          </p>
+          <p className="text-gray-500 text-sm">Review and manage student registration requests before they can access the portal.</p>
+          {programs.length > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              Managing: {programs.map(p => PROGRAM_LABELS[p] ?? p).join(', ')}
+            </p>
+          )}
         </div>
         <button
           onClick={() => { setUploadedFile(null); setUploadError(''); setUploadSuccess(false); setShowUploadModal(true); }}

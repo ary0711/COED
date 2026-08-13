@@ -836,7 +836,7 @@ router.post('/login', async (req, res) => {
     GENERATE JWT
     =====================================================
     */
-
+   
     const token =
       jwt.sign(
         {
@@ -858,7 +858,8 @@ router.post('/login', async (req, res) => {
 
           alumniId:
             user.alumni_id ??
-            null
+            null,
+          programs: user.programs ?? [],
         },
 
         process.env.JWT_SECRET,
