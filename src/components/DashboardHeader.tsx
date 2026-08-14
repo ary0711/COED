@@ -19,13 +19,14 @@ interface DashboardHeaderProps {
   userRole: string;
   userName: string;
   onMenuClick?: () => void; // ← added for mobile sidebar toggle
-  
+  departmentNames?: string[]; // ← shown under the name/role badge, e.g. for Department Chairs
 }
 
 export function DashboardHeader({
   userRole,
   userName,
-  onMenuClick
+  onMenuClick,
+  departmentNames
 }: DashboardHeaderProps) {
 const [notifications, setNotifications] = useState<Notification[]>([]);
 const [showNotifications, setShowNotifications] = useState(false);
@@ -180,6 +181,11 @@ useEffect(() => {
                   {userRole}
                 </span>
               </div>
+              {departmentNames && departmentNames.length > 0 && (
+                <p className="text-xs text-gray-400 mt-1 truncate max-w-[180px] sm:max-w-none">
+                  {departmentNames.join(', ')}
+                </p>
+              )}
             </div>
           </div>
 

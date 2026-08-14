@@ -65,17 +65,25 @@ router.patch('/:id/status', authenticate, requireChairRole, async (req, res) => 
       return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
     }
 
-    const { data: existing, error: fetchError } = await supabase
-      .from('profiles')
-      .select('id, student_profiles ( department_id )')
-      .eq('id', id)
+    // Query student_profiles directly by user_id instead of embedding
+    // through profiles. student_profiles.user_id has no UNIQUE constraint
+    // (only `id` [pkey] and `student_no` are unique), so PostgREST can't
+    // infer a one-to-one relationship and would return student_profiles
+    // as an ARRAY when embedded via `profiles.select('student_profiles(...)')`.
+    // Reading `.department_id` off that array silently returns undefined,
+    // which made every chair's departmentIds.includes(undefined) check
+    // fail — a 403 for every student, regardless of actual department.
+    const { data: studentProfile, error: fetchError } = await supabase
+      .from('student_profiles')
+      .select('department_id')
+      .eq('user_id', id)
       .single();
 
-    if (fetchError || !existing) {
+    if (fetchError || !studentProfile) {
       return res.status(404).json({ error: 'Student not found.' });
     }
 
-    const studentDepartmentId = existing.student_profiles?.department_id;
+    const studentDepartmentId = studentProfile.department_id;
     if (!req.user.departmentIds.includes(studentDepartmentId)) {
       return res.status(403).json({ error: 'You can only manage students in your own department(s).' });
     }

@@ -136,7 +136,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={userName} />
+              <DashboardHeader userRole="Department Chair" userName={userName} departmentNames={departmentNames} />
             </div>
           </div>
         </div>

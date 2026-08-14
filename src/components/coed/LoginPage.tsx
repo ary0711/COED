@@ -13,12 +13,15 @@ const DB_TO_UI_ROLE: Record<string, string> = {
 };
 
 // Maps each program code to its exact department name in the `departments`
-// table (college of education — now 3 programs, 3 matching departments,
-// since BSEd-Math and BSEd-English were merged into one BSEd program).
+// table. BSEd-Math and BSEd-English stay as two separate programs here,
+// matching the two separate department rows that actually exist — a
+// student must map to exactly one department_id, and there is no single
+// "combined" department row for them to share.
 const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
-  'BEEd':  'Bachelor of Elementary Education Program',
-  'BTLEd': 'Bachelor of Technology and Livelihood Education Program',
-  'BSEd':  'Bachelor of Secondary Education Program',
+  'BEEd':        'Bachelor of Elementary Education Program',
+  'BTLEd':       'Bachelor of Technology and Livelihood Education Program',
+  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics Program',
+  'BSEd-English': 'Bachelor of Secondary Education Major in English Program',
 };
 
 interface LoginPageProps {
@@ -67,9 +70,10 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
   ];
 
   const programs = [
-    { id: 'BEEd',  label: 'Bachelor of Elementary Education' },
-    { id: 'BTLEd', label: 'Bachelor of Technology and Livelihood Education' },
-    { id: 'BSEd',  label: 'Bachelor of Secondary Education (Mathematics & English)' },
+    { id: 'BEEd',         label: 'Bachelor of Elementary Education' },
+    { id: 'BTLEd',        label: 'Bachelor of Technology and Livelihood Education' },
+    { id: 'BSEd-Math',    label: 'Bachelor of Secondary Education - Mathematics' },
+    { id: 'BSEd-English', label: 'Bachelor of Secondary Education - English' },
   ];
 
   const passwordChecks = {
