@@ -833,41 +833,68 @@ router.post('/login', async (req, res) => {
 
     /*
     =====================================================
+    RESOLVE THIS CHAIR'S ASSIGNED DEPARTMENT(S)
+    =====================================================
+
+    Scoping is by department_id (a real foreign key on
+    student_profiles), not the free-text `program` column —
+    that field has no validation and drifts out of sync
+    (e.g. "BEEd" vs "BEED"). department_id is always reliable.
+
+    Also resolves the department NAMEs so the frontend can
+    display "Managing: X, Y" without hardcoding any IDs.
+    */
+
+    const departmentIds = user.department_ids ?? [];
+    let departmentNames = [];
+
+    if (departmentIds.length > 0) {
+      const { data: depRows } = await supabase
+        .from('departments')
+        .select('id, name')
+        .in('id', departmentIds);
+
+      departmentNames = (depRows ?? []).map(d => d.name);
+    }
+
+    /*
+    =====================================================
     GENERATE JWT
     =====================================================
     */
-   
-    const token =
-      jwt.sign(
-        {
-          userId: user.id,
 
-          profileId,
+    const token = jwt.sign(
+      {
+        userId: user.id,
 
-          username:
-            user.username,
+        profileId,
 
-          role:
-            user.role,
+        username:
+          user.username,
 
-          fullName,
+        role:
+          user.role,
 
-          idNumber,
+        fullName,
 
-          department,
+        idNumber,
 
-          alumniId:
-            user.alumni_id ??
-            null,
-          programs: user.programs ?? [],
-        },
+        department,
 
-        process.env.JWT_SECRET,
+        alumniId:
+          user.alumni_id ??
+          null,
 
-        {
-          expiresIn: '8h'
-        }
-      );
+        departmentIds,
+        departmentNames,
+      },
+
+      process.env.JWT_SECRET,
+
+      {
+        expiresIn: '8h'
+      }
+    );
 
     /*
     =====================================================

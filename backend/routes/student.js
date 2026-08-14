@@ -4,7 +4,7 @@ const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
-// Only department chairs (or dean/admin) can view/manage student approvals.
+// Only department chairs (or dean/admin) can view/manage student approvals
 function requireChairRole(req, res, next) {
   const allowedRoles = ['department_chair', 'dean', 'admin'];
   if (!allowedRoles.includes(req.user.role)) {
@@ -14,32 +14,35 @@ function requireChairRole(req, res, next) {
 }
 
 // GET all student profiles with their student_profiles info.
-// Chairs only see students in one of their assigned programs (from the
-// JWT's `programs` array — a chair can cover more than one program,
-// e.g. BSED-Math and BSED-English at once); dean/admin see everyone.
+// Chairs only see students in one of their assigned departments (from
+// the JWT's `departmentIds` array — a chair can cover more than one
+// department, e.g. BSED-Math and BSED-English at once). Scoping is by
+// department_id (a real foreign key), not the free-text `program`
+// column, since that field has no validation and drifts out of sync
+// (e.g. "BEEd" vs "BEED") — department_id is always reliable.
 router.get('/', authenticate, requireChairRole, async (req, res) => {
   const isChairScoped = req.user.role === 'department_chair';
 
-  if (isChairScoped && (!req.user.programs || req.user.programs.length === 0)) {
-    return res.status(400).json({ error: 'Your chair account has no program assigned. Contact the dean/admin.' });
+  if (isChairScoped && (!req.user.departmentIds || req.user.departmentIds.length === 0)) {
+    return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
   }
 
   // !inner is required when filtering on the embedded relation's column —
   // without it, PostgREST filters the embedded array's *contents* but
   // still returns the parent profile row even when nothing matches,
-  // which would leak students from other programs into the response.
+  // which would leak students from other departments into the response.
   let query = supabase
     .from('profiles')
     .select(
       isChairScoped
-        ? `id, full_name, email, status, created_at, student_profiles!inner ( student_no, program, year_level )`
-        : `id, full_name, email, status, created_at, student_profiles ( student_no, program, year_level )`
+        ? `id, full_name, email, status, created_at, student_profiles!inner ( student_no, program, department_id, year_level )`
+        : `id, full_name, email, status, created_at, student_profiles ( student_no, program, department_id, year_level )`
     )
     .eq('role', 'student')
     .order('created_at', { ascending: false });
 
   if (isChairScoped) {
-    query = query.in('student_profiles.program', req.user.programs);
+    query = query.in('student_profiles.department_id', req.user.departmentIds);
   }
 
   const { data, error } = await query;
@@ -48,7 +51,7 @@ router.get('/', authenticate, requireChairRole, async (req, res) => {
 });
 
 // PATCH a single student's status: 'active' | 'rejected'.
-// Chairs can only act on students in one of their assigned programs.
+// Chairs can only act on students in one of their assigned departments.
 router.patch('/:id/status', authenticate, requireChairRole, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -58,13 +61,13 @@ router.patch('/:id/status', authenticate, requireChairRole, async (req, res) => 
   }
 
   if (req.user.role === 'department_chair') {
-    if (!req.user.programs || req.user.programs.length === 0) {
-      return res.status(400).json({ error: 'Your chair account has no program assigned. Contact the dean/admin.' });
+    if (!req.user.departmentIds || req.user.departmentIds.length === 0) {
+      return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
     }
 
     const { data: existing, error: fetchError } = await supabase
       .from('profiles')
-      .select('id, student_profiles ( program )')
+      .select('id, student_profiles ( department_id )')
       .eq('id', id)
       .single();
 
@@ -72,9 +75,9 @@ router.patch('/:id/status', authenticate, requireChairRole, async (req, res) => 
       return res.status(404).json({ error: 'Student not found.' });
     }
 
-    const studentProgram = existing.student_profiles?.program;
-    if (!req.user.programs.includes(studentProgram)) {
-      return res.status(403).json({ error: 'You can only manage students in your own program(s).' });
+    const studentDepartmentId = existing.student_profiles?.department_id;
+    if (!req.user.departmentIds.includes(studentDepartmentId)) {
+      return res.status(403).json({ error: 'You can only manage students in your own department(s).' });
     }
   }
 

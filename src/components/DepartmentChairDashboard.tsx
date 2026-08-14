@@ -110,7 +110,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
   const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
   const userId = decoded?.userId ?? '';
   const userName = decoded?.fullName || 'Department Chair';
-  const programs: string[] = decoded?.programs ?? [];
+  const departmentNames: string[] = decoded?.departmentNames ?? [];
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -149,7 +149,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
-          {activeMenuItem === 'approvals'   && <StudentApprovalsView programs={programs} />}
+          {activeMenuItem === 'approvals'   && <StudentApprovalsView departmentNames={departmentNames} />}
         </main>
       </div>
     </div>
@@ -687,14 +687,7 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
 
 const STUDENTS_API_URL = 'http://localhost:5000/api/students';
 
-const PROGRAM_LABELS: Record<string, string> = {
-  'BEED': 'Bachelor of Elementary Education',
-  'BTLEd-HE': 'Bachelor of Technology and Livelihood Education',
-  'BSED-ENGLISH': 'Bachelor of Secondary Education English',
-  'BSED-MATH': 'Bachelor of Secondary Education Mathematics',
-};
-
-function StudentApprovalsView({ programs }: { programs: string[] }) {
+function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }) {
   const [students, setStudents] = useState<StudentApplicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -870,9 +863,9 @@ function StudentApprovalsView({ programs }: { programs: string[] }) {
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Student Account Approvals</h1>
           <p className="text-gray-500 text-sm">Review and manage student registration requests before they can access the portal.</p>
-          {programs.length > 0 && (
+          {departmentNames.length > 0 && (
             <p className="text-xs text-gray-400 mt-1">
-              Managing: {programs.map(p => PROGRAM_LABELS[p] ?? p).join(', ')}
+              Managing: {departmentNames.join(', ')}
             </p>
           )}
         </div>
