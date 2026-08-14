@@ -278,11 +278,9 @@ const displaySocialLinks =
                 </div>
                 <div>
                   <h3 className="font-semibold text-[#1E3A8A]">{displayContent?.email_title}</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    <div className="whitespace-pre-line">
+                  <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
   {displayContent?.email_content}
 </div>
-                  </p>
                 </div>
               </div>
 
@@ -354,7 +352,7 @@ const displaySocialLinks =
           </div>
 
           {/* RIGHT SIDE - FORM */}
-          <div className="lg:-mt-8">
+          <div>
             <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl p-10">
 
               <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">

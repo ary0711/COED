@@ -4135,18 +4135,31 @@ async function loadAchievementsPage() {
   </div>
 )}
 {showPreview && (
-  <div className="fixed inset-0 z-50 bg-black/50 overflow-auto">
-    <div className="bg-white min-h-screen">
+ <div className="fixed inset-0 z-50 bg-black/50">
+  <div className="bg-white h-screen flex flex-col">
+      {/* Preview Header */}
+<div className="sticky top-0 z-50 flex items-center justify-between bg-white border-b border-gray-200 px-6 py-3">
 
-      <div className="sticky top-0 bg-white border-b p-4 flex justify-end">
-        <button
-          onClick={() => setShowPreview(false)}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg"
-        >
-          Close Preview
-        </button>
-      </div>
+  {/* Title */}
+  <div>
+    <h2 className="text-lg font-semibold text-[#1E3A8A]">
+      Website Preview
+    </h2>
+    <p className="text-xs text-gray-500">
+      Previewing: <span className="capitalize">{activePage}</span>
+    </p>
+  </div>
 
+  {/* Close */}
+  <button
+    onClick={() => setShowPreview(false)}
+    className="px-4 py-2 bg-[#1E3A8A] text-white text-sm font-medium rounded-lg hover:bg-[#172554] transition"
+  >
+    Close Preview
+  </button>
+
+</div>
+<div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
       {activePage === 'homepage' ? (
         <HomePage
           previewMode
@@ -4226,6 +4239,7 @@ async function loadAchievementsPage() {
 
 
     </div>
+  </div>
   </div>
 )}
     </div>
