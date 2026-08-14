@@ -16,13 +16,13 @@ import {
   Pencil,
   Trash2,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect } from 'react';
-// NOTE: getAlumniNews/getSingleNewsArticle removed — Alumni News tab replaced by Alumni Calendar.
-import { submitInquiry, getInquiryHistory, type InquiryItem } from '../../alumniInquiry';
 import { supabase } from '../../supabaseClient';
+// NOTE: getAlumniNews/getSingleNewsArticle removed — Alumni News tab replaced by Alumni Calendar.
 // NOTE: Alumni Calendar currently uses local hardcoded event data (matching the
 // Student dashboard's Achievements & Activities calendar pattern). Wire this up
 // to a Supabase table the Dean's dashboard writes to once that table exists.
@@ -176,6 +176,10 @@ export function AlumniDashboard({
                  userName={userName ?? 'Alumni'}
                 />
             </div>
+            {/* Notification bell — shows replies to this alumnus's inquiries */}
+            <div className="px-2 lg:pr-4">
+              <NotificationBell onGoToInquiries={() => setActiveMenuItem('inquiry')} />
+            </div>
           </div>
         </div>
 
@@ -186,9 +190,146 @@ export function AlumniDashboard({
           {activeMenuItem === 'college-info' && <CollegeInformation />}
           {activeMenuItem === 'achievements' && <AlumniAchievements />}
           {activeMenuItem === 'documents'    && <DocumentsResources />}
-          {activeMenuItem === 'inquiry'      && <AlumniInquiry alumniId={idNumber || 'ALU-2020-0458'} />}
+          {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
         </main>
       </div>
+    </div>
+  );
+}
+
+// ====================== NOTIFICATION BELL ======================
+// Self-contained: reads/writes the shared `notifications` table, scoped
+// to the logged-in user via localStorage('userId') (this app uses a
+// custom JWT login, not Supabase Auth, so there's no auth session to
+// read the user from). Updates live via a realtime subscription.
+interface NotificationRow {
+  id: string;
+  title: string;
+  message: string;
+  type: string | null;
+  reference_id: string | null;
+  reference_table: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) { setLoading(false); return; }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, title, message, type, reference_id, reference_table, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!error && data) setNotifications(data as NotificationRow[]);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) return;
+    const channelName = `alumni-notif-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        () => fetchNotifications()
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const markAsRead = async (n: NotificationRow) => {
+    if (!n.is_read) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', n.id);
+      fetchNotifications();
+    }
+    if (n.reference_table === 'inquiries' || n.type === 'inquiry_reply') {
+      setOpen(false);
+      onGoToInquiries();
+    }
+  };
+
+  const markAllRead = async () => {
+    const userId = localStorage.getItem('userId');
+    if (!userId) return;
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false);
+    fetchNotifications();
+  };
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+        aria-label="Notifications"
+      >
+        <Bell className="w-5 h-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-100 z-40 max-h-96 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
+              <span className="font-semibold text-gray-900 text-sm">Notifications</span>
+              {unreadCount > 0 && (
+                <button onClick={markAllRead} className="text-xs text-blue-600 hover:underline">
+                  Mark all as read
+                </button>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {loading ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Loading...</div>
+              ) : notifications.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">No notifications yet</div>
+              ) : (
+                notifications.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => markAsRead(n)}
+                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!n.is_read && <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                        <p className="text-[10px] text-gray-400 mt-1">{formatDate(n.created_at)}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -775,6 +916,7 @@ function AlumniCalendar() {
   );
 }
 
+
 // ====================== DOCUMENTS & RESOURCES ======================
 interface DocumentItem {
   id: string;
@@ -899,14 +1041,35 @@ function DocumentsResources() {
   );
 }
 
-// ====================== INQUIRY ======================
+// ====================== INQUIRY / CONTACT ======================
+// FIXED: now writes directly to the shared `inquiries` table — the same
+// table the Student side and the Dean's InquiriesManagement page use —
+// instead of the old `alumniInquiry.ts` service (which pointed at a
+// different table the Dean never reads, and looked up history using the
+// placeholder "ALU-2020-0458" id instead of the real logged-in user).
+// Identity comes from localStorage('userId'), set by LoginPage.tsx at
+// login (this app uses a custom JWT login, not Supabase Auth).
 const INQUIRY_CATEGORIES = [
-  'Transcript Request',
-  'Certificate Request',
-  'Alumni Card',
-  'Event Inquiry',
+  'Documents',
+  'Employment',
+  'Alumni Records',
+  'Events',
+  'System',
+  'Account',
+  'Suggestion',
   'Other',
 ];
+
+interface AlumniInquiryRow {
+  id: string;
+  subject: string;
+  category: string | null;
+  message: string;
+  reply: string | null;
+  status: 'pending' | 'answered';
+  created_at: string;
+  replied_at: string | null;
+}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -917,28 +1080,41 @@ function formatDate(dateStr: string) {
 }
 
 function getStatusStyle(status: string) {
-  if (status === 'Resolved') return 'bg-green-100 text-green-700';
-  if (status === 'Ongoing') return 'bg-blue-100 text-blue-700';
-  return 'bg-yellow-100 text-yellow-700'; // Pending
+  return status === 'answered'
+    ? 'bg-green-100 text-green-700'
+    : 'bg-yellow-100 text-yellow-700';
 }
 
-function AlumniInquiry({ alumniId }: { alumniId: string }) {
+function AlumniInquiry() {
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState(INQUIRY_CATEGORIES[0]);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [history, setHistory] = useState<InquiryItem[]>([]);
+  const [history, setHistory] = useState<AlumniInquiryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState('');
+  const [selectedInquiry, setSelectedInquiry] = useState<AlumniInquiryRow | null>(null);
 
   const loadHistory = async () => {
     setHistoryLoading(true);
     setHistoryError('');
     try {
-      const data = await getInquiryHistory(alumniId);
-      setHistory(data);
+      const currentUserId = localStorage.getItem('userId');
+      if (!currentUserId) {
+        setHistoryError('Your session looks outdated. Please log out and log in again.');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('inquiries')
+        .select('id, subject, category, message, reply, status, created_at, replied_at')
+        .eq('sender_id', currentUserId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setHistory((data as AlumniInquiryRow[]) ?? []);
     } catch (err) {
       setHistoryError('Failed to load inquiry history.');
       console.error(err);
@@ -949,21 +1125,58 @@ function AlumniInquiry({ alumniId }: { alumniId: string }) {
 
   useEffect(() => {
     loadHistory();
-  }, [alumniId]);
+  }, []);
+
+  // Realtime — reflect the dean's reply as soon as it's saved
+  useEffect(() => {
+    const channelName = `alumni-inquiries-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => loadHistory())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setSubmitMessage(null);
+
     try {
-      await submitInquiry({ alumni_id: alumniId, subject, category, message });
-      setSubmitMessage({ type: 'success', text: '✅ Your inquiry has been submitted successfully! We will contact you soon.' });
+      const currentUserId = localStorage.getItem('userId');
+      if (!currentUserId) {
+        setSubmitMessage({ type: 'error', text: 'Your session looks outdated. Please log out and log in again.' });
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from('alumni_profiles')
+        .select('full_name')
+        .eq('user_id', currentUserId)
+        .single();
+
+      const { error } = await supabase.from('inquiries').insert({
+        sender_id: currentUserId,
+        sender_name: profileData?.full_name ?? localStorage.getItem('userFullName') ?? 'Alumni',
+        sender_role: 'alumni',
+        subject: subject.trim(),
+        category,
+        message: message.trim(),
+        status: 'pending',
+        // student_id kept for backward compatibility with the original
+        // NOT NULL column on this shared table
+        student_id: currentUserId,
+      });
+
+      if (error) throw error;
+
+      setSubmitMessage({ type: 'success', text: 'Your inquiry has been submitted successfully! We will contact you soon.' });
       setSubject('');
       setCategory(INQUIRY_CATEGORIES[0]);
       setMessage('');
       await loadHistory();
     } catch (err) {
-      setSubmitMessage({ type: 'error', text: '❌ Error submitting inquiry. Please try again.' });
+      setSubmitMessage({ type: 'error', text: 'Failed to submit your inquiry. Please try again.' });
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -1031,9 +1244,14 @@ function AlumniInquiry({ alumniId }: { alumniId: string }) {
 
       {/* ── Inquiry History ── */}
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <History className="w-5 h-5" /> My Inquiry History
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <History className="w-5 h-5" /> My Inquiry History
+          </h2>
+          <button onClick={loadHistory} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
 
         {historyLoading ? (
           <div className="space-y-3 animate-pulse">
@@ -1050,23 +1268,82 @@ function AlumniInquiry({ alumniId }: { alumniId: string }) {
         ) : (
           <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
             {history.map((inq) => (
-              <div key={inq.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+              <button
+                key={inq.id}
+                onClick={() => setSelectedInquiry(inq)}
+                className="w-full text-left p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{inq.subject}</div>
-                    <div className="text-xs sm:text-sm text-gray-600 mt-1">{inq.category}</div>
+                    {inq.category && <div className="text-xs sm:text-sm text-gray-600 mt-1">{inq.category}</div>}
                     <div className="text-xs sm:text-sm text-gray-500 mt-2 line-clamp-2">{inq.message}</div>
                     <div className="text-xs text-gray-400 mt-2">{formatDate(inq.created_at)}</div>
+                    {inq.status === 'answered' && (
+                      <p className="text-xs text-blue-600 mt-1.5">Dean replied — tap to view</p>
+                    )}
                   </div>
                   <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${getStatusStyle(inq.status)}`}>
-                    {inq.status}
+                    {inq.status === 'answered' ? 'Answered' : 'Pending'}
                   </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
       </div>
+
+      {/* ── Detail modal (shows the dean's reply, if any) ── */}
+      {selectedInquiry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="min-w-0">
+                {selectedInquiry.category && (
+                  <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 mb-2">
+                    {selectedInquiry.category}
+                  </span>
+                )}
+                <h3 className="text-lg font-semibold text-gray-900 truncate">{selectedInquiry.subject}</h3>
+                <p className="text-xs text-gray-400 mt-1">Submitted {formatDate(selectedInquiry.created_at)}</p>
+              </div>
+              <button
+                onClick={() => setSelectedInquiry(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Your Message</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedInquiry.message}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Status</p>
+                {selectedInquiry.status === 'pending' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                    Awaiting reply from the Dean
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    Answered
+                  </span>
+                )}
+              </div>
+              {selectedInquiry.reply && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-blue-700 mb-1">Dean's Reply</p>
+                  <p className="text-sm text-blue-900 whitespace-pre-wrap">{selectedInquiry.reply}</p>
+                  {selectedInquiry.replied_at && (
+                    <p className="text-xs text-blue-400 mt-2">{formatDate(selectedInquiry.replied_at)}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
