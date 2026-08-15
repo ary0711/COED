@@ -21,6 +21,7 @@ app.use('/api/accomplishment-reports', require('./routes/accomplishmentReports')
 app.use('/api/extension-reports', require('./routes/extensionReports'));
 app.use('/api/research-submissions', require('./routes/researchSubmissions'));
 app.use('/api/tracer-survey', require('./routes/tracerSurvey'));
+app.use('/api/accounts', require('./routes/accounts'));
 
 // Protected route test
 const authenticate = require('./middleware/authenticate');
@@ -32,3 +33,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+

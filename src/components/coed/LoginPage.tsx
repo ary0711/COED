@@ -13,21 +13,16 @@ const DB_TO_UI_ROLE: Record<string, string> = {
 };
 
 // Maps each program code to its exact department name in the `departments`
-// table. Math and English now share a single department row/program option,
-// since there is only one chair (Dr. Marichou L. Carreon) over both majors.
-//
-// ⚠️ VERIFY: the string below must match `departments.name` EXACTLY (case,
-// spacing, punctuation) or the department lookup in handleRegister() will
-// silently fail with "Could not match your selected program to a
-// department." Run this against your DB to confirm/adjust:
-//
-//   SELECT id, name, chair_id FROM departments
-//   WHERE name ILIKE '%secondary education%' OR name ILIKE '%math%' OR name ILIKE '%english%';
-//
+// table (college of education — now 3 programs, 3 matching departments,
+// since BSEd-Math and BSEd-English were merged into one BSEd program).
+// Used for ALL registering roles now (student, faculty, alumni) so that
+// every role ends up scoped to a real department_id at signup — this is
+// what lets a Department Chair's approval queue filter correctly by
+// department for every account type, not just students.
 const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
-  'BEEd':             'Bachelor of Elementary Education Program',
-  'BTLEd':            'Bachelor of Technology and Livelihood Education Program',
-  'BSEd-MathEnglish': 'Bachelor of Secondary Education Major in Mathematics and English Program',
+  'BEEd':  'Bachelor of Elementary Education Program',
+  'BTLEd': 'Bachelor of Technology and Livelihood Education Program',
+  'BSEd':  'Bachelor of Secondary Education Program',
 };
 
 interface LoginPageProps {
@@ -75,12 +70,10 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
   ];
 
-  // Math and English merged into a single program option — there is only
-  // one department chair (Dr. Marichou L. Carreon) covering both majors.
   const programs = [
-    { id: 'BEEd',             label: 'Bachelor of Elementary Education' },
-    { id: 'BTLEd',            label: 'Bachelor of Technology and Livelihood Education' },
-    { id: 'BSEd-MathEnglish', label: 'Bachelor of Secondary Education - Major in Mathematics and English' },
+    { id: 'BEEd',  label: 'Bachelor of Elementary Education' },
+    { id: 'BTLEd', label: 'Bachelor of Technology and Livelihood Education' },
+    { id: 'BSEd',  label: 'Bachelor of Secondary Education (Mathematics & English)' },
   ];
 
   const passwordChecks = {
@@ -198,6 +191,23 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     } catch (err) {
       console.error('Failed to roll back auth user:', err);
     }
+  };
+
+  // Looks up the departments.id row matching a program code. Shared by
+  // student, faculty, and alumni registration so every role gets scoped
+  // to a real department, not just students.
+  const lookupDepartmentId = async (program: string): Promise<{ id: string } | null> => {
+    const departmentName = PROGRAM_TO_DEPARTMENT[program];
+    if (!departmentName) return null;
+
+    const { data: deptRow, error: deptError } = await supabase
+      .from('departments')
+      .select('id')
+      .eq('name', departmentName)
+      .maybeSingle();
+
+    if (deptError || !deptRow) return null;
+    return deptRow;
   };
 
   const handleLogin = async () => {
@@ -372,27 +382,21 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
         return;
       }
 
-      // Students also need a matching row in student_profiles. Department
-      // is derived automatically from the selected program (each program
-      // in this college maps to exactly one department) — there is no
-      // separate department field for the student to fill in.
+      // Every role's own profile table now gets a department_id derived
+      // from the selected program (each program maps to exactly one
+      // department) — this is what lets a Department Chair's approval
+      // queue filter students, faculty, AND alumni by their own
+      // department(s), instead of only students.
+      const deptRow = await lookupDepartmentId(regProgram);
+      if (!deptRow) {
+        await rollbackRegistration(userId);
+        await supabase.auth.signOut();
+        console.error('No matching department found for program: ' + regProgram);
+        setError('Could not match your selected program to a department. Please contact the registrar.');
+        return;
+      }
+
       if (regUserType === 'student') {
-        const departmentName = PROGRAM_TO_DEPARTMENT[regProgram];
-
-        const { data: deptRow, error: deptError } = await supabase
-          .from('departments')
-          .select('id')
-          .eq('name', departmentName)
-          .maybeSingle();
-
-        if (deptError || !deptRow) {
-          await rollbackRegistration(userId);
-          await supabase.auth.signOut();
-          console.error(deptError?.message ?? 'No matching department found for program: ' + regProgram);
-          setError('Could not match your selected program to a department. Please contact the registrar.');
-          return;
-        }
-
         const { error: studentProfileError } = await supabase.from('student_profiles').insert({
           user_id: userId,
           department_id: deptRow.id,
@@ -417,11 +421,16 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       }
 
       if (regUserType === 'faculty') {
+        // status is explicitly 'pending' here — the column defaults to
+        // 'Active' in the DB schema, which would silently grant faculty
+        // status before any chair approval. profiles.status is the real
+        // gate the backend checks; this column should never contradict it.
         const { error: facultyProfileError } = await supabase.from('faculty_profiles').insert({
           user_id: userId,
           full_name: regFullName.trim(),
           contact_email: regEmail.trim(),
-          status: 'Active',
+          department_id: deptRow.id,
+          status: 'pending',
         });
 
         if (facultyProfileError) {
@@ -439,6 +448,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
           full_name: regFullName.trim(),
           graduation_year: parseInt(regGraduationYear.trim(), 10),
           program: regProgram,
+          department_id: deptRow.id,
           contact_email: regEmail.trim(),
         });
 
