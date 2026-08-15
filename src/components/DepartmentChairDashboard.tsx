@@ -142,7 +142,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
         </div>
 
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
-          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
+          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
           {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
@@ -158,16 +158,25 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
 
 /* ─────────────────────────────────────────────
    Dashboard Overview
+   — Header, Notifications, and Quick Actions removed.
+   — Left card: compact Student Approvals (list + Accept/Reject only,
+     no batch upload, no search/filter chrome). Right card: Faculty
+     Monitoring. Both are styled like the "Inquiries" card — a white
+     rounded panel with a header row and its OWN internal scroll area,
+     sized equally (half/half) so the outer dashboard never scrolls.
 ───────────────────────────────────────────── */
-function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
+function ChairDashboardView({
+  setActiveMenuItem,
+  departmentNames,
+}: {
+  setActiveMenuItem: (id: string) => void;
+  departmentNames: string[];
+}) {
   return (
-    <div>
-      <div className="mb-6 pb-6 border-b border-gray-200">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Department Chair Dashboard</h1>
-        <p className="text-gray-600">Computer Science Department Overview</p>
-      </div>
-
-      <div className="mb-6">
+    // Capped to the viewport (minus the sticky top bar + page padding) so this
+    // view itself NEVER scrolls — only the two cards' inner lists do.
+    <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 160px)' }}>
+      <div className="mb-6 flex-shrink-0">
         <div
           className="flex gap-3 overflow-x-auto pb-2 sm:hidden"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
@@ -192,38 +201,276 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
-        <NotificationsPanel userType="chair" />
+      {/* flex-1 + min-h-0 makes this row fill whatever height is left under
+         the summary cards; grid items in the same row stretch to match each
+         other automatically, so both cards are always the same height. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0">
+        <DashboardStudentApprovalsCard
+          departmentNames={departmentNames}
+          onViewAll={() => setActiveMenuItem('approvals')}
+        />
+        <DashboardFacultyMonitoringCard
+          onViewAll={() => setActiveMenuItem('faculty')}
+        />
+      </div>
+    </div>
+  );
+}
 
-        <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              onClick={() => setActiveMenuItem('reports')}
-              className="w-full p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">View Faculty Reports</div>
-              <div className="text-sm text-gray-600">Check submission status</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('approvals')}
-              className="w-full p-4 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">Review Student Registrations</div>
-              <div className="text-sm text-gray-600">3 pending approvals</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('calendar')}
-              className="w-full p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">Add Department Event</div>
-              <div className="text-sm text-gray-600">Schedule activities</div>
-            </button>
+/* ─────────────────────────────────────────────
+   Dashboard card: compact Student Approvals
+   — Just the pending list + Accept/Reject buttons.
+   — No batch-file upload, no search bar, no status filter chips.
+   — Card itself is fixed to the grid cell's height; only the inner
+     list scrolls (matches the "Inquiries" card behavior).
+───────────────────────────────────────────── */
+function DashboardStudentApprovalsCard({
+  departmentNames,
+  onViewAll,
+}: {
+  departmentNames: string[];
+  onViewAll: () => void;
+}) {
+  const [students, setStudents] = useState<StudentApplicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
+
+  const fetchStudents = async () => {
+    setLoading(true);
+    setLoadError('');
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(STUDENTS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load: ' + (err.error || res.statusText));
+        setStudents([]);
+        return;
+      }
+      const data = await res.json();
+      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
+        const yl = p.student_profiles?.year_level ?? 1;
+        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+        return {
+          id: p.id,
+          name: p.full_name ?? '—',
+          email: p.email ?? '—',
+          studentId: p.student_profiles?.student_no ?? '—',
+          program: p.student_profiles?.program ?? '—',
+          yearLevel: `${yl}${suffix} Year`,
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
+            month: 'long', day: 'numeric', year: 'numeric',
+          }),
+          status: p.status,
+        };
+      });
+      setStudents(mapped);
+    } catch (err) {
+      setLoadError('Could not reach the server.');
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updateStatus = async (id: string, status: 'active' | 'rejected') => {
+    setUpdatingId(id);
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${STUDENTS_API_URL}/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to update: ' + (err.error || res.statusText));
+        return;
+      }
+      // Remove from the pending list once actioned.
+      setStudents(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      setLoadError('Could not reach the server.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleConfirm = () => {
+    if (!confirmModal) return;
+    updateStatus(confirmModal.id, confirmModal.action === 'approve' ? 'active' : 'rejected');
+    setConfirmModal(null);
+  };
+
+  const pending = students.filter(s => s.status === 'pending');
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-0 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-[#1E3A8A]" />
+          <h2 className="font-semibold text-gray-900 text-base">Student Approvals</h2>
+        </div>
+        {pending.length > 0 && (
+          <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+            <Clock className="w-3 h-3" /> {pending.length} pending
+          </span>
+        )}
+      </div>
+
+      {loadError && (
+        <div className="mx-5 mt-3 flex items-center gap-2 p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-600 text-xs flex-shrink-0">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          {loadError}
+        </div>
+      )}
+
+      {/* Scrollable list */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        {loading ? (
+          <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Loading…</span>
           </div>
+        ) : pending.length === 0 ? (
+          <div className="py-10 text-center text-gray-400">
+            <UserCheck className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No pending student approvals.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {pending.map(student => (
+              <div
+                key={student.id}
+                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-gray-50/70 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-[#1E3A8A]/10 text-[#1E3A8A] flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    {student.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{student.name}</div>
+                    <div className="text-xs text-gray-400 truncate">{student.email}</div>
+                    <div className="text-xs text-gray-400 truncate">{student.studentId} · {student.program}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setConfirmModal({ id: student.id, action: 'approve' })}
+                    disabled={updatingId === student.id}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-semibold disabled:opacity-50"
+                    title="Accept"
+                  >
+                    {updatingId === student.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => setConfirmModal({ id: student.id, action: 'reject' })}
+                    disabled={updatingId === student.id}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-xs font-semibold disabled:opacity-50"
+                    title="Reject"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-gray-50 flex-shrink-0">
+        <button
+          onClick={onViewAll}
+          className="text-sm font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
+        >
+          View all approvals <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Confirm modal */}
+      {confirmModal && (() => {
+        const student = students.find(s => s.id === confirmModal.id);
+        if (!student) return null;
+        const isApprove = confirmModal.action === 'approve';
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+              <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${isApprove ? 'bg-green-100' : 'bg-red-100'}`}>
+                {isApprove ? <Check className="w-7 h-7 text-green-600" /> : <X className="w-7 h-7 text-red-600" />}
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">
+                {isApprove ? 'Approve Student?' : 'Reject Student?'}
+              </h3>
+              <p className="text-sm text-gray-500 mb-6">
+                {isApprove
+                  ? <>You are about to grant <span className="font-semibold text-gray-800">{student.name}</span> access to the student portal.</>
+                  : <>You are about to deny <span className="font-semibold text-gray-800">{student.name}</span>'s registration request.</>
+                }
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirm}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors ${isApprove ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                  {isApprove ? 'Yes, Approve' : 'Yes, Reject'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Dashboard card: Faculty Monitoring
+   — Same card shell/sizing as the Student Approvals card above so the
+     two sit half/half. The existing FacultyMonitoringTable is reused
+     as-is inside the scrollable body.
+───────────────────────────────────────────── */
+function DashboardFacultyMonitoringCard({ onViewAll }: { onViewAll: () => void }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-0 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-[#1E3A8A]" />
+          <h2 className="font-semibold text-gray-900 text-base">Faculty Monitoring</h2>
         </div>
       </div>
 
-      <FacultyMonitoringTable />
+      {/* Scrollable body */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <FacultyMonitoringTable />
+      </div>
+
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-gray-50 flex-shrink-0">
+        <button
+          onClick={onViewAll}
+          className="text-sm font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
+        >
+          View all faculty <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

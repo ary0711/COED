@@ -13,15 +13,21 @@ const DB_TO_UI_ROLE: Record<string, string> = {
 };
 
 // Maps each program code to its exact department name in the `departments`
-// table. BSEd-Math and BSEd-English stay as two separate programs here,
-// matching the two separate department rows that actually exist — a
-// student must map to exactly one department_id, and there is no single
-// "combined" department row for them to share.
+// table. Math and English now share a single department row/program option,
+// since there is only one chair (Dr. Marichou L. Carreon) over both majors.
+//
+// ⚠️ VERIFY: the string below must match `departments.name` EXACTLY (case,
+// spacing, punctuation) or the department lookup in handleRegister() will
+// silently fail with "Could not match your selected program to a
+// department." Run this against your DB to confirm/adjust:
+//
+//   SELECT id, name, chair_id FROM departments
+//   WHERE name ILIKE '%secondary education%' OR name ILIKE '%math%' OR name ILIKE '%english%';
+//
 const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
-  'BEEd':        'Bachelor of Elementary Education Program',
-  'BTLEd':       'Bachelor of Technology and Livelihood Education Program',
-  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics Program',
-  'BSEd-English': 'Bachelor of Secondary Education Major in English Program',
+  'BEEd':             'Bachelor of Elementary Education Program',
+  'BTLEd':            'Bachelor of Technology and Livelihood Education Program',
+  'BSEd-MathEnglish': 'Bachelor of Secondary Education Major in Mathematics and English Program',
 };
 
 interface LoginPageProps {
@@ -69,11 +75,12 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
   ];
 
+  // Math and English merged into a single program option — there is only
+  // one department chair (Dr. Marichou L. Carreon) covering both majors.
   const programs = [
-    { id: 'BEEd',         label: 'Bachelor of Elementary Education' },
-    { id: 'BTLEd',        label: 'Bachelor of Technology and Livelihood Education' },
-    { id: 'BSEd-Math',    label: 'Bachelor of Secondary Education - Mathematics' },
-    { id: 'BSEd-English', label: 'Bachelor of Secondary Education - English' },
+    { id: 'BEEd',             label: 'Bachelor of Elementary Education' },
+    { id: 'BTLEd',            label: 'Bachelor of Technology and Livelihood Education' },
+    { id: 'BSEd-MathEnglish', label: 'Bachelor of Secondary Education - Major in Mathematics and English' },
   ];
 
   const passwordChecks = {
