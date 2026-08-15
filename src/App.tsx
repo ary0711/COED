@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect  } from 'react';
 import { CollegeDeanDashboard } from './components/CollegeDeanDashboard';
 import { DepartmentChairDashboard } from './components/DepartmentChairDashboard';
 import { FacultyDashboard } from './components/dashboards/FacultyDashboard';
@@ -15,6 +15,9 @@ import { AchievementsPage } from './components/coed/AchievementsPage';
 import { AccreditationPage } from './components/coed/AccreditationPage';
 import { ContactPage } from './components/coed/ContactPage';
 import { LoginPage } from './components/coed/LoginPage';
+import  { ForgotPasswordPage } from './components/coed/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/coed/ResetPasswordPage';
+
 
 /**
  * College of Education (COED) Website & Management System
@@ -37,15 +40,42 @@ import { LoginPage } from './components/coed/LoginPage';
 type AppMode = 'public' | 'dashboard';
 type UserRole = 'dean' | 'chair' | 'faculty' | 'student' | 'alumni' | null;
 // ✅ Added 'clubs' to the PublicPage type
-type PublicPage = 'home' | 'about' | 'departments' | 'clubs' | 'research' | 'achievements' | 'accreditation' | 'contact' | 'login';
+type PublicPage =
+  | 'home'
+  | 'about'
+  | 'departments'
+  | 'clubs'
+  | 'research'
+  | 'achievements'
+  | 'accreditation'
+  | 'contact'
+  | 'login'
+  | 'forgot-password'
+  | 'reset-password';
 
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('public');
   const [currentRole, setCurrentRole] = useState<UserRole>(null);
   const [currentPage, setCurrentPage] = useState<PublicPage>('home');
   const [activeMenuItem, setActiveMenuItem] = useState('dashboard');
+  useEffect(() => {
+  if (window.location.pathname === '/reset-password') {
+    setCurrentPage('reset-password');
+  }
+}, []);
 
-  const handleLogin = (role: string) => {
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string; idNumber?: string } | null>(null);
+
+const handleLogin = (role: string) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setCurrentUser({
+        username: payload.fullName ?? payload.username,
+        role: payload.role,
+        idNumber: payload.idNumber ?? '',
+      });
+    }
     setCurrentRole(role as UserRole);
     setAppMode('dashboard');
     setActiveMenuItem('dashboard');
@@ -67,35 +97,85 @@ export default function App() {
   };
 
   const handleNavigate = (page: string) => {
-    setCurrentPage(page as PublicPage);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  setCurrentPage(page as PublicPage);
+
+  setTimeout(() => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
+  }, 0);
+};
+  
 
   // Public Website Mode
   if (appMode === 'public') {
     return (
       <div className="min-h-screen bg-white">
-        {currentPage !== 'login' && (
-          <Header onNavigate={handleNavigate} currentPage={currentPage} />
-        )}
+        {currentPage !== 'login' &&
+ currentPage !== 'forgot-password' && (
+  <Header
+    onNavigate={handleNavigate}
+    currentPage={currentPage}
+  />
+)}
         
         {/* Remove padding-top for home page to fit perfectly with header */}
-        <div className={currentPage !== 'login' && currentPage !== 'home' ? 'pt-20' : ''}>
+        <div
+  className={
+    currentPage !== 'login' &&
+    currentPage !== 'forgot-password' &&
+    currentPage !== 'reset-password' &&
+    currentPage !== 'home'
+      ? 'pt-20'
+      : ''
+  }
+>
           {currentPage === 'home' && <HomePage onNavigate={handleNavigate} />}
           {currentPage === 'about' && <AboutPage />}
-          {currentPage === 'departments' && <DepartmentsPage />}
+          {currentPage === 'departments' && (
+  <DepartmentsPage
+    onNavigate={handleNavigate}
+  />
+)}
           {currentPage === 'clubs' && <ClubsPage />} {/* ✅ Added ClubsPage route */}
           {currentPage === 'research' && <ResearchPage />}
           {currentPage === 'achievements' && <AchievementsPage />}
           {currentPage === 'accreditation' && <AccreditationPage />}
           {currentPage === 'contact' && <ContactPage />}
-          {currentPage === 'login' && <LoginPage onLogin={handleLogin} />}
+          {currentPage === 'login' && (
+  <LoginPage
+    onLogin={handleLogin}
+    onBack={() => handleNavigate('home')}
+    onForgotPassword={() => {
+  console.log('Navigate to forgot-password');
+  handleNavigate('forgot-password');
+}}
+  />
+)}
+
+{currentPage === 'forgot-password' && (
+  <ForgotPasswordPage
+    onBack={() => handleNavigate('home')}
+    onReturnToLogin={() => handleNavigate('login')}
+  />
+)}
         </div>
 
-        {currentPage !== 'login' && <Footer />}
+       {currentPage !== 'login' &&
+ currentPage !== 'forgot-password' && (
+  <Footer onNavigate={handleNavigate} />
+)}
       </div>
     );
+    
   }
+  {currentPage === 'reset-password' && (
+  <ResetPasswordPage
+    onBack={() => handleNavigate('home')}
+    onReturnToLogin={() => handleNavigate('login')}
+  />
+)}
 
   // Dashboard Mode (after login)
   return (
@@ -105,6 +185,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'chair' && (
@@ -112,6 +193,7 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+           onLogout={handleLogout} 
         />
       )}
       {currentRole === 'faculty' && (
@@ -119,6 +201,8 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Faculty'}
         />
       )}
       {currentRole === 'student' && (
@@ -126,6 +210,8 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Student'}
         />
       )}
       {currentRole === 'alumni' && (
@@ -133,19 +219,13 @@ export default function App() {
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
+          onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Alumni'}
+          idNumber={currentUser?.idNumber ?? ''}
         />
       )}
       
-      {/* Logout Button - Elegant fixed button */}
-      <button
-        onClick={handleLogout}
-        className="fixed bottom-8 right-8 px-8 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-2xl hover:from-red-600 hover:to-red-700 transition-all shadow-xl hover:shadow-2xl font-semibold z-50 hover:scale-105 flex items-center gap-2"
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-        </svg>
-        Logout
-      </button>
+
     </div>
   );
 }

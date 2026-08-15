@@ -1,148 +1,281 @@
-import { Trophy, Award, TrendingUp, Medal } from 'lucide-react';
+import {Trophy,Award,TrendingUp,Medal,ChevronDown,} from 'lucide-react';
 
-export function AchievementsPage() {
-  const topnotchers = [
-    {
-      id: 1,
-      name: 'Maria Gabriela Santos',
-      rank: '1st Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'September 2025',
-      rating: '96.8%',
-    },
-    {
-      id: 2,
-      name: 'John Michael Reyes',
-      rank: '3rd Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary',
-      date: 'September 2025',
-      rating: '95.2%',
-    },
-    {
-      id: 3,
-      name: 'Ana Marie Cruz',
-      rank: '5th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Elementary',
-      date: 'March 2025',
-      rating: '94.8%',
-    },
-    {
-      id: 4,
-      name: 'Rafael Antonio Lopez',
-      rank: '8th Place',
-      exam: 'Licensure Examination for Teachers (LET) - Secondary',
-      date: 'March 2025',
-      rating: '93.5%',
-    },
-  ];
+import {useState,useEffect,} from 'react';
 
-  const collegeAchievements = [
-    {
-      id: 1,
-      title: 'Level III Accreditation Status',
-      description: 'All undergraduate programs receive highest accreditation level',
-      year: '2025',
-      category: 'Accreditation',
-    },
-    {
-      id: 2,
-      title: '98% LET Passing Rate',
-      description: 'Consistently above national average for 10 consecutive years',
-      year: '2025',
-      category: 'Academic Excellence',
-    },
-    {
-      id: 3,
-      title: 'Best College of Education Award',
-      description: 'Recognized by National Association of Teacher Education',
-      year: '2024',
-      category: 'Recognition',
-    },
-    {
-      id: 4,
-      title: 'International Research Partnership',
-      description: 'Collaborative projects with universities in 5 countries',
-      year: '2024',
-      category: 'Research',
-    },
-    {
-      id: 5,
-      title: 'Center of Excellence',
-      description: 'Designated by CHED for Teacher Education Programs',
-      year: '2023',
-      category: 'Recognition',
-    },
-    {
-      id: 6,
-      title: 'Community Impact Award',
-      description: 'Outstanding extension services benefiting 50+ communities',
-      year: '2025',
-      category: 'Extension',
-    },
-  ];
+import { achievementsService } from '../../landing-page/services/achievementsService';
+interface Topnotcher {
+  id: string;
+  name: string;
+  rank: string;
+  exam: string;
+  exam_date: string;
+  rating: string;
+  year: string;
+  level: string;
+  display_order: number;
+}
 
-  const statistics = [
-    {
-      label: 'LET Passing Rate',
-      value: '98%',
-      description: '10-year average',
-      color: 'from-[#10B981] to-[#34D399]',
-    },
-    {
-      label: 'Topnotchers Produced',
-      value: '47',
-      description: 'Last 5 years',
-      color: 'from-[#F59E0B] to-[#FBBF24]',
-    },
-    {
-      label: 'Research Publications',
-      value: '285',
-      description: 'Since 2020',
-      color: 'from-[#8B5CF6] to-[#A78BFA]',
-    },
-    {
-      label: 'Alumni Employed',
-      value: '99%',
-      description: 'Within 6 months',
-      color: 'from-[#2563EB] to-[#60A5FA]',
-    },
-  ];
+interface CollegeAchievement {
+  id: string;
+  title: string;
+  description: string;
+  year: string;
+  category: string;
+  display_order: number;
+}
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'Accreditation':
-        return 'bg-blue-100 text-blue-700';
-      case 'Academic Excellence':
-        return 'bg-green-100 text-green-700';
-      case 'Recognition':
-        return 'bg-purple-100 text-purple-700';
-      case 'Research':
-        return 'bg-orange-100 text-orange-700';
-      case 'Extension':
-        return 'bg-pink-100 text-pink-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
+interface Statistic {
+  id: string;
+  label: string;
+  value: string;
+  description: string;
+  color: string;
+  display_order: number;
+}
+interface AchievementBanner {
+  id: string;
+
+  title: string;
+  description: string;
+
+}
+interface BannerStat {
+  id: string;
+  title: string;
+  value: string;
+  display_order: number;
+}
+
+interface AchievementPageContent {
+  id: string;
+
+  page_title: string;
+  page_subtitle: string;
+
+  topnotchers_title: string;
+  topnotchers_filter_label: string;
+
+  college_achievements_title: string;
+
+  button_text: string;
+}
+interface AchievementPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewBanner?: any;
+  previewBannerStats?: any[];
+  previewStatistics?: any[];
+  previewTopnotchers?: any[];
+  previewCollegeAchievements?: any[];
+}
+
+export function AchievementsPage({
+  previewMode = false,
+  previewContent,
+  previewBanner,
+  previewBannerStats,
+  previewStatistics,
+  previewTopnotchers,
+  previewCollegeAchievements,
+}: AchievementPageProps) {
+
+  
+  
+  const [selectedYear, setSelectedYear] = useState('2025');
+  const [pageContent, setPageContent] =
+  useState<AchievementPageContent | null>(
+    null
+  );
+  const [bannerStats, setBannerStats] =
+  useState<BannerStat[]>([]);
+  const [banner, setBanner] =
+  useState<AchievementBanner | null>(
+    null
+  );
+const [topnotchersData, setTopnotchersData] =
+  useState<Topnotcher[]>([]);
+
+const [
+  collegeAchievements,
+  setCollegeAchievements,
+] = useState<CollegeAchievement[]>([]);
+
+const [statistics, setStatistics] =
+  useState<Statistic[]>([]);
+  // Complete topnotchers list (sourced from official college records table)
+const [loading, setLoading] =
+  useState(true);
+  useEffect(() => {
+  loadAchievements();
+}, []);
+  const displayPageContent = previewMode
+  ? previewContent
+  : pageContent;
+
+const displayBanner = previewMode
+  ? previewBanner
+  : banner;
+
+const displayBannerStats = previewMode
+  ? previewBannerStats
+  : bannerStats;
+
+const displayStatistics = previewMode
+  ? previewStatistics
+  : statistics;
+
+const displayTopnotchers = previewMode
+  ? previewTopnotchers
+  : topnotchersData;
+
+const displayCollegeAchievements = previewMode
+  ? previewCollegeAchievements
+  : collegeAchievements;
+const loadAchievements =
+  async () => {
+    try {
+
+      const [
+        topnotchers,
+        achievements,
+        stats,
+         bannerData,
+         bannerStatsData,
+        pageContentData,
+      ] = await Promise.all([
+        achievementsService.getTopnotchers(),
+        achievementsService.getCollegeAchievements(),
+        achievementsService.getStatistics(),
+        achievementsService.getBanner(),
+        achievementsService.getBannerStats(),
+          achievementsService.getPageContent(),
+      ]);
+
+      setTopnotchersData(
+        topnotchers || []
+      );
+
+      setCollegeAchievements(
+        achievements || []
+      );
+
+      setStatistics(
+        stats || []
+      );
+      setBanner(bannerData);
+      setPageContent(pageContentData);
+      setBannerStats(
+  bannerStatsData || []
+);
+
+
+      if (
+        topnotchers &&
+        topnotchers.length > 0
+      ) {
+        setSelectedYear(
+          topnotchers[0].year
+        );
+
+      }
+
+    } catch (error) {
+      console.error(
+        'Failed loading achievements:',
+        error
+      );
+    } finally {
+      setLoading(false);
     }
   };
+const getCategoryColor = (
+  category: string
+) => {
+  switch (category) {
+    case 'Accreditation':
+      return 'bg-blue-100 text-blue-700';
 
+    case 'Academic Excellence':
+      return 'bg-green-100 text-green-700';
+
+    case 'Recognition':
+      return 'bg-purple-100 text-purple-700';
+
+    case 'Excellence':
+      return 'bg-pink-100 text-pink-700';
+
+    default:
+      return 'bg-gray-100 text-gray-700';
+  }
+};
+  const getRankColor = (
+  rank: string
+) => {
+    if (rank.includes('1st') || rank.includes('National')) {
+      return 'from-yellow-400 to-yellow-600';
+    } else if (rank.includes('2') || rank.includes('3') || rank.includes('4')) {
+      return 'from-slate-300 to-slate-500';
+    }
+    return 'from-orange-300 to-orange-500';
+  };
+
+  // Years sorted most recent first
+  const years = Array.from(
+  new Set(
+    (displayTopnotchers || []).map(
+      (t) => t.year
+    )
+  )
+).sort(
+  (a, b) =>
+    Number(b) - Number(a)
+);
+
+  const filteredTopnotchers =
+  (displayTopnotchers || []).filter(
+    (topnotcher) =>
+      topnotcher.year === selectedYear
+  );
+if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading Achievements...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-12">
-          <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">Achievements</h1>
+          <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4"> {displayPageContent?.page_title}</h1>
           <p className="text-xl text-gray-600">
-            Celebrating excellence and success in education
+            {displayPageContent?.page_subtitle}
           </p>
         </div>
 
         {/* Statistics */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">
-          {statistics.map((stat, index) => (
-            <div
-              key={index}
-              className={`bg-gradient-to-br ${stat.color} rounded-xl shadow-lg p-6 text-white`}
-            >
+          {displayStatistics?.map((stat, index) => (
+           <div
+  key={index}
+  className="rounded-xl shadow-lg p-6 text-white"
+  style={{
+    background: stat.color
+      ? `linear-gradient(135deg, ${stat.color.split(',')[0]}, ${stat.color.split(',')[1]})`
+      : '#2563EB'
+  }}
+>
               <div className="text-4xl font-bold mb-2">{stat.value}</div>
               <div className="text-lg font-semibold mb-1 opacity-90">{stat.label}</div>
               <div className="text-sm opacity-80">{stat.description}</div>
@@ -152,52 +285,98 @@ export function AchievementsPage() {
 
         {/* Topnotchers Section */}
         <section className="mb-12">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-              <Trophy className="w-6 h-6 text-yellow-600" />
-            </div>
-            <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              Recent Topnotchers
-            </h2>
-          </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            {topnotchers.map((topnotcher, index) => (
-              <div
-                key={topnotcher.id}
-                className="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500 hover:shadow-lg transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center text-white font-bold">
-                      {index + 1}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {topnotcher.name}
-                      </h3>
-                      <p className="text-sm font-medium text-yellow-600">
-                        {topnotcher.rank}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-[#2563EB]">
-                      {topnotcher.rating}
-                    </div>
-                    <div className="text-xs text-gray-600">Rating</div>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <p>
-                    <strong>Examination:</strong> {topnotcher.exam}
-                  </p>
-                  <p>
-                    <strong>Date:</strong> {topnotcher.date}
-                  </p>
-                </div>
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <Trophy className="w-6 h-6 text-yellow-600" />
               </div>
-            ))}
+              <h2 className="text-2xl font-semibold text-[#1E3A8A]">
+               {displayPageContent?.topnotchers_title}
+              </h2>
+            </div>
+
+            {/* Year Filter Dropdown */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="year-filter" className="text-sm font-medium text-gray-700">
+              {displayPageContent?.topnotchers_filter_label}
+              </label>
+              <div className="relative">
+                <select
+                  id="year-filter"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="appearance-none px-4 py-2 pr-10 rounded-lg font-medium bg-white text-[#1E3A8A] border-2 border-[#1E3A8A] hover:shadow-md transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                >
+                  {years.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#1E3A8A] pointer-events-none" />
+              </div>
+            </div>
           </div>
+
+          {filteredTopnotchers.length > 0 ? (
+            <div className="grid md:grid-cols-2 gap-6">
+              {filteredTopnotchers.map((topnotcher, index) => (
+                <div
+                  key={topnotcher.id}
+                  className="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500 hover:shadow-lg transition-shadow"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-12 h-12 bg-gradient-to-br ${getRankColor(
+                          topnotcher.rank
+                        )} rounded-full flex items-center justify-center text-white font-bold text-sm text-center p-1`}
+                      >
+                        {topnotcher.rank.split(' ')[0]}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {topnotcher.name}
+                        </h3>
+                        <p className="text-sm font-medium text-yellow-600">
+                          {topnotcher.rank}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-[#2563EB]">
+                        {topnotcher.rating}
+                      </div>
+                      <div className="text-xs text-gray-600">Rating</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <p>
+                      <strong>Examination:</strong> {topnotcher.exam}
+                    </p>
+                    <p>
+                      <strong>Date:</strong> {topnotcher.exam_date}
+                    </p>
+                    <div className="mt-3 inline-block">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        topnotcher.level === 'Elementary'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {topnotcher.level} Level
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-md p-12 text-center">
+              <p className="text-gray-600 text-lg">
+                No topnotchers found for the selected year.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* College Achievements */}
@@ -207,11 +386,11 @@ export function AchievementsPage() {
               <Award className="w-6 h-6 text-[#2563EB]" />
             </div>
             <h2 className="text-2xl font-semibold text-[#1E3A8A]">
-              College Achievements
+             {displayPageContent?.college_achievements_title}
             </h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {collegeAchievements.map((achievement) => (
+            {displayCollegeAchievements?.map((achievement) => (
               <div
                 key={achievement.id}
                 className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-shadow"
@@ -243,37 +422,65 @@ export function AchievementsPage() {
             <div className="text-white">
               <Medal className="w-12 h-12 mb-4 opacity-90" />
               <h2 className="text-2xl font-semibold mb-3">
-                Excellence is Our Tradition
+               {displayBanner?.title}
               </h2>
               <p className="text-blue-100 mb-6 leading-relaxed">
-                For over 32 years, COED has been producing top-performing graduates who excel in their careers and make significant contributions to education and society.
-              </p>
+ {displayBanner?.description}              </p>
               <button className="px-6 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-                Join Our Legacy
+              {displayPageContent?.button_text}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <TrendingUp className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">32+</div>
-                <div className="text-sm opacity-90">Years of Excellence</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Trophy className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">150+</div>
-                <div className="text-sm opacity-90">Awards Received</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Award className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">5,000+</div>
-                <div className="text-sm opacity-90">Graduates</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-                <Medal className="w-8 h-8 mx-auto mb-2" />
-                <div className="text-2xl font-bold">Level III</div>
-                <div className="text-sm opacity-90">Accreditation</div>
-              </div>
-            </div>
+
+  {displayBannerStats?.map(
+    (stat, index) => {
+
+      const icons = [
+        <TrendingUp
+          key="trend"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Trophy
+          key="trophy"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Award
+          key="award"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+        <Medal
+          key="medal"
+          className="w-8 h-8 mx-auto mb-2"
+        />,
+      ];
+
+      return (
+        <div
+          key={stat.id}
+          className="
+            bg-white/10
+            backdrop-blur-sm
+            rounded-lg
+            p-4
+            text-center
+            text-white
+          "
+        >
+          {icons[index]}
+
+          <div className="text-2xl font-bold">
+            {stat.value}
+          </div>
+
+          <div className="text-sm opacity-90">
+            {stat.title}
+          </div>
+        </div>
+      );
+    }
+  )}
+
+</div>
           </div>
         </div>
       </div>

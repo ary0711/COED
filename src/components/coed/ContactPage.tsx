@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState , useEffect} from 'react';
+import { supabase } from '../../supabaseClient';
 import {
   Mail,
   Phone,
@@ -9,8 +10,74 @@ import {
   Twitter,
   Clock,
 } from 'lucide-react';
+interface ContactPageContent {
+  id: string;
 
-export function ContactPage() {
+  page_title: string;
+  page_subtitle: string;
+
+  address_title: string;
+  address_content: string;
+
+  phone_title: string;
+  phone_content: string;
+
+  email_title: string;
+  email_content: string;
+
+  office_hours_title: string;
+
+  social_title: string;
+
+  form_title: string;
+
+  map_embed_url: string;
+}
+
+interface OfficeHour {
+  id: string;
+  day_name: string;
+  hours: string;
+}
+
+interface SocialLink {
+  id: string;
+  platform: string;
+  url: string;
+}
+interface ContactPageProps {
+  previewMode?: boolean;
+
+  previewContent?: any;
+
+  previewOfficeHours?: any[];
+
+  previewSocialLinks?: any[];
+}
+export function ContactPage({
+  previewMode = false,
+  previewContent,
+  previewOfficeHours,
+  previewSocialLinks,
+}: ContactPageProps) {
+  const [showModal, setShowModal] = useState(false);
+
+  const [modalTitle, setModalTitle] = useState("");
+
+  const [modalMessage, setModalMessage] = useState("");
+
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] =
+  useState(true);
+  const [content, setContent] =
+  useState<ContactPageContent | null>(null);
+
+  const [officeHours, setOfficeHours] =
+  useState<OfficeHour[]>([]);
+
+  const [socialLinks, setSocialLinks] =
+  useState<SocialLink[]>([]);
+  
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -18,12 +85,145 @@ export function ContactPage() {
     message: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert('Thank you for your inquiry! We will get back to you soon.');
-    setFormData({ name: '', email: '', subject: '', message: '' });
-  };
+  const handleSubmit = async (
+    e: React.FormEvent
+) => {
 
+    e.preventDefault();
+
+    try {
+
+        setSending(true);
+
+        const { error } = await supabase
+            .from("contact_messages")
+            .insert({
+
+                full_name: formData.name,
+                email: formData.email,
+                subject: formData.subject,
+                message: formData.message
+
+            });
+
+        if (error)
+            throw error;
+
+        setModalTitle("Message Sent");
+
+        setModalMessage(
+            "Thank you for contacting us. Your inquiry has been submitted successfully."
+        );
+
+        setShowModal(true);
+
+        setFormData({
+
+            name: "",
+            email: "",
+            subject: "",
+            message: ""
+
+        });
+
+    } catch (error: any) {
+
+        setModalTitle("Submission Failed");
+
+        setModalMessage(
+            error.message ||
+            "Unable to send your message."
+        );
+
+        setShowModal(true);
+
+    } finally {
+
+        setSending(false);
+
+    }
+
+};
+useEffect(() => {
+  if (!previewMode) {
+    loadContactPage();
+  } else {
+    setLoading(false);
+  }
+}, [previewMode]);
+async function loadContactPage() {
+  try {
+    setLoading(true);
+
+    const [
+      contentRes,
+      hoursRes,
+      socialRes
+    ] = await Promise.all([
+
+      supabase
+        .from('contact_page_content')
+        .select('*')
+        .single(),
+
+      supabase
+        .from('contact_office_hours')
+        .select('*')
+        .order('sort_order'),
+
+      supabase
+        .from('contact_social_links')
+        .select('*')
+        .order('sort_order'),
+    ]);
+
+    setContent(contentRes.data);
+
+    setOfficeHours(
+      hoursRes.data || []
+    );
+
+    setSocialLinks(
+      socialRes.data || []
+    );
+
+  } catch (error) {
+    console.error('Failed to load contact page:', error);
+  } finally {
+    setLoading(false);
+  }
+}
+if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading Contact...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
+const displayContent =
+  previewMode
+    ? previewContent
+    : content;
+
+const displayOfficeHours =
+  previewMode
+    ? previewOfficeHours || []
+    : officeHours;
+
+const displaySocialLinks =
+  previewMode
+    ? previewSocialLinks || []
+    : socialLinks;
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-[#E0ECFF] via-[#F1F5F9] to-[#DBEAFE] pt-20 pb-12">
 
@@ -32,12 +232,11 @@ export function ContactPage() {
         {/* Header */}
         <div className="mb-14">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            Get In Touch
+           {displayContent.page_title}
           </h1>
           <p className="text-gray-600 max-w-2xl text-lg">
-            We’d love to hear from you. Reach out to the College of Education
-            for inquiries, admissions, partnerships, or general concerns.
-          </p>
+            {displayContent?.page_subtitle}
+              </p>
         </div>
 
         {/* Main Layout */}
@@ -54,12 +253,10 @@ export function ContactPage() {
                   <MapPin className="w-6 h-6 text-[#2563EB]" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-[#1E3A8A]">Address</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    College of Education Building <br />
-                    University Main Campus <br />
-                    City, State 12345
-                  </p>
+                  <h3 className="font-semibold text-[#1E3A8A]">{content?.address_title}</h3>
+                  <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
+  {displayContent?.address_content}
+</div>
                 </div>
               </div>
 
@@ -68,11 +265,10 @@ export function ContactPage() {
                   <Phone className="w-6 h-6 text-[#2563EB]" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-[#1E3A8A]">Phone</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    Main: +1 (234) 567-8900 <br />
-                    Admissions: +1 (234) 567-8901
-                  </p>
+                  <h3 className="font-semibold text-[#1E3A8A]">{content?.phone_title}</h3>
+                  <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
+  {displayContent?.phone_content}
+</div>
                 </div>
               </div>
 
@@ -81,11 +277,10 @@ export function ContactPage() {
                   <Mail className="w-6 h-6 text-[#2563EB]" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-[#1E3A8A]">Email</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    info@coed.university.edu <br />
-                    admissions@coed.university.edu
-                  </p>
+                  <h3 className="font-semibold text-[#1E3A8A]">{displayContent?.email_title}</h3>
+                  <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
+  {displayContent?.email_content}
+</div>
                 </div>
               </div>
 
@@ -95,60 +290,73 @@ export function ContactPage() {
             <div>
               <h3 className="text-lg font-semibold text-[#1E3A8A] mb-4 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-[#2563EB]" />
-                Office Hours
+               {displayContent?.office_hours_title}
               </h3>
 
               <div className="space-y-2 text-sm text-gray-700">
-                <div className="flex justify-between">
-                  <span>Monday - Friday</span>
-                  <span className="font-medium">8:00 AM - 5:00 PM</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Saturday</span>
-                  <span className="font-medium">9:00 AM - 12:00 PM</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Sunday</span>
-                  <span className="font-medium text-red-500">Closed</span>
-                </div>
+                {displayOfficeHours.map((hour) => (
+
+  <div
+    key={hour.id}
+    className="flex justify-between"
+  >
+
+    <span>
+      {hour.day_name}
+    </span>
+
+    <span className="font-medium">
+      {hour.hours}
+    </span>
+
+  </div>
+
+))}
               </div>
             </div>
 
             {/* Socials */}
             <div>
               <h3 className="text-lg font-semibold text-[#1E3A8A] mb-4">
-                Follow Us
+                 {displayContent?.social_title}
               </h3>
               <div className="flex gap-4">
-                <a
-                  href="#"
-                  className="w-11 h-11 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition shadow-sm"
-                >
-                  <Facebook className="w-5 h-5 text-[#2563EB]" />
-                </a>
-                <a
-                  href="#"
-                  className="w-11 h-11 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition shadow-sm"
-                >
-                  <Twitter className="w-5 h-5 text-[#2563EB]" />
-                </a>
-                <a
-                  href="#"
-                  className="w-11 h-11 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition shadow-sm"
-                >
-                  <Globe className="w-5 h-5 text-[#2563EB]" />
-                </a>
+                {displaySocialLinks.map((social) => (
+
+  <a
+    key={social.id}
+    href={social.url}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="w-11 h-11 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition shadow-sm"
+  >
+
+    {social.platform === 'facebook' && (
+      <Facebook className="w-5 h-5 text-[#2563EB]" />
+    )}
+
+    {social.platform === 'twitter' && (
+      <Twitter className="w-5 h-5 text-[#2563EB]" />
+    )}
+
+    {social.platform === 'website' && (
+      <Globe className="w-5 h-5 text-[#2563EB]" />
+    )}
+
+  </a>
+
+))}
               </div>
             </div>
 
           </div>
 
           {/* RIGHT SIDE - FORM */}
-          <div className="lg:-mt-8">
+          <div>
             <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl p-10">
 
               <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">
-                Send a Message
+             {displayContent?.form_title}
               </h2>
 
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -198,14 +406,21 @@ export function ContactPage() {
                 />
 
                 <button
-                  type="submit"
-                  className="w-full py-3 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E40AF] transition font-semibold flex items-center justify-center gap-2 shadow-md"
-                >
-                  <Send className="w-5 h-5" />
-                  Submit
-                </button>
+  type="submit"
+  disabled={sending}
+  className={`w-full py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-md transition ${
+    sending
+      ? "bg-gray-400 cursor-not-allowed"
+      : "bg-[#2563EB] hover:bg-[#1E40AF] text-white"
+  }`}
+>
+  <Send className="w-5 h-5" />
+
+  {sending ? "Sending..." : "Submit"}
+</button>
 
               </form>
+
             </div>
           </div>
 
@@ -214,17 +429,46 @@ export function ContactPage() {
         {/* Interactive Map */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           <div className="h-96">
-            <iframe
-              title="Google Map"
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3153.019874107982!2d-122.41941508468113!3d37.77492977975959!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8085808d1f1f1f1f%3A0x1234567890abcdef!2sUniversity!5e0!3m2!1sen!2sph!4v1610000000000"
-              className="w-full h-full border-0"
-              allowFullScreen
-              loading="lazy"
-            ></iframe>
-          </div>
+           
+  {displayContent?.map_embed_url ? (
+    <iframe
+      title="Google Map"
+      
+      src={displayContent.map_embed_url}
+      className="w-full h-full border-0"
+      allowFullScreen
+      loading="lazy"
+    />
+  ) : (
+    <div className="h-full flex items-center justify-center text-gray-500">
+      No map configured.
+    </div>
+  )}
+</div>
         </div>
 
       </div>
+      {showModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="bg-white rounded-2xl shadow-2xl p-6 w-[90%] max-w-md">
+      <h2 className="text-2xl font-bold text-[#1E3A8A] mb-3">
+        {modalTitle}
+      </h2>
+
+      <p className="text-gray-600 mb-6">
+        {modalMessage}
+      </p>
+
+      <button
+        onClick={() => setShowModal(false)}
+        className="w-full py-3 rounded-lg bg-[#2563EB] text-white hover:bg-[#1E40AF] transition"
+      >
+        OK
+      </button>
     </div>
+  </div>
+)}
+    </div>
+    
   );
 }

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User, PlayCircle, Sparkles } from 'lucide-react';
+import { supabase } from '../../supabaseClient';
 
 // --- TypeScript Interfaces ---
 interface Person {
@@ -9,103 +10,63 @@ interface Person {
   education: string;
   experience: string;
   subject: string;
+  image: string;
+}
+interface AboutContent {
+  id: string;
+  section_name: string;
+  title?: string;
+  description?: string;
+  content?: string;
+  image?: string;
+  badge_number?: string;
+}
+
+// --- Dummy Data ---
+interface FacultyMember {
+  id: string;
+  name: string;
+  role: string;
+  education: string;
+  experience: string;
+  academic_rank: string;
+  image: string;
+  department_id: string;
+  member_type: string;
 }
 
 interface Department {
   id: string;
   name: string;
-  chairman: Person;
-  teachers: Person[];
 }
 
-interface OrgData {
-  dean: Person;
-  departments: Department[];
+interface CoreValue {
+  id: string;
+  letter: string;
+  word: string;
+  description: string;
 }
 
-// --- Dummy Data ---
-const orgData: OrgData = {
-  dean: {
-    id: 'dean',
-    name: 'Dr. Elizabeth Martinez',
-    role: 'College Dean',
-    education: 'Ph.D. in Educational Leadership, Stanford University',
-    experience: '25 Years',
-    subject: 'Educational Administration & Policy',
-  },
-  departments: [
-    {
-      id: 'elem-ed',
-      name: 'Elementary Education',
-      chairman: {
-        id: 'chair-1',
-        name: 'Dr. Sarah Johnson',
-        role: 'Department Chairman',
-        education: 'Ph.D. in Elementary Education',
-        experience: '18 Years',
-        subject: 'Child Development & Pedagogy',
-      },
-      teachers: [
-        { id: 't1', name: 'Mark Davis', role: 'Teacher', education: 'M.A. in Education', experience: '10 Years', subject: 'Primary Mathematics' },
-        { id: 't2', name: 'Linda Smith', role: 'Teacher', education: 'M.A. in Teaching', experience: '12 Years', subject: 'Early Literacy' },
-        { id: 't3', name: 'James Wilson', role: 'Teacher', education: 'B.S. in Elementary Ed.', experience: '5 Years', subject: 'General Science' },
-        { id: 't4', name: 'Anna Lee', role: 'Teacher', education: 'M.A. in Special Education', experience: '8 Years', subject: 'Inclusive Strategies' },
-      ]
-    },
-    {
-      id: 'sec-ed',
-      name: 'Secondary Education',
-      chairman: {
-        id: 'chair-2',
-        name: 'Dr. Michael Chen',
-        role: 'Department Chairman',
-        education: 'Ed.D. in Curriculum and Instruction',
-        experience: '20 Years',
-        subject: 'Curriculum Design',
-      },
-      teachers: [
-        { id: 't5', name: 'Rachel Green', role: 'Teacher', education: 'M.A. in English Lit.', experience: '8 Years', subject: 'High School English' },
-        { id: 't6', name: 'Dr. Robert Brown', role: 'Teacher', education: 'Ph.D. in Physics', experience: '15 Years', subject: 'Advanced Physics' },
-        { id: 't7', name: 'Emily White', role: 'Teacher', education: 'M.S. in Mathematics', experience: '11 Years', subject: 'Calculus & Algebra' },
-        { id: 't8', name: 'David Clark', role: 'Teacher', education: 'M.A. in History', experience: '14 Years', subject: 'World History' },
-      ]
-    },
-    {
-      id: 'sped',
-      name: 'Special Education',
-      chairman: {
-        id: 'chair-3',
-        name: 'Dr. Patricia Williams',
-        role: 'Department Chairman',
-        education: 'Ph.D. in Special Education',
-        experience: '22 Years',
-        subject: 'Behavioral Interventions',
-      },
-      teachers: [
-        { id: 't9', name: 'Jessica Taylor', role: 'Teacher', education: 'M.A. in Special Ed.', experience: '9 Years', subject: 'Autism Spectrum Studies' },
-        { id: 't10', name: 'William Moore', role: 'Teacher', education: 'M.Ed. in Inclusion', experience: '7 Years', subject: 'Sign Language & Comm.' },
-        { id: 't11', name: 'Sophia Davis', role: 'Teacher', education: 'B.S. in Special Ed.', experience: '4 Years', subject: 'Adaptive Physical Ed.' },
-      ]
-    },
-    {
-      id: 'ed-lead',
-      name: 'Educational Leadership',
-      chairman: {
-        id: 'chair-4',
-        name: 'Dr. Robert Anderson',
-        role: 'Department Chairman',
-        education: 'Ed.D. in School Administration',
-        experience: '28 Years',
-        subject: 'Organizational Leadership',
-      },
-      teachers: [
-        { id: 't12', name: 'Thomas White', role: 'Teacher', education: 'Ph.D. in Policy', experience: '16 Years', subject: 'Educational Law' },
-        { id: 't13', name: 'Maria Garcia', role: 'Teacher', education: 'M.A. in Administration', experience: '13 Years', subject: 'School Finance' },
-        { id: 't14', name: 'Kevin Lee', role: 'Teacher', education: 'M.Ed. in Leadership', experience: '10 Years', subject: 'Ethics in Education' },
-      ]
-    }
-  ]
-};
+interface Statistic {
+  id: string;
+  count: string;
+  label: string;
+}
+interface AboutPageProps {
+  previewMode?: boolean;
+  previewContent?: any;
+  previewStats?: any[];
+  previewFacultyMembers?: any[];
+  previewCoreValues?: any[];
+  previewCoreValueCards?: any[];
+  previewDepartments?:  any[];
+}
+interface CoreValueCard {
+  id: string;
+  value_name: string;
+  display_order: number;
+}
+
 
 // --- Extracted ProfileCard Component ---
 interface ProfileCardProps {
@@ -119,8 +80,16 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
     className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300"
   >
     {/* Placeholder for actual image */}
-    <div className="absolute inset-0 bg-gray-300 transition-colors group-hover:bg-gray-400"></div>
-    
+   <img
+  src={person.image}
+  alt={person.name}
+  className="absolute inset-0 w-full h-full object-cover bg-gray-300"
+  onError={() => {}}
+/>
+<div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
+  <User className="w-12 h-12 text-gray-400" />
+</div>
+
     {/* Floating White Label */}
     <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 flex justify-between items-center shadow-md transform transition-transform group-hover:-translate-y-1">
       <div className="overflow-hidden">
@@ -135,86 +104,288 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 );
 
 // --- Main Page Component ---
-export function AboutPage() {
+export function AboutPage({
+  previewMode = false,
+  previewContent = {},
+  previewStats = [],
+  previewFacultyMembers = [],
+  previewCoreValues = [],
+  previewCoreValueCards = [],
+  previewDepartments = []
+}: AboutPageProps) {
+  
+  useEffect(() => {
+  if (!previewMode) {
+    loadAboutPage();
+  }
+}, [previewMode]);
+const [loading, setLoading] = useState(true);
+
+const [dean, setDean] =
+  useState<FacultyMember | null>(null);
+const deanToDisplay =
+  previewMode
+    ? previewFacultyMembers.find(
+        member =>
+          member.member_type === 'dean'
+      )
+    : dean;
+ const [aboutContent, setAboutContent] =
+  useState<Record<string, AboutContent>>({});
+  const content = previewMode
+  ? previewContent
+  : aboutContent;
+  
+const [departments, setDepartments] =
+  useState<Department[]>([]);
+const departmentsToDisplay =
+  previewMode
+    ? previewDepartments
+    : departments;
+const [facultyMembers, setFacultyMembers] =
+  useState<FacultyMember[]>([]);
+
+const [coreValues, setCoreValues] =
+  useState<CoreValue[]>([]);
+
+const [statistics, setStatistics] =
+  useState<Statistic[]>([]);
+  const statsToDisplay =
+  previewMode
+    ? previewStats
+    : statistics;
+const [coreValueCards, setCoreValueCards] =
+  useState<CoreValueCard[]>([]);
+
+const facultyToDisplay =
+  previewMode
+    ? previewFacultyMembers
+    : facultyMembers;
+
+const valuesToDisplay =
+  previewMode
+    ? previewCoreValues
+    : coreValues;
+
+const coreValueCardsToDisplay =
+  previewMode
+    ? previewCoreValueCards
+    : coreValueCards;
+async function loadAboutPage() {
+
+  setLoading(true);
+
+  const formatted: Record<
+  string,
+  AboutContent
+> = {};
+
+  const [
+    contentRes,
+    deptRes,
+    facultyRes,
+    valuesRes,
+    statsRes,
+    coreValuesRes,
+    deanRes
+  ] = await Promise.all([
+    supabase.from('about_page_content').select('*'),
+    supabase.from('departments').select('*'),
+    supabase.from('faculty_members').select('*'),
+    supabase.from('premier_values').select('*'),
+    supabase.from('about_statistics').select('*'),
+    supabase
+      .from('core_values')
+      .select('*')
+      .order('display_order'),
+    supabase
+      .from('faculty_members')
+      .select('*')
+      .eq('member_type', 'dean')
+      .single()
+  ]);
+
+  contentRes.data?.forEach((item) => {
+  formatted[item.section_name] =
+    item as AboutContent;
+});
+  setAboutContent(formatted);
+
+  setDepartments(deptRes.data || []);
+  setFacultyMembers(facultyRes.data || []);
+  setCoreValues(valuesRes.data || []);
+  setStatistics(statsRes.data || []);
+  setCoreValueCards(coreValuesRes.data || []);
+  setDean(deanRes.data || null);
+
+  setLoading(false);
+}
+  
   const [currentPage, setCurrentPage] = useState<number>(0);
   // Type explicitly provided so TypeScript knows this holds either a Person object or null
+  const department =
+    departmentsToDisplay[Math.floor((currentPage - 1) / 2)] || null;
+
+const chairman = facultyToDisplay.find(
+  member =>
+    member.department_id === department?.id &&
+    member.member_type === 'chairman'
+);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  
+  const totalPages =
+  1 + departmentsToDisplay.length * 2; // 1 for Dean + 4 departments = 5 pages
+  const teacherDepartment =
+   departmentsToDisplay[
+    Math.floor((currentPage - 2) / 2)
+  ];
 
-  const totalPages = 1 + orgData.departments.length; // 1 for Dean + 4 departments = 5 pages
-
+const teachers =
+  facultyToDisplay.filter(
+    member =>
+      member.department_id === teacherDepartment?.id &&
+      member.member_type === 'teacher'
+  );
+  if (!previewMode && loading) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50/30 py-12 relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading About...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
+  return (
+    <div className="min-h-screen bg-white py-12 relative">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
         
         {/* Page Header */}
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
             About Us
           </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">About COED</h1>
-          <p className="text-xl text-gray-600">32 Years of Excellence in Education</p>
+          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">  {content['header']?.title}</h1>
+          <p className="text-xl text-gray-900">  {content['header']?.description}</p>
         </div>
 
-        {/* College History */}
-        <div className="bg-gradient-to-br from-white to-blue-50/50 rounded-2xl shadow-lg border border-blue-100 p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6">Our History</h2>
-          <div className="prose max-w-none text-gray-700 leading-relaxed space-y-4">
-            <p>
-              Established in 1994, the College of Education has been a cornerstone of teacher education and professional development for over three decades. What began as a small institution with a handful of dedicated faculty members has grown into a premier college of education, recognized nationally for its innovative programs and commitment to excellence.
-            </p>
-            <p>
-              Throughout our 32-year journey, we have consistently adapted to meet the evolving needs of the education sector while maintaining our core values of integrity, innovation, and inclusivity. Our graduates serve in leadership positions across educational institutions, government agencies, and international organizations.
-            </p>
-            <p>
-              Today, COED stands as a testament to the power of quality education, producing thousands of highly competent educators who are transforming lives and communities through their dedication to teaching and learning.
-            </p>
+        {/* College History — text left, image right w/ floating badge (Xennada-style) */}
+        <div className="mb-8">
+          <div className="grid md:grid-cols-2 gap-10 items-center">
+            {/* Text side */}
+            <div>
+              <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A8A] mb-4 leading-tight">
+                Our History
+              </h2>
+              <div
+                className="prose max-w-none text-gray-900 leading-relaxed text-[17px] [&>p]:mb-5"
+                dangerouslySetInnerHTML={{
+                  __html: content['history']?.content || ''
+                }}
+              />
+            </div>
+
+            {/* Image side with floating badge */}
+            <div className="relative">
+              <div className="rounded-2xl overflow-hidden shadow-lg aspect-[4/3]">
+                <img
+  src={
+    content['history']?.image ||
+    '/bg.jpg'
+  }
+  alt="College of Education History"
+  className="w-full h-full object-cover"
+  loading="lazy"
+/>
+              </div>
+              {/* Floating experience/stat badge */}
+              <div className="absolute -bottom-6 left-6 bg-white rounded-xl shadow-xl px-5 py-4 flex items-center gap-3 border border-gray-100">
+                <div className="w-11 h-11 rounded-full bg-[#1E3A8A] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                  {content['history']?.badge_number || '30+'}
+                </div>
+                <div className="text-xs font-semibold text-gray-700 leading-tight uppercase tracking-wide">
+                  Years of<br />Excellence
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Vision, Mission, Goals */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
-              <Eye className="w-7 h-7 text-[#2563EB]" />
+        {/* Vision, Mission, Goals — livened up cards */}
+        <div className="grid md:grid-cols-3 gap-9 mb-24 mt-14">
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Eye className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Vision</h3>
-            <p className="text-gray-700 leading-relaxed">
-              To be a leading institution in teacher education, recognized globally for producing innovative, competent, and socially responsible educators.
-            </p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Vision</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['vision']?.description}
+            </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4">
-              <Target className="w-7 h-7 text-green-600" />
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Target className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Mission</h3>
-            <p className="text-gray-700 leading-relaxed">
-              To provide quality education through innovative teaching methods, research, and community engagement that develops future educators committed to lifelong learning.
-            </p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Mission</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['mission']?.description}
+            </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
-              <Award className="w-7 h-7 text-purple-600" />
+          <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
+            <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+              <Award className="w-5 h-5 text-[#2563EB]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#1E3A8A] mb-4">Goals</h3>
-            <p className="text-gray-700 leading-relaxed">
-              To maintain excellence in instruction, foster research and innovation, strengthen community partnerships, and ensure continuous program improvement.
-            </p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Goals</h3>
+            <div className="text-medium text-gray-900 leading-relaxed">
+              {content['goals']?.description}
+            </div>
           </div>
         </div>
+
+        {/* Core Values Acronym - PREMIER */}
+        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
+            {valuesToDisplay.map((value) => (
+  <div
+    key={value.id}
+    className="flex flex-col items-center"
+  >
+    <div className="w-12 h-12 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center font-bold text-xl mb-2">
+      {value.letter}
+    </div>
+
+    <div className="font-semibold text-gray-900 text-sm">
+      {value.word}
+    </div>
+
+    <div className="text-xs text-gray-500 mt-1">
+      {value.description}
+    </div>
+  </div>
+))}
+    </div>
+    </div>
 
         {/* Organizational Structure Section */}
         <div className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-200 pb-6">
             <div className="max-w-2xl">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Our Team Structure</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">{content.team_structure?.title}<div className="section_name"></div></h4>
               <h2 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-                The People Behind the Programs
+                {content.team_structure?.description}
               </h2>
               <p className="text-gray-600">
-                Our team is a blend of visionaries, educators, and mentors dedicated to crafting experiences, not just classes. We come together with one shared goal: to guide you seamlessly through the world of education.
-              </p>
+              {content.team_structure?.content}              </p>
             </div>
             
             {/* Pagination Controls */}
@@ -238,78 +409,116 @@ export function AboutPage() {
               </button>
             </div>
           </div>
-
-          {/* Render Active View */}
+  {/* Render Active View */}
           <div className="min-h-[450px]">
             {currentPage === 0 ? (
-              /* Page 1: Dean Solo View */
-              <div className="flex flex-col items-center animate-fade-in py-10">
-                <div className="mb-6 text-center">
-                  <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
-                </div>
-                <ProfileCard person={orgData.dean} onClick={setSelectedPerson} />
-              </div>
-            ) : (
-              /* Pages 2-5: Department Views */
-              <div className="animate-fade-in pb-8">
-                <div className="text-center mb-10">
-                  <h3 className="text-2xl font-bold text-gray-800">
-                    {orgData.departments[currentPage - 1].name}
-                  </h3>
-                </div>
-                
-                {/* Chairman Top Center */}
-                <div className="flex justify-center mb-10">
-                  <div className="relative">
-                    <ProfileCard person={orgData.departments[currentPage - 1].chairman} onClick={setSelectedPerson} />
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <div className="flex items-center justify-center mb-10">
-                  <div className="h-px bg-gray-200 w-full max-w-3xl"></div>
-                </div>
-
-                {/* Teachers Group Grid Below */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-                  {orgData.departments[currentPage - 1].teachers.map(teacher => (
-                    <ProfileCard key={teacher.id} person={teacher} onClick={setSelectedPerson} />
-                  ))}
-                </div>
-              </div>
-            )}
+  /* Page 1: Dean */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">Office of the Dean</h3>
+    </div>
+    {deanToDisplay && (
+  <ProfileCard
+    person={{
+  id: deanToDisplay.id,
+  name: deanToDisplay.name,
+  role: deanToDisplay.role,
+  education: deanToDisplay.education,
+  experience: deanToDisplay.experience,
+  subject: deanToDisplay.academic_rank,
+  image: deanToDisplay.image
+}}
+    onClick={setSelectedPerson}
+  />
+)}
+  </div>
+) : currentPage % 2 === 1 ? (
+  /* Odd pages: Chairman only */
+  <div className="flex flex-col items-center animate-fade-in py-10">
+    <div className="mb-6 text-center">
+      <h3 className="text-2xl font-bold text-gray-800">
+        { departmentsToDisplay[
+ Math.floor((currentPage - 1) / 2)
+].name}
+      </h3>
+       </div>
+    {chairman && (
+  <ProfileCard
+    person={{
+      id: chairman.id,
+      name: chairman.name,
+      role: chairman.role,
+      education: chairman.education,
+      experience: chairman.experience,
+      subject: chairman.academic_rank,
+      image: chairman.image
+    }}
+    onClick={setSelectedPerson}
+  />
+)}
+  </div>
+) : (
+  /* Even pages: Teachers grid */
+  <div className="animate-fade-in pb-8">
+    <div className="text-center mb-10">
+      <h3 className="text-2xl font-bold text-gray-800">
+        {teacherDepartment?.name}
+      </h3>
+       </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
+      {teachers.map((teacher) => (
+  <ProfileCard
+    key={teacher.id}
+    person={{
+      id: teacher.id,
+      name: teacher.name,
+      role: teacher.role,
+      education: teacher.education,
+      experience: teacher.experience,
+      subject: teacher.academic_rank,
+      image: teacher.image
+    }}
+    onClick={setSelectedPerson}
+  />
+      ))}
+    </div>
+  </div>
+)}
           </div>
         </div>
+
 
         {/* Stats */}
         <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {[
-              { count: '142', label: 'Total Faculty' },
-              { count: '85', label: 'Full-Time' },
-              { count: '57', label: 'Part-Time' },
-              { count: '28', label: 'Support Staff' },
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                  <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
-                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">{stat.count}</div>
-                  <div className="text-sm text-gray-600">{stat.label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+            {statsToDisplay.map((stat) => (
+  <div
+    key={stat.id}
+    className="text-center"
+  >
+    <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
+      <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
 
+      <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
+        {stat.count}
+      </div>
+
+      <div className="text-sm text-gray-600">
+        {stat.label}
+      </div>
+    </div>
+  </div>
+))}
+          </div>
+</div>
         {/* Core Values */}
-        <div className="bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-lg p-10 text-white">
+       <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
           <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
-            {['Excellence', 'Integrity', 'Innovation', 'Inclusivity', 'Service'].map(
-              (value, index) => (
-                <div key={index} className="text-center">
+            {coreValueCardsToDisplay.map((value) => (
+                <div key={value.id} className="text-center">
                   <div className="bg-white/10 hover:bg-white/20 transition-colors backdrop-blur-sm rounded-xl p-4 md:p-6 h-full flex items-center justify-center">
-                    <div className="text-lg md:text-xl font-medium">{value}</div>
+                    <div className="text-lg md:text-xl font-medium">{value.value_name}</div>
                   </div>
                 </div>
               )
@@ -330,8 +539,18 @@ export function AboutPage() {
           >
             <div className="flex flex-col md:flex-row">
               {/* Left Side: Blank Square-ish Image Placeholder */}
-              <div className="w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]"></div>
-              
+            <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
+  <img 
+    src={selectedPerson.image} 
+    alt={selectedPerson.name}
+    className="absolute inset-0 w-full h-full object-cover object-top"
+  />
+  {!selectedPerson.image && (
+    <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
+      <User className="w-20 h-20 text-gray-400" />
+    </div>
+  )}
+</div>
               {/* Right Side: Data */}
               <div className="w-full md:w-[55%] p-8 md:p-14 flex flex-col justify-center bg-[#f5f5f5]">
                 <h2 className="text-4xl md:text-5xl font-light text-gray-800 tracking-tight">
@@ -346,15 +565,22 @@ export function AboutPage() {
                     {selectedPerson.role}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Educational Attainment</span>
-                    {selectedPerson.education}
-                  </p>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">
+                    Educational Attainment
+                  </span>
+
+                  {selectedPerson.education.split(',').map((item, index) => (
+                    <span key={index} className="block">
+                      {item.trim()}
+                    </span>
+                  ))}
+                </p>
                   <p>
                     <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Years of Teaching</span>
                     {selectedPerson.experience}
                   </p>
                   <p>
-                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Subject Area</span>
+                    <span className="block font-semibold text-gray-400 uppercase tracking-widest text-xs mb-1">Academic Rank</span>
                     {selectedPerson.subject}
                   </p>
                 </div>

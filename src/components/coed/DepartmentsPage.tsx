@@ -1,105 +1,156 @@
 import { BookOpen, Users, GraduationCap } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
-export function DepartmentsPage() {
-  const departments = [
-    {
-      id: 1,
-      name: 'Elementary Education',
-      chair: 'Dr. Sarah Johnson',
-      programs: [
-        'Bachelor of Elementary Education (BEEd)',
-        'Master in Elementary Education',
-        'Certificate in Early Childhood Education',
-      ],
-      description:
-        'Prepares future elementary school teachers with comprehensive pedagogical skills and child development knowledge.',
-      faculty: 35,
-      students: 892,
-    },
-    {
-      id: 2,
-      name: 'Secondary Education',
-      chair: 'Dr. Michael Chen',
-      programs: [
-        'Bachelor of Secondary Education Major in English',
-        'Bachelor of Secondary Education Major in Mathematics',
-        'Bachelor of Secondary Education Major in Science',
-        'Bachelor of Secondary Education Major in Social Studies',
-        'Master in Secondary Education',
-      ],
-      description:
-        'Develops competent secondary school teachers specialized in various subject areas with strong content knowledge.',
-      faculty: 42,
-      students: 1245,
-    },
-    {
-      id: 3,
-      name: 'Special Education',
-      chair: 'Dr. Patricia Williams',
-      programs: [
-        'Bachelor of Special Needs Education',
-        'Certificate in Inclusive Education',
-        'Master in Special Education',
-      ],
-      description:
-        'Trains educators to work with learners with special needs, promoting inclusive education and differentiated instruction.',
-      faculty: 28,
-      students: 487,
-    },
-    {
-      id: 4,
-      name: 'Educational Leadership',
-      chair: 'Dr. Robert Anderson',
-      programs: [
-        'Master in Educational Management',
-        'Doctor of Philosophy in Educational Leadership',
-        'Certificate in School Administration',
-      ],
-      description:
-        'Develops educational leaders and administrators who can effectively manage and lead educational institutions.',
-      faculty: 22,
-      students: 356,
-    },
-    {
-      id: 5,
-      name: 'Technology Education',
-      chair: 'Dr. Jennifer Lee',
-      programs: [
-        'Bachelor in Educational Technology',
-        'Master in Instructional Design',
-        'Certificate in E-Learning Development',
-      ],
-      description:
-        'Focuses on integrating technology in education and preparing educators to leverage digital tools for enhanced learning.',
-      faculty: 18,
-      students: 423,
-    },
-    {
-      id: 6,
-      name: 'Physical Education',
-      chair: 'Dr. David Martinez',
-      programs: [
-        'Bachelor of Physical Education',
-        'Master in Sports Pedagogy',
-        'Certificate in Health and Wellness Education',
-      ],
-      description:
-        'Prepares physical education teachers and coaches who promote health, fitness, and sports development.',
-      faculty: 15,
-      students: 318,
-    },
-  ];
+interface Faculty {
+  id: string;
+  faculty_name: string;
+  position: string;
+  display_order: number;
+}
 
+interface Program {
+  id: string;
+  program_name: string;
+  description: string;
+  display_order: number;
+  program_faculty: Faculty[];
+}
+
+interface College {
+  id: string;
+  college_name: string;
+  display_order: number;
+  programs: Program[];
+}
+
+interface DepartmentsPageProps {
+  onNavigate?: (page: string) => void;
+
+  previewMode?: boolean;
+  previewContent?: any;
+  previewColleges?: College[];
+}
+
+export function DepartmentsPage({
+  onNavigate,
+  previewMode = false,
+  previewContent,
+  previewColleges,
+}: DepartmentsPageProps) {
+  const [pageContent, setPageContent] =
+  useState<Record<string, any>>({});
+  const [colleges, setColleges] = useState<College[]>(
+  previewMode ? previewColleges || [] : []
+);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+  loadDepartmentsPage();
+   loadPageContent();
+}, []);
+  const displayContent =
+  previewMode && previewContent
+    ? previewContent
+    : pageContent;
+
+const displayColleges =
+  previewMode && previewColleges
+    ? previewColleges
+    : colleges;
+async function loadPageContent() {
+  const { data, error } = await supabase
+    .from('department_page_content')
+    .select('*');
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const formatted: Record<string, any> = {};
+
+  data?.forEach(item => {
+    formatted[item.section_name] = item;
+  });
+
+  setPageContent(formatted);
+}
+async function loadDepartmentsPage() {
+  const { data, error } = await supabase
+    .from('colleges')
+    .select(`
+      *,
+      programs (
+        *,
+        program_faculty (*)
+      )
+    `)
+    .order('display_order', { ascending: true });
+
+ if (error) {
+  console.error(error);
+  setLoading(false);
+  return;
+}
+  
+
+  const formatted =
+    data?.map((college: any) => ({
+      ...college,
+      programs:
+        college.programs?.sort(
+          (a: any, b: any) =>
+            a.display_order - b.display_order
+        ) || [],
+    })) || [];
+
+  setColleges(formatted);
+  setLoading(false);
+}
+  // Calculate totals
+  const totalPrograms =  displayColleges.reduce(
+  (sum, college) => sum + college.programs.length,
+  0
+);
+
+const totalFaculty =  displayColleges.reduce(
+  (sum, college) =>
+    sum +
+    college.programs.reduce(
+      (pSum, program) =>
+        pSum +
+        (program.program_faculty?.length || 0),
+      0
+    ),
+  0
+);
+if (!previewMode && loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-[#1E3A8A] rounded-full animate-spin mx-auto mb-4"></div>
+
+        <h2 className="text-xl font-semibold text-[#1E3A8A]">
+          Loading Department...
+        </h2>
+
+        <p className="text-gray-500 mt-2">
+          Please wait while we load the page.
+        </p>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-[#F1F5F9] py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
-            Departments & Programs
+             {displayContent.header?.title}
           </h1>
           <p className="text-xl text-gray-600">
-            Discover our diverse academic departments and degree programs
+              {displayContent.header?.description}
           </p>
         </div>
 
@@ -107,72 +158,75 @@ export function DepartmentsPage() {
         <div className="grid md:grid-cols-3 gap-6 mb-12">
           <div className="bg-gradient-to-br from-[#2563EB] to-[#60A5FA] rounded-xl shadow-lg p-6 text-white">
             <BookOpen className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">6</div>
-            <div className="text-blue-100">Academic Departments</div>
+            <div className="text-3xl font-bold mb-1">{totalPrograms}</div>
+            <div className="text-blue-100">Academic Programs</div>
           </div>
           <div className="bg-gradient-to-br from-[#10B981] to-[#34D399] rounded-xl shadow-lg p-6 text-white">
-            <GraduationCap className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">22</div>
-            <div className="text-green-100">Degree Programs</div>
+            <Users className="w-10 h-10 mb-3 opacity-90" />
+            <div className="text-3xl font-bold mb-1">{totalFaculty}</div>
+            <div className="text-green-100">Distinguished Faculty</div>
           </div>
           <div className="bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA] rounded-xl shadow-lg p-6 text-white">
-            <Users className="w-10 h-10 mb-3 opacity-90" />
-            <div className="text-3xl font-bold mb-1">3,721</div>
-            <div className="text-purple-100">Enrolled Students</div>
+            <GraduationCap className="w-10 h-10 mb-3 opacity-90" />
+            <div className="text-3xl font-bold mb-1">{ displayColleges.length}</div>
+            <div className="text-purple-100">College</div>
           </div>
         </div>
 
-        {/* Departments List */}
-        <div className="space-y-6">
-          {departments.map((dept) => (
-            <div
-              key={dept.id}
-              className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
-            >
-              <div className="p-8">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
-                  <div className="flex-1">
-                    <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-2">
-                      {dept.name}
-                    </h2>
-                    <div className="flex items-center gap-2 text-gray-600 mb-4">
-                      <Users className="w-4 h-4" />
-                      <span className="text-sm">
-                        Department Chair: <strong>{dept.chair}</strong>
-                      </span>
-                    </div>
-                    <p className="text-gray-700 leading-relaxed mb-6">
-                      {dept.description}
-                    </p>
-                  </div>
-                  <div className="flex md:flex-col gap-4 md:gap-2 md:ml-8">
-                    <div className="bg-blue-50 px-4 py-2 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-[#2563EB]">{dept.faculty}</div>
-                      <div className="text-xs text-gray-600">Faculty</div>
-                    </div>
-                    <div className="bg-green-50 px-4 py-2 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-green-600">{dept.students}</div>
-                      <div className="text-xs text-gray-600">Students</div>
-                    </div>
-                  </div>
-                </div>
+        {/* Colleges and Programs */}
+        <div className="space-y-8">
+          {displayColleges.map((college) => (
+            <div key={college.id}>
+              <div className="mb-6">
+                <h2 className="text-3xl font-bold text-[#1E3A8A] pb-3 border-b-4 border-[#2563EB]">
+                  {college.college_name}
+                </h2>
+              </div>
 
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">
-                    Programs Offered:
-                  </h3>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    {dept.programs.map((program, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-gray-700 bg-gray-50 px-4 py-3 rounded-lg"
-                      >
-                        <div className="w-2 h-2 bg-[#2563EB] rounded-full flex-shrink-0"></div>
-                        <span className="text-sm">{program}</span>
+              {/* Programs within College */}
+              <div className="space-y-6">
+                {college.programs.map((program) => (
+                  <div
+                    key={program.id}
+                    className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
+                  >
+                    <div className="p-8">
+                      {/* Program Header */}
+                      <div className="mb-6">
+                        <h3 className="text-2xl font-semibold text-[#1E3A8A] mb-2">
+                          {program.program_name}
+                        </h3>
+                        <p className="text-gray-700 leading-relaxed">
+                          {program.description}
+                        </p>
                       </div>
-                    ))}
+
+                      {/* Faculty List */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide">
+                          Program Faculty:
+                        </h4>
+                        <div className="space-y-3">
+                          {program.program_faculty?.map((faculty) => (
+                            <div
+                             key={faculty.id}
+                              className="flex flex-col sm:flex-row sm:items-start sm:justify-between p-4 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900 text-sm sm:text-base">
+                                 {faculty.faculty_name}
+                                </div>
+                                <div className="text-xs sm:text-sm text-gray-600 mt-1">
+                                  {faculty.position}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           ))}
@@ -181,14 +235,14 @@ export function DepartmentsPage() {
         {/* Call to Action */}
         <div className="mt-12 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
           <h2 className="text-2xl font-semibold mb-3">
-            Ready to Start Your Journey?
+             {displayContent.cta?.title}
           </h2>
           <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            Join thousands of successful educators who began their career at COED. 
-            Explore our programs and find the perfect fit for your aspirations.
+              {displayContent.cta?.description}
           </p>
-          <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            Contact Admissions
+          <button   onClick={() => onNavigate?.('contact')}
+          className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
+            {displayContent.cta?.content}
           </button>
         </div>
       </div>
