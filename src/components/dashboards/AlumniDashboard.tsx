@@ -17,6 +17,9 @@ import {
   Trash2,
   X,
   RefreshCw,
+  Settings,
+  Lock,
+  LogOut,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -110,6 +113,7 @@ const alumniMenuItems = [
   { icon: Award,        label: 'Achievements',            id: 'achievements'},
   { icon: FileText,     label: 'Documents & Resources',   id: 'documents'   },
   { icon: MessageSquare,label: 'Inquiry / Contact',       id: 'inquiry'     },
+  { icon: Settings,    label: 'Settings',            id: 'settings' },
 ];
 
 interface AlumniDashboardProps {
@@ -131,6 +135,34 @@ export function AlumniDashboard({
 }: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Profile state — shared between AlumniSettings and (future) other views
+  const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
+  const [userEmail, setUserEmail] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id_number', idNumber)
+        .maybeSingle();
+      if (data) {
+        setProfile(data);
+        setUserEmail(data.email ?? '');
+      }
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (idNumber) fetchProfile();
+  }, [idNumber]);
+  
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
     const handleResize = () => {
@@ -176,10 +208,7 @@ export function AlumniDashboard({
                  userName={userName ?? 'Alumni'}
                 />
             </div>
-            {/* Notification bell — shows replies to this alumnus's inquiries */}
-            <div className="px-2 lg:pr-4">
-              <NotificationBell onGoToInquiries={() => setActiveMenuItem('inquiry')} />
-            </div>
+            
           </div>
         </div>
 
@@ -191,7 +220,16 @@ export function AlumniDashboard({
           {activeMenuItem === 'achievements' && <AlumniAchievements />}
           {activeMenuItem === 'documents'    && <DocumentsResources />}
           {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
-        </main>
+         {activeMenuItem === 'settings'    && (
+            <AlumniSettings
+              profile={profile}
+              userEmail={userEmail}
+              loading={profileLoading}
+              onProfileUpdated={fetchProfile}
+              idNumber={idNumber || ''}
+            />
+          )}
+          </main>
       </div>
     </div>
   );
@@ -1601,6 +1639,212 @@ function AlumniAchievements() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ====================== SETTINGS ======================
+interface AlumniSettingsProps {
+  profile: { full_name: string; email: string } | null;
+  userEmail: string;
+  loading: boolean;
+  onProfileUpdated: () => void;
+  idNumber: string;
+}
+
+function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumber }: AlumniSettingsProps) {
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+
+  const [fullNameInput, setFullNameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (profile?.full_name) {
+      setFullNameInput(profile.full_name);
+    }
+  }, [profile?.full_name]);
+
+  useEffect(() => {
+    setEmailInput(userEmail);
+  }, [userEmail]);
+
+  const handleSaveChanges = async () => {
+    const trimmedName = fullNameInput.trim();
+    const trimmedEmail = emailInput.trim();
+
+    if (!trimmedName) {
+      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+      return;
+    }
+    if (!trimmedEmail) {
+      setSaveMessage({ type: 'error', text: 'Email address cannot be empty.' });
+      return;
+    }
+
+    setSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: trimmedName, email: trimmedEmail })
+        .eq('id_number', idNumber);
+
+      if (error) throw error;
+      setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+      onProfileUpdated();
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      setSaveMessage({ type: 'error', text: 'Failed to save changes. Please try again.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFullNameInput(profile?.full_name ?? '');
+    setEmailInput(userEmail);
+    setSaveMessage(null);
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
+
+      {/* Basic Settings */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Settings className="w-5 h-5" /> Basic Settings
+        </h2>
+
+        <div className="mb-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
+
+          {loading ? (
+            <div className="animate-pulse space-y-4">
+              <div className="h-10 bg-gray-100 rounded-lg" />
+              <div className="h-10 bg-gray-100 rounded-lg" />
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                <input
+                  type="text"
+                  value={fullNameInput}
+                  onChange={(e) => setFullNameInput(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </>
+          )}
+
+          {saveMessage && (
+            <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+              {saveMessage.text}
+            </p>
+          )}
+        </div>
+
+        <div className="border-t border-gray-200 pt-8">
+          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Lock className="w-5 h-5" /> Password & Security
+          </h3>
+          <div className="space-y-3">
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Change Password
+            </button>
+            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Enable Two-Factor Authentication
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Bell className="w-5 h-5" /> Notifications
+        </h2>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Email Notifications</p>
+              <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={emailNotifications}
+                onChange={(e) => setEmailNotifications(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
+              <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={announcementAlerts}
+                onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Account Actions */}
+      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <LogOut className="w-5 h-5" /> Account Actions
+        </h2>
+
+        <div className="space-y-3">
+          <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+            Log Out from All Devices
+          </button>
+          <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="mt-8 flex gap-3">
+        <button
+          onClick={handleSaveChanges}
+          disabled={saving || loading}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+        <button
+          onClick={handleCancel}
+          disabled={saving}
+          className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
