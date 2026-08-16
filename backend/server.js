@@ -22,6 +22,7 @@ app.use('/api/extension-reports', require('./routes/extensionReports'));
 app.use('/api/research-submissions', require('./routes/researchSubmissions'));
 app.use('/api/tracer-survey', require('./routes/tracerSurvey'));
 app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/me', require('./routes/me'));
 
 // Protected route test
 const authenticate = require('./middleware/authenticate');

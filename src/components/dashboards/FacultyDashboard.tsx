@@ -26,6 +26,8 @@ import {
   LayoutDashboard,
   GraduationCap,
   Info,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
   import { Sidebar } from '../Sidebar';
   import { DashboardHeader } from '../DashboardHeader';
@@ -54,12 +56,35 @@ import {
   userName?: string;
 }
 
+const ME_API_URL = 'http://localhost:5000/api/me';
+
 export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Kuhaon ang userId gikan sa JWT token
   const token = localStorage.getItem('token');
   const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
+
+  // Faculty JWTs don't carry department info (unlike chairs), so it's
+  // fetched once on mount from /api/me, which looks it up fresh from
+  // faculty_profiles + departments.
+  const [departmentNames, setDepartmentNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadMe = async () => {
+      try {
+        const res = await fetch(ME_API_URL, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setDepartmentNames(data.departmentNames ?? []);
+      } catch {
+        // silent — department line just won't render if this fails
+      }
+    };
+    loadMe();
+  }, [token]);
 
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
@@ -101,7 +126,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <Menu className="w-5 h-5" />
               </button>
               <div className="flex-1">
-                <DashboardHeader userRole="Faculty" userName={userName} />
+                <DashboardHeader userRole="Faculty" userName={userName} departmentNames={departmentNames} />
               </div>
             </div>
           </div>
@@ -897,187 +922,203 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 }
 
 
-  // ====================== 5.7 CALENDAR (NEW DESIGN) ======================
+  // ====================== 5.7 CALENDAR ======================
+  // Reads department-scoped events from the backend (GET /api/calendar-events,
+  // same endpoint the Department Chair calendar uses). The backend already
+  // restricts results to the requesting faculty member's own department(s)
+  // via faculty_profiles.department_id — no client-side filtering needed
+  // or trusted. Faculty are read-only here: only chairs can create/delete
+  // events (enforced server-side too).
+
   interface CalendarEvent {
     id: string;
     title: string;
-    date: number;
-    type: 'meeting' | 'seminar' | 'deadline' | 'event';
-    description?: string;
-    program?: string;
-    color?: string;
+    description: string | null;
+    event_date: string; // "YYYY-MM-DDTHH:mm:ss"
+    end_date: string | null;
+    location: string | null;
+    event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
+    organizer_id: string | null;
+    department: string | null;
+    department_ids: string[] | null;
+    status: string | null;
+    created_at: string;
+    updated_at: string;
+  }
+
+  const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+
+  const TYPE_TO_COLOR: Record<string, string> = {
+    meeting: '#3B82F6',
+    activity: '#10B981',
+    holiday: '#8B5CF6',
+    deadline: '#F59E0B',
+    exam: '#EF4444',
+  };
+  const DEFAULT_EVENT_COLOR = '#1E3A8A';
+
+  function colorForEvent(ev: CalendarEvent): string {
+    return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
+  }
+
+  function dateOnly(isoLike: string): string {
+    return isoLike.split('T')[0];
   }
 
   function FacultyCalendar() {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+
+    const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
 
-    const today = new Date();
-    const [currentDate] = useState(new Date(today.getFullYear(), today.getMonth()));
+    const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
-    const calendarEvents: CalendarEvent[] = [
-      { id: '1', title: 'Faculty Meeting', date: 5, type: 'meeting', description: 'Monthly faculty meeting', program: 'College of Education', color: '#3B82F6' },
-      { id: '2', title: 'Research Seminar', date: 12, type: 'seminar', description: 'Seminar on AI in Education', program: 'Research Department', color: '#10B981' },
-      { id: '3', title: 'Report Deadline', date: 15, type: 'deadline', description: 'Quarterly report submission', program: 'Administration', color: '#EF4444' },
-      { id: '4', title: 'Department Event', date: 22, type: 'event', description: 'Annual department gathering', program: 'College of Education', color: '#A855F7' },
-      { id: '5', title: 'Evaluation Period', date: 28, type: 'deadline', description: 'Faculty evaluation period', program: 'HR Department', color: '#EF4444' },
-    ];
+    const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+    const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
-    const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-    
-    // Get first day of month and number of days
-    const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-    
-    const days = Array.from({ length: 42 }, (_, i) => {
-      const dayNumber = i - firstDay + 1;
-      return dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null;
-    });
-
-    const getEventColor = (type: string) => {
-      switch (type) {
-        case 'meeting': return 'bg-blue-500';
-        case 'seminar': return 'bg-green-500';
-        case 'deadline': return 'bg-red-500';
-        case 'event': return 'bg-purple-500';
-        default: return 'bg-gray-500';
+    const fetchEvents = async () => {
+      setLoading(true);
+      setLoadError('');
+      const token = localStorage.getItem('token');
+      try {
+        const res = await fetch(CALENDAR_API_URL, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setLoadError('Failed to load events: ' + (err.error || res.statusText));
+          setEvents([]);
+          return;
+        }
+        const data = await res.json();
+        setEvents((data ?? []) as CalendarEvent[]);
+      } catch {
+        setLoadError('Could not reach the server. Please try again.');
+        setEvents([]);
+      } finally {
+        setLoading(false);
       }
     };
 
+    useEffect(() => {
+      fetchEvents();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const getEventsForDay = (day: number) => {
-      return calendarEvents.filter(event => event.date === day);
+      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return events.filter(e => dateOnly(e.event_date) === dateStr);
     };
 
-    const formatDate = (day: number) => {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const upcomingEvents = events
+      .filter(e => dateOnly(e.event_date) >= todayStr)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+    const historyEvents = events
+      .filter(e => dateOnly(e.event_date) < todayStr)
+      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+
+    const formatDate = (dateStr: string) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
-    const upcomingEvents = calendarEvents.filter(event => {
-      const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
-      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return eventDate >= todayDate;
-    }).sort((a, b) => a.date - b.date);
-
-    const historyEvents = calendarEvents.filter(event => {
-      const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
-      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return eventDate < todayDate;
-    }).sort((a, b) => b.date - a.date);
-
-    const isPastDay = (day: number) => {
-      if (!day) return false;
-      const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      return dateToCheck < todayDate;
-    };
-
-    const isToday = (day: number) => {
-      if (!day) return false;
-      return (
-        day === today.getDate() &&
-        currentDate.getMonth() === today.getMonth() &&
-        currentDate.getFullYear() === today.getFullYear()
-      );
-    };
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     return (
       <div>
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Calendar</h1>
 
+        {loadError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {loadError}
+          </div>
+        )}
+
         {/* Calendar View */}
         <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100 mb-6">
-          {/* Calendar Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">{monthName}</h3>
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronLeft className="w-5 h-5 text-gray-600" />
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronRight className="w-5 h-5 text-gray-600" />
               </button>
             </div>
           </div>
 
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {/* Day headers */}
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
-                {day}
-              </div>
-            ))}
-
-            {/* Calendar days */}
-            {days.map((day, index) => {
-              const events = day ? getEventsForDay(day) : [];
-              const isTodayDate = day ? isToday(day) : false;
-              const isPast = day ? isPastDay(day) : false;
-              
-              return (
-                <div
-                  key={index}
-                  className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
-                    !day 
-                      ? 'bg-gray-50' 
-                      : isPast 
-                        ? 'bg-gray-200 opacity-60 hover:bg-gray-300' 
-                        : 'bg-white hover:bg-gray-50 cursor-pointer'
-                  } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
-                >
-                  {day && (
-                    <>
-                      <div className={`text-sm font-medium mb-1 ${
-                        isPast 
-                          ? 'text-gray-600' 
-                          : isTodayDate 
-                            ? 'text-[#2563EB]' 
-                            : 'text-gray-900'
-                      }`}>
-                        {day}
-                      </div>
-                      <div className="space-y-1">
-                        {events.map((event) => (
-                          <div
-                            key={event.id}
-                            onClick={() => setSelectedEvent(event)}
-                            className={`text-xs ${getEventColor(event.type)} text-white px-1 py-0.5 rounded truncate ${
-                              isPast ? 'opacity-70' : ''
-                            } cursor-pointer hover:shadow-md transition-all`}
-                            title={event.title}
-                          >
-                            {event.title}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-sm">Loading events…</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-7 gap-2">
+              {DAYS.map((day) => (
+                <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
+                  {day}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div key={`empty-${i}`} className="min-h-[80px] p-2 bg-gray-50 rounded-lg" />
+              ))}
+
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                const dayEvents = getEventsForDay(day);
+                const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isTodayDate = dateStr === todayStr;
+                const isPast = dateStr < todayStr;
+
+                return (
+                  <div
+                    key={day}
+                    className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
+                      isPast ? 'bg-gray-200 opacity-60' : 'bg-white hover:bg-gray-50'
+                    } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
+                  >
+                    <div className={`text-sm font-medium mb-1 ${isPast ? 'text-gray-600' : isTodayDate ? 'text-[#2563EB]' : 'text-gray-900'}`}>
+                      {day}
+                    </div>
+                    <div className="space-y-1">
+                      {dayEvents.map((event) => (
+                        <div
+                          key={event.id}
+                          onClick={() => setSelectedEvent(event)}
+                          className={`text-xs text-white px-1 py-0.5 rounded truncate cursor-pointer hover:shadow-md transition-all ${isPast ? 'opacity-70' : ''}`}
+                          style={{ backgroundColor: colorForEvent(event) }}
+                          title={event.title}
+                        >
+                          {event.title}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Event Legend */}
           <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span className="text-xs text-gray-600">Meeting</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span className="text-xs text-gray-600">Seminar</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-500 rounded"></div>
-              <span className="text-xs text-gray-600">Deadline</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-purple-500 rounded"></div>
-              <span className="text-xs text-gray-600">Event</span>
-            </div>
+            {Object.entries(TYPE_TO_COLOR).map(([type, color]) => (
+              <div key={type} className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
+                <span className="text-xs text-gray-600 capitalize">{type}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -1105,7 +1146,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           </div>
 
           <div className="p-4 sm:p-6">
-            {activeTab === 'upcoming' && (
+            {loading ? (
+              <p className="text-center text-gray-400 text-sm py-6">Loading…</p>
+            ) : activeTab === 'upcoming' ? (
               <div className="space-y-3">
                 {upcomingEvents.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
@@ -1114,17 +1157,16 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                   </div>
                 ) : upcomingEvents.map(ev => (
                   <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
                       {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-            {activeTab === 'history' && (
+            ) : (
               <div className="space-y-3">
                 {historyEvents.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
@@ -1133,10 +1175,10 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                   </div>
                 ) : historyEvents.map(ev => (
                   <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: ev.color }} />
+                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
                       {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                     </div>
                     <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1155,11 +1197,11 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <div className="flex items-start gap-3 min-w-0">
                   <div
                     className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
-                    style={{ backgroundColor: selectedEvent.color }}
+                    style={{ backgroundColor: colorForEvent(selectedEvent) }}
                   />
                   <div className="min-w-0">
                     <h2 className="text-lg sm:text-xl font-semibold text-gray-900">{selectedEvent.title}</h2>
-                    <p className="text-xs sm:text-sm text-gray-500">Day {selectedEvent.date}</p>
+                    <p className="text-xs sm:text-sm text-gray-500">{formatDate(dateOnly(selectedEvent.event_date))}</p>
                   </div>
                 </div>
                 <button
@@ -1171,13 +1213,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
               </div>
 
               <div className="space-y-4">
-                {selectedEvent.program && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">Program</p>
-                    <p className="text-sm text-gray-900">{selectedEvent.program}</p>
-                  </div>
-                )}
-
                 {selectedEvent.description && (
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-1">Description</p>
@@ -1185,17 +1220,19 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-gray-200">
-                  <span
-                    className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase"
-                    style={{
-                      backgroundColor: selectedEvent.color + '20',
-                      color: selectedEvent.color,
-                    }}
-                  >
-                    {selectedEvent.type}
-                  </span>
-                </div>
+                {selectedEvent.event_type && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <span
+                      className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase"
+                      style={{
+                        backgroundColor: colorForEvent(selectedEvent) + '20',
+                        color: colorForEvent(selectedEvent),
+                      }}
+                    >
+                      {selectedEvent.event_type}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

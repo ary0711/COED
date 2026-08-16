@@ -146,7 +146,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
 
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
           {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
-          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
+          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
@@ -286,9 +286,10 @@ function toTimestamp(dateStr: string): string {
 
 interface DepartmentCalendarProps {
   organizerId: string;
+  departmentNames: string[];
 }
 
-function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
+function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendarProps) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
@@ -302,7 +303,7 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const emptyForm = { title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' };
+  const emptyForm = { title: '', date: '', description: '', color: '#3B82F6' };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
@@ -313,22 +314,34 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
-  // ── Fetch events from Supabase ──
+  // ── Fetch events via the backend (department-scoped server-side) ──
+  // Previously this queried Supabase directly and unfiltered, returning
+  // every department's events to every chair. Reads now go through the
+  // same backend route as writes, since department scoping has to be
+  // enforced server-side against the chair's own departmentIds — the
+  // anon client can't be trusted to only ask for its own department.
   const fetchEvents = async () => {
     setLoading(true);
     setLoadError('');
-    const { data, error } = await supabase
-      .from('calendar_events')
-      .select('*')
-      .order('event_date', { ascending: true });
-
-    if (error) {
-      setLoadError('Failed to load events: ' + error.message);
-      setEvents([]);
-    } else {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(CALENDAR_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load events: ' + (err.error || res.statusText));
+        setEvents([]);
+        return;
+      }
+      const data = await res.json();
       setEvents((data ?? []) as CalendarEvent[]);
+    } catch (err) {
+      setLoadError('Could not reach the server. Please try again.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -364,7 +377,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: toTimestamp(form.date),
-      department: form.program,
       event_type: eventTypeForColor(form.color),
       status: 'upcoming',
     };
@@ -565,7 +577,7 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {ev.department}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'}</div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
@@ -620,14 +632,13 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
-                <select
-                  value={form.program}
-                  onChange={e => setForm({ ...form, program: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A]"
-                >
-                  {PROGRAM_OPTIONS.map(p => <option key={p}>{p}</option>)}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Posting to</label>
+                <div className="w-full px-3 py-2 border border-gray-100 bg-gray-50 rounded-lg text-sm text-gray-600">
+                  {departmentNames.length > 0 ? departmentNames.join(', ') : 'No department assigned'}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Events are automatically posted to faculty in your own department — this isn't editable here.
+                </p>
               </div>
 
               <div>
