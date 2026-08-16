@@ -1139,16 +1139,21 @@ function AlumniInquiry() {
     setHistoryLoading(true);
     setHistoryError('');
     try {
-      const currentUserId = localStorage.getItem('userId');
-      if (!currentUserId) {
-        setHistoryError('Your session looks outdated. Please log out and log in again.');
-        return;
-      }
+      const currentUserId =
+  localStorage.getItem('userId') ||
+  localStorage.getItem('userIdNumber') ||
+  localStorage.getItem('id');
+
+if (!currentUserId) {
+  setSubmitMessage({ type: 'error', text: 'Your session looks outdated. Please log out and log in again.' });
+  return;
+}
 
       const { data, error } = await supabase
         .from('inquiries')
         .select('id, subject, category, message, reply, status, created_at, replied_at')
         .eq('sender_id', currentUserId)
+        .eq('sender_role', 'alumni') 
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -1193,18 +1198,12 @@ function AlumniInquiry() {
         .eq('user_id', currentUserId)
         .single();
 
-      const { error } = await supabase.from('inquiries').insert({
-        sender_id: currentUserId,
-        sender_name: profileData?.full_name ?? localStorage.getItem('userFullName') ?? 'Alumni',
-        sender_role: 'alumni',
-        subject: subject.trim(),
-        category,
-        message: message.trim(),
-        status: 'pending',
-        // student_id kept for backward compatibility with the original
-        // NOT NULL column on this shared table
-        student_id: currentUserId,
-      });
+     const { data, error } = await supabase
+  .from('inquiries')
+  .select('id, subject, category, message, reply, status, created_at, replied_at')
+  .eq('sender_id', currentUserId)
+  .eq('sender_role', 'alumni')
+  .order('created_at', { ascending: false });
 
       if (error) throw error;
 
