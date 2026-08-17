@@ -1,28 +1,20 @@
-// routes/accomplishmentReports.js
+// routes/extensionReports.js
 //
-// All reads and writes for accomplishment_reports (and its photos) go
-// through here, authenticated via JWT, using the service-role Supabase
-// client — the browser never talks to Supabase directly for this data.
+// Used by BOTH the Faculty dashboard and the Department Chair dashboard —
+// both render the same ExtensionReport.tsx component, just passing in
+// their own userId/userName. Ownership here is scoped by submitted_by
+// matching req.user.userId (from the JWT), so it works correctly for
+// either role without any special-casing.
 
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const authenticate = require('../middleware/authenticate');
-
-// Default export, matching your existing supabaseClient.js.
 const supabase = require('../supabaseClient');
 
-const PHOTOS_BUCKET = 'accomplishment-photos';
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
-});
-
-// GET /api/accomplishment-reports/my-draft
-// Returns the signed-in chair's current draft, or null if none exists.
+// GET /api/extension-reports/my-draft
 router.get('/my-draft', authenticate, async (req, res) => {
   const { data, error } = await supabase
-    .from('accomplishment_reports')
+    .from('extension_reports')
     .select('*')
     .eq('submitted_by', req.user.userId)
     .eq('status', 'draft')
@@ -36,9 +28,7 @@ router.get('/my-draft', authenticate, async (req, res) => {
   return res.json(data ?? null);
 });
 
-// POST /api/accomplishment-reports
-// Creates a new report row. submitted_by is always set from the verified
-// JWT, never trusted from the request body.
+// POST /api/extension-reports
 router.post('/', authenticate, async (req, res) => {
   const payload = {
     ...req.body,
@@ -47,7 +37,7 @@ router.post('/', authenticate, async (req, res) => {
   };
 
   const { data, error } = await supabase
-    .from('accomplishment_reports')
+    .from('extension_reports')
     .insert(payload)
     .select()
     .single();
@@ -58,14 +48,12 @@ router.post('/', authenticate, async (req, res) => {
   return res.status(201).json(data);
 });
 
-// PUT /api/accomplishment-reports/:id
-// Updates an existing report row, but only if it actually belongs to
-// the signed-in user (prevents editing someone else's report by id).
+// PUT /api/extension-reports/:id
 router.put('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
 
   const { data: existing, error: fetchError } = await supabase
-    .from('accomplishment_reports')
+    .from('extension_reports')
     .select('submitted_by')
     .eq('id', id)
     .single();
@@ -78,10 +66,10 @@ router.put('/:id', authenticate, async (req, res) => {
   }
 
   const payload = { ...req.body, updated_at: new Date().toISOString() };
-  delete payload.submitted_by; // ownership can never be changed via the body
+  delete payload.submitted_by;
 
   const { data, error } = await supabase
-    .from('accomplishment_reports')
+    .from('extension_reports')
     .update(payload)
     .eq('id', id)
     .select()
@@ -91,59 +79,6 @@ router.put('/:id', authenticate, async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
   return res.json(data);
-});
-
-// POST /api/accomplishment-reports/photos
-// multipart/form-data: field "files" (one or more images) + field "entryId"
-router.post('/photos', authenticate, upload.array('files', 8), async (req, res) => {
-  const { entryId } = req.body;
-  if (!entryId) {
-    return res.status(400).json({ error: 'entryId is required.' });
-  }
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: 'No files uploaded.' });
-  }
-
-  const uploaded = [];
-  for (const file of req.files) {
-    if (!file.mimetype.startsWith('image/')) continue;
-
-    const ext = file.originalname.split('.').pop();
-    const path = `${req.user.userId}/${entryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(PHOTOS_BUCKET)
-      .upload(path, file.buffer, { contentType: file.mimetype });
-
-    if (uploadError) continue; // skip this file, keep processing the rest
-
-    const { data: urlData } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-    uploaded.push({ path, url: urlData.publicUrl });
-  }
-
-  return res.status(201).json(uploaded);
-});
-
-// DELETE /api/accomplishment-reports/photos
-// body: { paths: string[] }
-router.delete('/photos', authenticate, async (req, res) => {
-  const { paths } = req.body;
-  if (!Array.isArray(paths) || paths.length === 0) {
-    return res.status(400).json({ error: 'paths (array) is required.' });
-  }
-
-  // Every path is namespaced "<userId>/<entryId>/<filename>" at upload
-  // time, so this blocks one chair from deleting another chair's photos.
-  const notOwned = paths.filter(p => !p.startsWith(`${req.user.userId}/`));
-  if (notOwned.length > 0) {
-    return res.status(403).json({ error: 'You do not have permission to delete one or more of these files.' });
-  }
-
-  const { error } = await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-  return res.status(204).send();
 });
 
 module.exports = router;
