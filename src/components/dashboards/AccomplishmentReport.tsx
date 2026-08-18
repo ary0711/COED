@@ -300,7 +300,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     mfo4_pi1_data: mfo4pi1, mfo4_pi2_data: mfo4pi2, other_data: otherInitiatives, awards_data: awards,
     doc_entries_data: docEntries,
     other_accomplishments: otherAccomplishments, date_submitted: dateSubmitted,
-    status: submitStatus, progress: submitStatus === 'submitted' ? 100 : computeProgress(),
+    status: submitStatus, progress: computeProgress(),
   });
 
   const persist = async (payload: Record<string, unknown>) => {

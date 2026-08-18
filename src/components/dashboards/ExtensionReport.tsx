@@ -131,7 +131,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const submitReport = async () => {
     setSaving(true);
     try {
-      const payload = { quarter, year, rows, status: 'submitted', progress: 100 };
+      const payload = { quarter, year, rows, status: 'submitted', progress: computeProgress() };
       const data = await persist(payload);
       if (!reportId && data?.id) setReportId(data.id);
       setLastSavedAt(data?.updated_at ?? new Date().toISOString());

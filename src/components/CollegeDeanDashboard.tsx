@@ -2301,6 +2301,40 @@ interface FacultyReportRow {
 }
 
 function ReportsAnalytics() {
+  const [topTab, setTopTab] = useState<'faculty' | 'chair'>('faculty');
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit mb-6">
+        <button
+          onClick={() => setTopTab('faculty')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            topTab === 'faculty' ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Faculty Quarterly Reports
+        </button>
+        <button
+          onClick={() => setTopTab('chair')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            topTab === 'chair' ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Chair Reports
+        </button>
+      </div>
+
+      {topTab === 'faculty' && <FacultyQuarterlyReportsTracker />}
+      {topTab === 'chair' && <ChairReportsSection />}
+    </div>
+  );
+}
+
+// ─── Faculty Quarterly Reports (unchanged — just renamed) ────────────────────
+function FacultyQuarterlyReportsTracker() {
+  // ... PASTE THE ENTIRE ORIGINAL BODY OF ReportsAnalytics HERE, UNCHANGED ...
+  // (everything from `const [facultyRows, setFacultyRows] = useState...`
+  // down through the final closing `return ( ... );` and `}`)
   const [facultyRows, setFacultyRows]     = useState<FacultyReportRow[]>([]);
   const [loading, setLoading]             = useState(true);
   const [quarter, setQuarter]             = useState('Q1 2026');
@@ -2713,7 +2747,393 @@ function ReportsAnalytics() {
     </div>
   );
 }
+// ─── Chair Reports (Accomplishment / Extension, Dean approval) ───────────────
+const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_API_URL_DEAN = 'http://localhost:5000/api/extension-reports';
 
+interface ChairReportRow {
+  id: string;
+  quarter: string;
+  year: string;
+  status: 'submitted' | 'approved' | 'rejected';
+  progress: number;
+  dean_remarks: string | null;
+  updated_at: string;
+  submitter: { full_name: string; department: string | null } | null;
+  // accomplishment-only
+  program?: string | null;
+  program_chair?: string | null;
+  pi1_data?: any[]; pi2_data?: any[]; pi3_data?: any[]; pi4_data?: any[];
+  pi5_data?: any[]; pi6_data?: any[]; pi7_data?: any[]; pi8_data?: any[];
+  mfo3_pi1_data?: any[]; mfo3_pi2_data?: any[]; mfo3_pi3_data?: any[]; mfo3_pi4_data?: any[];
+  mfo4_pi1_data?: any[]; mfo4_pi2_data?: any[]; other_data?: any[]; awards_data?: any[];
+  doc_entries_data?: any[];
+  other_accomplishments?: string | null;
+  // extension-only
+  rows?: any[];
+}
+
+const CHAIR_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  submitted: { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
+  approved:  { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
+  rejected:  { label: 'Rejected',       color: '#991B1B', bg: '#FEE2E2' },
+};
+
+function getDeanToken() {
+  return localStorage.getItem('token');
+}
+
+function ChairReportsSection() {
+  const [reportType, setReportType] = useState<'accomplishment' | 'extension'>('accomplishment');
+  const [statusFilter, setStatusFilter] = useState<'submitted' | 'approved' | 'rejected' | 'all'>('submitted');
+  const [reports, setReports] = useState<ChairReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [selected, setSelected] = useState<ChairReportRow | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [rejectFor, setRejectFor] = useState<ChairReportRow | null>(null);
+  const [remarksInput, setRemarksInput] = useState('');
+
+  const apiUrl = reportType === 'accomplishment' ? ACCOMPLISHMENT_API_URL : EXTENSION_API_URL_DEAN;
+
+  const fetchReports = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const url = statusFilter === 'all' ? apiUrl : `${apiUrl}?status=${statusFilter}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${getDeanToken()}` } });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load reports.');
+        setReports([]);
+        return;
+      }
+      const data = await res.json();
+      setReports(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchReports(); /* eslint-disable-next-line */ }, [reportType, statusFilter]);
+
+  const decide = async (report: ChairReportRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
+    setActionId(report.id);
+    try {
+      const res = await fetch(`${apiUrl}/${report.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getDeanToken()}` },
+        body: JSON.stringify({ status, dean_remarks }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to update report status.');
+        return;
+      }
+      setReports(prev => prev.filter(r => r.id !== report.id)); // leaves the "submitted" list once decided
+      setSelected(null);
+      setRejectFor(null);
+      setRemarksInput('');
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const formatDateTime = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  return (
+    <div>
+      {/* Type + status filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {(['accomplishment', 'extension'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setReportType(t)}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
+                reportType === t ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t === 'accomplishment' ? 'Accomplishment Reports' : 'Extension Reports'}
+            </button>
+          ))}
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as any)}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="submitted">Pending Review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-56">
+            <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
+          </div>
+        ) : reports.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-56 text-gray-400">
+            <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
+            <p className="font-medium">No reports found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Chair</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Period</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {reports.map(r => {
+                  const cfg = CHAIR_STATUS_LABEL[r.status];
+                  return (
+                    <tr key={r.id} className="hover:bg-blue-50/30 transition-colors">
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="font-semibold text-gray-900 text-sm">{r.submitter?.full_name ?? 'Unknown'}</div>
+                        <div className="text-xs text-gray-400">{r.submitter?.department ?? '—'}</div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600">{r.quarter} Quarter, {r.year}</td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center gap-2 min-w-[100px]">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-[#1E3A8A]" style={{ width: `${r.progress}%` }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600 w-9 text-right">{r.progress}%</span>
+                        </div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
+                        <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button onClick={() => setSelected(r)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="View report">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {r.status === 'submitted' && (
+                            <>
+                              <button
+                                onClick={() => decide(r, 'approved')}
+                                disabled={actionId === r.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-60"
+                              >
+                                <Check className="w-3.5 h-3.5" /> Approve
+                              </button>
+                              <button
+                                onClick={() => { setRejectFor(r); setRemarksInput(''); }}
+                                disabled={actionId === r.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-600 hover:text-white rounded-lg transition-colors disabled:opacity-60"
+                              >
+                                <X className="w-3.5 h-3.5" /> Reject
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Reject reason modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Report?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Rejecting <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s {rejectFor.quarter} Quarter {rejectFor.year} report.
+            </p>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reason (optional)</label>
+            <textarea
+              value={remarksInput}
+              onChange={e => setRemarksInput(e.target.value)}
+              rows={3}
+              placeholder="Let the chair know what needs revision..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => decide(rejectFor, 'rejected', remarksInput)}
+                disabled={actionId === rejectFor.id}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionId === rejectFor.id ? 'Rejecting...' : 'Confirm Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail viewer */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="font-bold text-gray-900">
+                  {reportType === 'accomplishment' ? 'Accomplishment Report' : 'Extension Report'} — {selected.submitter?.full_name}
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">{selected.quarter} Quarter, {selected.year} · Last updated {formatDateTime(selected.updated_at)}</p>
+              </div>
+              <button onClick={() => setSelected(null)} className="p-2 hover:bg-gray-100 rounded-xl"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {selected.dean_remarks && (
+                <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+                  <span className="font-semibold">Dean's remarks:</span> {selected.dean_remarks}
+                </div>
+              )}
+
+              {reportType === 'extension' ? (
+                <GenericJsonTable
+                  rows={selected.rows ?? []}
+                  columns={[
+                    { key: 'extension_project', label: 'Project/Activity' },
+                    { key: 'highlights', label: 'Highlights' },
+                    { key: 'partner_linkage', label: 'Partner/Linkage' },
+                    { key: 'num_trainees', label: 'No. of Trainees' },
+                    { key: 'venue', label: 'Venue' },
+                    { key: 'inclusive_date', label: 'Inclusive Date' },
+                  ]}
+                />
+              ) : (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div><span className="font-semibold text-gray-600">Program Chairperson:</span> {selected.program_chair}</div>
+                    <div><span className="font-semibold text-gray-600">Program:</span> {selected.program}</div>
+                  </div>
+
+                  {[
+                    { title: 'PI 1: Licensure Exam Passers', rows: selected.pi1_data, cols: [['date_exam','Date'],['no_first_time','First-time Takers'],['no_passers','Passers'],['passing_pct_first','Passing % (First-time)'],['total_takers','Total Takers'],['total_passers','Total Passers'],['overall_pct','Overall %']] },
+                    { title: 'PI 2: Graduate Employment', rows: selected.pi2_data, cols: [['no_graduates','Graduates'],['no_employed','Employed'],['percentage','Percentage']] },
+                    { title: 'PI 3: Priority Program Enrollment', rows: selected.pi3_data, cols: [['class_section','Section'],['no_enrolled','Enrolled'],['name_adviser','Adviser']] },
+                    { title: 'PI 4: Syllabus Submission', rows: selected.pi4_data, cols: [['name_faculty','Faculty'],['courses_taught','Courses'],['status_syllabus','Status'],['remarks','Remarks']] },
+                    { title: 'PI 5: Certifications', rows: selected.pi5_data, cols: [['name_faculty','Faculty'],['nature_cert','Certification'],['granting_agency','Agency'],['date_granted','Date']] },
+                    { title: 'PI 6: Post-Graduate Education', rows: selected.pi6_data, cols: [['name_faculty','Faculty'],['program_enrolled','Program'],['total_units','Total Units'],['units_this_sem','Units This Sem'],['institution','Institution']] },
+                    { title: 'PI 7: Trainings/Seminars', rows: selected.pi7_data, cols: [['name_faculty','Faculty'],['title_training','Title'],['date','Date'],['venue','Venue'],['sponsoring_agency','Agency'],['role','Role']] },
+                    { title: 'PI 8: Instructional Materials', rows: selected.pi8_data, cols: [['name_faculty','Authors'],['title_im','Title'],['type_im','Type'],['courses_utilizing','Courses'],['ip_protection','IP Protection']] },
+                    { title: 'MFO3 PI1: Research Utilization', rows: selected.mfo3_pi1_data, cols: [['title_research','Title'],['proponents','Proponents'],['nature_utilization','Nature'],['partner_community','Partner'],['address','Address']] },
+                    { title: 'MFO3 PI2: Research Completed', rows: selected.mfo3_pi2_data, cols: [['title_research','Title'],['proponents','Proponents'],['date_completed','Date'],['funding_source','Funding']] },
+                    { title: 'MFO3 PI3: Publications', rows: selected.mfo3_pi3_data, cols: [['title_research','Title'],['proponents','Proponents'],['name_publication','Publication'],['date_published','Date'],['funding_source','Funding']] },
+                    { title: 'MFO3 PI4: Conference Presentations', rows: selected.mfo3_pi4_data, cols: [['title_research','Title'],['proponents','Proponents'],['date','Date'],['sponsoring_agency','Agency'],['venue','Venue']] },
+                    { title: 'MFO4 PI1: Active Partnerships', rows: selected.mfo4_pi1_data, cols: [['title_project','Project'],['proponents','Proponents'],['partner','Partner'],['project_locale','Locale']] },
+                    { title: 'MFO4 PI2: Training Manhours', rows: selected.mfo4_pi2_data, cols: [['title_training','Title'],['no_beneficiaries','Beneficiaries'],['length_training','Length'],['total_manhours','Manhours'],['partner_agency','Agency']] },
+                    { title: 'Other Initiatives', rows: selected.other_data, cols: [['title_activity','Activity'],['date_conducted','Date'],['venue','Venue'],['sponsoring_agency','Agency'],['students_involved','Students'],['faculty_involved','Faculty']] },
+                    { title: 'Awards', rows: selected.awards_data, cols: [['title_award','Award'],['nature_award','Nature'],['granting_agency','Agency'],['date_awarding','Date']] },
+                  ].filter(section => section.rows && section.rows.length > 0).map(section => (
+                    <div key={section.title}>
+                      <p className="font-semibold text-sm text-gray-800 mb-2">{section.title}</p>
+                      <GenericJsonTable rows={section.rows!} columns={section.cols.map(([key, label]) => ({ key, label }))} />
+                    </div>
+                  ))}
+
+                  {selected.other_accomplishments && (
+                    <div>
+                      <p className="font-semibold text-sm text-gray-800 mb-1">Other Accomplishments</p>
+                      <p className="text-sm text-gray-600">{selected.other_accomplishments}</p>
+                    </div>
+                  )}
+
+                  {(selected.doc_entries_data ?? []).length > 0 && (
+                    <div>
+                      <p className="font-semibold text-sm text-gray-800 mb-2">Documentation Photos</p>
+                      <div className="space-y-4">
+                        {selected.doc_entries_data!.map((entry: any) => (
+                          <div key={entry.id} className="border border-gray-100 rounded-xl p-3">
+                            <p className="text-sm font-medium text-gray-800">{entry.title} — {entry.venue} ({entry.date})</p>
+                            {entry.description && <p className="text-xs text-gray-500 mt-1">{entry.description}</p>}
+                            {entry.photos?.length > 0 && (
+                              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-2">
+                                {entry.photos.map((p: any) => (
+                                  <img key={p.path} src={p.url} alt="" className="w-full h-24 object-cover rounded-lg" />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selected.status === 'submitted' && (
+                <div className="flex gap-3 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={() => decide(selected, 'approved')}
+                    disabled={actionId === selected.id}
+                    className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-60"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => { setRejectFor(selected); setRemarksInput(''); }}
+                    disabled={actionId === selected.id}
+                    className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small reusable read-only table for rendering jsonb row arrays.
+function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: string; label: string }[] }) {
+  if (!rows || rows.length === 0) {
+    return <p className="text-xs text-gray-400 italic">No entries.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-gray-50">
+            {columns.map(c => <th key={c.key} className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-600">{c.label}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+              {columns.map(c => <td key={c.key} className="border border-gray-200 px-2 py-1.5 align-top text-gray-700">{row[c.key] || '—'}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+  
 // ─── Announcements ────────────────────────────────────────────────────────────
 function AnnouncementsContent() {
   

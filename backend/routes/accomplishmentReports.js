@@ -12,6 +12,14 @@ const authenticate = require('../middleware/authenticate');
 // Default export, matching your existing supabaseClient.js.
 const supabase = require('../supabaseClient');
 
+// Only the Dean (or admin) may list all submissions or approve/reject them.
+function requireDean(req, res, next) {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the Dean can access this resource.' });
+  }
+  next();
+}
+
 const PHOTOS_BUCKET = 'accomplishment-photos';
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -34,6 +42,94 @@ router.get('/my-draft', authenticate, async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
   return res.json(data ?? null);
+});
+
+// GET /api/accomplishment-reports?status=submitted
+// Dean-only. Lists reports college-wide, optionally filtered by status.
+// Two queries + merge in JS — safe regardless of how submitted_by's FK
+// is declared, since we never rely on PostgREST inferring a relationship
+// to `profiles` (the FK is only declared against `users`).
+router.get('/', authenticate, requireDean, async (req, res) => {
+  const { status } = req.query;
+
+  let query = supabase
+    .from('accomplishment_reports')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (status) {
+    query = query.eq('status', status);
+  } else {
+    query = query.in('status', ['submitted', 'approved', 'rejected']);
+  }
+
+  const { data: reports, error } = await query;
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  if (!reports || reports.length === 0) {
+    return res.json([]);
+  }
+
+  const submitterIds = [...new Set(reports.map(r => r.submitted_by).filter(Boolean))];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, full_name, department')
+    .in('id', submitterIds);
+
+  if (profilesError) {
+    return res.json(reports.map(r => ({ ...r, submitter: null })));
+  }
+
+  const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
+  const merged = reports.map(r => ({
+    ...r,
+    submitter: profileMap.get(r.submitted_by) ?? null,
+  }));
+
+  return res.json(merged);
+});
+
+// PATCH /api/accomplishment-reports/:id/status
+// Dean-only. body: { status: 'approved' | 'rejected', dean_remarks?: string }
+router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
+  const { id } = req.params;
+  const { status, dean_remarks } = req.body;
+
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be "approved" or "rejected".' });
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('accomplishment_reports')
+    .select('status')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !existing) {
+    return res.status(404).json({ error: 'Report not found.' });
+  }
+  if (existing.status !== 'submitted') {
+    return res.status(400).json({ error: 'Only submitted reports can be approved or rejected.' });
+  }
+
+  const { data, error } = await supabase
+    .from('accomplishment_reports')
+    .update({
+      status,
+      dean_remarks: dean_remarks?.trim() || null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: req.user.userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  return res.json(data);
 });
 
 // POST /api/accomplishment-reports
