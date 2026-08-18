@@ -2,78 +2,11 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../supabaseClient');
-
+const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
-/*
-=========================================================
-REGISTER
-=========================================================
 
-FULL REGISTRATION
------------------
-
-Used by Dean/User Management (no `userId` in the body — this
-route creates a brand-new Supabase Auth user from scratch).
-
-Creates:
-
-1. auth user (via supabase.auth.admin.createUser)
-2. users
-3. profiles
-
-The same UUID is used for users.id and profiles.id.
-
-Required:
-
-username
-password
-role
-email
-full_name
-id_number
-
-Optional:
-
-department
-status
-
-
-SELF-SERVICE REGISTRATION (student/faculty/alumni via LoginPage)
-------------------------------------------------------------------
-
-The frontend's own signup form already calls
-supabase.auth.signUp() AND inserts the profiles /
-student_profiles / faculty_profiles / alumni_profiles rows
-directly via the Supabase client BEFORE hitting this route.
-That means by the time this endpoint runs, the auth user and
-the profiles row already exist.
-
-When the frontend includes `userId` in the request body, this
-route reuses that existing auth user instead of trying to
-create a second one for the same email (which always fails,
-since the email is already registered) and skips re-inserting
-`profiles` (already inserted by the frontend). It only needs
-to create the `users` table row here, since that table stores
-the bcrypt password hash used by the legacy username/password
-login flow and the frontend has no direct insert access to it.
-
-
-LEGACY REGISTRATION
--------------------
-
-Your existing activatePending() function sends only:
-
-username
-password
-role
-
-That is still supported below so existing
-student/faculty/alumni activation does not
-immediately break.
-=========================================================
-*/
 
 router.post('/register', async (req, res) => {
   try {
@@ -960,82 +893,80 @@ profiles
 =========================================================
 */
 
-router.put('/users/:id', async (req, res) => {
+router.put('/users/:id', authenticate, async (req, res) => {
   try {
-    const { id } = req.params;
+    if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the Dean can modify users.' });
+    }
 
+    const { id } = req.params;
     const {
+      full_name,
       role,
+      id_number,
+      department,
+      status,
       password
     } = req.body;
 
-    const updateData = {};
+    // ---- Update profiles (whatever fields were actually sent) ----
+    const profileUpdate = {};
+    if (full_name !== undefined) profileUpdate.full_name = full_name.trim();
+    if (role !== undefined) profileUpdate.role = role;
+    if (id_number !== undefined) profileUpdate.id_number = id_number.trim();
+    if (department !== undefined) profileUpdate.department = department?.trim() || null;
+    if (status !== undefined) profileUpdate.status = status;
 
-    // Update role
-    if (role) {
-      updateData.role = role;
-    }
-
-    // Update password only if provided
-    if (password && password.trim() !== '') {
-
-      if (password.length < 6) {
-        return res.status(400).json({
-          error: 'Password must be at least 6 characters.'
-        });
-      }
-
-      updateData.password_hash =
-        await bcrypt.hash(password, 10);
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        error: 'No changes were provided.'
-      });
-    }
-
-    const {
-      data,
-      error
-    } = await supabase
-      .from('users')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return res.status(400).json({
-        error: error.message
-      });
-    }
-
-    // Keep profiles synchronized
-    if (role) {
-      await supabase
+    if (Object.keys(profileUpdate).length > 0) {
+      const { error: profileError } = await supabase
         .from('profiles')
-        .update({
-          role: role
-        })
+        .update(profileUpdate)
         .eq('id', id);
+
+      if (profileError) {
+        console.error('Profile update error:', profileError);
+        return res.status(400).json({ error: profileError.message });
+      }
+    }
+
+    // ---- Update users (role and/or password only) ----
+    const userUpdate = {};
+    if (role !== undefined) userUpdate.role = role;
+    if (password && password.trim() !== '') {
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      }
+      userUpdate.password_hash = await bcrypt.hash(password, 10);
+    }
+
+    let updatedUser = null;
+    if (Object.keys(userUpdate).length > 0) {
+      const { data, error: userError } = await supabase
+        .from('users')
+        .update(userUpdate)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (userError) {
+        console.error('Users table update error:', userError);
+        return res.status(400).json({ error: userError.message });
+      }
+      updatedUser = data;
+    }
+
+    if (Object.keys(profileUpdate).length === 0 && Object.keys(userUpdate).length === 0) {
+      return res.status(400).json({ error: 'No changes were provided.' });
     }
 
     return res.json({
       message: 'User updated successfully.',
-      user: data
+      user: updatedUser
     });
 
   } catch (error) {
-
-    console.error(
-      'Update user error:',
-      error
-    );
-
-    return res.status(500).json({
-      error: 'Internal server error.'
-    });
+    console.error('Update user error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 });
 /*
@@ -1366,6 +1297,21 @@ router.delete('/users/:id', async (req, res) => {
         'Failed to delete user.'
     });
   }
+});
+router.get('/users', authenticate, async (req, res) => {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the Dean can access this resource.' });
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  return res.json(data ?? []);
 });
 
 module.exports = router;

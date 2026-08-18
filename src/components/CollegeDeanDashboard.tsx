@@ -490,9 +490,9 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 }
 
 // ─── User Management ──────────────────────────────────────────────────────────
+// ─── User Management ──────────────────────────────────────────────────────────
 function UserManagement() {
-  const [showPassword, setShowPassword] =
-  useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [users, setUsers]               = useState<Profile[]>([]);
   const [filtered, setFiltered]         = useState<Profile[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -507,6 +507,7 @@ function UserManagement() {
   const [selected, setSelected]   = useState<Profile | null>(null);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
+  const [fetchError, setFetchError] = useState('');
 
   const [form, setForm] = useState({
     full_name: '', email: '', role: 'student',
@@ -515,12 +516,26 @@ function UserManagement() {
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) setUsers(data);
-    setLoading(false);
+    setFetchError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/auth/users', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFetchError(err.error || 'Failed to load users.');
+        setUsers([]);
+        return;
+      }
+      const data = await res.json();
+      setUsers(data ?? []);
+    } catch {
+      setFetchError('Could not reach the server. Please try again.');
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
@@ -563,468 +578,244 @@ function UserManagement() {
     setModal('edit');
   };
   const openDelete = (user: Profile) => { setSelected(user); setModal('delete'); };
+
   const handleAdd = async () => {
-  setFormError('');
+    setFormError('');
 
-  // ================================
-  // VALIDATION
-  // ================================
+    if (!form.full_name.trim()) {
+      setFormError('Full name is required.');
+      return;
+    }
+    if (!form.email.trim()) {
+      setFormError('Email address is required.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.email.trim())) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
+    if (!form.id_number.trim()) {
+      setFormError('ID number is required.');
+      return;
+    }
+    if (!form.password) {
+      setFormError('Password is required.');
+      return;
+    }
+    if (form.password.length < 6) {
+      setFormError('Password must be at least 6 characters.');
+      return;
+    }
 
-  if (!form.full_name.trim()) {
-    setFormError('Full name is required.');
-    return;
-  }
+    setSaving(true);
 
-  if (!form.email.trim()) {
-    setFormError('Email address is required.');
-    return;
-  }
-
-  // Basic email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!emailRegex.test(form.email.trim())) {
-    setFormError('Please enter a valid email address.');
-    return;
-  }
-
-  if (!form.id_number.trim()) {
-    setFormError('ID number is required.');
-    return;
-  }
-
-  if (!form.password) {
-    setFormError('Password is required.');
-    return;
-  }
-
-  if (form.password.length < 6) {
-    setFormError('Password must be at least 6 characters.');
-    return;
-  }
-
-  setSaving(true);
-
-  try {
-    // ================================
-    // CREATE USER THROUGH BACKEND
-    // ================================
-
-    const response = await fetch(
-      'http://localhost:5000/api/auth/register',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
-
-        headers: {
-          'Content-Type': 'application/json',
-        },
-
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: form.email.trim(),
           email: form.email.trim(),
           password: form.password,
           role: form.role,
-
           full_name: form.full_name.trim(),
-
           id_number: form.id_number.trim(),
-
-          department:
-            form.department.trim() || null,
-
+          department: form.department.trim() || null,
           status: form.status,
         }),
+      });
+
+      const responseText = await response.text();
+      let result: any = {};
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        result = { error: responseText || 'The server returned an invalid response.' };
       }
-    );
 
-    // ================================
-    // READ RESPONSE SAFELY
-    // ================================
+      console.log('Add user response:', response.status, result);
 
-    const responseText = await response.text();
-
-    let result: any = {};
-
-    try {
-      result = responseText
-        ? JSON.parse(responseText)
-        : {};
-    } catch {
-      result = {
-        error:
-          responseText ||
-          'The server returned an invalid response.',
-      };
-    }
-
-    console.log(
-      'Add user response:',
-      response.status,
-      result
-    );
-
-    // ================================
-    // BACKEND ERROR
-    // ================================
-
-    if (!response.ok) {
-      let errorMessage =
-        result.error ||
-        result.message ||
-        result.details ||
-        result.hint;
-
-      // Handle common HTTP errors
-      if (!errorMessage) {
-        switch (response.status) {
-          case 400:
-            errorMessage =
-              'Invalid user information. Please check the form and try again.';
-            break;
-
-          case 401:
-            errorMessage =
-              'You are not authorized to create this account.';
-            break;
-
-          case 403:
-            errorMessage =
-              'You do not have permission to create users.';
-            break;
-
-          case 409:
-            errorMessage =
-              'A user with this email or ID number already exists.';
-            break;
-
-          case 500:
-            errorMessage =
-              'The server encountered an error while creating the account.';
-            break;
-
-          default:
-            errorMessage =
-              `Failed to create account. Server returned ${response.status}.`;
+      if (!response.ok) {
+        let errorMessage = result.error || result.message || result.details || result.hint;
+        if (!errorMessage) {
+          switch (response.status) {
+            case 400: errorMessage = 'Invalid user information. Please check the form and try again.'; break;
+            case 401: errorMessage = 'You are not authorized to create this account.'; break;
+            case 403: errorMessage = 'You do not have permission to create users.'; break;
+            case 409: errorMessage = 'A user with this email or ID number already exists.'; break;
+            case 500: errorMessage = 'The server encountered an error while creating the account.'; break;
+            default:  errorMessage = `Failed to create account. Server returned ${response.status}.`;
+          }
         }
+        setFormError(errorMessage);
+        return;
       }
 
-      setFormError(errorMessage);
-      return;
+      if (!result || result.success === false) {
+        setFormError(result?.error || result?.message || 'The account could not be created.');
+        return;
+      }
+
+      console.log('User created successfully:', result);
+
+      setModal(null);
+      setSelected(null);
+      setForm({
+        full_name: '', email: '', role: 'student',
+        id_number: '', department: '', status: 'active', password: '',
+      });
+      setShowPassword(false);
+      setFormError('');
+
+      await fetchUsers();
+
+    } catch (error: any) {
+      console.error('Create user error:', error);
+      if (error?.name === 'TypeError' && error?.message?.toLowerCase().includes('fetch')) {
+        setFormError('Unable to connect to the backend server. Please make sure your backend is running on http://localhost:5000.');
+      } else {
+        setFormError(error?.message || 'Something went wrong while creating the account. Please try again.');
+      }
+    } finally {
+      setSaving(false);
     }
-
-    // ================================
-    // CHECK FOR BACKEND SUCCESS
-    // ================================
-
-    if (!result || result.success === false) {
-      setFormError(
-        result?.error ||
-        result?.message ||
-        'The account could not be created.'
-      );
-
-      return;
-    }
-
-    // ================================
-    // SUCCESS
-    // ================================
-
-    console.log(
-      'User created successfully:',
-      result
-    );
-
-    // Close modal
-    setModal(null);
-
-    // Clear selected user
-    setSelected(null);
-
-    // Reset form
-    setForm({
-      full_name: '',
-      email: '',
-      role: 'student',
-      id_number: '',
-      department: '',
-      status: 'active',
-      password: '',
-    });
-
-    // Reset password visibility
-    setShowPassword(false);
-
-    // Clear error
-    setFormError('');
-
-    // Refresh users table
-    await fetchUsers();
-
-  } catch (error: any) {
-
-    console.error(
-      'Create user error:',
-      error
-    );
-
-    // ================================
-    // CONNECTION / NETWORK ERROR
-    // ================================
-
-    if (
-      error?.name === 'TypeError' &&
-      error?.message?.toLowerCase().includes('fetch')
-    ) {
-      setFormError(
-        'Unable to connect to the backend server. Please make sure your backend is running on http://localhost:5000.'
-      );
-    } else {
-      setFormError(
-        error?.message ||
-        'Something went wrong while creating the account. Please try again.'
-      );
-    }
-
-  } finally {
-    setSaving(false);
-  }
-};
-
+  };
 
   const handleEdit = async () => {
-  setFormError('');
-
-  // =====================================
-  // VALIDATION
-  // =====================================
-
-  if (!form.full_name.trim()) {
-    setFormError('Full name is required.');
-    return;
-  }
-
-  if (!form.id_number.trim()) {
-    setFormError('ID number is required.');
-    return;
-  }
-
-  if (!selected) {
-    setFormError('No user selected.');
-    return;
-  }
-
-  setSaving(true);
-
-  try {
-
-    // =====================================
-    // STEP 1: UPDATE PROFILE
-    // =====================================
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        full_name: form.full_name.trim(),
-        role: form.role,
-        id_number: form.id_number.trim(),
-        department: form.department.trim() || null,
-        status: form.status,
-      })
-      .eq('id', selected.id);
-
-    if (profileError) {
-      console.error(
-        'Profile update error:',
-        profileError
-      );
-
-      setFormError(
-        profileError.message ||
-        'Failed to update profile.'
-      );
-
-      return;
-    }
-
-    // =====================================
-    // STEP 2: UPDATE LOGIN ACCOUNT
-    // =====================================
-
-    const response = await fetch(
-      `http://localhost:5000/api/auth/users/${selected.id}`,
-      {
-        method: 'PUT',
-
-        headers: {
-          'Content-Type': 'application/json',
-        },
-
-        body: JSON.stringify({
-          role: form.role,
-
-          // Only update password if user entered one
-          ...(form.password.trim()
-            ? {
-                password: form.password.trim(),
-              }
-            : {}),
-        }),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error(
-        'Backend update error:',
-        result
-      );
-
-      setFormError(
-        result.error ||
-        result.message ||
-        'Failed to update login account.'
-      );
-
-      return;
-    }
-
-    // =====================================
-    // SUCCESS
-    // =====================================
-
-    setModal(null);
-    setSelected(null);
-
-    setForm({
-      full_name: '',
-      email: '',
-      role: 'student',
-      id_number: '',
-      department: '',
-      status: 'active',
-      password: '',
-    });
-
-    await fetchUsers();
-
-  } catch (error: any) {
-
-    console.error(
-      'Edit user error:',
-      error
-    );
-
-    setFormError(
-      error.message ||
-      'Unable to connect to the backend.'
-    );
-
-  } finally {
-    setSaving(false);
-  }
-};
-
- const handleDelete = async () => {
-  if (!selected) {
-    setFormError('No user selected.');
-    return;
-  }
-
-  setFormError('');
-  setSaving(true);
-
-  try {
-    console.log('Deleting user:', selected);
-    console.log('Profile ID:', selected.id);
-    console.log('Email:', selected.email);
-
-    const response = await fetch(
-      `http://localhost:5000/api/auth/users/${selected.id}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    // -------------------------------------
-    // READ RESPONSE SAFELY
-    // -------------------------------------
-
-    const text = await response.text();
-
-    let result: any = {};
-
-    try {
-      result = text ? JSON.parse(text) : {};
-    } catch {
-      result = {
-        error: text || 'Server returned an invalid response.',
-      };
-    }
-
-    console.log('Delete response:', response.status, result);
-
-    // -------------------------------------
-    // BACKEND ERROR
-    // -------------------------------------
-
-    if (!response.ok) {
-      setFormError(
-        result.error ||
-        result.message ||
-        `Failed to delete user. Server returned ${response.status}.`
-      );
-
-      return;
-    }
-
-    // -------------------------------------
-    // SUCCESS
-    // -------------------------------------
-
-    console.log('User deleted successfully.');
-
-    setModal(null);
-    setSelected(null);
     setFormError('');
 
-    setForm({
-      full_name: '',
-      email: '',
-      role: 'student',
-      id_number: '',
-      department: '',
-      status: 'active',
-      password: '',
-    });
+    if (!form.full_name.trim()) {
+      setFormError('Full name is required.');
+      return;
+    }
+    if (!form.id_number.trim()) {
+      setFormError('ID number is required.');
+      return;
+    }
+    if (!selected) {
+      setFormError('No user selected.');
+      return;
+    }
 
-    await fetchUsers();
+    setSaving(true);
 
-  } catch (error: any) {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          full_name: form.full_name.trim(),
+          role: form.role,
+          id_number: form.id_number.trim(),
+          department: form.department.trim() || null,
+          status: form.status,
+          ...(form.password.trim() ? { password: form.password.trim() } : {}),
+        }),
+      });
 
-    console.error('Delete user error:', error);
+      const result = await response.json();
 
-    setFormError(
-      error?.message ||
-      'Unable to connect to the backend server.'
-    );
+      if (!response.ok) {
+        setFormError(result.error || result.message || 'Failed to update user.');
+        return;
+      }
 
-  } finally {
-    setSaving(false);
-  }
-};
+      setModal(null);
+      setSelected(null);
+      setForm({
+        full_name: '', email: '', role: 'student',
+        id_number: '', department: '', status: 'active', password: '',
+      });
+
+      await fetchUsers();
+
+    } catch (error: any) {
+      console.error('Edit user error:', error);
+      setFormError(error.message || 'Unable to connect to the backend.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selected) {
+      setFormError('No user selected.');
+      return;
+    }
+
+    setFormError('');
+    setSaving(true);
+
+    try {
+      console.log('Deleting user:', selected);
+      console.log('Profile ID:', selected.id);
+      console.log('Email:', selected.email);
+
+      const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const text = await response.text();
+      let result: any = {};
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        result = { error: text || 'Server returned an invalid response.' };
+      }
+
+      console.log('Delete response:', response.status, result);
+
+      if (!response.ok) {
+        setFormError(result.error || result.message || `Failed to delete user. Server returned ${response.status}.`);
+        return;
+      }
+
+      console.log('User deleted successfully.');
+
+      setModal(null);
+      setSelected(null);
+      setFormError('');
+      setForm({
+        full_name: '', email: '', role: 'student',
+        id_number: '', department: '', status: 'active', password: '',
+      });
+
+      await fetchUsers();
+
+    } catch (error: any) {
+      console.error('Delete user error:', error);
+      setFormError(error?.message || 'Unable to connect to the backend server.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const activatePending = async (user: Profile) => {
     setActivating(user.id);
     try {
-      // Step 1: I-activate ang profile
-      await supabase.from('profiles').update({ status: 'active' }).eq('id', user.id);
+      const token = localStorage.getItem('token');
 
-      // Step 2: I-add sa users table para maka-login via JWT
-      // Pangitaa ang username sa profiles
+      const res = await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: 'active' }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Activate profile error:', err);
+        return;
+      }
+
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -1032,14 +823,12 @@ function UserManagement() {
         .single();
 
       if (profile) {
-        // Check kung naa na sa users table
         const { data: existingUser } = await supabase
           .from('users')
           .select('id')
           .eq('username', profile.email)
           .single();
 
-        // Kung wala pa, i-add gamit email as username
         if (!existingUser) {
           await fetch('http://localhost:5000/api/auth/register', {
             method: 'POST',
@@ -1061,7 +850,23 @@ function UserManagement() {
   const toggleStatus = async (user: Profile) => {
     if (user.status === 'pending') return;
     const next = user.status === 'active' ? 'inactive' : 'active';
-    await supabase.from('profiles').update({ status: next }).eq('id', user.id);
+
+    const token = localStorage.getItem('token');
+    const res = await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: next }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('Toggle status error:', err);
+      return;
+    }
+
     fetchUsers();
   };
 
@@ -1084,6 +889,10 @@ function UserManagement() {
           </button>
         </div>
       </div>
+
+      {fetchError && (
+        <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{fetchError}</div>
+      )}
 
       {/* Pending banner */}
       {pendingCount > 0 && (
@@ -1315,50 +1124,28 @@ function UserManagement() {
                   </select>
                 </div>
                 {modal === 'add' && (
-  <div className="col-span-1 sm:col-span-2">
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      Password *
-    </label>
-
-    <div className="relative">
-      <input
-        type={showPassword ? 'text' : 'password'}
-        value={form.password}
-        onChange={e =>
-          setForm({
-            ...form,
-            password: e.target.value
-          })
-        }
-        className="w-full px-3 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        placeholder="Min. 6 characters"
-      />
-
-      <button
-        type="button"
-        onClick={() =>
-          setShowPassword(prev => !prev)
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        title={
-          showPassword
-            ? 'Hide password'
-            : 'Show password'
-        }
-      >
-        {showPassword ? (
-          <EyeOff className="w-5 h-5" />
-        ) : (
-          <Eye className="w-5 h-5" />
-        )}
-      </button>
-    </div>
-
-    <p className="text-xs text-gray-400 mt-1.5">
-      Password must be at least 6 characters.
-    </p>
-  </div>
-)}
+                  <div className="col-span-1 sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Password *</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={form.password}
+                        onChange={e => setForm({ ...form, password: e.target.value })}
+                        className="w-full px-3 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Min. 6 characters"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">Password must be at least 6 characters.</p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-3 mt-6">
@@ -1374,113 +1161,76 @@ function UserManagement() {
       )}
 
       {/* Delete Modal */}
-{modal === 'delete' && selected && (
-  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {modal === 'delete' && selected && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => {
+              if (!saving) {
+                setModal(null);
+                setFormError('');
+              }
+            }}
+          />
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 z-10">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Delete User</h2>
+                <p className="text-sm text-gray-500">This action cannot be undone.</p>
+              </div>
+            </div>
 
-    {/* Overlay */}
-    <div
-      className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-      onClick={() => {
-        if (!saving) {
-          setModal(null);
-          setFormError('');
-        }
-      }}
-    />
+            {formError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+                <p className="text-sm text-red-700">{formError}</p>
+              </div>
+            )}
 
-    {/* Modal */}
-    <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 z-10">
+            <div className="bg-gray-50 rounded-xl p-4 mb-6">
+              <p className="font-semibold text-gray-900">{selected.full_name}</p>
+              <p className="text-sm text-gray-500">{selected.email}</p>
+              <p className="text-xs text-gray-400 mt-1">{selected.id_number}</p>
+            </div>
 
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-4">
-
-        <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
-          <Trash2 className="w-6 h-6 text-red-600" />
-        </div>
-
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">
-            Delete User
-          </h2>
-
-          <p className="text-sm text-gray-500">
-            This action cannot be undone.
-          </p>
-        </div>
-
-      </div>
-
-      {/* ERROR MESSAGE */}
-      {formError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
-          <p className="text-sm text-red-700">
-            {formError}
-          </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!saving) {
+                    setModal(null);
+                    setFormError('');
+                  }
+                }}
+                disabled={saving}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={saving}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete User
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* User Information */}
-      <div className="bg-gray-50 rounded-xl p-4 mb-6">
-
-        <p className="font-semibold text-gray-900">
-          {selected.full_name}
-        </p>
-
-        <p className="text-sm text-gray-500">
-          {selected.email}
-        </p>
-
-        <p className="text-xs text-gray-400 mt-1">
-          {selected.id_number}
-        </p>
-
-      </div>
-
-      {/* Buttons */}
-      <div className="flex gap-3">
-
-        {/* Cancel */}
-        <button
-          type="button"
-          onClick={() => {
-            if (!saving) {
-              setModal(null);
-              setFormError('');
-            }
-          }}
-          disabled={saving}
-          className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
-        >
-          Cancel
-        </button>
-
-        {/* Delete */}
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={saving}
-          className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-
-          {saving ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Deleting...
-            </>
-          ) : (
-            <>
-              <Trash2 className="w-4 h-4" />
-              Delete User
-            </>
-          )}
-
-        </button>
-
-      </div>
-
-    </div>
-  </div>
-)}
     </div>
   );
 }
