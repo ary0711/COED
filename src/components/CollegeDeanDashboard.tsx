@@ -1497,47 +1497,381 @@ function CalendarActivities() {
 }
 
 // ─── Academic Records ─────────────────────────────────────────────────────────
+// ─── Academic Records ─────────────────────────────────────────────────────────
+interface AcademicDocument {
+  id: string;
+  title: string;
+  description: string | null;
+  document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  uploaded_by: string | null;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  handbook: 'Handbook',
+  policy: 'Policy',
+  form: 'Form',
+  memorandum: 'Memorandum',
+};
+
+const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+
+function getDocsToken() {
+  return localStorage.getItem('token');
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function AcademicRecords() {
+  const [documents, setDocuments] = useState<AcademicDocument[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
+
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<AcademicDocument | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', document_type: 'handbook' });
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const [deleteConfirm, setDeleteConfirm] = useState<AcademicDocument | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const params = new URLSearchParams();
+      if (typeFilter !== 'all') params.set('document_type', typeFilter);
+      params.set('status', statusFilter);
+
+      const res = await fetch(`${DOCS_API_URL}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load documents.');
+        setDocuments([]);
+        return;
+      }
+      const data = await res.json();
+      setDocuments(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDocuments(); /* eslint-disable-next-line */ }, [typeFilter, statusFilter]);
+
+  const resetForm = () => {
+    setForm({ title: '', description: '', document_type: 'handbook' });
+    setFile(null);
+    setFormError('');
+    setEditingDoc(null);
+  };
+
+  const openUpload = () => { resetForm(); setShowUploadModal(true); };
+  const openEdit = (doc: AcademicDocument) => {
+    setEditingDoc(doc);
+    setForm({ title: doc.title, description: doc.description ?? '', document_type: doc.document_type });
+    setFile(null);
+    setFormError('');
+    setShowUploadModal(true);
+  };
+
+  const handleSave = async () => {
+    setFormError('');
+    if (!form.title.trim()) { setFormError('Title is required.'); return; }
+    if (!editingDoc && !file) { setFormError('Please choose a file to upload.'); return; }
+
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('title', form.title.trim());
+      fd.append('description', form.description.trim());
+      fd.append('document_type', form.document_type);
+      if (file) fd.append('file', file);
+
+      const url = editingDoc ? `${DOCS_API_URL}/${editingDoc.id}` : DOCS_API_URL;
+      const method = editingDoc ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+        body: fd,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFormError(err.error || 'Failed to save document.');
+        return;
+      }
+
+      setShowUploadModal(false);
+      resetForm();
+      await fetchDocuments();
+    } catch {
+      setFormError('Could not reach the server. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleArchive = async (doc: AcademicDocument) => {
+    const nextStatus = doc.status === 'active' ? 'archived' : 'active';
+    const fd = new FormData();
+    fd.append('status', nextStatus);
+    const res = await fetch(`${DOCS_API_URL}/${doc.id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getDocsToken()}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setLoadError(err.error || 'Failed to update document status.');
+      return;
+    }
+    fetchDocuments();
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${DOCS_API_URL}/${deleteConfirm.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to delete document.');
+        return;
+      }
+      setDeleteConfirm(null);
+      await fetchDocuments();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDownload = async (doc: AcademicDocument) => {
+    setDownloadingId(doc.id);
+    try {
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to generate download link.');
+        return;
+      }
+      const { url } = await res.json();
+      window.open(url, '_blank');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
   return (
     <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records Management</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Dean's List</h2>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Automated generation of Dean's List per semester</p>
-          <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Generate Dean's List</button>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Load</h2>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">View and manage faculty teaching loads</p>
-          <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">View Loads</button>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Documents</h2>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Accreditation and academic documents</p>
-          <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
-            <Upload className="w-4 h-4" /> Upload
-          </button>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Academic Records — Documents</h1>
+        <button
+          onClick={openUpload}
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors text-sm font-semibold shadow-md"
+        >
+          <Upload className="w-4 h-4" /> Upload Document
+        </button>
       </div>
+
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <select
+          value={typeFilter}
+          onChange={e => setTypeFilter(e.target.value)}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="all">All Categories</option>
+          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as any)}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Documents</h2>
-        <div className="space-y-3">
-          {['Accreditation Report 2025', 'Faculty Handbook', 'Academic Calendar 2025-2026'].map((doc, i) => (
-            <div key={i} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                <FileText className="w-5 sm:w-6 h-5 sm:h-6 text-blue-600 flex-shrink-0" />
-                <span className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc}</span>
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading documents...</span>
+          </div>
+        ) : documents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+            <FileText className="w-10 h-10 mb-2 opacity-40" />
+            <p className="text-sm text-gray-400">No documents found.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {documents.map(doc => (
+              <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
+                    <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">{DOC_TYPE_LABELS[doc.document_type]}</span>
+                      {doc.status === 'archived' && <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>}
+                      <span>{formatDate(doc.created_at)}</span>
+                      <span>· {formatFileSize(doc.file_size)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => handleDownload(doc)}
+                    disabled={downloadingId === doc.id}
+                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
+                    title="Download"
+                  >
+                    {downloadingId === doc.id
+                      ? <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      : <Download className="w-5 h-5" />}
+                  </button>
+                  <button onClick={() => openEdit(doc)} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors" title="Edit">
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => toggleArchive(doc)} className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg transition-colors" title={doc.status === 'active' ? 'Archive' : 'Restore'}>
+                    {doc.status === 'active' ? <History className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                  </button>
+                  <button onClick={() => setDeleteConfirm(doc)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <button className="text-blue-600 hover:text-blue-700 flex-shrink-0 ml-2"><Download className="w-5 h-5" /></button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Upload / Edit Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
+              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+
+            {formError && <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{formError}</div>}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Title *</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={e => setForm({ ...form, title: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Student Handbook 2026"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
+                <select
+                  value={form.document_type}
+                  onChange={e => setForm({ ...form, document_type: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  {editingDoc ? 'Replace File (optional)' : 'File *'}
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx"
+                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm"
+                />
+                {editingDoc && <p className="text-xs text-gray-400 mt-1">Current file: {editingDoc.file_name}</p>}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowUploadModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-60"
+              >
+                {saving ? 'Saving...' : editingDoc ? 'Save Changes' : 'Upload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-7 h-7 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Delete Document?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              This will permanently remove <span className="font-semibold text-gray-800">"{deleteConfirm.title}"</span>. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
   const [facultyList, setFacultyList] = useState<Profile[]>([]);

@@ -23,6 +23,7 @@ app.use('/api/research-submissions', require('./routes/researchSubmissions'));
 app.use('/api/tracer-survey', require('./routes/tracerSurvey'));
 app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/me', require('./routes/me'));
+app.use('/api/academic-records/documents', require('./routes/academicDocuments'));
 
 // Protected route test
 const authenticate = require('./middleware/authenticate');
