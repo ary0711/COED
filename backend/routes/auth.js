@@ -6,8 +6,47 @@ const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
+router.get('/student-count', async (req, res) => {
+  try {
+    console.log('====================================');
+    console.log('STUDENT COUNT API CALLED');
 
+    const { data, count, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, status', {
+        count: 'exact',
+      })
+      .eq('role', 'student')
+      .eq('status', 'active');
 
+    console.log('STUDENT DATA:', data);
+    console.log('STUDENT COUNT:', count);
+    console.log('STUDENT ERROR:', error);
+
+    console.log('====================================');
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: count ?? data?.length ?? 0,
+      students: data,
+    });
+
+  } catch (error) {
+    console.error('UNEXPECTED ERROR:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load student count',
+    });
+  }
+});
 router.post('/register', async (req, res) => {
   try {
     const {

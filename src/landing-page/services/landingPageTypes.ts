@@ -29,10 +29,12 @@ export interface CoreValueCard {
   display_order: number;
 }
 export interface ClubStatistic {
-  id: string;
-  label: string;
-  value: string;
-  display_order: number;
+ id: string;
+   title: string;
+   value: string;
+   icon: string;
+   color: string;
+   display_order: number;
 }
 export interface Organization {
   id: string;
