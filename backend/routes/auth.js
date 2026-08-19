@@ -883,13 +883,7 @@ router.post('/login', async (req, res) => {
 
 /*
 =========================================================
-DELETE USER
-=========================================================
-
-Deletes both:
-
-users
-profiles
+UPDATE USER (PROFILE + LOGIN ACCOUNT)
 =========================================================
 */
 
@@ -969,6 +963,7 @@ router.put('/users/:id', authenticate, async (req, res) => {
     return res.status(500).json({ error: 'Internal server error.' });
   }
 });
+
 /*
 =====================================================
 DELETE USER
@@ -976,29 +971,22 @@ DELETE USER
 
 Deletes:
 
-1. profiles record
-2. users record
+1. Supabase Auth account
+2. public.users record
+3. profiles record
 
-The same UUID is used for both tables.
+The frontend sends the PROFILE ID. We first find the
+profile, then find the corresponding login account in
+`users` via matching id or, failing that, email. This
+works even if profiles.id and users.id ever diverge.
 */
 
-/*
-=====================================================
-DELETE USER
-=====================================================
-
-The frontend sends the PROFILE ID.
-
-We first find the profile, then find the
-corresponding login account in users using
-the email/username.
-
-This works even if profiles.id and users.id
-are different UUIDs.
-*/
-
-router.delete('/users/:id', async (req, res) => {
+router.delete('/users/:id', authenticate, async (req, res) => {
   try {
+    if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the Dean can delete users.' });
+    }
+
     const { id } = req.params;
 
     console.log('====================================');
@@ -1298,6 +1286,13 @@ router.delete('/users/:id', async (req, res) => {
     });
   }
 });
+
+/*
+=========================================================
+GET ALL USERS (for User Management table)
+=========================================================
+*/
+
 router.get('/users', authenticate, async (req, res) => {
   if (req.user.role !== 'dean' && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Only the Dean can access this resource.' });

@@ -77,7 +77,7 @@ interface ProfileCardProps {
 const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
   <div 
     onClick={() => onClick(person)} 
-    className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300"
+    className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300 shadow-md"
   >
     {/* Placeholder for actual image */}
    <img

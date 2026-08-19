@@ -142,7 +142,7 @@ if (!previewMode && loading) {
   );
 }
   return (
-    <div className="min-h-screen bg-[#F1F5F9] py-12">
+    <div className="min-h-screen bg-white  py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-12">
@@ -233,18 +233,7 @@ if (!previewMode && loading) {
         </div>
 
         {/* Call to Action */}
-        <div className="mt-12 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
-          <h2 className="text-2xl font-semibold mb-3">
-             {displayContent.cta?.title}
-          </h2>
-          <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-              {displayContent.cta?.description}
-          </p>
-          <button   onClick={() => onNavigate?.('contact')}
-          className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            {displayContent.cta?.content}
-          </button>
-        </div>
+  
       </div>
     </div>
   );

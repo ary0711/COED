@@ -225,7 +225,7 @@ const displaySocialLinks =
     ? previewSocialLinks || []
     : socialLinks;
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-[#E0ECFF] via-[#F1F5F9] to-[#DBEAFE] pt-20 pb-12">
+    <div className="min-h-screen w-full bg-white  pt-20 pb-12">
 
       <div className="max-w-7xl mx-auto px-6">
 
@@ -335,9 +335,6 @@ const displaySocialLinks =
       <Facebook className="w-5 h-5 text-[#2563EB]" />
     )}
 
-    {social.platform === 'twitter' && (
-      <Twitter className="w-5 h-5 text-[#2563EB]" />
-    )}
 
     {social.platform === 'website' && (
       <Globe className="w-5 h-5 text-[#2563EB]" />
