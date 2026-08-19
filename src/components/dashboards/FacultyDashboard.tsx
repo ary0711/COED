@@ -828,67 +828,154 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
   // ====================== 5.4 ACADEMIC RECORDS ======================
   function AcademicRecordsView() {
-    const handleDownload = (name: string) => alert(`📥 Downloading: ${name}`);
-    const [activeCategory, setActiveCategory] = useState('All');
+  interface AcademicDoc {
+    id: string;
+    title: string;
+    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+    file_size: number;
+  }
 
-    const documents = [
-      { name: 'Faculty Handbook 2025–2026',          category: 'Handbook',   size: '2.4 MB'  },
-      { name: 'Academic Policies & Guidelines',       category: 'Policy',     size: '1.1 MB'  },
-      { name: 'Research Memorandum No. 2026-01',      category: 'Memorandum', size: '340 KB'  },
-      { name: 'Administrative Memorandum No. 2026-03',category: 'Memorandum', size: '280 KB'  },
-      { name: 'Leave Application Form',               category: 'Form',       size: '120 KB'  },
-      { name: 'Research Proposal Template',           category: 'Form',       size: '95 KB'   },
-      { name: 'Grade Sheet Template',                 category: 'Form',       size: '88 KB'   },
-      { name: 'Faculty Evaluation Form',              category: 'Form',       size: '110 KB'  },
-    ];
+  const DOC_TYPE_LABELS: Record<string, string> = {
+    handbook: 'Handbook',
+    policy: 'Policy',
+    memorandum: 'Memorandum',
+    form: 'Form',
+  };
 
-    const categories = ['All', 'Handbook', 'Policy', 'Memorandum', 'Form'];
-    const filtered = activeCategory === 'All' ? documents : documents.filter(d => d.category === activeCategory);
+  const categoryColor: Record<string, string> = {
+    Handbook:   'bg-blue-100 text-blue-700',
+    Policy:     'bg-purple-100 text-purple-700',
+    Memorandum: 'bg-orange-100 text-orange-700',
+    Form:       'bg-green-100 text-green-700',
+  };
 
-    const categoryColor: Record<string, string> = {
-      Handbook:   'bg-blue-100 text-blue-700',
-      Policy:     'bg-purple-100 text-purple-700',
-      Memorandum: 'bg-orange-100 text-orange-700',
-      Form:       'bg-green-100 text-green-700',
-    };
+  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
 
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {categories.map(c => (
-            <button key={c} onClick={() => setActiveCategory(c)}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const categories = ['All', 'Handbook', 'Policy', 'Memorandum', 'Form'];
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(DOCS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load documents.');
+        setDocuments([]);
+        return;
+      }
+      const data = await res.json();
+      setDocuments(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDocuments(); }, []);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleDownload = async (doc: AcademicDoc) => {
+    setDownloadingId(doc.id);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to generate download link.');
+        return;
+      }
+      const { url } = await res.json();
+      window.open(url, '_blank');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const filtered = activeCategory === 'All'
+    ? documents
+    : documents.filter(d => DOC_TYPE_LABELS[d.document_type] === activeCategory);
+
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
+
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {categories.map(c => (
+          <button key={c} onClick={() => setActiveCategory(c)}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading documents...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No documents found.</div>
+        ) : (
           <div className="divide-y divide-gray-100">
-            {filtered.map((doc, i) => (
-              <div key={i} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.name}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[doc.category]}`}>{doc.category}</span>
-                      <span className="text-xs text-gray-400">{doc.size}</span>
+            {filtered.map((doc) => {
+              const label = DOC_TYPE_LABELS[doc.document_type];
+              return (
+                <div key={doc.id} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[label]}`}>{label}</span>
+                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleDownload(doc)}
+                    disabled={downloadingId === doc.id}
+                    className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
+                  >
+                    {downloadingId === doc.id
+                      ? <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      : <Download size={14} />}
+                    <span className="hidden xs:inline sm:inline">Download</span>
+                  </button>
                 </div>
-                <button onClick={() => handleDownload(doc.name)} className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0">
-                  <Download size={14} /> <span className="hidden xs:inline sm:inline">Download</span>
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ====================== 5.6 REPORTS ======================
   function ReportsView({ userId, userName }: { userId: string; userName: string }) {

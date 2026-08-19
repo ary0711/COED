@@ -34,6 +34,7 @@ import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { NotificationsPanel } from './NotificationsPanel';
 import { FacultyMonitoringTable } from './FacultyMonitoringTable';
+import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 
 // NOTE: These two components already exist in your Faculty dashboard folder.
 // Update the import path below if your project structure places them elsewhere
@@ -1416,30 +1417,7 @@ function ReportsMonitoring() {
    Academic Records
 ───────────────────────────────────────────── */
 function AcademicRecordsView() {
-  const handleDownload = (doc: string) => alert(`Downloading: ${doc}`);
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <div className="space-y-3">
-          {['Curriculum 2025', 'Faculty Load Summary'].map((doc, index) => (
-            <div key={index} className="p-4 bg-gray-50 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <FileText className="w-6 h-6 text-blue-600 shrink-0" />
-                <span className="font-medium text-gray-900">{doc}</span>
-              </div>
-              <button
-                onClick={() => handleDownload(doc)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all self-start sm:self-auto"
-              >
-                <Download className="w-4 h-4" /> Download
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  return <AcademicDocumentsViewer />;
 }
 
 /* ─────────────────────────────────────────────
