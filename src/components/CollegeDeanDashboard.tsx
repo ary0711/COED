@@ -394,97 +394,429 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
-  // Mobile-only metric cards (charts replaced on small screens)
+  const [facultyCount, setFacultyCount] = useState<number>(0);
+  const [facultyLoading, setFacultyLoading] = useState(true);
+  const [studentCount, setStudentCount] = useState<number>(0);
+  const [studentLoading, setStudentLoading] = useState(true);
+  const [departmentCount, setDepartmentCount] = useState<number>(0);
+  const [departmentLoading, setDepartmentLoading] = useState(true);
+  // ============================================
+  // LOAD TOTAL FACULTY FROM SUPABASE
+  // ============================================
+  useEffect(() => {
+  const loadDepartmentCount = async () => {
+    try {
+      setDepartmentLoading(true);
+
+      const response = await fetch(
+        'http://localhost:5000/api/departments/count'
+      );
+
+      console.log(
+        'Department count HTTP status:',
+        response.status
+      );
+
+      const result = await response.json();
+
+      console.log('Department count API:', result);
+
+      if (!response.ok || !result.success) {
+        console.error(
+          'Department count failed:',
+          result
+        );
+
+        setDepartmentCount(0);
+        return;
+      }
+
+      setDepartmentCount(
+        Number(result.count) || 0
+      );
+
+    } catch (error) {
+      console.error(
+        'Failed to load department count:',
+        error
+      );
+
+      setDepartmentCount(0);
+
+    } finally {
+      setDepartmentLoading(false);
+    }
+  };
+
+  loadDepartmentCount();
+}, []);
+  useEffect(() => {
+    const loadFacultyCount = async () => {
+      try {
+        setFacultyLoading(true);
+
+        const { count, error } = await supabase
+          .from('faculty_members')
+          .select('*', {
+            count: 'exact',
+            head: true,
+          });
+
+        if (error) {
+          console.error('Error loading faculty count:', error);
+          setFacultyCount(0);
+          return;
+        }
+
+        setFacultyCount(count ?? 0);
+
+      } catch (error) {
+        console.error('Unexpected error loading faculty count:', error);
+        setFacultyCount(0);
+      } finally {
+        setFacultyLoading(false);
+      }
+    };
+
+    loadFacultyCount();
+  }, []);
+  useEffect(() => {
+  const loadStudentCount = async () => {
+    try {
+      setStudentLoading(true);
+
+      const response = await fetch(
+        'http://localhost:5000/api/auth/student-count'
+      );
+
+      const result = await response.json();
+
+      console.log('Student count API:', result);
+
+      if (!response.ok || !result.success) {
+        console.error('Student count failed:', result);
+        setStudentCount(0);
+        return;
+      }
+
+      setStudentCount(Number(result.count) || 0);
+
+    } catch (error) {
+      console.error('Failed to load student count:', error);
+      setStudentCount(0);
+    } finally {
+      setStudentLoading(false);
+    }
+  };
+
+  loadStudentCount();
+}, []);
+
+  // Mobile-only metric cards
   const mobileMetrics = [
-    { label: 'Total Faculty',       value: '142',   sub: '+5.2% this semester',  color: '#1E3A8A', bg: '#DBEAFE' },
-    { label: 'Total Students',      value: '3,847', sub: '+12.3% this semester', color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Active Departments',  value: '8',     sub: 'All operational',      color: '#7C3AED', bg: '#EDE9FE' },
-    { label: 'Pending Reports',     value: '23',    sub: '8 newly added',        color: '#B45309', bg: '#FEF3C7' },
-    { label: 'Alumni Responses',    value: '1,256', sub: '+18.7% response rate', color: '#BE185D', bg: '#FCE7F3' },
-    { label: 'Evaluation Rating',   value: '4.6',   sub: 'Out of 5.0 avg.',      color: '#0369A1', bg: '#E0F2FE' },
-    { label: 'Research Submitted',  value: '14',    sub: '2 pending approval',   color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Completion Rate',     value: '94%',   sub: 'Student evaluations',  color: '#9D174D', bg: '#FCE7F3' },
+    {
+      label: 'Total Faculty',
+      value: facultyLoading ? '...' : facultyCount.toLocaleString(),
+      sub: 'Faculty members',
+      color: '#1E3A8A',
+      bg: '#DBEAFE'
+    },
+    {
+  label: 'Total Students',
+  value: studentLoading
+    ? '...'
+    : studentCount.toLocaleString(),
+  sub: 'Active student accounts',
+  color: '#065F46',
+  bg: '#D1FAE5'
+},
+    {
+  label: 'Active Departments',
+  value: departmentLoading
+    ? '...'
+    : departmentCount.toLocaleString(),
+  sub: 'All operational',
+  color: '#7C3AED',
+  bg: '#EDE9FE'
+},
+    {
+      label: 'Pending Reports',
+      value: '23',
+      sub: '8 newly added',
+      color: '#B45309',
+      bg: '#FEF3C7'
+    },
+    {
+      label: 'Alumni Responses',
+      value: '1,256',
+      sub: '+18.7% response rate',
+      color: '#BE185D',
+      bg: '#FCE7F3'
+    },
+    {
+      label: 'Evaluation Rating',
+      value: '4.6',
+      sub: 'Out of 5.0 avg.',
+      color: '#0369A1',
+      bg: '#E0F2FE'
+    },
+    {
+      label: 'Research Submitted',
+      value: '14',
+      sub: '2 pending approval',
+      color: '#065F46',
+      bg: '#D1FAE5'
+    },
+    {
+      label: 'Completion Rate',
+      value: '94%',
+      sub: 'Student evaluations',
+      color: '#9D174D',
+      bg: '#FCE7F3'
+    },
   ];
 
   return (
     <div className="flex flex-col h-full">
+
       <div className="mb-4 pb-4 border-b border-gray-200">
-         <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
+        <p className="text-gray-500 text-sm">
+          Welcome back! Here's your college overview
+        </p>
       </div>
 
-      {/* ── Summary cards (all screen sizes) ── */}
+      {/* ============================================
+          SUMMARY CARDS
+      ============================================ */}
       <div className="mb-4">
+
+        {/* MOBILE */}
         <div
           className="flex gap-3 overflow-x-auto pb-4 sm:hidden"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch'
+          }}
         >
           {[
-            { title: 'Total Faculty',      value: '142',   icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE', trend: '5.2%',  trendUp: true  },
-            { title: 'Total Students',     value: '3,847', icon: Users,         iconColor: '#10B981', iconBgColor: '#D1FAE5', trend: '12.3%', trendUp: true  },
-            { title: 'Active Departments', value: '8',     icon: Building2,     iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
-            { title: 'Pending Reports',    value: '23',    icon: FileText,      iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: '8',     trendUp: false },
-            { title: 'Alumni Responses',   value: '1,256', icon: UserCheck,     iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: '18.7%', trendUp: true  },
+            {
+              title: 'Total Faculty',
+              value: facultyLoading
+                ? '...'
+                : facultyCount.toLocaleString(),
+              icon: GraduationCap,
+              iconColor: '#2563EB',
+              iconBgColor: '#DBEAFE',
+              trend: undefined,
+              trendUp: undefined
+            },
+            {
+  title: 'Total Students',
+  value: studentLoading
+    ? '...'
+    : studentCount.toLocaleString(),
+  icon: Users,
+  iconColor: '#10B981',
+  iconBgColor: '#D1FAE5',
+  trend: undefined,
+  trendUp: undefined
+},
+            {
+  title: 'Active Departments',
+  value: departmentLoading
+    ? '...'
+    : departmentCount.toLocaleString(),
+  icon: Building2,
+  iconColor: '#8B5CF6',
+  iconBgColor: '#EDE9FE'
+},
+            {
+              title: 'Pending Reports',
+              value: '23',
+              icon: FileText,
+              iconColor: '#F59E0B',
+              iconBgColor: '#FEF3C7',
+              trend: '8',
+              trendUp: false
+            },
+            {
+              title: 'Alumni Responses',
+              value: '1,256',
+              icon: UserCheck,
+              iconColor: '#EF4444',
+              iconBgColor: '#FEE2E2',
+              trend: '18.7%',
+              trendUp: true
+            },
           ].map((card) => (
-            <div key={card.title} className="flex-shrink-0 w-48 h-40">
+            <div
+              key={card.title}
+              className="flex-shrink-0 w-48 h-40"
+            >
               <SummaryCard {...card} />
             </div>
           ))}
         </div>
 
+        {/* DESKTOP */}
         <div className="hidden sm:grid sm:grid-cols-3 xl:grid-cols-5 gap-4">
-          <div className="min-h-[160px]"><SummaryCard title="Total Faculty"      value="142"   icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" trend="5.2%"  trendUp={true} /></div>
-          <div className="min-h-[160px]"><SummaryCard title="Total Students"     value="3,847" icon={Users}         iconColor="#10B981" iconBgColor="#D1FAE5" trend="12.3%" trendUp={true} /></div>
-          <div className="min-h-[160px]"><SummaryCard title="Active Departments" value="8"     icon={Building2}     iconColor="#8B5CF6" iconBgColor="#EDE9FE" /></div>
-          <div className="min-h-[160px]"><SummaryCard title="Pending Reports"    value="23"    icon={FileText}      iconColor="#F59E0B" iconBgColor="#FEF3C7" trend="8"     trendUp={false} /></div>
-          <div className="min-h-[160px]"><SummaryCard title="Alumni Responses"   value="1,256" icon={UserCheck}     iconColor="#EF4444" iconBgColor="#FEE2E2" trend="18.7%" trendUp={true} /></div>
+
+          <div className="min-h-[160px]">
+            <SummaryCard
+              title="Total Faculty"
+              value={
+                facultyLoading
+                  ? '...'
+                  : facultyCount.toLocaleString()
+              }
+              icon={GraduationCap}
+              iconColor="#2563EB"
+              iconBgColor="#DBEAFE"
+            />
+          </div>
+
+          <div className="min-h-[160px]">
+            <SummaryCard
+  title="Total Students"
+  value={
+    studentLoading
+      ? '...'
+      : studentCount.toLocaleString()
+  }
+  icon={Users}
+  iconColor="#10B981"
+  iconBgColor="#D1FAE5"
+/>
+          </div>
+
+          <div className="min-h-[160px]">
+            <SummaryCard
+  title="Active Departments"
+  value={
+    departmentLoading
+      ? '...'
+      : departmentCount.toLocaleString()
+  }
+  icon={Building2}
+  iconColor="#8B5CF6"
+  iconBgColor="#EDE9FE"
+/>
+          </div>
+
+          <div className="min-h-[160px]">
+            <SummaryCard
+              title="Pending Reports"
+              value="23"
+              icon={FileText}
+              iconColor="#F59E0B"
+              iconBgColor="#FEF3C7"
+              trend="8"
+              trendUp={false}
+            />
+          </div>
+
+          <div className="min-h-[160px]">
+            <SummaryCard
+              title="Alumni Responses"
+              value="1,256"
+              icon={UserCheck}
+              iconColor="#EF4444"
+              iconBgColor="#FEE2E2"
+              trend="18.7%"
+              trendUp={true}
+            />
+          </div>
+
         </div>
       </div>
 
-      {/* ── MOBILE ONLY: metric cards grid (replaces charts) ── */}
+      {/* ============================================
+          MOBILE METRICS
+      ============================================ */}
       <div className="lg:hidden mb-4">
+
         <p className="text-xs text-gray-400 mb-3 flex items-center gap-1.5">
           <BarChart3 className="w-3.5 h-3.5" />
           Key Metrics · Use the web version for full charts &amp; analytics
         </p>
+
         <div className="grid grid-cols-2 gap-3">
+
           {mobileMetrics.map((m) => (
             <div
               key={m.label}
               className="rounded-2xl p-4"
               style={{ backgroundColor: m.bg }}
             >
-              <p className="text-xs font-medium mb-1" style={{ color: m.color, opacity: 0.75 }}>
+
+              <p
+                className="text-xs font-medium mb-1"
+                style={{
+                  color: m.color,
+                  opacity: 0.75
+                }}
+              >
                 {m.label}
               </p>
-              <p className="text-2xl font-bold leading-none mb-1" style={{ color: m.color }}>
+
+              <p
+                className="text-2xl font-bold leading-none mb-1"
+                style={{ color: m.color }}
+              >
                 {m.value}
               </p>
-              <p className="text-xs" style={{ color: m.color, opacity: 0.6 }}>
+
+              <p
+                className="text-xs"
+                style={{
+                  color: m.color,
+                  opacity: 0.6
+                }}
+              >
                 {m.sub}
               </p>
+
             </div>
           ))}
+
         </div>
       </div>
 
-{/* ── DESKTOP ONLY: Charts + side panel ── */}
+      {/* ============================================
+          DESKTOP CHARTS + SIDE PANEL
+      ============================================ */}
       <div className="hidden lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
+
         <div className="lg:col-span-2 min-h-0 overflow-auto">
           <ChartsSection />
         </div>
 
         <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
-          {/* Inquiries summary — sized to match the Evaluation Trends card */}
-          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+
+          <InquiriesSummaryCard
+            onViewAll={onGoToInquiries}
+          />
+
         </div>
+
       </div>
 
-      {/* ── MOBILE: Inquiries summary ── */}
+      {/* ============================================
+          MOBILE INQUIRIES
+      ============================================ */}
       <div className="lg:hidden flex flex-col gap-4">
+
         <div className="h-80">
-          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+
+          <InquiriesSummaryCard
+            onViewAll={onGoToInquiries}
+          />
+
         </div>
+
       </div>
+
     </div>
   );
 }
@@ -1540,115 +1872,522 @@ function AcademicRecords() {
 
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
-  const [facultyList, setFacultyList] = useState<Profile[]>([]);
-  const [staffList, setStaffList]     = useState<Profile[]>([]);
-  const [loadingList, setLoadingList] = useState(false);
-  const [viewModal, setViewModal]     = useState<'faculty' | 'staff' | null>(null);
-  const [search, setSearch]           = useState('');
+  const [facultyList, setFacultyList] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<Profile[]>([]);
 
-  const openList = async (type: 'faculty' | 'staff') => {
+  const [facultyCount, setFacultyCount] = useState(0);
+  const [staffCount, setStaffCount] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+  const [loadingList, setLoadingList] = useState(false);
+
+  const [viewModal, setViewModal] =
+    useState<'faculty' | 'staff' | null>(null);
+
+  const [search, setSearch] = useState('');
+
+  // ============================================
+  // LOAD FACULTY + STAFF COUNTS
+  // ============================================
+  useEffect(() => {
+    loadCounts();
+  }, []);
+
+  const loadCounts = async () => {
+    try {
+      setLoading(true);
+
+      // -------------------------------
+      // FACULTY COUNT
+      // -------------------------------
+      const {
+        count: facultyTotal,
+        error: facultyError
+      } = await supabase
+        .from('faculty_members')
+        .select('*', {
+          count: 'exact',
+          head: true
+        });
+
+      if (facultyError) {
+        console.error(
+          'Error loading faculty count:',
+          facultyError
+        );
+      } else {
+        setFacultyCount(facultyTotal ?? 0);
+      }
+
+      // -------------------------------
+      // STAFF COUNT
+      // -------------------------------
+      const {
+        count: staffTotal,
+        error: staffError
+      } = await supabase
+        .from('profiles')
+        .select('*', {
+          count: 'exact',
+          head: true
+        })
+        .eq('role', 'staff');
+
+      if (staffError) {
+        console.error(
+          'Error loading staff count:',
+          staffError
+        );
+      } else {
+        setStaffCount(staffTotal ?? 0);
+      }
+
+    } catch (error) {
+      console.error('Error loading counts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================
+  // OPEN FACULTY / STAFF LIST
+  // ============================================
+  const openList = async (
+    type: 'faculty' | 'staff'
+  ) => {
     setViewModal(type);
     setSearch('');
     setLoadingList(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', type)
-      .order('full_name', { ascending: true });
 
-    if (!error && data) {
-      if (type === 'faculty') setFacultyList(data);
-      else setStaffList(data);
+    try {
+
+      // ========================================
+      // FACULTY
+      // ========================================
+      if (type === 'faculty') {
+
+        const {
+          data,
+          error
+        } = await supabase
+          .from('faculty_members')
+          .select(`
+            id,
+            name,
+            role,
+            education,
+            experience,
+            academic_rank,
+            image,
+            department_id,
+            member_type,
+            display_order,
+            created_at
+          `)
+          .order('display_order', {
+            ascending: true
+          })
+          .order('name', {
+            ascending: true
+          });
+
+        if (error) {
+          console.error(
+            'Error loading faculty:',
+            error
+          );
+
+          setFacultyList([]);
+        } else {
+          setFacultyList(data ?? []);
+        }
+
+      }
+
+      // ========================================
+      // STAFF
+      // ========================================
+      else {
+
+        const {
+          data,
+          error
+        } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'staff')
+          .order('full_name', {
+            ascending: true
+          });
+
+        if (error) {
+          console.error(
+            'Error loading staff:',
+            error
+          );
+
+          setStaffList([]);
+        } else {
+          setStaffList(data ?? []);
+        }
+      }
+
+    } catch (error) {
+      console.error(
+        'Unexpected error loading list:',
+        error
+      );
+    } finally {
+      setLoadingList(false);
     }
-    setLoadingList(false);
   };
 
-  const closeList = () => setViewModal(null);
+  // ============================================
+  // CLOSE MODAL
+  // ============================================
+  const closeList = () => {
+    setViewModal(null);
+    setSearch('');
+  };
 
-  const activeList = viewModal === 'faculty' ? facultyList : viewModal === 'staff' ? staffList : [];
+  // ============================================
+  // CURRENT LIST
+  // ============================================
+  const activeList =
+    viewModal === 'faculty'
+      ? facultyList
+      : viewModal === 'staff'
+        ? staffList
+        : [];
+
+  // ============================================
+  // SEARCH
+  // ============================================
   const filteredList = search.trim()
-    ? activeList.filter(p =>
-        p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-        (p.department ?? '').toLowerCase().includes(search.toLowerCase())
-      )
+    ? activeList.filter((person) => {
+
+        const searchText =
+          search.toLowerCase().trim();
+
+        if (viewModal === 'faculty') {
+
+          return (
+            (person.name ?? '')
+              .toLowerCase()
+              .includes(searchText) ||
+
+            (person.role ?? '')
+              .toLowerCase()
+              .includes(searchText) ||
+
+            (person.academic_rank ?? '')
+              .toLowerCase()
+              .includes(searchText) ||
+
+            (person.education ?? '')
+              .toLowerCase()
+              .includes(searchText) ||
+
+            (person.member_type ?? '')
+              .toLowerCase()
+              .includes(searchText)
+          );
+
+        }
+
+        return (
+          (person.full_name ?? '')
+            .toLowerCase()
+            .includes(searchText) ||
+
+          (person.department ?? '')
+            .toLowerCase()
+            .includes(searchText)
+        );
+      })
     : activeList;
 
-  const accent = viewModal === 'faculty' ? '#2563EB' : '#16A34A';
-  const accentBg = viewModal === 'faculty' ? '#DBEAFE' : '#D1FAE5';
+  // ============================================
+  // COLORS
+  // ============================================
+  const accent =
+    viewModal === 'faculty'
+      ? '#2563EB'
+      : '#16A34A';
+
+  const accentBg =
+    viewModal === 'faculty'
+      ? '#DBEAFE'
+      : '#D1FAE5';
 
   return (
     <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
+
+      {/* ========================================
+          PAGE TITLE
+      ======================================== */}
+      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">
+        Faculty & Staff Management
+      </h1>
+
+      {/* ========================================
+          SUMMARY CARDS
+      ======================================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+
+        {/* ======================================
+            FACULTY CARD
+        ====================================== */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
-          <p className="text-3xl font-bold text-blue-600 mb-2">142</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Total Faculty Members</p>
-          <button onClick={() => openList('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">View All Faculty</button>
+
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
+            Faculty Profiles
+          </h2>
+
+          <p className="text-3xl font-bold text-blue-600 mb-2">
+            {loading ? '...' : facultyCount.toLocaleString()}
+          </p>
+
+          <p className="text-gray-600 mb-4 text-sm sm:text-base">
+            Total Faculty Members
+          </p>
+
+          <button
+            onClick={() => openList('faculty')}
+            className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            View All Faculty
+          </button>
+
         </div>
+
+        {/* ======================================
+            STAFF CARD
+        ====================================== */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
-          <p className="text-3xl font-bold text-green-600 mb-2">28</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Total Staff Members</p>
-          <button onClick={() => openList('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">View All Staff</button>
+
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
+            Staff Profiles
+          </h2>
+
+          <p className="text-3xl font-bold text-green-600 mb-2">
+            {loading ? '...' : staffCount.toLocaleString()}
+          </p>
+
+          <p className="text-gray-600 mb-4 text-sm sm:text-base">
+            Total Staff Members
+          </p>
+
+          <button
+            onClick={() => openList('staff')}
+            className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            View All Staff
+          </button>
+
         </div>
+
       </div>
 
-      {/* View All Faculty / Staff Modal — lists each person's name with department (falls back to role) */}
+      {/* ========================================
+          VIEW ALL MODAL
+      ======================================== */}
       {viewModal && (
+
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeList} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
+
+          {/* BACKDROP */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={closeList}
+          />
+
+          {/* MODAL */}
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
+
+            {/* ==================================
+                HEADER
+            ================================== */}
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">
-                {viewModal === 'faculty' ? 'All Faculty' : 'All Staff'}
-                <span className="ml-2 text-sm font-semibold text-gray-400">({filteredList.length})</span>
-              </h2>
-              <button onClick={closeList} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+
+                  {viewModal === 'faculty'
+                    ? 'All Faculty'
+                    : 'All Staff'}
+
+                  <span className="ml-2 text-sm font-semibold text-gray-400">
+                    ({filteredList.length})
+                  </span>
+
+                </h2>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  {viewModal === 'faculty'
+                    ? 'Faculty members registered in the system'
+                    : 'Staff members registered in the system'}
+                </p>
+              </div>
+
+              <button
+                onClick={closeList}
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+
             </div>
 
+            {/* ==================================
+                SEARCH
+            ================================== */}
             <div className="relative mb-4 flex-shrink-0">
+
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
               <input
                 type="text"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search name or department..."
+                onChange={(e) =>
+                  setSearch(e.target.value)
+                }
+                placeholder={
+                  viewModal === 'faculty'
+                    ? 'Search faculty name, rank, role...'
+                    : 'Search name or department...'
+                }
                 className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
               />
+
             </div>
 
+            {/* ==================================
+                LIST
+            ================================== */}
             <div className="flex-1 overflow-y-auto space-y-2 -mx-1 px-1">
+
+              {/* LOADING */}
               {loadingList ? (
-                <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Loading...</div>
-              ) : filteredList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                  <Users className="w-10 h-10 mb-2 opacity-40" />
-                  <p className="text-sm text-gray-400">No {viewModal} found</p>
+
+                <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+
+                  <div className="w-7 h-7 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-3" />
+
+                  <p className="text-sm">
+                    Loading {viewModal}...
+                  </p>
+
                 </div>
+
+              ) : filteredList.length === 0 ? (
+
+                /* EMPTY */
+                <div className="flex flex-col items-center justify-center h-40 text-gray-300">
+
+                  <Users className="w-10 h-10 mb-2 opacity-40" />
+
+                  <p className="text-sm text-gray-400">
+                    {search
+                      ? `No ${viewModal} found matching "${search}"`
+                      : `No ${viewModal} found`}
+                  </p>
+
+                </div>
+
               ) : (
-                filteredList.map(person => (
-                  <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
-                      {person.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 text-sm truncate">{person.full_name}</p>
-                      <p className="text-xs text-gray-500 truncate">{person.department || (viewModal === 'faculty' ? 'Faculty' : 'Staff')}</p>
-                    </div>
-                    <span
-                      className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize"
-                      style={{ backgroundColor: accentBg, color: accent }}
+
+                /* RESULTS */
+                filteredList.map((person) => {
+
+                  const isFaculty =
+                    viewModal === 'faculty';
+
+                  const name = isFaculty
+                    ? person.name
+                    : person.full_name;
+
+                  const role = isFaculty
+                    ? (
+                        person.academic_rank ||
+                        person.role ||
+                        'Faculty'
+                      )
+                    : (
+                        person.department ||
+                        'Staff'
+                      );
+
+                  const initial =
+                    (name ?? '?')
+                      .charAt(0)
+                      .toUpperCase();
+
+                  return (
+
+                    <div
+                      key={person.id}
+                      className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors"
                     >
-                      {viewModal}
-                    </span>
-                  </div>
-                ))
+
+                      {/* AVATAR */}
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+                        style={{
+                          background: accentBg,
+                          color: accent
+                        }}
+                      >
+                        {initial}
+                      </div>
+
+                      {/* INFORMATION */}
+                      <div className="min-w-0 flex-1">
+
+                        <p className="font-semibold text-gray-900 text-sm truncate">
+                          {name}
+                        </p>
+
+                        <p className="text-xs text-gray-500 truncate">
+                          {role}
+                        </p>
+
+                        {isFaculty && person.education && (
+                          <p className="text-[11px] text-gray-400 truncate mt-0.5">
+                            {person.education}
+                          </p>
+                        )}
+
+                      </div>
+
+                      {/* TYPE */}
+                      <span
+                        className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize"
+                        style={{
+                          backgroundColor: accentBg,
+                          color: accent
+                        }}
+                      >
+                        {isFaculty
+                          ? 'Faculty'
+                          : 'Staff'}
+                      </span>
+
+                    </div>
+
+                  );
+                })
+
               )}
+
             </div>
+
           </div>
+
         </div>
+
       )}
+
     </div>
   );
 }
