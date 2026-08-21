@@ -1451,22 +1451,27 @@ function AnnouncementsView() {
   const [formError, setFormError] = useState('');
 
   const fetchAnnouncements = async () => {
-    setLoading(true);
-    setLoadError('');
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      setLoadError('Failed to load announcements: ' + error.message);
+  setLoading(true);
+  setLoadError('');
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch(ANNOUNCEMENTS_API_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
       setAnnouncements([]);
-    } else {
-      setAnnouncements((data ?? []) as Announcement[]);
+      return;
     }
-    setLoading(false);
-  };
-
+    const data = await res.json();
+    setAnnouncements((data ?? []) as Announcement[]);
+  } catch {
+    setLoadError('Could not reach the server. Please try again.');
+    setAnnouncements([]);
+  }
+  setLoading(false);
+};
   useEffect(() => {
     fetchAnnouncements();
     // eslint-disable-next-line react-hooks/exhaustive-deps

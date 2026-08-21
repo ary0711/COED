@@ -3958,221 +3958,218 @@ function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: stri
 }
   
 // ─── Announcements ────────────────────────────────────────────────────────────
-function AnnouncementsContent() {
+// ─── Announcements ────────────────────────────────────────────────────────────
+interface DeptOption { id: string; name: string; }
 
+const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
+const ALL_ROLES = ['admin', 'dean', 'department_chair', 'faculty', 'student', 'alumni'];
+
+function AnnouncementsContent() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<DeptOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
   const [showModal, setShowModal] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
+
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [program, setProgram] = useState('All Programs');
-
-  const programOptions = ['All Programs', ...DEFAULT_PROGRAMS];
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([...ALL_ROLES]);
+  const [targetDepartmentId, setTargetDepartmentId] = useState<string>('');
+  const [publishing, setPublishing] = useState(false);
 
   function formatManilaTime(dateString: string) {
     return new Date(dateString).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
+      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
     });
   }
 
+  const getToken = () => localStorage.getItem('token');
+
+  const loadAnnouncements = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(ANNOUNCEMENTS_API_URL, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load announcements.');
+        setAnnouncements([]);
+        return;
+      }
+      const data = await res.json();
+      setAnnouncements(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setAnnouncements([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDepartments = async () => {
+    // Read-only lookup for the dropdown — same pattern as other
+    // non-sensitive reference-data reads elsewhere in this dashboard.
+    const { data, error } = await supabase.from('departments').select('id, name').order('name');
+    if (!error && data) setDepartments(data);
+  };
+
   useEffect(() => {
     loadAnnouncements();
+    loadDepartments();
+
     const channelName = `announcements-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'announcements'
-        },
-        (payload) => {
-          setAnnouncements((prev) => [
-            payload.new,
-            ...prev
-          ]);
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => loadAnnouncements())
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  async function loadAnnouncements() {
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .order('created_at', { ascending: false });
+  const toggleRole = (role: string) => {
+    setSelectedRoles(prev =>
+      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+    );
+  };
 
-    if (!error && data) {
-      setAnnouncements(data);
+  const publishAnnouncement = async () => {
+    if (!title.trim() || !content.trim()) {
+      setModalTitle('Error');
+      setModalMessage('Title and content are required.');
+      setShowModal(true);
+      return;
     }
-  }
+    if (selectedRoles.length === 0) {
+      setModalTitle('Error');
+      setModalMessage('Select at least one recipient role.');
+      setShowModal(true);
+      return;
+    }
 
-  async function publishAnnouncement() {
+    setPublishing(true);
     try {
+      const res = await fetch(ANNOUNCEMENTS_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          content: content.trim(),
+          target_role: selectedRoles,
+          target_department_id: targetDepartmentId || null,
+        }),
+      });
 
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (!user) {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
         setModalTitle('Error');
-        setModalMessage('User not found');
+        setModalMessage(err.error || 'Failed to publish announcement.');
         setShowModal(true);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('announcements')
-        .insert([
-          {
-            title,
-            content,
-            program,
-            author_id: user.id,
-            target_role: [
-              'admin',
-              'dean',
-              'department_chair',
-              'faculty',
-              'student',
-              'alumni'
-            ]
-          }
-        ])
-        .select()
-        .single();
+      const data = await res.json();
 
-      if (error) throw error;
-      const announcementId = data.id;
-      setAnnouncements(prev => [
-        data,
-        ...prev
-      ]);
+      // Notify only the roles actually targeted — and, if a department was
+      // targeted, only members of that department within those roles.
+      const targetDeptName = targetDepartmentId
+        ? departments.find(d => d.id === targetDepartmentId)?.name ?? null
+        : null;
 
-      async function notifyRole(
-        role: string,
-        title: string,
-        message: string,
-        announcementId: string
-      ) {
-        const { data: users, error } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('role', role);
+      for (const role of selectedRoles) {
+        let query = supabase.from('profiles').select('id, department').eq('role', role);
+        const { data: users, error: usersError } = await query;
+        if (usersError || !users?.length) continue;
 
-        if (error) {
-          console.error(error);
-          return;
-        }
+        const recipients = targetDeptName
+          ? users.filter(u => (u.department ?? '').trim().toLowerCase() === targetDeptName.trim().toLowerCase())
+          : users;
 
-        if (!users?.length) return;
+        if (recipients.length === 0) continue;
 
-        const notifications = users.map(user => ({
-          user_id: user.id,
-          title,
-          message,
+        const notifications = recipients.map(u => ({
+          user_id: u.id,
+          title: title.trim(),
+          message: content.trim(),
           type: 'announcement',
-          reference_id: announcementId,
+          reference_id: data.id,
           reference_table: 'announcements',
-          is_read: false
+          is_read: false,
         }));
 
-        const { error: insertError } = await supabase
-          .from('notifications')
-          .insert(notifications);
-
-        if (insertError) {
-          console.error(insertError);
-        }
+        await supabase.from('notifications').insert(notifications);
       }
-
-      // Notifications
-      await notifyRole('admin', title, content, announcementId);
-      await notifyRole('dean', title, content, announcementId);
-      await notifyRole('department_chair', title, content, announcementId);
-      await notifyRole('faculty', title, content, announcementId);
-      await notifyRole('student', title, content, announcementId);
-      await notifyRole('alumni', title, content, announcementId);
 
       setTitle('');
       setContent('');
-      setProgram('All Programs');
+      setSelectedRoles([...ALL_ROLES]);
+      setTargetDepartmentId('');
 
       setModalTitle('Success');
       setModalMessage('Announcement published successfully.');
       setShowModal(true);
 
+      await loadAnnouncements();
+
     } catch (err: any) {
-      console.error(err);
-
       setModalTitle('Error');
-      setModalMessage(
-        err?.message ||
-        JSON.stringify(err) ||
-        'Failed to publish announcement.'
-      );
-
+      setModalMessage(err?.message || 'Failed to publish announcement.');
       setShowModal(true);
+    } finally {
+      setPublishing(false);
     }
-  }
+  };
 
-  async function deleteAnnouncement(announcementId: string) {
+  const deleteAnnouncement = async (id: string) => {
     const confirmed = window.confirm('Delete this announcement?');
-
     if (!confirmed) return;
 
     try {
-      const { error: announcementError } =
-        await supabase
-          .from('announcements')
-          .delete()
-          .eq('id', announcementId);
+      const res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        setModalTitle('Error');
+        setModalMessage(err.error || 'Failed to delete announcement.');
+        setShowModal(true);
+        return;
+      }
 
-      if (announcementError) throw announcementError;
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('reference_id', id)
+        .eq('reference_table', 'announcements');
 
-      const { error: notificationError } =
-        await supabase
-          .from('notifications')
-          .delete()
-          .eq('reference_id', announcementId)
-          .eq('reference_table', 'announcements');
-
-      if (notificationError) throw notificationError;
-
-      setAnnouncements(prev =>
-        prev.filter(a => a.id !== announcementId)
-      );
-
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
       setModalTitle('Success');
       setModalMessage('Announcement deleted successfully.');
       setShowModal(true);
-    } catch (err) {
-      console.error(err);
-
+    } catch {
       setModalTitle('Error');
       setModalMessage('Failed to delete announcement.');
       setShowModal(true);
     }
-  }
+  };
+
+  const roleLabel = (r: string) => ROLE_CONFIG[r]?.label ?? r;
+  const deptName = (id: string | null) => id ? (departments.find(d => d.id === id)?.name ?? 'Unknown') : null;
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Announcements</h1>
       </div>
+
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Create Announcement</h2>
         <div className="space-y-4">
@@ -4196,95 +4193,111 @@ function AnnouncementsContent() {
               placeholder="Enter announcement content"
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Program</label>
-            <select
-              value={program}
-              onChange={(e) => setProgram(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {programOptions.map((p) => (
-                <option key={p} value={p}>{p}</option>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Recipient Roles</label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_ROLES.map(role => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => toggleRole(role)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    selectedRoles.includes(role)
+                      ? 'bg-[#1E3A8A] text-white'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {roleLabel(role)}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Restrict to Department (optional)</label>
+            <select
+              value={targetDepartmentId}
+              onChange={e => setTargetDepartmentId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">All Departments</option>
+              {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              If set, only people in this department (among the selected roles) will see and be notified of this announcement.
+            </p>
+          </div>
+
           <button
             onClick={publishAnnouncement}
-            className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
+            disabled={publishing}
+            className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base disabled:opacity-60"
           >
-            Publish Announcement
+            {publishing ? 'Publishing...' : 'Publish Announcement'}
           </button>
         </div>
       </div>
 
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-          Recent Announcements
-        </h2>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Announcements</h2>
 
-        <div className="space-y-3">
-          {announcements.length === 0 ? (
-            <div className="text-gray-500 text-center py-6">
-              No announcements found.
-            </div>
-          ) : (
-            announcements.map((announcement) => (
-              <div
-                key={announcement.id}
-                className="p-4 bg-gray-50 rounded-lg"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base">
-                      {announcement.title}
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading announcements...</span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {announcements.length === 0 ? (
+              <div className="text-gray-500 text-center py-6">No announcements found.</div>
+            ) : (
+              announcements.map((announcement) => (
+                <div key={announcement.id} className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base">{announcement.title}</div>
+                      <div className="text-xs sm:text-sm text-gray-600">{formatManilaTime(announcement.created_at)}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {(announcement.target_role ?? []).map((r: string) => (
+                          <span key={r} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{roleLabel(r)}</span>
+                        ))}
+                        {announcement.target_department_id && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                            {deptName(announcement.target_department_id)} only
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-2">{announcement.content}</div>
                     </div>
-
-                    <div className="text-xs sm:text-sm text-gray-600">
-                      {formatManilaTime(announcement.created_at)}
+                    <div className="flex gap-2 flex-shrink-0">
+                      <span className="px-2 sm:px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm">Published</span>
+                      <button
+                        onClick={() => deleteAnnouncement(announcement.id)}
+                        className="px-3 py-1 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600"
+                      >
+                        Delete
+                      </button>
                     </div>
-
-                    <div className="text-sm text-gray-500 mt-2">
-                      {announcement.content}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
-                    <span className="px-2 sm:px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs sm:text-sm whitespace-nowrap">
-                      {announcement.program || 'All Programs'}
-                    </span>
-
-                    <span className="px-2 sm:px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs sm:text-sm whitespace-nowrap">
-                      Published
-                    </span>
-
-                    <button
-                      onClick={() => deleteAnnouncement(announcement.id)}
-                      className="px-3 py-1 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600"
-                    >
-                      Delete
-                    </button>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-
             <div className="p-6">
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {modalTitle}
-              </h3>
-
-              <p className="text-gray-600">
-                {modalMessage}
-              </p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">{modalTitle}</h3>
+              <p className="text-gray-600">{modalMessage}</p>
             </div>
-
             <div className="flex justify-end border-t p-4">
               <button
                 onClick={() => setShowModal(false)}
@@ -4293,7 +4306,6 @@ function AnnouncementsContent() {
                 OK
               </button>
             </div>
-
           </div>
         </div>
       )}
