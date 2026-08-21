@@ -142,6 +142,10 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     document.body.removeChild(link);
   };
 
+  // Faculty picks "Save as PDF" as the destination inside the browser's own
+  // print dialog — no extra PDF library needed. The print-only CSS below
+  // makes sure ONLY the letterhead + table shows up in that PDF/printout,
+  // not the upload form, sidebar, or search/sort toolbar.
   const handlePrint = () => window.print();
 
   const reset = () => {
@@ -176,7 +180,40 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
 
   return (
     <div>
-      <div className="mb-6">
+      {/*
+        Print isolation: only #dl-print-area (letterhead + stats + table)
+        should appear when the faculty prints or "Save as PDF"s the page.
+        Everything else on the page (upload form, sidebar, toolbar, nav,
+        browser chrome we can't touch) is hidden for the print media type.
+      */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #dl-print-area, #dl-print-area * {
+            visibility: visible;
+          }
+          #dl-print-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          #dl-print-area .no-print {
+            display: none !important;
+          }
+          @page {
+            margin: 1.5cm;
+          }
+        }
+      `}</style>
+
+      <div className="mb-6 no-print">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Dean's List Generator</h1>
         <p className="text-sm text-gray-500 mt-1">Upload a grade sheet to automatically identify qualifiers and produce an official, letterhead-ready list.</p>
       </div>
@@ -184,7 +221,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
           {/* Upload Card */}
-          <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+          <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8 no-print">
             <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Batch Details</h2>
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -281,11 +318,11 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             </div>
           </div>
 
-          {/* Results */}
+          {/* Results — this whole block is the printable/PDF-able area */}
           {results && (
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-              {/* Success banner */}
-              <div className="px-4 sm:px-6 py-3 bg-green-50 border-b border-green-100 flex items-center gap-2">
+            <div id="dl-print-area" className="bg-white rounded-2xl shadow-md overflow-hidden">
+              {/* Success banner — screen only */}
+              <div className="px-4 sm:px-6 py-3 bg-green-50 border-b border-green-100 flex items-center gap-2 no-print">
                 <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                 <p className="text-sm text-green-800">
                   Generated <span className="font-semibold">{results.length}</span> qualifier{results.length !== 1 ? 's' : ''}
@@ -293,16 +330,19 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </p>
               </div>
 
-              {/* Letterhead-style header preview */}
+              {/* Letterhead-style header — this is what should appear on the PDF */}
               <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-100 text-center">
                 <p className="text-xs text-gray-400 tracking-wide uppercase">Cebu Technological University</p>
                 <h2 className="text-base sm:text-lg font-bold text-gray-900 mt-1">Dean's List</h2>
                 <p className="text-xs sm:text-sm text-gray-500 mt-1">{college} · {semesterLabel}</p>
+                {generatedAt && (
+                  <p className="hidden print:block text-[10px] text-gray-400 mt-2">Generated {generatedAt}</p>
+                )}
               </div>
 
-              {/* Summary stat cards */}
+              {/* Summary stat cards — screen only; keeps the printed page clean/formal */}
               {stats && (
-                <div className="grid grid-cols-3 gap-3 sm:gap-4 px-4 sm:px-6 py-4 bg-gray-50/60 border-b border-gray-100">
+                <div className="grid grid-cols-3 gap-3 sm:gap-4 px-4 sm:px-6 py-4 bg-gray-50/60 border-b border-gray-100 no-print">
                   <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 text-center">
                     <Users className="w-4 h-4 text-blue-600 mx-auto mb-1" />
                     <p className="text-lg sm:text-xl font-bold text-gray-900">{stats.total}</p>
@@ -321,8 +361,8 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </div>
               )}
 
-              {/* Table toolbar */}
-              <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {/* Table toolbar — screen only */}
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
@@ -343,8 +383,9 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                   <button
                     onClick={handlePrint}
                     className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                    title="Opens your browser's print dialog — choose 'Save as PDF' as the destination to export a PDF"
                   >
-                    <Printer size={14} /> Print
+                    <Printer size={14} /> Print / Save as PDF
                   </button>
                   <button
                     onClick={handleDownload}
@@ -396,7 +437,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
               )}
 
               {visibleRows.length > 0 && (
-                <div className="px-4 sm:px-6 py-3 border-t border-gray-100 text-xs text-gray-400">
+                <div className="px-4 sm:px-6 py-3 border-t border-gray-100 text-xs text-gray-400 no-print">
                   Showing {visibleRows.length} of {results.length} qualifier{results.length !== 1 ? 's' : ''}
                 </div>
               )}
@@ -404,8 +445,8 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
           )}
         </div>
 
-        {/* Side panel */}
-        <div className="space-y-6">
+        {/* Side panel — screen only */}
+        <div className="space-y-6 no-print">
           <div className="bg-white rounded-2xl shadow-md p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-blue-600" /> Qualification Rule

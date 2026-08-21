@@ -193,10 +193,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 userName={profile?.full_name ?? userName}
               />
             </div>
-            {/* Notification bell — shows replies to this student's inquiries */}
-            <div className="px-2 lg:pr-4">
-              <NotificationBell onGoToInquiries={() => setActiveMenuItem('inquiry')} />
-            </div>
           </div>
         </div>
 
