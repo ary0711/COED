@@ -450,36 +450,51 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
   loadDepartmentCount();
 }, []);
-  useEffect(() => {
-    const loadFacultyCount = async () => {
-      try {
-        setFacultyLoading(true);
+  // ============================================
+// LOAD ACTIVE FACULTY COUNT FROM PROFILES
+// ============================================
+useEffect(() => {
+  const loadFacultyCount = async () => {
+    try {
+      setFacultyLoading(true);
 
-        const { count, error } = await supabase
-          .from('faculty_members')
-          .select('*', {
-            count: 'exact',
-            head: true,
-          });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/faculty-count'
+      );
 
-        if (error) {
-          console.error('Error loading faculty count:', error);
-          setFacultyCount(0);
-          return;
-        }
+      const result = await response.json();
 
-        setFacultyCount(count ?? 0);
+      console.log('Faculty count API:', result);
 
-      } catch (error) {
-        console.error('Unexpected error loading faculty count:', error);
+      if (!response.ok || !result.success) {
+        console.error(
+          'Faculty count failed:',
+          result
+        );
+
         setFacultyCount(0);
-      } finally {
-        setFacultyLoading(false);
+        return;
       }
-    };
 
-    loadFacultyCount();
-  }, []);
+      setFacultyCount(
+        Number(result.count) || 0
+      );
+
+    } catch (error) {
+      console.error(
+        'Failed to load faculty count:',
+        error
+      );
+
+      setFacultyCount(0);
+
+    } finally {
+      setFacultyLoading(false);
+    }
+  };
+
+  loadFacultyCount();
+}, []);
   useEffect(() => {
   const loadStudentCount = async () => {
     try {
@@ -2206,175 +2221,240 @@ function AcademicRecords() {
 }
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
-  const [facultyList, setFacultyList] = useState<any[]>([]);
-  const [staffList, setStaffList] = useState<Profile[]>([]);
+  const [facultyList, setFacultyList] =
+    useState<Profile[]>([]);
 
-  const [facultyCount, setFacultyCount] = useState(0);
-  const [staffCount, setStaffCount] = useState(0);
+  const [staffList, setStaffList] =
+    useState<Profile[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [loadingList, setLoadingList] = useState(false);
+  const [facultyCount, setFacultyCount] =
+    useState(0);
+
+  const [staffCount, setStaffCount] =
+    useState(0);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [loadingList, setLoadingList] =
+    useState(false);
 
   const [viewModal, setViewModal] =
     useState<'faculty' | 'staff' | null>(null);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] =
+    useState('');
 
   // ============================================
-  // LOAD FACULTY + STAFF COUNTS
+  // LOAD ACTIVE FACULTY + STAFF COUNTS
+  // FROM PROFILES TABLE
+  // ============================================
+  const loadCounts = async () => {
+  try {
+    setLoading(true);
+
+    // ========================================
+    // LOAD FACULTY COUNT
+    // ========================================
+    const facultyResponse = await fetch(
+      'http://localhost:5000/api/auth/faculty-count'
+    );
+
+    const facultyResult =
+      await facultyResponse.json();
+
+    console.log(
+      'Faculty count API:',
+      facultyResult
+    );
+
+    if (
+      !facultyResponse.ok ||
+      !facultyResult.success
+    ) {
+      console.error(
+        'Faculty count failed:',
+        facultyResult
+      );
+
+      setFacultyCount(0);
+
+    } else {
+
+      setFacultyCount(
+        Number(facultyResult.count) || 0
+      );
+    }
+
+
+    // ========================================
+    // LOAD STAFF COUNT
+    // ========================================
+    const staffResponse = await fetch(
+      'http://localhost:5000/api/auth/staff-count'
+    );
+
+    const staffResult =
+      await staffResponse.json();
+
+    console.log(
+      'Staff count API:',
+      staffResult
+    );
+
+    if (
+      !staffResponse.ok ||
+      !staffResult.success
+    ) {
+      console.error(
+        'Staff count failed:',
+        staffResult
+      );
+
+      setStaffCount(0);
+
+    } else {
+
+      setStaffCount(
+        Number(staffResult.count) || 0
+      );
+    }
+
+  } catch (error) {
+
+    console.error(
+      'Failed to load faculty/staff counts:',
+      error
+    );
+
+    setFacultyCount(0);
+    setStaffCount(0);
+
+  } finally {
+
+    setLoading(false);
+
+  }
+};
+
+
+  // ============================================
+  // LOAD COUNTS WHEN COMPONENT OPENS
   // ============================================
   useEffect(() => {
     loadCounts();
   }, []);
 
-  const loadCounts = async () => {
-    try {
-      setLoading(true);
-
-      // -------------------------------
-      // FACULTY COUNT
-      // -------------------------------
-      const {
-        count: facultyTotal,
-        error: facultyError
-      } = await supabase
-        .from('faculty_members')
-        .select('*', {
-          count: 'exact',
-          head: true
-        });
-
-      if (facultyError) {
-        console.error(
-          'Error loading faculty count:',
-          facultyError
-        );
-      } else {
-        setFacultyCount(facultyTotal ?? 0);
-      }
-
-      // -------------------------------
-      // STAFF COUNT
-      // -------------------------------
-      const {
-        count: staffTotal,
-        error: staffError
-      } = await supabase
-        .from('profiles')
-        .select('*', {
-          count: 'exact',
-          head: true
-        })
-        .eq('role', 'staff');
-
-      if (staffError) {
-        console.error(
-          'Error loading staff count:',
-          staffError
-        );
-      } else {
-        setStaffCount(staffTotal ?? 0);
-      }
-
-    } catch (error) {
-      console.error('Error loading counts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // ============================================
   // OPEN FACULTY / STAFF LIST
+  // IMPORTANT:
+  // This MUST be outside loadCounts()
   // ============================================
-  const openList = async (
-    type: 'faculty' | 'staff'
-  ) => {
-    setViewModal(type);
-    setSearch('');
-    setLoadingList(true);
+ const openList = async (
+  type: 'faculty' | 'staff'
+) => {
+  setViewModal(type);
+  setSearch('');
+  setLoadingList(true);
 
-    try {
+  try {
 
-      // ========================================
-      // FACULTY
-      // ========================================
-      if (type === 'faculty') {
+    // ========================================
+    // FACULTY
+    // ========================================
+    if (type === 'faculty') {
 
-        const {
-          data,
-          error
-        } = await supabase
-          .from('faculty_members')
-          .select(`
-            id,
-            name,
-            role,
-            education,
-            experience,
-            academic_rank,
-            image,
-            department_id,
-            member_type,
-            display_order,
-            created_at
-          `)
-          .order('display_order', {
-            ascending: true
-          })
-          .order('name', {
-            ascending: true
-          });
-
-        if (error) {
-          console.error(
-            'Error loading faculty:',
-            error
-          );
-
-          setFacultyList([]);
-        } else {
-          setFacultyList(data ?? []);
-        }
-
-      }
-
-      // ========================================
-      // STAFF
-      // ========================================
-      else {
-
-        const {
-          data,
-          error
-        } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'staff')
-          .order('full_name', {
-            ascending: true
-          });
-
-        if (error) {
-          console.error(
-            'Error loading staff:',
-            error
-          );
-
-          setStaffList([]);
-        } else {
-          setStaffList(data ?? []);
-        }
-      }
-
-    } catch (error) {
-      console.error(
-        'Unexpected error loading list:',
-        error
+      const response = await fetch(
+        'http://localhost:5000/api/auth/faculty'
       );
-    } finally {
-      setLoadingList(false);
+
+      const result = await response.json();
+
+      console.log(
+        'FACULTY LIST RESPONSE:',
+        result
+      );
+
+      if (!response.ok || !result.success) {
+
+        console.error(
+          'Faculty list failed:',
+          result
+        );
+
+        setFacultyList([]);
+
+        return;
+      }
+
+      console.log(
+        'Faculty data:',
+        result.data
+      );
+
+      setFacultyList(
+        Array.isArray(result.data)
+          ? result.data
+          : []
+      );
+
     }
-  };
+
+    // ========================================
+    // STAFF
+    // ========================================
+    else {
+
+      const response = await fetch(
+        'http://localhost:5000/api/auth/staff'
+      );
+
+      const result = await response.json();
+
+      console.log(
+        'STAFF LIST RESPONSE:',
+        result
+      );
+
+      if (!response.ok || !result.success) {
+
+        console.error(
+          'Staff list failed:',
+          result
+        );
+
+        setStaffList([]);
+
+        return;
+      }
+
+      setStaffList(
+        Array.isArray(result.data)
+          ? result.data
+          : []
+      );
+    }
+
+  } catch (error) {
+
+    console.error(
+      'Unexpected error loading faculty/staff:',
+      error
+    );
+
+    if (type === 'faculty') {
+      setFacultyList([]);
+    } else {
+      setStaffList([]);
+    }
+
+  } finally {
+
+    setLoadingList(false);
+
+  }
+};
 
   // ============================================
   // CLOSE MODAL
@@ -2384,8 +2464,9 @@ function FacultyStaffManagement() {
     setSearch('');
   };
 
+
   // ============================================
-  // CURRENT LIST
+  // DETERMINE WHICH LIST TO DISPLAY
   // ============================================
   const activeList =
     viewModal === 'faculty'
@@ -2394,43 +2475,28 @@ function FacultyStaffManagement() {
         ? staffList
         : [];
 
+
   // ============================================
-  // SEARCH
+  // SEARCH FACULTY / STAFF
   // ============================================
   const filteredList = search.trim()
     ? activeList.filter((person) => {
 
         const searchText =
-          search.toLowerCase().trim();
-
-        if (viewModal === 'faculty') {
-
-          return (
-            (person.name ?? '')
-              .toLowerCase()
-              .includes(searchText) ||
-
-            (person.role ?? '')
-              .toLowerCase()
-              .includes(searchText) ||
-
-            (person.academic_rank ?? '')
-              .toLowerCase()
-              .includes(searchText) ||
-
-            (person.education ?? '')
-              .toLowerCase()
-              .includes(searchText) ||
-
-            (person.member_type ?? '')
-              .toLowerCase()
-              .includes(searchText)
-          );
-
-        }
+          search
+            .toLowerCase()
+            .trim();
 
         return (
           (person.full_name ?? '')
+            .toLowerCase()
+            .includes(searchText) ||
+
+          (person.email ?? '')
+            .toLowerCase()
+            .includes(searchText) ||
+
+          (person.id_number ?? '')
             .toLowerCase()
             .includes(searchText) ||
 
@@ -2440,6 +2506,7 @@ function FacultyStaffManagement() {
         );
       })
     : activeList;
+
 
   // ============================================
   // COLORS
@@ -2454,6 +2521,10 @@ function FacultyStaffManagement() {
       ? '#DBEAFE'
       : '#D1FAE5';
 
+
+  // ============================================
+  // UI
+  // ============================================
   return (
     <div>
 
@@ -2463,6 +2534,7 @@ function FacultyStaffManagement() {
       <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">
         Faculty & Staff Management
       </h1>
+
 
       {/* ========================================
           SUMMARY CARDS
@@ -2479,21 +2551,26 @@ function FacultyStaffManagement() {
           </h2>
 
           <p className="text-3xl font-bold text-blue-600 mb-2">
-            {loading ? '...' : facultyCount.toLocaleString()}
+            {loading
+              ? '...'
+              : facultyCount.toLocaleString()}
           </p>
 
           <p className="text-gray-600 mb-4 text-sm sm:text-base">
-            Total Faculty Members
+            Active Faculty Members
           </p>
 
           <button
-            onClick={() => openList('faculty')}
+            onClick={() =>
+              openList('faculty')
+            }
             className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             View All Faculty
           </button>
 
         </div>
+
 
         {/* ======================================
             STAFF CARD
@@ -2505,15 +2582,19 @@ function FacultyStaffManagement() {
           </h2>
 
           <p className="text-3xl font-bold text-green-600 mb-2">
-            {loading ? '...' : staffCount.toLocaleString()}
+            {loading
+              ? '...'
+              : staffCount.toLocaleString()}
           </p>
 
           <p className="text-gray-600 mb-4 text-sm sm:text-base">
-            Total Staff Members
+            Active Staff Members
           </p>
 
           <button
-            onClick={() => openList('staff')}
+            onClick={() =>
+              openList('staff')
+            }
             className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
             View All Staff
@@ -2522,6 +2603,7 @@ function FacultyStaffManagement() {
         </div>
 
       </div>
+
 
       {/* ========================================
           VIEW ALL MODAL
@@ -2536,6 +2618,7 @@ function FacultyStaffManagement() {
             onClick={closeList}
           />
 
+
           {/* MODAL */}
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
 
@@ -2545,6 +2628,7 @@ function FacultyStaffManagement() {
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
 
               <div>
+
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">
 
                   {viewModal === 'faculty'
@@ -2558,11 +2642,15 @@ function FacultyStaffManagement() {
                 </h2>
 
                 <p className="text-xs text-gray-500 mt-1">
+
                   {viewModal === 'faculty'
-                    ? 'Faculty members registered in the system'
-                    : 'Staff members registered in the system'}
+                    ? 'Active faculty members registered in the system'
+                    : 'Active staff members registered in the system'}
+
                 </p>
+
               </div>
+
 
               <button
                 onClick={closeList}
@@ -2572,6 +2660,7 @@ function FacultyStaffManagement() {
               </button>
 
             </div>
+
 
             {/* ==================================
                 SEARCH
@@ -2588,13 +2677,14 @@ function FacultyStaffManagement() {
                 }
                 placeholder={
                   viewModal === 'faculty'
-                    ? 'Search faculty name, rank, role...'
-                    : 'Search name or department...'
+                    ? 'Search faculty name, email, department...'
+                    : 'Search staff name, email, department...'
                 }
                 className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
               />
 
             </div>
+
 
             {/* ==================================
                 LIST
@@ -2622,9 +2712,11 @@ function FacultyStaffManagement() {
                   <Users className="w-10 h-10 mb-2 opacity-40" />
 
                   <p className="text-sm text-gray-400">
+
                     {search
                       ? `No ${viewModal} found matching "${search}"`
-                      : `No ${viewModal} found`}
+                      : `No active ${viewModal} found`}
+
                   </p>
 
                 </div>
@@ -2637,25 +2729,21 @@ function FacultyStaffManagement() {
                   const isFaculty =
                     viewModal === 'faculty';
 
-                  const name = isFaculty
-                    ? person.name
-                    : person.full_name;
+                  const name =
+                    person.full_name ||
+                    'Unnamed User';
 
-                  const role = isFaculty
-                    ? (
-                        person.academic_rank ||
-                        person.role ||
-                        'Faculty'
-                      )
-                    : (
-                        person.department ||
-                        'Staff'
-                      );
+                  const role =
+                    person.department ||
+                    (isFaculty
+                      ? 'Faculty'
+                      : 'Staff');
 
                   const initial =
-                    (name ?? '?')
+                    name
                       .charAt(0)
                       .toUpperCase();
+
 
                   return (
 
@@ -2675,6 +2763,7 @@ function FacultyStaffManagement() {
                         {initial}
                       </div>
 
+
                       {/* INFORMATION */}
                       <div className="min-w-0 flex-1">
 
@@ -2686,13 +2775,20 @@ function FacultyStaffManagement() {
                           {role}
                         </p>
 
-                        {isFaculty && person.education && (
+                        {person.email && (
                           <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                            {person.education}
+                            {person.email}
+                          </p>
+                        )}
+
+                        {person.id_number && (
+                          <p className="text-[11px] text-gray-400 truncate">
+                            ID: {person.id_number}
                           </p>
                         )}
 
                       </div>
+
 
                       {/* TYPE */}
                       <span
@@ -2725,7 +2821,6 @@ function FacultyStaffManagement() {
     </div>
   );
 }
-
 // ─── Research & Achievements ──────────────────────────────────────────────────
 function ResearchAchievements() {
   return (

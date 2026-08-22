@@ -5,7 +5,203 @@ const supabase = require('../supabaseClient');
 const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
+// ============================================
+// GET ACTIVE FACULTY LIST
+// ============================================
+router.get('/faculty', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'faculty')
+      .eq('status', 'active')
+      .order('full_name', {
+        ascending: true
+      });
 
+    if (error) {
+      console.error(
+        'Error loading faculty list:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to load faculty',
+        error: error.message
+      });
+    }
+
+    console.log(
+      'Active faculty returned:',
+      data?.length ?? 0
+    );
+
+    return res.json({
+      success: true,
+      data: data ?? []
+    });
+
+  } catch (error) {
+    console.error(
+      'Unexpected faculty list error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while loading faculty',
+      error: error.message
+    });
+  }
+});
+// =====================================================
+// GET ACTIVE FACULTY COUNT
+// =====================================================
+// Counts users from profiles where:
+// role = faculty
+// status = active
+// =====================================================
+
+router.get('/faculty-count', async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from('profiles')
+      .select('*', {
+        count: 'exact',
+        head: true
+      })
+      .eq('role', 'faculty')
+      .eq('status', 'active');
+
+    if (error) {
+      console.error(
+        'Error getting faculty count:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to get faculty count',
+        error: error.message
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: count ?? 0
+    });
+
+  } catch (error) {
+    console.error(
+      'Unexpected faculty count error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while getting faculty count',
+      error: error.message
+    });
+  }
+});
+
+
+// =====================================================
+// GET ACTIVE STAFF COUNT
+// =====================================================
+// Counts users from profiles where:
+// role = staff
+// status = active
+// =====================================================
+
+router.get('/staff-count', async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from('profiles')
+      .select('*', {
+        count: 'exact',
+        head: true
+      })
+      .eq('role', 'staff')
+      .eq('status', 'active');
+
+    if (error) {
+      console.error(
+        'Error getting staff count:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to get staff count',
+        error: error.message
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: count ?? 0
+    });
+
+  } catch (error) {
+    console.error(
+      'Unexpected staff count error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while getting staff count',
+      error: error.message
+    });
+  }
+});
+// ============================================
+// GET ACTIVE FACULTY COUNT
+// ============================================
+router.get('/faculty-count', async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from('profiles')
+      .select('*', {
+        count: 'exact',
+        head: true,
+      })
+      .eq('role', 'faculty')
+      .eq('status', 'active');
+
+    if (error) {
+      console.error(
+        'Faculty count database error:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        count: 0,
+        error: error.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: count ?? 0,
+    });
+
+  } catch (error) {
+    console.error(
+      'Faculty count server error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      count: 0,
+      error: 'Failed to load faculty count',
+    });
+  }
+});
 router.get('/student-count', async (req, res) => {
   try {
     console.log('====================================');

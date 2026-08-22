@@ -43,10 +43,6 @@ const ICON_OPTIONS = [
     value: "👥",
   },
   {
-    name: "Graduation",
-    value: "🎓",
-  },
-  {
     name: "Lightbulb",
     value: "💡",
   },

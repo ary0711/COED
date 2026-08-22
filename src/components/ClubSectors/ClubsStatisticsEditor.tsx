@@ -15,12 +15,11 @@ import {
 } from "lucide-react";
 
 interface ClubStatistic {
-  id: string;
+  id: string | number;
   title: string;
   value: string;
-  icon: string;
-  color: string;
-  display_order: number;
+  icon?: string;
+  color?: string;
 }
 
 interface Props {
@@ -365,58 +364,62 @@ export function ClubsStatisticsEditor({
               })}
             </div>
 
-            {/* ========================================= */}
-            {/* COLOR SELECTOR */}
-            {/* ========================================= */}
+           {/* ========================================= */}
+{/* COLOR SELECTOR */}
+{/* ========================================= */}
 
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Statistic Color
-            </label>
+<label className="block text-sm font-semibold text-gray-700 mb-2">
+  Statistic Color
+</label>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-              {COLOR_OPTIONS.map((option) => {
-                const selected =
-                  currentColor === option.value;
+<div className="flex flex-wrap items-center gap-4 mb-5">
+  {COLOR_OPTIONS.map((option) => {
+    const selected = currentColor === option.value;
 
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() =>
-                      updateStatistic(
-                        index,
-                        "color",
-                        option.value
-                      )
-                    }
-                    className={`
-                      relative
-                      h-11
-                      rounded-lg
-                      ${option.className}
-                      text-white
-                      font-semibold
-                      transition-all
-                      duration-200
-                      hover:scale-[1.02]
-                      ${
-                        selected
-                          ? "ring-4 ring-blue-300 ring-offset-2"
-                          : "ring-1 ring-gray-200"
-                      }
-                    `}
-                  >
-                    {option.name}
-
-                    {selected && (
-                      <span className="absolute top-1 right-1 w-5 h-5 bg-white text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
-                        ✓
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+    return (
+      <button
+        key={option.value}
+        type="button"
+        title={option.name}
+        aria-label={`Select ${option.name} color`}
+        onClick={() =>
+          updateStatistic(
+            index,
+            "color",
+            option.value
+          )
+        }
+        className={`
+          relative
+          w-11
+          h-11
+          rounded-full
+          ${option.className}
+          transition-all
+          duration-200
+          hover:scale-110
+          focus:outline-none
+          focus:ring-2
+          focus:ring-blue-300
+          focus:ring-offset-2
+          ${
+            selected
+              ? "ring-4 ring-blue-300 ring-offset-2 scale-110"
+              : "ring-1 ring-gray-200"
+          }
+        `}
+      >
+        {selected && (
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="w-5 h-5 bg-white/95 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold shadow">
+              ✓
+            </span>
+          </span>
+        )}
+      </button>
+    );
+  })}
+</div>
 
             {/* ========================================= */}
             {/* CURRENT VALUES */}

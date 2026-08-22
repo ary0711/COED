@@ -66,7 +66,7 @@ export function HeroSectionEditor({
 
       {/* Badge Text */}
       <input
-        className="w-full border p-3 rounded mb-3"
+        className="w-full border p-3 rounded mb-3,"
         placeholder="Badge Text"
         value={hero.badge_text || ''}
         onChange={(e) =>

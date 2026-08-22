@@ -252,89 +252,81 @@ export function AnnouncementsEditor({
                 Announcement Color
               </label>
 
-              {/* ========================================= */}
-              {/* COLOR OPTIONS */}
-              {/* ========================================= */}
+             {/* ========================================= */}
+{/* COLOR OPTIONS */}
+{/* ========================================= */}
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
+<div className="flex flex-wrap items-center gap-4 mb-4">
+  {COLOR_OPTIONS.map((option) => {
+    const isSelected = currentColor === option.value;
 
-                {COLOR_OPTIONS.map(
-                  (option) => {
-
-                    const isSelected =
-                      currentColor ===
-                      option.value;
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-
-                        // IMPORTANT:
-                        // This updates the SAME
-                        // announcement object that
-                        // the preview uses.
-                        onClick={() =>
-                          updateAnnouncement(
-                            index,
-                            "color",
-                            option.value
-                          )
-                        }
-
-                        className={`
-                          relative
-                          h-12
-                          rounded-lg
-                          ${option.className}
-                          text-white
-                          font-semibold
-                          transition-all
-                          duration-200
-                          hover:scale-[1.03]
-                          active:scale-[0.98]
-
-                          ${
-                            isSelected
-                              ? "ring-4 ring-blue-300 ring-offset-2"
-                              : "ring-1 ring-gray-200"
-                          }
-                        `}
-                      >
-
-                        {option.name}
-
-                        {/* SELECTED CHECK */}
-
-                        {isSelected && (
-                          <span
-                            className="
-                              absolute
-                              top-1.5
-                              right-1.5
-                              w-5
-                              h-5
-                              bg-white
-                              text-blue-600
-                              rounded-full
-                              flex
-                              items-center
-                              justify-center
-                              text-xs
-                              font-bold
-                              shadow
-                            "
-                          >
-                            ✓
-                          </span>
-                        )}
-
-                      </button>
-                    );
-                  }
-                )}
-
-              </div>
+    return (
+      <button
+        key={option.value}
+        type="button"
+        title={option.name}
+        aria-label={`Select ${option.name} color`}
+        onClick={() =>
+          updateAnnouncement(
+            index,
+            "color",
+            option.value
+          )
+        }
+        className={`
+          relative
+          w-11
+          h-11
+          rounded-full
+          ${option.className}
+          transition-all
+          duration-200
+          hover:scale-110
+          active:scale-95
+          focus:outline-none
+          focus:ring-2
+          focus:ring-blue-300
+          focus:ring-offset-2
+          ${
+            isSelected
+              ? "ring-4 ring-blue-300 ring-offset-2 scale-110"
+              : "ring-1 ring-gray-200"
+          }
+        `}
+      >
+        {isSelected && (
+          <span
+            className="
+              absolute
+              inset-0
+              flex
+              items-center
+              justify-center
+            "
+          >
+            <span
+              className="
+                w-5
+                h-5
+                bg-white
+                text-blue-600
+                rounded-full
+                flex
+                items-center
+                justify-center
+                text-xs
+                font-bold
+                shadow
+              "
+            >
+              ✓
+            </span>
+          </span>
+        )}
+      </button>
+    );
+  })}
+</div>
 
               {/* ========================================= */}
               {/* CURRENT DATABASE VALUE */}
