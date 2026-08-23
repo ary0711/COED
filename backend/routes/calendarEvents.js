@@ -42,16 +42,28 @@ async function getDepartmentIdsForUser(req) {
     if (error || !data?.department_id) return [];
     return [data.department_id];
   }
+  // NEW — students are scoped to their own approved program's department.
+  if (req.user.role === 'student') {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select('department_id')
+      .eq('user_id', req.user.userId)
+      .single();
+
+    if (error || !data?.department_id) return [];
+    return [data.department_id];
+  }
 
   return [];
 }
+
 
 // GET /api/calendar-events
 // - dean/admin: all events
 // - department_chair / faculty: only events whose department_ids overlaps
 //   the requester's own department(s)
 router.get('/', authenticate, async (req, res) => {
-  const isScoped = ['department_chair', 'faculty'].includes(req.user.role);
+  const isScoped = ['department_chair', 'faculty', 'student'].includes(req.user.role);
 
   let query = supabase
     .from('calendar_events')

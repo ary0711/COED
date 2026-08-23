@@ -7,6 +7,12 @@
 // looked up fresh from their own profile table + departments — this
 // also avoids showing a stale department if it's ever reassigned after
 // the token was issued.
+//
+// Students additionally get their approved program, department_id,
+// and registration-time profile fields included in the response, so
+// the frontend never has to query student_profiles directly (which
+// previously happened via the anon Supabase client — the same
+// RLS-dependency risk fixed elsewhere in this app).
 
 const express = require('express');
 const router = express.Router();
@@ -22,7 +28,7 @@ const ROLE_TO_TABLE = {
 router.get('/', authenticate, async (req, res) => {
   const { role, userId, fullName } = req.user;
 
-  // Chairs: already on the JWT, no DB lookup needed.
+  // Chairs: already on the JWT, no DB lookup needed. (Unchanged.)
   if (role === 'department_chair') {
     return res.json({
       userId,
@@ -34,31 +40,98 @@ router.get('/', authenticate, async (req, res) => {
 
   const table = ROLE_TO_TABLE[role];
   if (!table) {
-    // dean/admin — not scoped to a department
+    // dean/admin — not scoped to a department. (Unchanged.)
     return res.json({ userId, role, fullName, departmentNames: [] });
   }
 
   const { data: profile, error: profileError } = await supabase
     .from(table)
-    .select('department_id')
+    .select('*')
     .eq('user_id', userId)
     .single();
 
-  if (profileError || !profile?.department_id) {
+  if (profileError || !profile) {
     return res.json({ userId, role, fullName, departmentNames: [] });
   }
 
-  const { data: dept, error: deptError } = await supabase
-    .from('departments')
-    .select('name')
-    .eq('id', profile.department_id)
+  const departmentId = profile.department_id ?? null;
+  let departmentNames = [];
+
+  if (departmentId) {
+    const { data: dept, error: deptError } = await supabase
+      .from('departments')
+      .select('name')
+      .eq('id', departmentId)
+      .single();
+
+    if (!deptError && dept) {
+      departmentNames = [dept.name];
+    }
+  }
+
+  const response = { userId, role, fullName, departmentNames };
+
+  // Student-specific extras — additive only, doesn't change the base
+  // shape faculty/alumni/dean/admin already rely on.
+  if (role === 'student') {
+    const { data: userRow } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', userId)
+      .maybeSingle();
+
+    response.program = profile.program ?? null;
+    response.departmentId = departmentId;
+    response.studentNo = profile.student_no ?? null;
+    response.yearLevel = profile.year_level ?? null;
+    response.academicStanding = profile.academic_standing ?? null;
+    response.enrollmentStatus = profile.enrollment_status ?? null;
+    response.gpa = profile.gpa ?? null;
+    response.email = userRow?.email ?? null;
+  }
+
+  return res.json(response);
+});
+
+// PATCH /api/me — students can update full_name and/or student_no.
+// Program is intentionally NOT editable here: it must remain whatever
+// was selected at registration and approved by the department chair.
+// Email is also not editable here (this app has no real Supabase Auth
+// session to safely re-verify a new email against).
+router.patch('/', authenticate, async (req, res) => {
+  const { role, userId } = req.user;
+
+  if (role !== 'student') {
+    return res.status(403).json({ error: 'This endpoint currently only supports student profile updates.' });
+  }
+
+  const { full_name, student_no } = req.body;
+  const patch = {};
+  if (full_name !== undefined) {
+    if (!String(full_name).trim()) return res.status(400).json({ error: 'Full name cannot be empty.' });
+    patch.full_name = String(full_name).trim();
+  }
+  if (student_no !== undefined) {
+    if (!String(student_no).trim()) return res.status(400).json({ error: 'Student ID cannot be empty.' });
+    patch.student_no = String(student_no).trim();
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: 'No changes were provided.' });
+  }
+
+  const { data, error } = await supabase
+    .from('student_profiles')
+    .update(patch)
+    .eq('user_id', userId)
+    .select()
     .single();
 
-  if (deptError || !dept) {
-    return res.json({ userId, role, fullName, departmentNames: [] });
+  if (error) {
+    return res.status(500).json({ error: error.message });
   }
 
-  return res.json({ userId, role, fullName, departmentNames: [dept.name] });
+  return res.json(data);
 });
 
 module.exports = router;

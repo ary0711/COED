@@ -26,6 +26,7 @@ app.use('/api/me', require('./routes/me'));
 app.use('/api/departments', require('./routes/departments'));
 app.use('/api/academic-records/documents', require('./routes/academicDocuments'));
 app.use('/api/deans-list', require('./routes/deansList'));
+app.use('/api/faculty', require('./routes/facultyDirectory'));
 
 // Protected route test
 const authenticate = require('./middleware/authenticate');
