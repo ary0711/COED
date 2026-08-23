@@ -95,14 +95,6 @@ interface Profile {
   created_at: string;
 }
 
-interface CalendarEvent {
-  id: string;
-  title: string;
-  date: string;
-  program: string;
-  description: string;
-  color: string;
-}
 
 // Categories a student can file an inquiry under. Kept in sync with the
 // student-side dashboard so the labels/badges line up.
@@ -1583,25 +1575,66 @@ function UserManagement() {
 }
 
 // ─── Calendar & Activities ────────────────────────────────────────────────────
+// ─── Calendar & Activities ────────────────────────────────────────────────────
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string; // "YYYY-MM-DDTHH:mm:ss"
+  department_ids: string[] | null;
+  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
+  status: string | null;
+  posted_by_role: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DeptOption { id: string; name: string; }
+
+const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+
+const TYPE_TO_COLOR: Record<string, string> = {
+  meeting: '#3B82F6',
+  activity: '#10B981',
+  holiday: '#8B5CF6',
+  deadline: '#F59E0B',
+  exam: '#EF4444',
+};
+const DEFAULT_EVENT_COLOR = '#1E3A8A';
+const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
+
+function colorForCalendarEvent(ev: CalendarEvent): string {
+  return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
+}
+
+function dateOnlyStr(isoLike: string): string {
+  return isoLike.split('T')[0];
+}
+
 function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  const [events, setEvents] = useState<CalendarEvent[]>([
-    { id: '1', title: 'Faculty Development Seminar', date: '2026-05-15', program: 'All Programs', description: 'Annual faculty upskilling seminar.', color: '#3B82F6' },
-    { id: '2', title: 'Department Meeting', date: '2026-05-18', program: 'BSED-MATH', description: 'Monthly department coordination.', color: '#10B981' },
-    { id: '3', title: 'College Foundation Day', date: '2026-05-25', program: 'All Programs', description: 'Celebration of college founding.', color: '#8B5CF6' },
-    { id: '4', title: 'Graduation Rehearsal', date: '2026-03-10', program: 'BEED', description: 'Practice run for graduation ceremony.', color: '#F59E0B' },
-    { id: '5', title: 'Alumni Homecoming', date: '2026-04-05', program: 'All Programs', description: 'Annual alumni gathering.', color: '#EF4444' },
-  ]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [departments, setDepartments] = useState<DeptOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const [programs] = useState(['All Programs', ...DEFAULT_PROGRAMS]);
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [form, setForm] = useState({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' });
+  const emptyForm = { title: '', date: '', description: '', event_type: 'meeting', target_department_id: '' };
+  const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
+
+  const getToken = () => localStorage.getItem('token');
 
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
@@ -1610,36 +1643,125 @@ function CalendarActivities() {
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
+  const fetchEvents = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(CALENDAR_API_URL, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load events: ' + (err.error || res.statusText));
+        setEvents([]);
+        return;
+      }
+      const data = await res.json();
+      setEvents((data ?? []) as CalendarEvent[]);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    const { data, error } = await supabase.from('departments').select('id, name').order('name');
+    if (!error && data) setDepartments(data);
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    fetchDepartments();
+  }, []);
+
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter(e => e.date === dateStr);
+    return events.filter(e => dateOnlyStr(e.event_date) === dateStr);
   };
 
-  const upcomingEvents = events.filter(e => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date));
-  const historyEvents  = events.filter(e => e.date < todayStr).sort((a, b) => b.date.localeCompare(a.date));
+  const upcomingEvents = events
+    .filter(e => dateOnlyStr(e.event_date) >= todayStr)
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const historyEvents = events
+    .filter(e => dateOnlyStr(e.event_date) < todayStr)
+    .sort((a, b) => b.event_date.localeCompare(a.event_date));
 
-  const handleAddEvent = () => {
+  const resetForm = () => {
+    setForm(emptyForm);
+    setFormError('');
+  };
+
+  const handleAddEvent = async () => {
     setFormError('');
     if (!form.title.trim()) { setFormError('Event title is required.'); return; }
-    if (!form.date)         { setFormError('Please select a date.'); return; }
-    const newEvent: CalendarEvent = {
-      id: Date.now().toString(),
-      title: form.title.trim(),
-      date: form.date,
-      program: form.program,
-      description: form.description.trim(),
-      color: form.color,
-    };
-    setEvents(prev => [...prev, newEvent]);
-    setForm({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' });
-    setShowModal(false);
+    if (!form.date)          { setFormError('Please select a date.'); return; }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(CALENDAR_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description: form.description.trim() || null,
+          event_date: `${form.date}T00:00:00`,
+          event_type: form.event_type,
+          status: 'upcoming',
+          target_department_id: form.target_department_id || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFormError('Failed to save event: ' + (err.error || res.statusText));
+        return;
+      }
+
+      const data = await res.json();
+      setEvents(prev => [...prev, data as CalendarEvent]);
+      resetForm();
+      setShowModal(false);
+    } catch {
+      setFormError('Could not reach the server. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const deleteEvent = (id: string) => setEvents(prev => prev.filter(e => e.id !== id));
+  const deleteEvent = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${CALENDAR_API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to delete event: ' + (err.error || res.statusText));
+        return;
+      }
+      setEvents(prev => prev.filter(e => e.id !== id));
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const departmentLabel = (ev: CalendarEvent) => {
+    if (!ev.department_ids || ev.department_ids.length === 0) return 'All Departments';
+    const names = ev.department_ids.map(id => departments.find(d => d.id === id)?.name ?? 'Unknown');
+    return names.join(', ');
   };
 
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1653,7 +1775,7 @@ function CalendarActivities() {
           <p className="text-gray-500 text-sm mt-1">Manage events and track activity history</p>
         </div>
         <button
-          onClick={() => { setForm({ title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' }); setFormError(''); setShowModal(true); }}
+          onClick={() => { resetForm(); setShowModal(true); }}
           className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -1661,6 +1783,12 @@ function CalendarActivities() {
           <span className="sm:hidden">Add</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+          {loadError}
+        </div>
+      )}
 
       {/* Calendar */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1677,44 +1805,50 @@ function CalendarActivities() {
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7">
-          {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-            <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
-          ))}
-          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-            const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = getEventsForDay(day);
-            const isToday = dateStr === todayStr;
-            const isPast  = dateStr < todayStr;
-            return (
-              <div key={day} className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${isPast ? 'bg-gray-50/60' : 'bg-white'}`}>
-                <div className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                  isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
-                }`}>
-                  {day}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading events…</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-7">
+            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+              <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+              const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const dayEvents = getEventsForDay(day);
+              const isToday = dateStr === todayStr;
+              const isPast  = dateStr < todayStr;
+              return (
+                <div key={day} className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${isPast ? 'bg-gray-50/60' : 'bg-white'}`}>
+                  <div className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
+                    isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
+                  }`}>
+                    {day}
+                  </div>
+                  <div className="space-y-0.5">
+                    {dayEvents.slice(0, 1).map(ev => (
+                      <div key={ev.id} className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block" style={{ backgroundColor: colorForCalendarEvent(ev) }} title={ev.title}>
+                        {ev.title}
+                      </div>
+                    ))}
+                    {dayEvents.length > 0 && (
+                      <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
+                        {dayEvents.slice(0, 3).map(ev => (
+                          <span key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
+                        ))}
+                      </div>
+                    )}
+                    {dayEvents.length > 1 && (
+                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">+{dayEvents.length - 1} more</div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  {dayEvents.slice(0, 1).map(ev => (
-                    <div key={ev.id} className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block" style={{ backgroundColor: ev.color }} title={ev.title}>
-                      {ev.title}
-                    </div>
-                  ))}
-                  {/* Mobile: just a dot */}
-                  {dayEvents.length > 0 && (
-                    <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
-                      {dayEvents.slice(0, 3).map(ev => (
-                        <span key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.color }} />
-                      ))}
-                    </div>
-                  )}
-                  {dayEvents.length > 1 && (
-                    <div className="text-[9px] text-gray-400 px-1 hidden sm:block">+{dayEvents.length - 1} more</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -1750,13 +1884,15 @@ function CalendarActivities() {
                 </div>
               ) : upcomingEvents.map(ev => (
                 <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors group">
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                     <div className="text-xs text-gray-500 mt-0.5">
+                       {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                       </div>
                     {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                   </div>
-                  <button onClick={() => deleteEvent(ev.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0">
+                  <button onClick={() => deleteEvent(ev.id)} disabled={deletingId === ev.id} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1772,10 +1908,12 @@ function CalendarActivities() {
                 </div>
               ) : historyEvents.map(ev => (
                 <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50">
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: ev.color }} />
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
+                      {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                      </div>
                     {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                   </div>
                   <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1808,11 +1946,13 @@ function CalendarActivities() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
-                <select value={form.program} onChange={e => setForm({ ...form, program: e.target.value })}
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department</label>
+                <select value={form.target_department_id} onChange={e => setForm({ ...form, target_department_id: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  {programs.map(p => <option key={p} value={p}>{p}</option>)}
+                  <option value="">All Departments</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
+                <p className="text-xs text-gray-400 mt-1">If set, only chairs/faculty in this department will see the event.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
@@ -1820,20 +1960,17 @@ function CalendarActivities() {
                   rows={3} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" placeholder="Optional..." />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Color</label>
-                <div className="flex gap-2">
-                  {EVENT_COLORS.map(c => (
-                    <button key={c.value} onClick={() => setForm({ ...form, color: c.value })}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${form.color === c.value ? 'border-gray-900 scale-110' : 'border-transparent'}`}
-                      style={{ backgroundColor: c.value }} title={c.label} />
-                  ))}
-                </div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Type</label>
+                <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {Object.keys(TYPE_TO_COLOR).map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                </select>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleAddEvent} className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2">
-                <Check className="w-4 h-4" /> Add Event
+              <button onClick={handleAddEvent} disabled={submitting} className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+                {submitting ? 'Saving...' : (<><Check className="w-4 h-4" /> Add Event</>)}
               </button>
             </div>
           </div>

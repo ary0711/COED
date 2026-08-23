@@ -1029,6 +1029,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     department: string | null;
     department_ids: string[] | null;
     status: string | null;
+    posted_by_role: string | null;
     created_at: string;
     updated_at: string;
   }
@@ -1043,6 +1044,11 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     exam: '#EF4444',
   };
   const DEFAULT_EVENT_COLOR = '#1E3A8A';
+  const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
   function colorForEvent(ev: CalendarEvent): string {
     return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
@@ -1247,7 +1253,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                         </div>
                       {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                     </div>
                   </div>
@@ -1265,7 +1273,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                         {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                          </div>
                       {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                     </div>
                     <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1320,6 +1330,12 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     </span>
                   </div>
                 )}
+                {selectedEvent.posted_by_role && (
+  <div>
+    <p className="text-xs font-medium text-gray-500 mb-1">Posted By</p>
+    <p className="text-sm text-gray-900">{ROLE_DISPLAY_LABEL[selectedEvent.posted_by_role] ?? selectedEvent.posted_by_role}</p>
+  </div>
+)}
               </div>
             </div>
           </div>

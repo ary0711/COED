@@ -80,6 +80,7 @@ interface CalendarEvent {
   organizer_id: string | null;
   department: string | null;
   status: string | null;
+  posted_by_role: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -251,6 +252,11 @@ const TYPE_TO_COLOR: Record<string, string> = {
   exam: '#EF4444',
 };
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
+const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
 function eventTypeForColor(color: string): CalendarEvent['event_type'] | null {
   const entry = Object.entries(TYPE_TO_COLOR).find(([, c]) => c === color);
@@ -574,7 +580,9 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                     {formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                       </div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
