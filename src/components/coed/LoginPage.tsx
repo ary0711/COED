@@ -24,8 +24,11 @@ const DB_TO_UI_ROLE: Record<string, string> = {
 const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
   'BEEd':         'Bachelor of Elementary Education Program',
   'BTLEd':        'Bachelor of Technology and Livelihood Education Program',
-  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics Program',
-  'BSEd-English': 'Bachelor of Secondary Education Major in English Program',
+  // Math and English are two majors under one combined BSEd department
+  // (one chair oversees both) — there is only one row for this in
+  // `departments`, so both program codes map to the same name.
+  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics & English Program',
+  'BSEd-English': 'Bachelor of Secondary Education Major in Mathematics & English Program',
 };
 
 interface LoginPageProps {

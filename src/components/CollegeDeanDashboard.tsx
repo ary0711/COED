@@ -4315,30 +4315,6 @@ function AnnouncementsContent() {
         ? departments.find(d => d.id === targetDepartmentId)?.name ?? null
         : null;
 
-      for (const role of selectedRoles) {
-        let query = supabase.from('profiles').select('id, department').eq('role', role);
-        const { data: users, error: usersError } = await query;
-        if (usersError || !users?.length) continue;
-
-        const recipients = targetDeptName
-          ? users.filter(u => (u.department ?? '').trim().toLowerCase() === targetDeptName.trim().toLowerCase())
-          : users;
-
-        if (recipients.length === 0) continue;
-
-        const notifications = recipients.map(u => ({
-          user_id: u.id,
-          title: title.trim(),
-          message: content.trim(),
-          type: 'announcement',
-          reference_id: data.id,
-          reference_table: 'announcements',
-          is_read: false,
-        }));
-
-        await supabase.from('notifications').insert(notifications);
-      }
-
       setTitle('');
       setContent('');
       setSelectedRoles([...ALL_ROLES]);
