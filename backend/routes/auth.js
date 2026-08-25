@@ -5,6 +5,400 @@ const supabase = require('../supabaseClient');
 const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
+
+// =========================================================
+// SYNC PASSWORD AFTER SUPABASE PASSWORD RECOVERY
+// =========================================================
+//
+// This endpoint updates public.users.password_hash
+// after the user successfully resets their Supabase Auth
+// password.
+//
+// The frontend sends the Supabase access token obtained
+// from the password recovery session.
+//
+// =========================================================
+// =========================================================
+// FORGOT PASSWORD
+// =========================================================
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    const trimmedUsername = username?.trim();
+    const trimmedEmail = email?.trim().toLowerCase();
+
+    // =====================================================
+    // BASIC VALIDATION
+    // =====================================================
+    if (!trimmedUsername) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter your username.',
+      });
+    }
+
+    if (!trimmedEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter your email address.',
+      });
+    }
+
+    // =====================================================
+    // FIND USERNAME
+    // =====================================================
+    const {
+      data: usernameUser,
+      error: usernameError,
+    } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .eq('username', trimmedUsername)
+      .maybeSingle();
+
+    if (usernameError) {
+      console.error(
+        'Username lookup error:',
+        usernameError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to verify your account. Please try again.',
+      });
+    }
+
+    // =====================================================
+    // FIND EMAIL
+    // =====================================================
+    const {
+      data: emailUser,
+      error: emailError,
+    } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .eq('email', trimmedEmail)
+      .maybeSingle();
+
+    if (emailError) {
+      console.error(
+        'Email lookup error:',
+        emailError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to verify your account. Please try again.',
+      });
+    }
+
+    // =====================================================
+    // CHECK BOTH
+    // =====================================================
+
+    const usernameExists = !!usernameUser;
+    const emailExists = !!emailUser;
+
+    // -----------------------------------------------------
+    // BOTH WRONG
+    // -----------------------------------------------------
+    if (!usernameExists && !emailExists) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username and email address are incorrect.',
+      });
+    }
+
+    // -----------------------------------------------------
+    // USERNAME WRONG
+    // -----------------------------------------------------
+    if (!usernameExists) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username is incorrect.',
+      });
+    }
+
+    // -----------------------------------------------------
+    // EMAIL WRONG
+    // -----------------------------------------------------
+    if (!emailExists) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is incorrect.',
+      });
+    }
+
+    // =====================================================
+    // IMPORTANT:
+    // MAKE SURE THE USERNAME AND EMAIL BELONG TO
+    // THE SAME ACCOUNT
+    // =====================================================
+    if (usernameUser.id !== emailUser.id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username and email address do not match.',
+      });
+    }
+
+    // =====================================================
+    // ACCOUNT FOUND
+    // =====================================================
+
+    console.log(
+      `Password reset requested for: ${usernameUser.username}`
+    );
+
+    // =====================================================
+    // SEND SUPABASE PASSWORD RESET EMAIL
+    // =====================================================
+
+    const resetUrl =
+      `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`;
+
+    const {
+      data: resetData,
+      error: resetError,
+    } = await supabase.auth.resetPasswordForEmail(
+      trimmedEmail,
+      {
+        redirectTo: resetUrl,
+      }
+    );
+
+    if (resetError) {
+      console.error(
+        'Supabase password reset error:',
+        resetError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          'We could not send the password reset email. Please try again.',
+      });
+    }
+
+    // =====================================================
+    // SUCCESS
+    // =====================================================
+
+    console.log(
+      `Password reset email sent to ${trimmedEmail}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        'Password reset link has been sent to your email address. Please check your inbox.',
+    });
+
+  } catch (error) {
+    console.error(
+      'FORGOT PASSWORD ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        'An unexpected error occurred. Please try again later.',
+    });
+  }
+});
+router.post('/sync-reset-password', async (req, res) => {
+  try {
+    const {
+      accessToken,
+      password
+    } = req.body;
+
+    // -----------------------------------------
+    // VALIDATE INPUT
+    // -----------------------------------------
+
+    if (!accessToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Password reset session is missing or expired.'
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password is required.'
+      });
+    }
+
+    // -----------------------------------------
+    // PASSWORD VALIDATION
+    // -----------------------------------------
+
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Your password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      });
+    }
+
+    // -----------------------------------------
+    // VERIFY SUPABASE RECOVERY SESSION
+    // -----------------------------------------
+
+    const {
+      data: {
+        user
+      },
+      error: userError
+    } = await supabase.auth.getUser(accessToken);
+
+    if (userError || !user) {
+      console.error(
+        'Password recovery user verification failed:',
+        userError
+      );
+
+      return res.status(401).json({
+        success: false,
+        error:
+          'Your password reset link is invalid or has expired.'
+      });
+    }
+
+    console.log(
+      'Password reset requested for user:',
+      user.id
+    );
+
+    // -----------------------------------------
+    // FIND public.users RECORD
+    // -----------------------------------------
+
+    const {
+      data: existingUser,
+      error: findUserError
+    } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (findUserError) {
+      console.error(
+        'Find public.users error:',
+        findUserError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          'Unable to find your application account.'
+      });
+    }
+
+    // -----------------------------------------
+    // FALLBACK: FIND BY EMAIL
+    // -----------------------------------------
+
+    let loginUser = existingUser;
+
+    if (!loginUser && user.email) {
+      const {
+        data: emailUser,
+        error: emailUserError
+      } = await supabase
+        .from('users')
+        .select('id, username, email')
+        .eq('email', user.email)
+        .maybeSingle();
+
+      if (emailUserError) {
+        console.error(
+          'Find user by email error:',
+          emailUserError
+        );
+
+        return res.status(500).json({
+          success: false,
+          error:
+            'Unable to find your application account.'
+        });
+      }
+
+      loginUser = emailUser;
+    }
+
+    if (!loginUser) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Your application login account could not be found.'
+      });
+    }
+
+    // -----------------------------------------
+    // HASH NEW PASSWORD
+    // -----------------------------------------
+
+    const passwordHash =
+      await bcrypt.hash(password, 10);
+
+    // -----------------------------------------
+    // UPDATE public.users
+    // -----------------------------------------
+
+    const {
+      error: updateError
+    } = await supabase
+      .from('users')
+      .update({
+        password_hash: passwordHash
+      })
+      .eq('id', loginUser.id);
+
+    if (updateError) {
+      console.error(
+        'Password hash update error:',
+        updateError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          'The password could not be synchronized with your login account.'
+      });
+    }
+
+    console.log(
+      'Application password updated successfully for:',
+      loginUser.username
+    );
+
+    return res.json({
+      success: true,
+      message:
+        'Password updated successfully.'
+    });
+
+  } catch (error) {
+    console.error(
+      'SYNC RESET PASSWORD ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        'An unexpected error occurred while updating your password.'
+    });
+  }
+});
 // ============================================
 // GET ACTIVE FACULTY LIST
 // ============================================
