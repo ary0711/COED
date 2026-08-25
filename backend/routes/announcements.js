@@ -36,6 +36,11 @@ async function getRecipientUserIds(role, departmentIds) {
   if (error || !data) return [];
   return data.map(r => r.user_id);
 }
+const ROLE_DISPLAY_LABEL = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
 // GET /api/announcements
 router.get('/', authenticate, async (req, res) => {
@@ -96,6 +101,7 @@ router.post('/', authenticate, async (req, res) => {
       is_pinned: is_pinned ?? false,
       target_role: target_role || null,
       target_department_id: target_department_id || null,
+       posted_by_role: req.user.role, 
     })
     .select()
     .single();
@@ -108,21 +114,23 @@ router.post('/', authenticate, async (req, res) => {
 
   const departmentScope = isChair ? (req.user.departmentIds ?? []) : (target_department_id ? [target_department_id] : null);
 
-  const notifications = [];
-  for (const role of rolesToNotify) {
-    const userIds = await getRecipientUserIds(role, departmentScope);
-    for (const userId of userIds) {
-      notifications.push({
-        user_id: userId,
-        title: announcement.title,
-        message: announcement.content,
-        type: 'announcement',
-        reference_id: announcement.id,
-        reference_table: 'announcements',
-        is_read: false,
-      });
-    }
+  const posterLabel = ROLE_DISPLAY_LABEL[req.user.role] ?? req.user.role;
+
+const notifications = [];
+for (const role of rolesToNotify) {
+  const userIds = await getRecipientUserIds(role, departmentScope);
+  for (const userId of userIds) {
+    notifications.push({
+      user_id: userId,
+      title: `${announcement.title} (from ${posterLabel})`,
+      message: announcement.content,
+      type: 'announcement',
+      reference_id: announcement.id,
+      reference_table: 'announcements',
+      is_read: false,
+    });
   }
+}
 
   if (notifications.length > 0) {
     await supabase.from('notifications').insert(notifications); // best-effort; announcement itself already saved
