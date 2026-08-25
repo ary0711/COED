@@ -66,6 +66,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     idNumber?: string;
     username?: string;
     password?: string;
+    confirmPassword?: string;
     graduationYear?: string;
   }>({});
   const [checkingUsername, setCheckingUsername] = useState(false);
@@ -134,14 +135,32 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     return /^[A-Za-zÀ-ÖØ-öø-ÿ.'-]+(\s[A-Za-zÀ-ÖØ-öø-ÿ.'-]+)+$/.test(trimmed);
   };
 
-  const isValidIdNumber = (value: string, userType: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return false;
-    if (userType === 'student') {
-      return /^\d+$/.test(trimmed);
-    }
-    return true;
-  };
+  const isValidIdNumber = (
+  idNumber: string,
+  userType: string
+): boolean => {
+  // Numbers only
+  if (!/^\d+$/.test(idNumber)) {
+    return false;
+  }
+
+  // Student = EXACTLY 7 digits
+  if (userType === 'student') {
+    return /^\d{7}$/.test(idNumber);
+  }
+
+  // Alumni = EXACTLY 8 digits
+  if (userType === 'alumni') {
+    return /^\d{8}$/.test(idNumber);
+  }
+
+  // Faculty = EXACTLY 6 digits
+  if (userType === 'faculty') {
+    return /^\d{6}$/.test(idNumber);
+  }
+
+  return true;
+};
 
   const isValidGraduationYear = (value: string) => {
     const trimmed = value.trim();
@@ -282,12 +301,23 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       }
     }
 
-    if (!regIdNumber.trim()) {
-      newFieldErrors.idNumber = 'Please enter your ID number.';
-    } else if (!isValidIdNumber(regIdNumber, regUserType)) {
-      newFieldErrors.idNumber = 'ID number should contain numbers only.';
-    }
-
+   if (!regIdNumber.trim()) {
+  newFieldErrors.idNumber = 'Please enter your ID number.';
+} else if (!isValidIdNumber(regIdNumber, regUserType)) {
+  if (regUserType === 'student') {
+    newFieldErrors.idNumber =
+      'Student ID number must contain exactly 7 digits.';
+  } else if (regUserType === 'alumni') {
+    newFieldErrors.idNumber =
+      'Alumni ID number must contain exactly 8 digits.';
+  } else if (regUserType === 'faculty') {
+    newFieldErrors.idNumber =
+      'Faculty ID number must contain exactly 6 digits.';
+  } else {
+    newFieldErrors.idNumber =
+      'ID number should contain numbers only.';
+  }
+}
     if (!regUsername.trim()) {
       newFieldErrors.username = 'Please enter a username.';
     } else if (fieldErrors.username) {
@@ -315,7 +345,22 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       setError('Your password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.');
       return;
     }
-    if (regPassword !== regConfirmPassword) { setError('Passwords do not match.'); return; }
+   if (!regConfirmPassword) {
+  setFieldErrors((prev) => ({
+    ...prev,
+    confirmPassword: 'Please confirm your password.',
+  }));
+  return;
+}
+
+if (regPassword !== regConfirmPassword) {
+  setFieldErrors((prev) => ({
+    ...prev,
+    confirmPassword:
+      'Please make sure your confirm password is the same as your password.',
+  }));
+  return;
+}
 
     const { data: existingUser } = await supabase
       .from('users')
@@ -788,40 +833,118 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                 {/* ID Number + Username — paired side by side to use the space better */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">ID Number <span className="text-red-500">*</span></label>
-                    <div className="relative">
-                      <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input type="text"
-                        inputMode={regUserType === 'student' ? 'numeric' : 'text'}
-                        placeholder={
-                          regUserType === 'student' ? '202412345' :
-                          regUserType === 'faculty' ? 'EMP-001' :
-                          regUserType === 'alumni'  ? 'ALU-001' : 'ID Number'
-                        }
-                        value={regIdNumber}
-                        onChange={(e) => {
-                          let v = e.target.value;
-                          if (regUserType === 'student') v = v.replace(/\D/g, '');
-                          setRegIdNumber(v);
-                          if (!v.trim()) {
-                            setFieldErrors((p) => ({ ...p, idNumber: undefined }));
-                          } else if (!isValidIdNumber(v, regUserType)) {
-                            setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
-                          } else {
-                            setFieldErrors((p) => ({ ...p, idNumber: undefined }));
-                          }
-                        }}
-                        onBlur={() => {
-                          if (!regIdNumber.trim()) setFieldErrors((p) => ({ ...p, idNumber: 'Please enter your ID number.' }));
-                          else if (!isValidIdNumber(regIdNumber, regUserType)) setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
-                        }}
-                        className={`w-full pl-9 pr-8 py-3 rounded-xl border ${fieldErrors.idNumber ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                        {renderStatusIcon(regIdNumber, !!fieldErrors.idNumber)}
-                      </span>
-                    </div>
-                    {fieldErrors.idNumber && <p className="text-red-500 text-xs mt-1">{fieldErrors.idNumber}</p>}
-                  </div>
+  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+    ID Number <span className="text-red-500">*</span>
+  </label>
+
+  <div className="relative">
+    <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder={
+        regUserType === 'student'
+          ? 'Enter 7-digit ID'
+          : regUserType === 'alumni'
+          ? 'Enter 6-digit ID'
+          : 'Enter 8-digit ID'
+      }
+      value={regIdNumber}
+      maxLength={
+  regUserType === 'student'
+    ? 7
+    : regUserType === 'alumni'
+    ? 8
+    : regUserType === 'faculty'
+    ? 6
+    : undefined
+}
+      onChange={(e) => {
+  let value = e.target.value.replace(/\D/g, '');
+
+  if (regUserType === 'student') {
+    value = value.slice(0, 7);
+  } else if (regUserType === 'alumni') {
+    value = value.slice(0, 8);
+  } else if (regUserType === 'faculty') {
+    value = value.slice(0, 6);
+  }
+
+  setRegIdNumber(value);
+
+  setFieldErrors((prev) => ({
+    ...prev,
+    idNumber: undefined,
+  }));
+}}
+      onBlur={() => {
+        if (!regIdNumber.trim()) {
+          setFieldErrors((p) => ({
+            ...p,
+            idNumber: 'Please enter your ID number.',
+          }));
+        } else if (!isValidIdNumber(regIdNumber, regUserType)) {
+          if (regUserType === 'student') {
+            setFieldErrors((p) => ({
+              ...p,
+              idNumber:
+                'Student ID number must contain exactly 7 digits.',
+            }));
+          } else if (regUserType === 'alumni') {
+            setFieldErrors((p) => ({
+              ...p,
+              idNumber:
+                'Alumni ID number must contain exactly 6 digits.',
+            }));
+          } else {
+            setFieldErrors((p) => ({
+              ...p,
+              idNumber:
+                'ID number should contain numbers only.',
+            }));
+          }
+        }
+      }}
+      className={`w-full pl-9 pr-8 py-3 rounded-xl border ${
+        fieldErrors.idNumber
+          ? 'border-red-400'
+          : 'border-gray-200'
+      } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
+    />
+
+    <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+      {renderStatusIcon(
+        regIdNumber,
+        !!fieldErrors.idNumber
+      )}
+    </span>
+  </div>
+
+  {regUserType === 'student' && (
+  <p className="text-gray-400 text-xs mt-1">
+    Student ID must be exactly 7 digits.
+  </p>
+)}
+
+{regUserType === 'alumni' && (
+  <p className="text-gray-400 text-xs mt-1">
+    Alumni ID must be exactly 8 digits.
+  </p>
+)}
+
+{regUserType === 'faculty' && (
+  <p className="text-gray-400 text-xs mt-1">
+    Faculty ID must be exactly 6 digits.
+  </p>
+)}
+
+  {fieldErrors.idNumber && (
+    <p className="text-red-500 text-xs mt-1">
+      {fieldErrors.idNumber}
+    </p>
+  )}
+</div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Username <span className="text-red-500">*</span></label>
@@ -862,9 +985,33 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                         placeholder="Min 8 chars, Aa1@"
                         value={regPassword}
                         onChange={(e) => {
-                          setRegPassword(e.target.value);
-                          if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
-                        }}
+  const value = e.target.value;
+
+  setRegPassword(value);
+
+  if (fieldErrors.password) {
+    setFieldErrors((p) => ({
+      ...p,
+      password: undefined,
+    }));
+  }
+
+  // Check confirm password whenever the original password changes
+  if (regConfirmPassword) {
+    if (value !== regConfirmPassword) {
+      setFieldErrors((p) => ({
+        ...p,
+        confirmPassword:
+          'Please make sure your confirm password is the same as your password.',
+      }));
+    } else {
+      setFieldErrors((p) => ({
+        ...p,
+        confirmPassword: undefined,
+      }));
+    }
+  }
+}}
                         onFocus={() => setPasswordFocused(true)}
                         onBlur={() => setTimeout(() => setPasswordFocused(false), 150)}
                         className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.password ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
@@ -895,21 +1042,68 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm <span className="text-red-500">*</span></label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        placeholder="Confirm"
-                        value={regConfirmPassword}
-                        onChange={(e) => setRegConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-9 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm" />
-                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
+  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+    Confirm <span className="text-red-500">*</span>
+  </label>
+
+  <div className="relative">
+    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
+    <input
+      type={showConfirmPassword ? 'text' : 'password'}
+      placeholder="Confirm password"
+      value={regConfirmPassword}
+      onChange={(e) => {
+        const value = e.target.value;
+
+        setRegConfirmPassword(value);
+
+        if (!value) {
+          setFieldErrors((p) => ({
+            ...p,
+            confirmPassword: 'Please confirm your password.',
+          }));
+        } else if (value !== regPassword) {
+          setFieldErrors((p) => ({
+            ...p,
+            confirmPassword:
+              'Please make sure your confirm password is the same as your password.',
+          }));
+        } else {
+          setFieldErrors((p) => ({
+            ...p,
+            confirmPassword: undefined,
+          }));
+        }
+      }}
+      className={`w-full pl-10 pr-9 py-3 rounded-xl border ${
+        fieldErrors.confirmPassword
+          ? 'border-red-400'
+          : 'border-gray-200'
+      } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
+    />
+
+    <button
+      type="button"
+      onClick={() =>
+        setShowConfirmPassword(!showConfirmPassword)
+      }
+      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+    >
+      {showConfirmPassword ? (
+        <EyeOff className="w-4 h-4" />
+      ) : (
+        <Eye className="w-4 h-4" />
+      )}
+    </button>
+  </div>
+
+  {fieldErrors.confirmPassword && (
+    <p className="text-red-500 text-xs mt-1">
+      {fieldErrors.confirmPassword}
+    </p>
+  )}
+</div>
                 </div>
 
                 <button onClick={handleRegister} disabled={loading || checkingUsername}
