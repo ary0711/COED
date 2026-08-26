@@ -4190,11 +4190,10 @@ function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: stri
 }
   
 // ─── Announcements ────────────────────────────────────────────────────────────
-// ─── Announcements ────────────────────────────────────────────────────────────
 interface DeptOption { id: string; name: string; }
 
 const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
-const ALL_ROLES = ['admin', 'dean', 'department_chair', 'faculty', 'student', 'alumni'];
+const ALL_ROLES = ['department_chair', 'faculty', 'student', 'alumni'];
 
 function AnnouncementsContent() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
