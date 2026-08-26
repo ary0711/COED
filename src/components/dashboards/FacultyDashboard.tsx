@@ -41,7 +41,6 @@ import {
   { icon: BookOpen,    label: 'Teaching Load',       id: 'teaching-load' },
   { icon: FileText,    label: 'Research & Extension',id: 'research' },
   { icon: Award,       label: 'Achievements',        id: 'achievements' },
-  { icon: FileText,    label: 'Academic Records',    id: 'records' },
   { icon: GraduationCap, label: "Dean's List",       id: 'deans-list' },
   { icon: FileText,    label: 'Reports',             id: 'reports' },
   { icon: Calendar,    label: 'Calendar',            id: 'calendar' },
@@ -136,7 +135,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             {activeMenuItem === 'teaching-load' && <TeachingLoad />}
             {activeMenuItem === 'research'      && <ResearchExtension userId={userId} />}
             {activeMenuItem === 'achievements'  && <FacultyAchievements />}
-            {activeMenuItem === 'records'       && <AcademicRecordsView />}
             {activeMenuItem === 'deans-list'    && <DeansListGenerator userId={userId} userName={userName} />}
             {activeMenuItem === 'reports' && <ReportsView userId={userId} userName={userName} />}
             {activeMenuItem === 'calendar'      && <FacultyCalendar />}
@@ -226,9 +224,25 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
   }
 
   // ====================== 5.1 TEACHING LOAD ======================
+  interface ClassListFile {
+    name: string;
+    size: number;
+    type: string;
+    uploadedAt: string;
+  }
+
   function TeachingLoad() {
     const [view, setView] = useState<'list' | 'students'>('list');
     const [selectedSubject, setSelectedSubject] = useState<any>(null);
+
+    // Class list files uploaded per subject (keyed by course code).
+    // These contain the roster of students for that subject and can be
+    // an Excel, PDF, or Word file.
+    const [classListFiles, setClassListFiles] = useState<Record<string, ClassListFile>>({});
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
+    const [uploadSubjectCode, setUploadSubjectCode] = useState('');
+
+    const ACCEPTED_CLASS_LIST_TYPES = '.xlsx,.xls,.pdf,.doc,.docx';
 
     const subjects = [
       { code: 'CS101', name: 'Introduction to Computer Science', units: 3, studentCount: 45, schedule: 'MWF 8:00–9:00 AM',   room: 'Room 201', semester: '2nd Semester AY 2025–2026' },
@@ -245,62 +259,197 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
       { id: '2023-211', name: 'Reyes, Ana Liza',        year: '2nd Year', status: 'Irregular' },
     ];
 
-    if (view === 'students' && selectedSubject) {
-      return (
-        <div className="animate-in slide-in-from-right duration-300">
-          <div className="flex items-center gap-3 sm:gap-4 mb-6">
-            <button onClick={() => { setView('list'); setSelectedSubject(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
-              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Enrolled Students</h1>
-              <p className="text-gray-600 text-sm sm:text-base truncate">{selectedSubject.code} – {selectedSubject.name}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 bg-blue-50 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-              <div className="flex items-center gap-2 text-blue-800 font-medium text-sm sm:text-base">
-                <Users size={18} />
-                <span>Total Enrolled: {selectedSubject.studentCount} Students</span>
-              </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-all w-fit">
-                <Download size={16} /> Export Class List
+    const formatFileSize = (bytes: number) => {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    const openUploadModal = (subjectCode?: string) => {
+      setUploadSubjectCode(subjectCode ?? '');
+      setUploadModalOpen(true);
+    };
+
+    const closeUploadModal = () => {
+      setUploadModalOpen(false);
+      setUploadSubjectCode('');
+    };
+
+    const handleClassListFile = (file: File) => {
+      if (!uploadSubjectCode) {
+        alert('Please select a subject first.');
+        return;
+      }
+      setClassListFiles(prev => ({
+        ...prev,
+        [uploadSubjectCode]: {
+          name: file.name,
+          size: file.size,
+          type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
+          uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        },
+      }));
+      closeUploadModal();
+      alert('✅ Class list uploaded successfully!');
+    };
+
+    const UploadModal = () => (
+      uploadModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Upload Class List</h2>
+              <button onClick={closeUploadModal} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[480px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year Level</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrolledStudents.map((student, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{student.id}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{student.name}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{student.year}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
-                        <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold uppercase ${student.status === 'Regular' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {student.status}
-                        </span>
-                      </td>
-                    </tr>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                <select
+                  value={uploadSubjectCode}
+                  onChange={(e) => setUploadSubjectCode(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a subject</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.code} value={sub.code}>{sub.code} – {sub.name}</option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Class List File</label>
+                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                  <p className="text-xs text-gray-400 mt-1">Excel, PDF, or Word up to 10MB</p>
+                  <input
+                    type="file"
+                    accept={ACCEPTED_CLASS_LIST_TYPES}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleClassListFile(f);
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </div>
+      ) : null
+    );
+
+    if (view === 'students' && selectedSubject) {
+      const uploadedFile = classListFiles[selectedSubject.code];
+
+      return (
+        <>
+          <div className="animate-in slide-in-from-right duration-300">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6">
+              <button onClick={() => { setView('list'); setSelectedSubject(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
+                <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Enrolled Students</h1>
+                <p className="text-gray-600 text-sm sm:text-base truncate">{selectedSubject.code} – {selectedSubject.name}</p>
+              </div>
+            </div>
+
+            {/* ── Uploaded class list file details ── */}
+            <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+              {uploadedFile ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm truncate">{uploadedFile.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {uploadedFile.type} · {formatFileSize(uploadedFile.size)} · Uploaded {uploadedFile.uploadedAt}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openUploadModal(selectedSubject.code)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-4 flex-shrink-0"
+                  >
+                    Replace File
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm text-gray-500">No class list file uploaded for this subject yet.</p>
+                  <button
+                    onClick={() => openUploadModal(selectedSubject.code)}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors flex-shrink-0"
+                  >
+                    <Upload size={14} /> Upload Class List
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 bg-blue-50 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                <div className="flex items-center gap-2 text-blue-800 font-medium text-sm sm:text-base">
+                  <Users size={18} />
+                  <span>Total Enrolled: {selectedSubject.studentCount} Students</span>
+                </div>
+                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-all w-fit">
+                  <Download size={16} /> Export Class List
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[480px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year Level</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrolledStudents.map((student, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{student.id}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{student.name}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{student.year}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
+                          <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold uppercase ${student.status === 'Regular' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {student.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <UploadModal />
+        </>
       );
     }
 
     return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Teaching Load</h1>
+      <>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Teaching Load</h1>
+        </div>
+
+        {/* ── Upload class list button — top left ── */}
+        <div className="mb-6">
+          <button
+            onClick={() => openUploadModal()}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors w-fit"
+          >
+            <Upload size={16} /> Upload Class List
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
             <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Academic Year</div>
@@ -323,24 +472,32 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
           {/* Mobile card layout */}
           <div className="divide-y divide-gray-100 sm:hidden">
-            {subjects.map((sub, i) => (
-              <div key={i} className="p-4 space-y-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-medium text-gray-900 text-sm">{sub.code}</span>
-                    <p className="text-gray-700 text-sm">{sub.name}</p>
+            {subjects.map((sub, i) => {
+              const hasClassList = !!classListFiles[sub.code];
+              return (
+                <div key={i} className="p-4 space-y-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-medium text-gray-900 text-sm">{sub.code}</span>
+                      <p className="text-gray-700 text-sm">{sub.name}</p>
+                    </div>
+                    <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0">{sub.units} units</span>
                   </div>
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0">{sub.units} units</span>
+                  <div className="text-xs text-gray-500">{sub.schedule} · {sub.room}</div>
+                  {hasClassList && (
+                    <div className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle size={12} /> Class list uploaded
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-xs text-gray-600">{sub.studentCount} students</span>
+                    <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline underline-offset-4">
+                      View Students
+                    </button>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">{sub.schedule} · {sub.room}</div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-xs text-gray-600">{sub.studentCount} students</span>
-                  <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline underline-offset-4">
-                    View Students
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Table layout for sm+ */}
@@ -348,36 +505,52 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             <table className="w-full text-left min-w-[640px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Code</th>
-                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Course Name</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Course Code</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Descriptive Name</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Units</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Students</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700">Schedule</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700">Room</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Class List</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {subjects.map((sub, i) => (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 px-6 font-medium text-gray-900">{sub.code}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.name}</td>
-                    <td className="py-4 px-6 text-center text-gray-700">{sub.units}</td>
-                    <td className="py-4 px-6 text-center font-bold text-gray-900">{sub.studentCount}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.schedule}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.room}</td>
-                    <td className="py-4 px-6 text-center">
-                      <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-sm font-semibold underline underline-offset-4">
-                        View Students
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {subjects.map((sub, i) => {
+                  const hasClassList = !!classListFiles[sub.code];
+                  return (
+                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-4 px-6 font-medium text-gray-900">{sub.code}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.name}</td>
+                      <td className="py-4 px-6 text-center text-gray-700">{sub.units}</td>
+                      <td className="py-4 px-6 text-center font-bold text-gray-900">{sub.studentCount}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.schedule}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.room}</td>
+                      <td className="py-4 px-6 text-center">
+                        {hasClassList ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                            <CheckCircle size={12} /> Uploaded
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400">
+                            Not uploaded
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-sm font-semibold underline underline-offset-4">
+                          View Students
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-      </div>
+        <UploadModal />
+      </>
     );
   }
 
@@ -826,158 +999,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     );
   }
 
-  // ====================== 5.4 ACADEMIC RECORDS ======================
-  function AcademicRecordsView() {
-  interface AcademicDoc {
-    id: string;
-    title: string;
-    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
-    file_size: number;
-  }
-
-  const DOC_TYPE_LABELS: Record<string, string> = {
-    handbook: 'Handbook',
-    policy: 'Policy',
-    memorandum: 'Memorandum',
-    form: 'Form',
-  };
-
-  const categoryColor: Record<string, string> = {
-    Handbook:   'bg-blue-100 text-blue-700',
-    Policy:     'bg-purple-100 text-purple-700',
-    Memorandum: 'bg-orange-100 text-orange-700',
-    Form:       'bg-green-100 text-green-700',
-  };
-
-  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-
-  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const categories = ['All', 'Handbook', 'Policy', 'Memorandum', 'Form'];
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(DOCS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load documents.');
-        setDocuments([]);
-        return;
-      }
-      const data = await res.json();
-      setDocuments(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setDocuments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchDocuments(); }, []);
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handleDownload = async (doc: AcademicDoc) => {
-    setDownloadingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
-      }
-      const { url } = await res.json();
-      window.open(url, '_blank');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const filtered = activeCategory === 'All'
-    ? documents
-    : documents.filter(d => DOC_TYPE_LABELS[d.document_type] === activeCategory);
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map(c => (
-          <button key={c} onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-            {c}
-          </button>
-        ))}
-      </div>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading documents...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No documents found.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filtered.map((doc) => {
-              const label = DOC_TYPE_LABELS[doc.document_type];
-              return (
-                <div key={doc.id} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[label]}`}>{label}</span>
-                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDownload(doc)}
-                    disabled={downloadingId === doc.id}
-                    className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
-                  >
-                    {downloadingId === doc.id
-                      ? <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      : <Download size={14} />}
-                    <span className="hidden xs:inline sm:inline">Download</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-  // ====================== 5.6 REPORTS ======================
+  // ====================== 5.4 REPORTS ======================
   function ReportsView({ userId, userName }: { userId: string; userName: string }) {
   const [tab, setTab] = useState<'accomplishment' | 'extension' | 'monitoring'>('accomplishment');
 
@@ -1009,7 +1031,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 }
 
 
-  // ====================== 5.7 CALENDAR ======================
+  // ====================== 5.5 CALENDAR ======================
   // Reads department-scoped events from the backend (GET /api/calendar-events,
   // same endpoint the Department Chair calendar uses). The backend already
   // restricts results to the requesting faculty member's own department(s)
@@ -1344,7 +1366,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     );
   }
 
-  // ====================== 5.8 SETTINGS ======================
+  // ====================== 5.6 SETTINGS ======================
   function FacultySettings() {
     const [announcementAlerts, setAnnouncementAlerts] = useState(true);
     const [departmentNotices, setDepartmentNotices] = useState(true);
