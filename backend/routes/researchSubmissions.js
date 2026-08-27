@@ -1,5 +1,3 @@
-// routes/researchSubmissions.js
-//
 // All reads/writes for research_submissions go through here,
 // authenticated via JWT, using the service-role Supabase client.
 
@@ -10,6 +8,13 @@ const authenticate = require('../middleware/authenticate');
 
 // Default export, matching your existing supabaseClient.js.
 const supabase = require('../supabaseClient');
+
+function requireDean(req, res, next) {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the Dean can access this resource.' });
+  }
+  next();
+}
 
 const BUCKET = 'research-submissions';
 const upload = multer({
@@ -31,6 +36,83 @@ router.get('/mine', authenticate, async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
   return res.json(data ?? []);
+});
+
+// GET /api/research-submissions?status=pending
+// Dean-only. Lists submissions college-wide, with submitter names attached.
+router.get('/', authenticate, requireDean, async (req, res) => {
+  const { status } = req.query;
+
+  let query = supabase
+    .from('research_submissions')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data: submissions, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  if (!submissions || submissions.length === 0) return res.json([]);
+
+  const submitterIds = [...new Set(submissions.map(s => s.submitted_by).filter(Boolean))];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, full_name, department')
+    .in('id', submitterIds);
+
+  if (profilesError) {
+    return res.json(submissions.map(s => ({ ...s, submitter: null })));
+  }
+
+  const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
+  const merged = submissions.map(s => ({
+    ...s,
+    submitter: profileMap.get(s.submitted_by) ?? null,
+  }));
+
+  return res.json(merged);
+});
+
+// PATCH /api/research-submissions/:id/status
+// Dean-only. body: { status: 'approved' | 'rejected', dean_remarks?: string }
+router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
+  const { id } = req.params;
+  const { status, dean_remarks } = req.body;
+
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be "approved" or "rejected".' });
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('research_submissions')
+    .select('status')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !existing) {
+    return res.status(404).json({ error: 'Submission not found.' });
+  }
+  if (existing.status !== 'pending') {
+    return res.status(400).json({ error: 'Only pending submissions can be approved or rejected.' });
+  }
+
+  const { data, error } = await supabase
+    .from('research_submissions')
+    .update({
+      status,
+      dean_remarks: dean_remarks?.trim() || null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: req.user.userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
 });
 
 // POST /api/research-submissions

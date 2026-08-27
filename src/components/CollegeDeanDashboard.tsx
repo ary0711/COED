@@ -2959,32 +2959,205 @@ function FacultyStaffManagement() {
   );
 }
 // ─── Research & Achievements ──────────────────────────────────────────────────
+interface ResearchSubmissionRow {
+  id: string;
+  title: string;
+  type: 'research' | 'extension';
+  file_name: string | null;
+  file_url: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  submitter: { full_name: string; department: string | null } | null;
+}
+
+const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
+
+const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  pending:  { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
+  approved: { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
+  rejected: { label: 'Rejected',       color: '#991B1B', bg: '#FEE2E2' },
+};
+
+function getResearchTokenDean() {
+  return localStorage.getItem('token');
+}
+
 function ResearchAchievements() {
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [rejectFor, setRejectFor] = useState<ResearchSubmissionRow | null>(null);
+  const [remarksInput, setRemarksInput] = useState('');
+
+  const fetchSubmissions = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const url = statusFilter === 'all' ? RESEARCH_API_URL_DEAN : `${RESEARCH_API_URL_DEAN}?status=${statusFilter}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${getResearchTokenDean()}` } });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load submissions.');
+        setSubmissions([]);
+        return;
+      }
+      const data = await res.json();
+      setSubmissions(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setSubmissions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchSubmissions(); /* eslint-disable-next-line */ }, [statusFilter]);
+
+  const decide = async (submission: ResearchSubmissionRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
+    setActionId(submission.id);
+    try {
+      const res = await fetch(`${RESEARCH_API_URL_DEAN}/${submission.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getResearchTokenDean()}` },
+        body: JSON.stringify({ status, dean_remarks }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to update submission status.');
+        return;
+      }
+      setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      setRejectFor(null);
+      setRemarksInput('');
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const typeLabel = (t: string) => t === 'research' ? 'Research' : 'Extension';
+
   return (
     <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Research, Extension & Achievements</h1>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Pending Approvals</h2>
-        <div className="space-y-3">
-          {[
-            { title: 'Machine Learning Research Paper', author: 'Dr. Sarah Johnson', type: 'Research' },
-            { title: 'Community Literacy Extension',    author: 'Prof. Michael Chen', type: 'Extension' },
-          ].map((item, i) => (
-            <div key={i} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
-                  <div className="text-sm text-gray-600">{item.author} • {item.type}</div>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">Approve</button>
-                  <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">Reject</button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Research, Extension & Achievements</h1>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as any)}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="pending">Pending Review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="all">All</option>
+        </select>
       </div>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
+          {statusFilter === 'pending' ? 'Pending Approvals' : statusFilter === 'approved' ? 'Approved Submissions' : statusFilter === 'rejected' ? 'Rejected Submissions' : 'All Submissions'}
+        </h2>
+
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading submissions...</span>
+          </div>
+        ) : submissions.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No submissions found.</div>
+        ) : (
+          <div className="space-y-3">
+            {submissions.map((item) => {
+              const cfg = RESEARCH_STATUS_LABEL[item.status];
+              return (
+                <div key={item.id} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
+                      <div className="text-sm text-gray-600">
+                        {item.submitter?.full_name ?? 'Unknown'} · {typeLabel(item.type)} · {formatDate(item.created_at)}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
+                          {cfg.label}
+                        </span>
+                        {item.file_url && (
+                          <a href={item.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
+                            View File{item.file_name ? ` (${item.file_name})` : ''}
+                          </a>
+                        )}
+                      </div>
+                      {item.dean_remarks && (
+                        <p className="text-xs text-red-600 mt-1.5">Remarks: {item.dean_remarks}</p>
+                      )}
+                    </div>
+                    {item.status === 'pending' && (
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => decide(item, 'approved')}
+                          disabled={actionId === item.id}
+                          className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-60"
+                        >
+                          {actionId === item.id ? 'Working...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => { setRejectFor(item); setRemarksInput(''); }}
+                          disabled={actionId === item.id}
+                          className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Reject reason modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Submission?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Rejecting <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s "{rejectFor.title}".
+            </p>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reason (optional)</label>
+            <textarea
+              value={remarksInput}
+              onChange={e => setRemarksInput(e.target.value)}
+              rows={3}
+              placeholder="Let them know what needs revision..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => decide(rejectFor, 'rejected', remarksInput)}
+                disabled={actionId === rejectFor.id}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionId === rejectFor.id ? 'Rejecting...' : 'Confirm Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
