@@ -167,11 +167,10 @@ if (!previewMode && loading) {
       <section className="relative w-full h-screen overflow-hidden">
         {/* Full-bleed background image */}
        <img
-       
-           src="/COED home.jpg"
-         alt="Campus"
-          className="absolute inset-0 w-full h-full object-cover object-center"
-        />
+  src={hero?.image_url || '/COED home.jpg'}
+  alt="Campus"
+  className="absolute inset-0 w-full h-full object-cover object-center"
+/>
 
         {/* Dark overlay — subtle, like the reference image */}
         <div className="absolute inset-0 bg-black/40" />

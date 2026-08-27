@@ -35,23 +35,21 @@ export async function getHomepageAnnouncements() {
   return { data, error };
 }
 
-export async function saveHomepageContent(
-  homeContent: any
-) {
+export async function saveHomepageContent(homeContent: any) {
   const updates = Object.entries(homeContent).map(
-    ([section_name, values]: any) => ({
+    ([section_name, values]: [string, any]) => ({
       section_name,
       ...values,
     })
   );
+
+  console.log('Saving homepage content:', updates);
 
   return await supabase
     .from('homepage_content')
     .upsert(updates, {
       onConflict: 'section_name',
     });
-
-    
 }
 export async function uploadHomepageImage(
   file: File,
