@@ -2962,7 +2962,8 @@ function FacultyStaffManagement() {
 interface ResearchSubmissionRow {
   id: string;
   title: string;
-  type: 'research' | 'extension';
+  type: 'research' | 'extension' | 'achievement';
+  category: string | null;
   file_name: string | null;
   file_url: string | null;
   status: 'pending' | 'approved' | 'rejected';
@@ -2985,6 +2986,7 @@ function getResearchTokenDean() {
 }
 
 function ResearchAchievements() {
+  const [typeFilter, setTypeFilter] = useState<'all' | 'research' | 'extension' | 'achievement'>('all');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3043,22 +3045,36 @@ function ResearchAchievements() {
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  const typeLabel = (t: string) => t === 'research' ? 'Research' : 'Extension';
+  const typeLabel = (t: string) => t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement';
+
+  const filtered = typeFilter === 'all' ? submissions : submissions.filter(s => s.type === typeFilter);
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Research, Extension & Achievements</h1>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as any)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="pending">Pending Review</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="all">All</option>
-        </select>
+        <div className="flex gap-2">
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value as any)}
+            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">All Types</option>
+            <option value="research">Research</option>
+            <option value="extension">Extension</option>
+            <option value="achievement">Achievements</option>
+          </select>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="pending">Pending Review</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All</option>
+          </select>
+        </div>
       </div>
 
       {loadError && (
@@ -3075,11 +3091,11 @@ function ResearchAchievements() {
             <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             <span className="text-sm">Loading submissions...</span>
           </div>
-        ) : submissions.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No submissions found.</div>
         ) : (
           <div className="space-y-3">
-            {submissions.map((item) => {
+            {filtered.map((item) => {
               const cfg = RESEARCH_STATUS_LABEL[item.status];
               return (
                 <div key={item.id} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
@@ -3087,7 +3103,8 @@ function ResearchAchievements() {
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
                       <div className="text-sm text-gray-600">
-                        {item.submitter?.full_name ?? 'Unknown'} · {typeLabel(item.type)} · {formatDate(item.created_at)}
+                        {item.submitter?.full_name ?? 'Unknown'} · {typeLabel(item.type)}
+                        {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
                       </div>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
@@ -3129,7 +3146,6 @@ function ResearchAchievements() {
         )}
       </div>
 
-      {/* Reject reason modal */}
       {rejectFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">

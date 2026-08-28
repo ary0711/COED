@@ -821,183 +821,370 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
   }
 
 
-  // ====================== 5.3 ACHIEVEMENTS ======================
-  function FacultyAchievements() {
-    const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
-    const [awardTitle, setAwardTitle] = useState('');
-    const [awardDate, setAwardDate] = useState('');
-    const [fileName, setFileName] = useState('');
+ // ====================== 5.3 ACHIEVEMENTS ======================
+interface AchievementSubmission {
+  id: string;
+  title: string;
+  type: 'achievement';
+  category: string | null;
+  date_received: string | null;
+  file_name: string | null;
+  file_url: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-    const achievements = [
-      { title: 'Best Paper Award – ICEICE 2025',  date: 'Nov 2025', status: 'Approved', category: 'Research'   },
-      { title: 'Outstanding Faculty Awardee',      date: 'Jan 2026', status: 'Pending',  category: 'Teaching'   },
-      { title: 'Community Service Medal',          date: 'Mar 2025', status: 'Approved', category: 'Extension'  },
-      { title: 'Innovation Grant Recipient',       date: 'Oct 2024', status: 'Approved', category: 'Research'   },
-    ];
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
 
-    const approved = achievements.filter(a => a.status === 'Approved');
-    const pendingCount = achievements.filter(a => a.status === 'Pending').length;
-    const rejectedCount = achievements.filter(a => a.status === 'Rejected').length;
+export default function FacultyAchievements() {
+  const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
+  const [awardTitle, setAwardTitle] = useState('');
+  const [awardCategory, setAwardCategory] = useState('Research');
+  const [awardDate, setAwardDate] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [submissions, setSubmissions] = useState<AchievementSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
-        <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-          {[{ id: 'submit', label: 'Submit' }, { id: 'approved', label: 'Approved' }, { id: 'history', label: 'History' }].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as any)}
-              className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+  const [modal, setModal] = useState<ModalState>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
 
-        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-2">
-            {tab === 'submit' && (
-              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
-                    <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
-                    <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
-                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                      <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                      <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
-                    </label>
-                    {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
-                  </div>
-                  <button onClick={() => alert('✅ Achievement submitted for review!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
-                    Submit for Review
-                  </button>
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getResearchToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSubmissions((data ?? []).filter((s: any) => s.type === 'achievement'));
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const approved = submissions.filter(a => a.status === 'approved');
+  const pendingCount = submissions.filter(a => a.status === 'pending').length;
+  const rejectedCount = submissions.filter(a => a.status === 'rejected').length;
+
+  const displayStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+  const handleSubmit = async () => {
+    if (!awardTitle.trim()) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'Missing Required Field',
+        message: 'Please enter an award/achievement title before submitting.',
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', awardTitle.trim());
+      formData.append('type', 'achievement');
+      formData.append('category', awardCategory);
+      if (awardDate) formData.append('date_received', awardDate);
+      if (selectedFile) formData.append('file', selectedFile);
+
+      const res = await fetch(RESEARCH_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getResearchToken()}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setModal({
+          isOpen: true,
+          type: 'error',
+          title: 'Submission Failed',
+          message: err.error || res.statusText || 'Failed to submit achievement.',
+        });
+        return;
+      }
+
+      const data: AchievementSubmission = await res.json();
+      setSubmissions(prev => [data, ...prev]);
+      setAwardTitle('');
+      setAwardCategory('Research');
+      setAwardDate('');
+      setSelectedFile(null);
+
+      setModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Achievement Submitted',
+        message: 'Your achievement has been successfully submitted for review!',
+      });
+    } catch {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not reach the server. Please check your connection and try again.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownload = (a: AchievementSubmission) => {
+    if (a.file_url) {
+      window.open(a.file_url, '_blank');
+    } else {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'No File Found',
+        message: 'No file was attached to this submission.',
+      });
+    }
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
+      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        {[{ id: 'submit', label: 'Submit' }, { id: 'approved', label: 'Approved' }, { id: 'history', label: 'History' }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2">
+          {tab === 'submit' && (
+            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
+                  <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <select value={awardCategory} onChange={e => setAwardCategory(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                    <option>Research</option>
+                    <option>Teaching</option>
+                    <option>Extension</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
+                  <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                </div>
+                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+                  {submitting ? 'Submitting...' : 'Submit for Review'}
+                </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {tab === 'approved' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
-                  <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
-                </div>
+          {tab === 'approved' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
+                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : approved.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No approved achievements yet.</div>
+              ) : (
                 <div className="divide-y divide-gray-100">
-                  {approved.map((a, i) => (
-                    <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                  {approved.map((a) => (
+                    <div key={a.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
                       <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
                         <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
                           <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
                         </div>
                         <div className="min-w-0">
                           <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{a.category} · {a.date}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
                         </div>
                       </div>
-                      <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                      <button onClick={() => handleDownload(a)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
                         <Download size={14} /> Download
                       </button>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {tab === 'history' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
-                </div>
-                <div className="divide-y divide-gray-100 sm:hidden">
-                  {achievements.map((a, i) => (
-                    <div key={i} className="p-4 space-y-1">
-                      <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                      <div className="text-xs text-gray-500">{a.category} · {a.date}</div>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {a.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="hidden sm:block overflow-x-auto">
-                  <table className="w-full text-left min-w-[480px]">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {achievements.map((a, i) => (
-                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                          <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
-                          <td className="py-4 px-6 text-gray-600">{a.category}</td>
-                          <td className="py-4 px-6 text-gray-600">{a.date}</td>
-                          <td className="py-4 px-6 text-center">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                              {a.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          {tab === 'history' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
               </div>
-            )}
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : submissions.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+              ) : (
+                <>
+                  <div className="divide-y divide-gray-100 sm:hidden">
+                    {submissions.map((a) => (
+                      <div key={a.id} className="p-4 space-y-1">
+                        <div className="font-medium text-gray-900 text-sm">{a.title}</div>
+                        <div className="text-xs text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {displayStatus(a.status)}
+                        </span>
+                        {a.dean_remarks && <p className="text-xs text-red-600 mt-1">Remarks: {a.dean_remarks}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full text-left min-w-[480px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {submissions.map((a) => (
+                          <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
+                            <td className="py-4 px-6 text-gray-600">{a.category ?? '—'}</td>
+                            <td className="py-4 px-6 text-gray-600">{formatDate(a.date_received)}</td>
+                            <td className="py-4 px-6 text-center">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                {displayStatus(a.status)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="text-sm text-gray-600">Total Submitted</span>
+                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-lg font-bold text-green-700">{approved.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+              </div>
+            </div>
           </div>
 
-          {/* ── Side panel: fills the empty space on wide screens ── */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Total Submitted</span>
-                  <span className="text-lg font-bold text-gray-900">{achievements.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
-                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
-                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
-                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
-              </h3>
-              <ul className="space-y-3 text-sm text-gray-600">
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
-              </ul>
-            </div>
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
+            </h3>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+            </ul>
           </div>
         </div>
       </div>
-    );
-  }
+
+      {/* Confirmation & Status Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex flex-col items-center text-center">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                modal.type === 'success' ? 'bg-green-100 text-green-600' :
+                modal.type === 'error' ? 'bg-red-100 text-red-600' :
+                'bg-yellow-100 text-yellow-600'
+              }`}>
+                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
+                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
+                {modal.type === 'validation' && <Info className="w-6 h-6" />}
+              </div>
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {modal.title}
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {modal.message}
+              </p>
+
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
   // ─── My Drafts (shared: works for both Chair and Faculty) ────────────────────
 interface DraftSummary {
   id: string;

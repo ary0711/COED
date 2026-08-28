@@ -22,7 +22,7 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB, matches the UI's stated limit
 });
 
-const ALLOWED_TYPES = ['research', 'extension'];
+const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
 
 // GET /api/research-submissions/mine
 router.get('/mine', authenticate, async (req, res) => {
@@ -118,7 +118,7 @@ router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
 // POST /api/research-submissions
 // multipart/form-data: fields "title", "type", optional file field "file"
 router.post('/', authenticate, upload.single('file'), async (req, res) => {
-  const { title, type } = req.body;
+  const { title, type, category, date_received } = req.body;
 
   if (!title || !String(title).trim()) {
     return res.status(400).json({ error: 'Title is required.' });
@@ -154,6 +154,8 @@ router.post('/', authenticate, upload.single('file'), async (req, res) => {
       submitted_by: req.user.userId,
       title: String(title).trim(),
       type,
+      category: category || null,
+      date_received: date_received || null,
       file_path,
       file_url,
       file_name,
