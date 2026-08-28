@@ -1248,9 +1248,7 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
 }
 
 
-/* ─────────────────────────────────────────────
-   Faculty Monitoring
-───────────────────────────────────────────── */
+/*Faculty Monitoring */
 function FacultyMonitoring() {
   return (
     <div>
@@ -1260,13 +1258,107 @@ function FacultyMonitoring() {
   );
 }
 
-/* ─────────────────────────────────────────────
-   Chair's own Reports (Accomplishment / Extension)
+// ─── My Drafts (shared: works for both Chair and Faculty) ────────────────────
+interface DraftSummary {
+  id: string;
+  quarter: string;
+  year: string;
+  progress: number;
+  updated_at: string;
+  created_at: string;
+}
+
+const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
+
+function getDraftsToken() {
+  return localStorage.getItem('token');
+}
+
+function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
+  const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
+  const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const fetchDrafts = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = getDraftsToken();
+      const [accRes, extRes] = await Promise.all([
+        fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      let hadError = false;
+      if (accRes.ok) setAccDraft(await accRes.json());
+      else hadError = true;
+      if (extRes.ok) setExtDraft(await extRes.json());
+      else hadError = true;
+      if (hadError) setLoadError('Failed to load one or more drafts.');
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDrafts(); }, []);
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  const cards = [
+    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
+    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
+  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
+      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading drafts...</span>
+        </div>
+      ) : cards.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map(({ type, label, draft }) => (
+            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 text-sm">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
+                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
+              </div>
+              <button
+                onClick={() => onEdit(type)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
+              >
+                Continue Editing
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Chair's own Reports (Accomplishment / Extension)
    — separate from "Reports Monitoring" below, which
-   is for reviewing faculty submissions.
-───────────────────────────────────────────── */
+   is for reviewing faculty submissions.*/
 function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'accomplishment' | 'extension'>('accomplishment');
+  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension'>('drafts');
 
   return (
     <div>
@@ -1276,6 +1368,12 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
       </div>
 
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setTab('drafts')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          My Drafts
+        </button>
         <button
           onClick={() => setTab('accomplishment')}
           className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
@@ -1290,6 +1388,10 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
         </button>
       </div>
 
+      {tab === 'drafts' && (
+        <MyDraftsPanel onEdit={(type) => setTab(type)} />
+      )}
+
       {tab === 'accomplishment' && (
         <AccomplishmentReport userId={userId} userName={userName} />
       )}
@@ -1300,6 +1402,7 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
     </div>
   );
 }
+
 
 /* ─────────────────────────────────────────────
    Reports Monitoring
