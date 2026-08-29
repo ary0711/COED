@@ -12,25 +12,6 @@ const DB_TO_UI_ROLE: Record<string, string> = {
   admin: 'dean',
 };
 
-// Maps each program code to its exact department name in the `departments`
-// table. BSEd is split into two separate, independently-selectable
-// programs — Math and English — because department_id is a single value
-// on student_profiles/faculty_profiles/alumni_profiles, so a combined
-// "Math & English" option could never map to exactly one department row.
-// Used for ALL registering roles (student, faculty, alumni) so that
-// every role ends up scoped to a real department_id at signup — this is
-// what lets a Department Chair's approval queue filter correctly by
-// department for every account type, not just students.
-const PROGRAM_TO_DEPARTMENT: Record<string, string> = {
-  'BEEd':         'Bachelor of Elementary Education Program',
-  'BTLEd':        'Bachelor of Technology and Livelihood Education Program',
-  // Math and English are two majors under one combined BSEd department
-  // (one chair oversees both) — there is only one row for this in
-  // `departments`, so both program codes map to the same name.
-  'BSEd-Math':    'Bachelor of Secondary Education Major in Mathematics & English Program',
-  'BSEd-English': 'Bachelor of Secondary Education Major in Mathematics & English Program',
-};
-
 interface LoginPageProps {
   onLogin: (role: string) => void;
   onBack?: () => void;
@@ -72,24 +53,24 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
   const [checkingUsername, setCheckingUsername] = useState(false);
 
   const userTypes = [
-    { id: 'student', label: 'Student',          icon: '🎓' },
+    { id: 'student', label: 'Student', icon: '🎓' },
     { id: 'faculty', label: 'Faculty/Employee', icon: '👨‍🏫' },
-    { id: 'alumni',  label: 'Alumni',           icon: '🎖️' },
+    { id: 'alumni', label: 'Alumni', icon: '🎖️' },
   ];
 
   const programs = [
-    { id: 'BEEd',         label: 'Bachelor of Elementary Education' },
-    { id: 'BTLEd',        label: 'Bachelor of Technology and Livelihood Education' },
-    { id: 'BSEd-Math',    label: 'Bachelor of Secondary Education - Major in Mathematics' },
+    { id: 'BEEd', label: 'Bachelor of Elementary Education' },
+    { id: 'BTLEd', label: 'Bachelor of Technology and Livelihood Education' },
+    { id: 'BSEd-Math', label: 'Bachelor of Secondary Education - Major in Mathematics' },
     { id: 'BSEd-English', label: 'Bachelor of Secondary Education - Major in English' },
   ];
 
   const passwordChecks = {
-    length:    regPassword.length >= 8,
+    length: regPassword.length >= 8,
     uppercase: /[A-Z]/.test(regPassword),
     lowercase: /[a-z]/.test(regPassword),
-    number:    /\d/.test(regPassword),
-    special:   /[@$!%*?&.#_-]/.test(regPassword),
+    number: /\d/.test(regPassword),
+    special: /[@$!%*?&.#_-]/.test(regPassword),
   };
 
   // --- Validation helpers ---
@@ -135,32 +116,13 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     return /^[A-Za-zÀ-ÖØ-öø-ÿ.'-]+(\s[A-Za-zÀ-ÖØ-öø-ÿ.'-]+)+$/.test(trimmed);
   };
 
-  const isValidIdNumber = (
-  idNumber: string,
-  userType: string
-): boolean => {
-  // Numbers only
-  if (!/^\d+$/.test(idNumber)) {
-    return false;
-  }
-
-  // Student = EXACTLY 7 digits
-  if (userType === 'student') {
-    return /^\d{7}$/.test(idNumber);
-  }
-
-  // Alumni = EXACTLY 8 digits
-  if (userType === 'alumni') {
-    return /^\d{8}$/.test(idNumber);
-  }
-
-  // Faculty = EXACTLY 6 digits
-  if (userType === 'faculty') {
-    return /^\d{6}$/.test(idNumber);
-  }
-
-  return true;
-};
+  const isValidIdNumber = (idNumber: string, userType: string): boolean => {
+    if (!/^\d+$/.test(idNumber)) return false;
+    if (userType === 'student') return /^\d{7}$/.test(idNumber);
+    if (userType === 'alumni') return /^\d{8}$/.test(idNumber);
+    if (userType === 'faculty') return /^\d{6}$/.test(idNumber);
+    return true;
+  };
 
   const isValidGraduationYear = (value: string) => {
     const trimmed = value.trim();
@@ -187,7 +149,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       const { data } = await supabase
         .from('users')
         .select('id')
-        .eq('username', trimmed)
+        .eq('username', trimmed.toLowerCase())
         .maybeSingle();
 
       if (data) {
@@ -202,44 +164,10 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
     }
   };
 
-  const rollbackRegistration = async (userId: string) => {
-    try {
-      await supabase.from('profiles').delete().eq('id', userId);
-    } catch (err) {
-      console.error('Failed to roll back profiles row:', err);
-    }
-    try {
-      await fetch('http://localhost:5000/api/auth/cleanup-failed-registration', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-    } catch (err) {
-      console.error('Failed to roll back auth user:', err);
-    }
-  };
-
-  // Looks up the departments.id row matching a program code. Shared by
-  // student, faculty, and alumni registration so every role gets scoped
-  // to a real department, not just students.
-  const lookupDepartmentId = async (program: string): Promise<{ id: string } | null> => {
-    const departmentName = PROGRAM_TO_DEPARTMENT[program];
-    if (!departmentName) return null;
-
-    const { data: deptRow, error: deptError } = await supabase
-      .from('departments')
-      .select('id')
-      .eq('name', departmentName)
-      .maybeSingle();
-
-    if (deptError || !deptRow) return null;
-    return deptRow;
-  };
-
   const handleLogin = async () => {
     setError('');
     if (!loginUsername.trim()) { setError('Please enter your username.'); return; }
-    if (!loginPassword)        { setError('Please enter your password.'); return; }
+    if (!loginPassword) { setError('Please enter your password.'); return; }
 
     setLoading(true);
     try {
@@ -281,6 +209,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
   const handleRegister = async () => {
     setError('');
+    setSuccessMsg('');
 
     const newFieldErrors: typeof fieldErrors = {};
 
@@ -301,23 +230,20 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       }
     }
 
-   if (!regIdNumber.trim()) {
-  newFieldErrors.idNumber = 'Please enter your ID number.';
-} else if (!isValidIdNumber(regIdNumber, regUserType)) {
-  if (regUserType === 'student') {
-    newFieldErrors.idNumber =
-      'Student ID number must contain exactly 7 digits.';
-  } else if (regUserType === 'alumni') {
-    newFieldErrors.idNumber =
-      'Alumni ID number must contain exactly 8 digits.';
-  } else if (regUserType === 'faculty') {
-    newFieldErrors.idNumber =
-      'Faculty ID number must contain exactly 6 digits.';
-  } else {
-    newFieldErrors.idNumber =
-      'ID number should contain numbers only.';
-  }
-}
+    if (!regIdNumber.trim()) {
+      newFieldErrors.idNumber = 'Please enter your ID number.';
+    } else if (!isValidIdNumber(regIdNumber, regUserType)) {
+      if (regUserType === 'student') {
+        newFieldErrors.idNumber = 'Student ID number must contain exactly 7 digits.';
+      } else if (regUserType === 'alumni') {
+        newFieldErrors.idNumber = 'Alumni ID number must contain exactly 8 digits.';
+      } else if (regUserType === 'faculty') {
+        newFieldErrors.idNumber = 'Faculty ID number must contain exactly 6 digits.';
+      } else {
+        newFieldErrors.idNumber = 'ID number should contain numbers only.';
+      }
+    }
+
     if (!regUsername.trim()) {
       newFieldErrors.username = 'Please enter a username.';
     } else if (fieldErrors.username) {
@@ -332,243 +258,82 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
       }
     }
 
+    if (!regPassword) {
+      newFieldErrors.password = 'Please enter a password.';
+    } else {
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+      if (!passwordRegex.test(regPassword)) {
+        newFieldErrors.password = 'Your password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.';
+      }
+    }
+
+    if (!regConfirmPassword) {
+      newFieldErrors.confirmPassword = 'Please confirm your password.';
+    } else if (regPassword !== regConfirmPassword) {
+      newFieldErrors.confirmPassword = 'Please make sure your confirm password is the same as your password.';
+    }
+
     setFieldErrors(newFieldErrors);
     if (Object.keys(newFieldErrors).length > 0) return;
 
     if (!regUserType) { setError('Please select a user type.'); return; }
-    if (!regProgram)  { setError('Please select your program.'); return; }
-    if (!regPassword) { setError('Please enter a password.'); return; }
-
-    const passwordRegex =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
-    if (!passwordRegex.test(regPassword)) {
-      setError('Your password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.');
-      return;
-    }
-   if (!regConfirmPassword) {
-  setFieldErrors((prev) => ({
-    ...prev,
-    confirmPassword: 'Please confirm your password.',
-  }));
-  return;
-}
-
-if (regPassword !== regConfirmPassword) {
-  setFieldErrors((prev) => ({
-    ...prev,
-    confirmPassword:
-      'Please make sure your confirm password is the same as your password.',
-  }));
-  return;
-}
-
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('username', regUsername.trim())
-      .maybeSingle();
-
-    if (existingUser) {
-      setFieldErrors((prev) => ({ ...prev, username: 'This username is already taken. Please choose another.' }));
-      return;
-    }
+    if (!regProgram) { setError('Please select your program.'); return; }
 
     setLoading(true);
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: regEmail.trim(),
-        password: regPassword,
-      });
-
-      if (signUpError) {
-        const msg = signUpError.message.toLowerCase();
-        if (msg.includes('already registered') || msg.includes('already exists')) {
-          setFieldErrors((prev) => ({ ...prev, email: 'An account with this email already exists.' }));
-        } else if (msg.includes('email') && (msg.includes('invalid') || msg.includes('format'))) {
-          setFieldErrors((prev) => ({ ...prev, email: 'Please enter a valid email address.' }));
-        } else if (msg.includes('password')) {
-          setFieldErrors((prev) => ({ ...prev, password: 'Please choose a stronger password and try again.' }));
-        } else if (msg.includes('rate limit')) {
-          setError('Too many attempts. Please wait a few minutes and try again.');
-        } else {
-          console.error(signUpError.message);
-          setError("We couldn't create your account. Please check your details and try again.");
-        }
-        return;
-      }
-
-      const userId = authData.user?.id;
-      if (!userId) { setError('Registration failed. Please try again.'); return; }
-
-      const { error: insertError } = await supabase.from('profiles').insert({
-        id: userId,
-        full_name: regFullName.trim(),
-        email: regEmail.trim(),
-        role: regUserType === 'faculty' ? 'faculty' : regUserType,
-        program: regProgram,
-        id_number: regIdNumber.trim(),
-        status: 'pending',
-      });
-
-      if (insertError) {
-        await supabase.auth.signOut();
-        const msg = insertError.message.toLowerCase();
-        if (msg.includes('profiles_email_key')) {
-          setFieldErrors((prev) => ({ ...prev, email: 'An account with this email already exists.' }));
-        } else if (msg.includes('profiles_id_number_key')) {
-          setFieldErrors((prev) => ({ ...prev, idNumber: 'This ID number is already registered.' }));
-        } else if (msg.includes('null value') && msg.includes('full_name')) {
-          setFieldErrors((prev) => ({ ...prev, fullName: 'Please enter your full name.' }));
-        } else if (msg.includes('null value') && msg.includes('email')) {
-          setFieldErrors((prev) => ({ ...prev, email: 'Please enter your email address.' }));
-        } else if (msg.includes('null value') && msg.includes('id_number')) {
-          setFieldErrors((prev) => ({ ...prev, idNumber: 'Please enter your ID number.' }));
-        } else if (msg.includes('null value') && msg.includes('program')) {
-          setError('Please select your program.');
-        } else if (msg.includes('check constraint') || msg.includes('invalid input value')) {
-          setError('One of the details you entered is not valid. Please review your information and try again.');
-        } else {
-          console.error(insertError.message);
-          setError('Something went wrong saving your details. Please check your information and try again.');
-        }
-        return;
-      }
-
-      // Every role's own profile table now gets a department_id derived
-      // from the selected program (each program maps to exactly one
-      // department) — this is what lets a Department Chair's approval
-      // queue filter students, faculty, AND alumni by their own
-      // department(s), instead of only students.
-      const deptRow = await lookupDepartmentId(regProgram);
-      if (!deptRow) {
-        await rollbackRegistration(userId);
-        await supabase.auth.signOut();
-        console.error('No matching department found for program: ' + regProgram);
-        setError('Could not match your selected program to a department. Please contact the registrar.');
-        return;
-      }
-
-      if (regUserType === 'student') {
-        const { error: studentProfileError } = await supabase.from('student_profiles').insert({
-          user_id: userId,
-          department_id: deptRow.id,
-          full_name: regFullName.trim(),
-          student_no: regIdNumber.trim(),
-          year_level: 1,
-          program: regProgram,
-        });
-
-        if (studentProfileError) {
-          await rollbackRegistration(userId);
-          await supabase.auth.signOut();
-          const msg = studentProfileError.message.toLowerCase();
-          if (msg.includes('student_profiles_student_no_key')) {
-            setFieldErrors((prev) => ({ ...prev, idNumber: 'This student number is already registered.' }));
-          } else {
-            console.error(studentProfileError.message);
-            setError('Something went wrong setting up your student profile. Please try again.');
-          }
-          return;
-        }
-      }
-
-      if (regUserType === 'faculty') {
-        // status is explicitly 'pending' here — the column defaults to
-        // 'Active' in the DB schema, which would silently grant faculty
-        // status before any chair approval. profiles.status is the real
-        // gate the backend checks; this column should never contradict it.
-        const { error: facultyProfileError } = await supabase.from('faculty_profiles').insert({
-          user_id: userId,
-          full_name: regFullName.trim(),
-          contact_email: regEmail.trim(),
-          department_id: deptRow.id,
-          status: 'pending',
-        });
-
-        if (facultyProfileError) {
-          await rollbackRegistration(userId);
-          await supabase.auth.signOut();
-          console.error(facultyProfileError.message);
-          setError('Something went wrong setting up your faculty profile. Please try again.');
-          return;
-        }
-      }
-
-      if (regUserType === 'alumni') {
-        const { error: alumniProfileError } = await supabase.from('alumni_profiles').insert({
-          user_id: userId,
-          full_name: regFullName.trim(),
-          graduation_year: parseInt(regGraduationYear.trim(), 10),
-          program: regProgram,
-          department_id: deptRow.id,
-          contact_email: regEmail.trim(),
-        });
-
-        if (alumniProfileError) {
-          await rollbackRegistration(userId);
-          await supabase.auth.signOut();
-          const msg = alumniProfileError.message.toLowerCase();
-          if (msg.includes('graduation_year')) {
-            setFieldErrors((prev) => ({ ...prev, graduationYear: 'Please enter a valid graduation year.' }));
-          } else if (msg.includes('contact_email')) {
-            setFieldErrors((prev) => ({ ...prev, email: 'Please enter a valid email address.' }));
-          } else {
-            console.error(alumniProfileError.message);
-            setError('Something went wrong setting up your alumni profile. Please try again.');
-          }
-          return;
-        }
-      }
-
+      // Direct call to atomic backend registration endpoint
       const res = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: regUsername.trim(),
           password: regPassword,
-          role: regUserType === 'faculty' ? 'faculty' : regUserType,
-          program: regProgram,
+          role: regUserType,
           email: regEmail.trim(),
           full_name: regFullName.trim(),
           id_number: regIdNumber.trim(),
           department: regProgram,
-          // The Supabase auth user (and profiles/student_profiles rows)
-          // were already created above via supabase.auth.signUp(). Pass
-          // this along so the backend reuses that same account instead
-          // of trying to create a second one for the same email, which
-          // always fails since the email is already registered by then.
-          userId,
+          status: 'pending',
+          graduation_year: regUserType === 'alumni' ? parseInt(regGraduationYear.trim(), 10) : undefined,
         }),
       });
 
       const regData = await res.json();
+
       if (!res.ok) {
-        await rollbackRegistration(userId);
-        await supabase.auth.signOut();
         const msg: string = regData.error || '';
         const lower = msg.toLowerCase();
         if (lower.includes('username')) {
-          setFieldErrors((prev) => ({ ...prev, username: 'This username is already taken. Please choose another.' }));
+          setFieldErrors((prev) => ({ ...prev, username: msg }));
         } else if (lower.includes('password')) {
-          setFieldErrors((prev) => ({ ...prev, password: 'Please check your password and try again.' }));
+          setFieldErrors((prev) => ({ ...prev, password: msg }));
         } else if (lower.includes('email')) {
-          setFieldErrors((prev) => ({ ...prev, email: 'Please check your email address and try again.' }));
-        } else if (lower.includes('role') || lower.includes('program')) {
-          setError('Please check your user type and program selections and try again.');
-        } else if (msg) {
-          setError(msg);
+          setFieldErrors((prev) => ({ ...prev, email: msg }));
+        } else if (lower.includes('id number')) {
+          setFieldErrors((prev) => ({ ...prev, idNumber: msg }));
         } else {
-          setError('Something went wrong creating your account. Please try again.');
+          setError(msg || 'Something went wrong creating your account. Please try again.');
         }
         return;
       }
 
+      // Reset form states on success
+      setRegFullName('');
+      setRegEmail('');
+      setRegUserType('');
+      setRegProgram('');
+      setRegIdNumber('');
+      setRegUsername('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setRegGraduationYear('');
+      setFieldErrors({});
+
       setMode('signin');
-      setError('');
       setSuccessMsg('Account created! Please wait for your department chairman to review and approve your account before you can sign in.');
     } catch (err) {
       console.error(err);
-      setError('Something went wrong. Please try again.');
+      setError('Connection to registration server failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -584,7 +349,6 @@ if (regPassword !== regConfirmPassword) {
 
   return (
     <div className="fixed inset-0 flex overflow-hidden">
-
       <div className="hidden lg:flex w-5/12 bg-[#0f2a5e] flex-col relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full border-[60px] border-white/5" />
@@ -616,7 +380,6 @@ if (regPassword !== regConfirmPassword) {
       </div>
 
       <div className="flex-1 bg-white flex flex-col overflow-y-auto">
-
         <div className="flex items-center justify-between px-10 pt-7 pb-2 flex-shrink-0">
           <button onClick={onBack}
             className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 transition-all"
@@ -628,7 +391,6 @@ if (regPassword !== regConfirmPassword) {
 
         <div className="flex-1 flex flex-col justify-center px-10 lg:px-16 py-4">
           <div className={mode === 'signup' ? 'w-full max-w-2xl mx-auto' : 'w-full max-w-md mx-auto'}>
-
             {error && (
               <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
                 {error}
@@ -708,7 +470,6 @@ if (regPassword !== regConfirmPassword) {
                   <p className="text-gray-500 text-sm mt-1">Fill in your details to get started</p>
                 </div>
 
-                {/* Full Name — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name <span className="text-red-500">*</span></label>
                   <div className="relative">
@@ -737,7 +498,6 @@ if (regPassword !== regConfirmPassword) {
                   {fieldErrors.fullName && <p className="text-red-500 text-xs mt-1">{fieldErrors.fullName}</p>}
                 </div>
 
-                {/* Email — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
                   <div className="relative">
@@ -769,7 +529,6 @@ if (regPassword !== regConfirmPassword) {
                   {fieldErrors.email && <p className="text-red-500 text-xs mt-1">{fieldErrors.email}</p>}
                 </div>
 
-                {/* User Type — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">User Type <span className="text-red-500">*</span></label>
                   <div className="grid grid-cols-3 gap-2">
@@ -785,7 +544,6 @@ if (regPassword !== regConfirmPassword) {
                   </div>
                 </div>
 
-                {/* Program — full width row */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Program <span className="text-red-500">*</span></label>
                   <select
@@ -799,7 +557,6 @@ if (regPassword !== regConfirmPassword) {
                   </select>
                 </div>
 
-                {/* Graduation Year — alumni only, full width row */}
                 {regUserType === 'alumni' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -830,121 +587,70 @@ if (regPassword !== regConfirmPassword) {
                   </div>
                 )}
 
-                {/* ID Number + Username — paired side by side to use the space better */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-    ID Number <span className="text-red-500">*</span>
-  </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      ID Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder={
+                          regUserType === 'student'
+                            ? 'Enter 7-digit ID'
+                            : regUserType === 'alumni'
+                            ? 'Enter 8-digit ID'
+                            : 'Enter 6-digit ID'
+                        }
+                        value={regIdNumber}
+                        maxLength={
+                          regUserType === 'student'
+                            ? 7
+                            : regUserType === 'alumni'
+                            ? 8
+                            : regUserType === 'faculty'
+                            ? 6
+                            : undefined
+                        }
+                        onChange={(e) => {
+                          let value = e.target.value.replace(/\D/g, '');
+                          if (regUserType === 'student') value = value.slice(0, 7);
+                          else if (regUserType === 'alumni') value = value.slice(0, 8);
+                          else if (regUserType === 'faculty') value = value.slice(0, 6);
 
-  <div className="relative">
-    <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-
-    <input
-      type="text"
-      inputMode="numeric"
-      placeholder={
-        regUserType === 'student'
-          ? 'Enter 7-digit ID'
-          : regUserType === 'alumni'
-          ? 'Enter 6-digit ID'
-          : 'Enter 8-digit ID'
-      }
-      value={regIdNumber}
-      maxLength={
-  regUserType === 'student'
-    ? 7
-    : regUserType === 'alumni'
-    ? 8
-    : regUserType === 'faculty'
-    ? 6
-    : undefined
-}
-      onChange={(e) => {
-  let value = e.target.value.replace(/\D/g, '');
-
-  if (regUserType === 'student') {
-    value = value.slice(0, 7);
-  } else if (regUserType === 'alumni') {
-    value = value.slice(0, 8);
-  } else if (regUserType === 'faculty') {
-    value = value.slice(0, 6);
-  }
-
-  setRegIdNumber(value);
-
-  setFieldErrors((prev) => ({
-    ...prev,
-    idNumber: undefined,
-  }));
-}}
-      onBlur={() => {
-        if (!regIdNumber.trim()) {
-          setFieldErrors((p) => ({
-            ...p,
-            idNumber: 'Please enter your ID number.',
-          }));
-        } else if (!isValidIdNumber(regIdNumber, regUserType)) {
-          if (regUserType === 'student') {
-            setFieldErrors((p) => ({
-              ...p,
-              idNumber:
-                'Student ID number must contain exactly 7 digits.',
-            }));
-          } else if (regUserType === 'alumni') {
-            setFieldErrors((p) => ({
-              ...p,
-              idNumber:
-                'Alumni ID number must contain exactly 6 digits.',
-            }));
-          } else {
-            setFieldErrors((p) => ({
-              ...p,
-              idNumber:
-                'ID number should contain numbers only.',
-            }));
-          }
-        }
-      }}
-      className={`w-full pl-9 pr-8 py-3 rounded-xl border ${
-        fieldErrors.idNumber
-          ? 'border-red-400'
-          : 'border-gray-200'
-      } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
-    />
-
-    <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
-      {renderStatusIcon(
-        regIdNumber,
-        !!fieldErrors.idNumber
-      )}
-    </span>
-  </div>
-
-  {regUserType === 'student' && (
-  <p className="text-gray-400 text-xs mt-1">
-    Student ID must be exactly 7 digits.
-  </p>
-)}
-
-{regUserType === 'alumni' && (
-  <p className="text-gray-400 text-xs mt-1">
-    Alumni ID must be exactly 8 digits.
-  </p>
-)}
-
-{regUserType === 'faculty' && (
-  <p className="text-gray-400 text-xs mt-1">
-    Faculty ID must be exactly 6 digits.
-  </p>
-)}
-
-  {fieldErrors.idNumber && (
-    <p className="text-red-500 text-xs mt-1">
-      {fieldErrors.idNumber}
-    </p>
-  )}
-</div>
+                          setRegIdNumber(value);
+                          setFieldErrors((prev) => ({ ...prev, idNumber: undefined }));
+                        }}
+                        onBlur={() => {
+                          if (!regIdNumber.trim()) {
+                            setFieldErrors((p) => ({ ...p, idNumber: 'Please enter your ID number.' }));
+                          } else if (!isValidIdNumber(regIdNumber, regUserType)) {
+                            if (regUserType === 'student') {
+                              setFieldErrors((p) => ({ ...p, idNumber: 'Student ID number must contain exactly 7 digits.' }));
+                            } else if (regUserType === 'alumni') {
+                              setFieldErrors((p) => ({ ...p, idNumber: 'Alumni ID number must contain exactly 8 digits.' }));
+                            } else if (regUserType === 'faculty') {
+                              setFieldErrors((p) => ({ ...p, idNumber: 'Faculty ID number must contain exactly 6 digits.' }));
+                            } else {
+                              setFieldErrors((p) => ({ ...p, idNumber: 'ID number should contain numbers only.' }));
+                            }
+                          }
+                        }}
+                        className={`w-full pl-9 pr-8 py-3 rounded-xl border ${
+                          fieldErrors.idNumber ? 'border-red-400' : 'border-gray-200'
+                        } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        {renderStatusIcon(regIdNumber, !!fieldErrors.idNumber)}
+                      </span>
+                    </div>
+                    {regUserType === 'student' && <p className="text-gray-400 text-xs mt-1">Student ID must be exactly 7 digits.</p>}
+                    {regUserType === 'alumni' && <p className="text-gray-400 text-xs mt-1">Alumni ID must be exactly 8 digits.</p>}
+                    {regUserType === 'faculty' && <p className="text-gray-400 text-xs mt-1">Faculty ID must be exactly 6 digits.</p>}
+                    {fieldErrors.idNumber && <p className="text-red-500 text-xs mt-1">{fieldErrors.idNumber}</p>}
+                  </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Username <span className="text-red-500">*</span></label>
@@ -985,33 +691,18 @@ if (regPassword !== regConfirmPassword) {
                         placeholder="Min 8 chars, Aa1@"
                         value={regPassword}
                         onChange={(e) => {
-  const value = e.target.value;
+                          const value = e.target.value;
+                          setRegPassword(value);
+                          if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
 
-  setRegPassword(value);
-
-  if (fieldErrors.password) {
-    setFieldErrors((p) => ({
-      ...p,
-      password: undefined,
-    }));
-  }
-
-  // Check confirm password whenever the original password changes
-  if (regConfirmPassword) {
-    if (value !== regConfirmPassword) {
-      setFieldErrors((p) => ({
-        ...p,
-        confirmPassword:
-          'Please make sure your confirm password is the same as your password.',
-      }));
-    } else {
-      setFieldErrors((p) => ({
-        ...p,
-        confirmPassword: undefined,
-      }));
-    }
-  }
-}}
+                          if (regConfirmPassword) {
+                            if (value !== regConfirmPassword) {
+                              setFieldErrors((p) => ({ ...p, confirmPassword: 'Please make sure your confirm password is the same as your password.' }));
+                            } else {
+                              setFieldErrors((p) => ({ ...p, confirmPassword: undefined }));
+                            }
+                          }
+                        }}
                         onFocus={() => setPasswordFocused(true)}
                         onBlur={() => setTimeout(() => setPasswordFocused(false), 150)}
                         className={`w-full pl-10 pr-9 py-3 rounded-xl border ${fieldErrors.password ? 'border-red-400' : 'border-gray-200'} focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`} />
@@ -1026,11 +717,11 @@ if (regPassword !== regConfirmPassword) {
                       <div className="absolute left-0 right-0 top-full mt-2 z-20 bg-[#241f1a] rounded-xl shadow-xl p-3 space-y-1.5">
                         <div className="absolute -top-1.5 left-6 w-3 h-3 bg-[#241f1a] rotate-45" />
                         {[
-                          { ok: passwordChecks.length,    label: 'At least 8 characters' },
+                          { ok: passwordChecks.length, label: 'At least 8 characters' },
                           { ok: passwordChecks.uppercase, label: 'One uppercase letter (A-Z)' },
                           { ok: passwordChecks.lowercase, label: 'One lowercase letter (a-z)' },
-                          { ok: passwordChecks.number,    label: 'One number (0-9)' },
-                          { ok: passwordChecks.special,   label: 'One special character (@, #, !, etc.)' },
+                          { ok: passwordChecks.number, label: 'One number (0-9)' },
+                          { ok: passwordChecks.special, label: 'One special character (@, #, !, etc.)' },
                         ].map((c, i) => (
                           <p key={i} className={`text-xs flex items-center gap-1.5 ${c.ok ? 'text-green-400' : 'text-gray-300'}`}>
                             <span className={c.ok ? 'text-green-400' : 'text-gray-500'}>{c.ok ? '✓' : '✗'}</span>
@@ -1042,68 +733,42 @@ if (regPassword !== regConfirmPassword) {
                   </div>
 
                   <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-    Confirm <span className="text-red-500">*</span>
-  </label>
-
-  <div className="relative">
-    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-
-    <input
-      type={showConfirmPassword ? 'text' : 'password'}
-      placeholder="Confirm password"
-      value={regConfirmPassword}
-      onChange={(e) => {
-        const value = e.target.value;
-
-        setRegConfirmPassword(value);
-
-        if (!value) {
-          setFieldErrors((p) => ({
-            ...p,
-            confirmPassword: 'Please confirm your password.',
-          }));
-        } else if (value !== regPassword) {
-          setFieldErrors((p) => ({
-            ...p,
-            confirmPassword:
-              'Please make sure your confirm password is the same as your password.',
-          }));
-        } else {
-          setFieldErrors((p) => ({
-            ...p,
-            confirmPassword: undefined,
-          }));
-        }
-      }}
-      className={`w-full pl-10 pr-9 py-3 rounded-xl border ${
-        fieldErrors.confirmPassword
-          ? 'border-red-400'
-          : 'border-gray-200'
-      } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
-    />
-
-    <button
-      type="button"
-      onClick={() =>
-        setShowConfirmPassword(!showConfirmPassword)
-      }
-      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-    >
-      {showConfirmPassword ? (
-        <EyeOff className="w-4 h-4" />
-      ) : (
-        <Eye className="w-4 h-4" />
-      )}
-    </button>
-  </div>
-
-  {fieldErrors.confirmPassword && (
-    <p className="text-red-500 text-xs mt-1">
-      {fieldErrors.confirmPassword}
-    </p>
-  )}
-</div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Confirm <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        placeholder="Confirm password"
+                        value={regConfirmPassword}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setRegConfirmPassword(value);
+                          if (!value) {
+                            setFieldErrors((p) => ({ ...p, confirmPassword: 'Please confirm your password.' }));
+                          } else if (value !== regPassword) {
+                            setFieldErrors((p) => ({ ...p, confirmPassword: 'Please make sure your confirm password is the same as your password.' }));
+                          } else {
+                            setFieldErrors((p) => ({ ...p, confirmPassword: undefined }));
+                          }
+                        }}
+                        className={`w-full pl-10 pr-9 py-3 rounded-xl border ${
+                          fieldErrors.confirmPassword ? 'border-red-400' : 'border-gray-200'
+                        } focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {fieldErrors.confirmPassword && (
+                      <p className="text-red-500 text-xs mt-1">{fieldErrors.confirmPassword}</p>
+                    )}
+                  </div>
                 </div>
 
                 <button onClick={handleRegister} disabled={loading || checkingUsername}
