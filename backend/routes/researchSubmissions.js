@@ -15,15 +15,6 @@ function requireDean(req, res, next) {
   }
   next();
 }
-
-const BUCKET = 'research-submissions';
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB, matches the UI's stated limit
-});
-
-const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
-
 // GET /api/research-submissions/mine
 router.get('/mine', authenticate, async (req, res) => {
   const { data, error } = await supabase
@@ -38,8 +29,21 @@ router.get('/mine', authenticate, async (req, res) => {
   return res.json(data ?? []);
 });
 
+const BUCKET = 'research-submissions';
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB, matches the UI's stated limit
+});
+
+const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
+
 // GET /api/research-submissions?status=pending
-// Dean-only. Lists submissions college-wide, with submitter names attached.
+// Dean-only. Lists submissions college-wide, with submitter names and
+// real department names attached. Department is resolved via
+// faculty_profiles.department_id -> departments.name for faculty
+// submitters, and student_profiles.department_id for students — never
+// from profiles.department, which is free text and often left blank
+// (faculty/student department is always the FK-backed source of truth).
 router.get('/', authenticate, requireDean, async (req, res) => {
   const { status } = req.query;
 
@@ -57,9 +61,10 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   if (!submissions || submissions.length === 0) return res.json([]);
 
   const submitterIds = [...new Set(submissions.map(s => s.submitted_by).filter(Boolean))];
+
   const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
-    .select('id, full_name, department')
+    .select('id, full_name, role')
     .in('id', submitterIds);
 
   if (profilesError) {
@@ -67,10 +72,41 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   }
 
   const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
-  const merged = submissions.map(s => ({
-    ...s,
-    submitter: profileMap.get(s.submitted_by) ?? null,
-  }));
+
+  // Resolve real department names via faculty_profiles/student_profiles,
+  // since research submissions currently only come from faculty (and
+  // possibly chairs later), but this covers both cleanly.
+  const { data: facultyRows } = await supabase
+    .from('faculty_profiles')
+    .select('user_id, department_id')
+    .in('user_id', submitterIds);
+
+  const departmentIdByUser = new Map(
+    (facultyRows ?? []).map(f => [f.user_id, f.department_id])
+  );
+
+  const departmentIds = [...new Set([...departmentIdByUser.values()].filter(Boolean))];
+  let departmentNameById = new Map();
+  if (departmentIds.length > 0) {
+    const { data: depts } = await supabase
+      .from('departments')
+      .select('id, name')
+      .in('id', departmentIds);
+    departmentNameById = new Map((depts ?? []).map(d => [d.id, d.name]));
+  }
+
+  const merged = submissions.map(s => {
+    const profile = profileMap.get(s.submitted_by);
+    const deptId = departmentIdByUser.get(s.submitted_by);
+    const departmentName = deptId ? departmentNameById.get(deptId) ?? null : null;
+
+    return {
+      ...s,
+      submitter: profile
+        ? { full_name: profile.full_name, department: departmentName }
+        : null,
+    };
+  });
 
   return res.json(merged);
 });

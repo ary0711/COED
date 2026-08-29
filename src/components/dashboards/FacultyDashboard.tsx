@@ -575,250 +575,334 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     updated_at: string;
   }
 
-  function ResearchExtension({ userId }: { userId: string }) {
-    const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
-    const [researchTitle, setResearchTitle] = useState('');
-    const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
 
-    useEffect(() => {
-      const load = async () => {
-        try {
-          const res = await fetch(`${RESEARCH_API_URL}/mine`, {
-            headers: { Authorization: `Bearer ${getResearchToken()}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setSubmissions(data ?? []);
-          }
-        } catch {
-          // silent — same as the reports components' load-error behavior
-        } finally {
-          setLoading(false);
+ function ResearchExtension({ userId }: { userId: string }) {
+  const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
+  const [researchTitle, setResearchTitle] = useState('');
+  const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [modal, setModal] = useState<ModalState>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getResearchToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSubmissions((data ?? []).filter((s: any) => s.type === 'research' || s.type === 'extension'));
         }
-      };
-      load();
-    }, [userId]);
-
-    const approved = submissions.filter(s => s.status === 'approved');
-    const pendingCount = submissions.filter(s => s.status === 'pending').length;
-    const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
-
-    const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
-    const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
-    const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    const statusBadge = (status: string) => {
-      const map: Record<string, string> = {
-        pending:  'bg-yellow-100 text-yellow-700',
-        approved: 'bg-green-100 text-green-700',
-        rejected: 'bg-red-100 text-red-700',
-      };
-      return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
+      } catch {
+        // silent — same as the reports components' load-error behavior
+      } finally {
+        setLoading(false);
+      }
     };
+    load();
+  }, [userId]);
 
-    const statusIcon = (status: string) => {
-      if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
-      if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
-      return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+  const approved = submissions.filter(s => s.status === 'approved');
+  const pendingCount = submissions.filter(s => s.status === 'pending').length;
+  const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
+
+  const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
+  const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-700',
+      approved: 'bg-green-100 text-green-700',
+      rejected: 'bg-red-100 text-red-700',
     };
+    return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
+  };
 
-    const handleSubmit = async () => {
-      if (!researchTitle.trim()) {
-        alert('Please enter a title.');
+  const statusIcon = (status: string) => {
+    if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
+    if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
+    return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+  };
+
+  const handleSubmit = async () => {
+    if (!researchTitle.trim()) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'Missing Required Field',
+        message: 'Please enter a title before submitting.',
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', researchTitle.trim());
+      formData.append('type', researchType);
+      if (selectedFile) formData.append('file', selectedFile);
+
+      const res = await fetch(RESEARCH_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getResearchToken()}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setModal({
+          isOpen: true,
+          type: 'error',
+          title: 'Submission Failed',
+          message: err.error || res.statusText || 'Failed to submit.',
+        });
         return;
       }
 
-      setSubmitting(true);
-      try {
-        const formData = new FormData();
-        formData.append('title', researchTitle.trim());
-        formData.append('type', researchType);
-        if (selectedFile) formData.append('file', selectedFile);
+      const data: ResearchSubmission = await res.json();
+      setSubmissions(prev => [data, ...prev]);
+      setResearchTitle('');
+      setSelectedFile(null);
+      setModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Output Submitted',
+        message: 'Your submission has been sent for approval!',
+      });
+    } catch {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not reach the server. Please try again.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        const res = await fetch(RESEARCH_API_URL, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${getResearchToken()}` },
-          body: formData,
-        });
+  const handleDownload = (s: ResearchSubmission) => {
+    if (s.file_url) {
+      window.open(s.file_url, '_blank');
+    } else {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'No File Found',
+        message: 'No file was attached to this submission.',
+      });
+    }
+  };
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          alert('❌ Failed to submit: ' + (err.error || res.statusText));
-          return;
-        }
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
+      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
+        {[{ id: 'submit', label: 'Submit' }, { id: 'track', label: 'Track Status' }, { id: 'approved', label: 'Approved' }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        const data: ResearchSubmission = await res.json();
-        setSubmissions(prev => [data, ...prev]);
-        setResearchTitle('');
-        setSelectedFile(null);
-        alert('✅ Submission sent for approval!');
-      } catch {
-        alert('❌ Could not reach the server. Please try again.');
-      } finally {
-        setSubmitting(false);
-      }
-    };
+      {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2">
+          {tab === 'submit' && (
+            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
+                  <div className="flex gap-3 sm:gap-4">
+                    <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
+                    <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                  <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
+                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                </div>
+                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+                  {submitting ? 'Submitting...' : 'Submit for Approval'}
+                </button>
+              </div>
+            </div>
+          )}
 
-    const handleDownload = (s: ResearchSubmission) => {
-      if (s.file_url) {
-        window.open(s.file_url, '_blank');
-      } else {
-        alert('No file was attached to this submission.');
-      }
-    };
+          {tab === 'track' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : submissions.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {submissions.map((s) => (
+                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        {statusIcon(s.status)}
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">{statusBadge(s.status)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
-        <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
-          {[{ id: 'submit', label: 'Submit' }, { id: 'track', label: 'Track Status' }, { id: 'approved', label: 'Approved' }].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as any)}
-              className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-              {t.label}
-            </button>
-          ))}
+          {tab === 'approved' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : approved.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {approved.map((s) => (
+                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
+                        </div>
+                      </div>
+                      <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                        <Download size={14} /> Download
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-2">
-            {tab === 'submit' && (
-              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
-                    <div className="flex gap-3 sm:gap-4">
-                      <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
-                      <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                    <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
-                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                      <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
-                      <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
-                    </label>
-                    {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
-                  </div>
-                  <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
-                    {submitting ? 'Submitting...' : 'Submit for Approval'}
-                  </button>
-                </div>
+        {/* ── Side panel: fills the empty space on wide screens ── */}
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="text-sm text-gray-600">Total Submitted</span>
+                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
               </div>
-            )}
-
-            {tab === 'track' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
-                </div>
-                {loading ? (
-                  <div className="p-12 text-center text-gray-400">Loading…</div>
-                ) : submissions.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400">No submissions yet.</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {submissions.map((s) => (
-                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                          {statusIcon(s.status)}
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0">{statusBadge(s.status)}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-lg font-bold text-green-700">{approved.length}</span>
               </div>
-            )}
-
-            {tab === 'approved' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
-                </div>
-                {loading ? (
-                  <div className="p-12 text-center text-gray-400">Loading…</div>
-                ) : approved.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {approved.map((s) => (
-                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
-                          </div>
-                        </div>
-                        <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                          <Download size={14} /> Download
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
               </div>
-            )}
+              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+              </div>
+            </div>
           </div>
 
-          {/* ── Side panel: fills the empty space on wide screens ── */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Total Submitted</span>
-                  <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
-                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
-                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
-                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
-              </h3>
-              <ul className="space-y-3 text-sm text-gray-600">
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
-              </ul>
-            </div>
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
+            </h3>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+            </ul>
           </div>
         </div>
       </div>
-    );
-  }
+
+      {/* Confirmation & Status Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex flex-col items-center text-center">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                modal.type === 'success' ? 'bg-green-100 text-green-600' :
+                modal.type === 'error' ? 'bg-red-100 text-red-600' :
+                'bg-yellow-100 text-yellow-600'
+              }`}>
+                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
+                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
+                {modal.type === 'validation' && <Info className="w-6 h-6" />}
+              </div>
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {modal.title}
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {modal.message}
+              </p>
+
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 
  // ====================== 5.3 ACHIEVEMENTS ======================

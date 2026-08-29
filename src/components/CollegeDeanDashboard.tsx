@@ -3102,10 +3102,12 @@ function ResearchAchievements() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
-                      <div className="text-sm text-gray-600">
-                        {item.submitter?.full_name ?? 'Unknown'} · {typeLabel(item.type)}
-                        {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
-                      </div>
+                        <div className="text-sm text-gray-600">
+                          {item.submitter?.full_name ?? 'Unknown'}
+                          {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
+                          {' · '}{typeLabel(item.type)}
+                          {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
+                       </div>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
                           {cfg.label}
