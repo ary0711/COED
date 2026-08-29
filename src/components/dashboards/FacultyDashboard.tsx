@@ -1733,13 +1733,118 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
   }
 
   // ====================== 5.6 SETTINGS ======================
-  function FacultySettings() {
+ function FacultySettings() {
     const [announcementAlerts, setAnnouncementAlerts] = useState(true);
     const [departmentNotices, setDepartmentNotices] = useState(true);
+
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const [fullNameInput, setFullNameInput] = useState('');
+    const [emailInput, setEmailInput] = useState('');
+    const [contactEmailInput, setContactEmailInput] = useState('');
+    const [contactNoInput, setContactNoInput] = useState('');
+    const [specializationInput, setSpecializationInput] = useState('');
+
+    const [readOnly, setReadOnly] = useState({
+      facultyId: '',
+      position: '',
+      departmentName: '',
+      dateHired: '',
+      status: '',
+    });
+
+    const fetchMe = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          setLoadError('Failed to load your profile.');
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+
+        setFullNameInput(data.fullName ?? '');
+        setEmailInput(data.email ?? '');
+        setContactEmailInput(data.contactEmail ?? '');
+        setContactNoInput(data.contactNo ?? '');
+        setSpecializationInput(data.specialization ?? '');
+        setReadOnly({
+          facultyId: data.facultyId ?? '—',
+          position: data.position ?? '—',
+          departmentName: data.departmentNames?.[0] ?? '—',
+          dateHired: data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—',
+          status: data.status ?? '—',
+        });
+      } catch {
+        setLoadError('Could not reach the server. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => { fetchMe(); }, []);
+
+    const handleSaveChanges = async () => {
+      const trimmedName = fullNameInput.trim();
+      if (!trimmedName) {
+        setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+        return;
+      }
+
+      setSaving(true);
+      setSaveMessage(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/me', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            contact_email: contactEmailInput.trim(),
+            contact_no: contactNoInput.trim(),
+            specialization: specializationInput.trim(),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes.' });
+          return;
+        }
+
+        setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+        await fetchMe();
+      } catch {
+        setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleCancel = () => {
+      fetchMe();
+      setSaveMessage(null);
+    };
 
     return (
       <div>
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
+
+        {loadError && (
+          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        )}
 
         {/* ⚙️ BASIC SETTINGS */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
@@ -1750,20 +1855,92 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
           {/* Profile Information */}
           <div className="mb-8">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <input type="text" defaultValue="Prof. Sarah Johnson" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+
+            {loading ? (
+              <div className="animate-pulse space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                </div>
+                <div className="h-10 bg-gray-100 rounded-lg" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
-                <input type="text" defaultValue="FAC-2018-001" disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-              <input type="email" defaultValue="sarah.johnson@university.edu.ph" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      value={fullNameInput}
+                      onChange={(e) => setFullNameInput(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                    <input type="text" value={readOnly.facultyId} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
+                    <input type="email" value={emailInput} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
+                    <input
+                      type="email"
+                      value={contactEmailInput}
+                      onChange={(e) => setContactEmailInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                    <input
+                      type="text"
+                      value={contactNoInput}
+                      onChange={(e) => setContactNoInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
+                    <input
+                      type="text"
+                      value={specializationInput}
+                      onChange={(e) => setSpecializationInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                    <input type="text" value={readOnly.position} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                    <input type="text" value={readOnly.departmentName} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
+                    <input type="text" value={readOnly.dateHired} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {saveMessage && (
+              <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                {saveMessage.text}
+              </p>
+            )}
           </div>
 
           {/* Password / Security */}
@@ -1789,35 +1966,33 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
           </h2>
 
           <div className="space-y-4">
-            {/* Announcement Alerts */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-gray-900">Announcements</p>
                 <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={announcementAlerts} 
-                  onChange={(e) => setAnnouncementAlerts(e.target.checked)} 
-                  className="sr-only peer" 
+                <input
+                  type="checkbox"
+                  checked={announcementAlerts}
+                  onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                  className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
 
-            {/* Department Notices */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-gray-900">Department Notices</p>
                 <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={departmentNotices} 
-                  onChange={(e) => setDepartmentNotices(e.target.checked)} 
-                  className="sr-only peer" 
+                <input
+                  type="checkbox"
+                  checked={departmentNotices}
+                  onChange={(e) => setDepartmentNotices(e.target.checked)}
+                  className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
@@ -1841,10 +2016,18 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
 
         {/* Save Button */}
         <div className="mt-8 flex gap-3">
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-            Save Changes
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving || loading}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+          <button
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
+          >
             Cancel
           </button>
         </div>
