@@ -1990,7 +1990,6 @@ const DOC_AUDIENCE_ROLES: TargetRoleOption[] = [
   { id: 'student', label: 'Students' },
   { id: 'faculty', label: 'Faculty' },
   { id: 'department_chair', label: 'Department Chairs' },
-  { id: 'staff', label: 'Staff' },
   { id: 'alumni', label: 'Alumni' },
 ];
 
@@ -1998,7 +1997,6 @@ const DOC_ROLE_LABELS: Record<string, string> = {
   student: 'Students',
   faculty: 'Faculty',
   department_chair: 'Chairs',
-  staff: 'Staff',
   alumni: 'Alumni',
 };
 
@@ -2049,7 +2047,7 @@ function AcademicRecords() {
     title: '',
     description: '',
     document_type: 'handbook' as 'handbook' | 'policy' | 'form' | 'memorandum',
-    target_roles: ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+    target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2096,7 +2094,7 @@ function AcademicRecords() {
       title: '',
       description: '',
       document_type: 'handbook',
-      target_roles: ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+      target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
     setFormError('');
@@ -2116,7 +2114,7 @@ function AcademicRecords() {
       document_type: doc.document_type,
       target_roles: doc.target_roles?.length
         ? doc.target_roles
-        : ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+        : ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
     setFormError('');
