@@ -1,10 +1,4 @@
 // routes/academicDocuments.js
-//
-// Academic Records document management. All reads/writes go through
-// here — the frontend never talks to Supabase Storage or the
-// academic_documents table directly. Downloads are served via
-// short-lived signed URLs generated server-side; the bucket itself
-// is private and the service-role key never reaches the browser.
 
 const express = require('express');
 const router = express.Router();
@@ -22,6 +16,7 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
 const ALLOWED_DOCUMENT_TYPES = ['handbook', 'policy', 'form', 'memorandum'];
+const ALLOWED_TARGET_ROLES = ['student', 'faculty', 'department_chair', 'staff', 'alumni'];
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -45,9 +40,29 @@ function validateFile(file) {
   return null;
 }
 
+// Parses target_roles from JSON strings, comma-separated values, or arrays from form-data
+function parseTargetRoles(input) {
+  if (!input) return null;
+  let roles = input;
+
+  if (typeof input === 'string') {
+    try {
+      roles = JSON.parse(input);
+    } catch {
+      roles = input.split(',').map((r) => r.trim());
+    }
+  }
+
+  if (!Array.isArray(roles)) return null;
+
+  // Filter and sanitize
+  const sanitized = [...new Set(roles.map((r) => String(r).trim().toLowerCase()))].filter(Boolean);
+  return sanitized;
+}
+
 // ── POST /api/academic-records/documents — upload (Dean/Admin only) ──
 router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {
-  const { title, description, document_type } = req.body;
+  const { title, description, document_type, target_roles } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Title is required.' });
@@ -55,6 +70,20 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
   if (!document_type || !ALLOWED_DOCUMENT_TYPES.includes(document_type)) {
     return res.status(400).json({ error: 'document_type must be one of: ' + ALLOWED_DOCUMENT_TYPES.join(', ') });
   }
+
+  // Parse and validate target audience roles
+  const parsedRoles = parseTargetRoles(target_roles);
+  if (!parsedRoles || parsedRoles.length === 0) {
+    return res.status(400).json({ error: 'At least one target audience role must be selected.' });
+  }
+
+  const invalidRoles = parsedRoles.filter((r) => !ALLOWED_TARGET_ROLES.includes(r));
+  if (invalidRoles.length > 0) {
+    return res.status(400).json({
+      error: `Invalid target role(s): ${invalidRoles.join(', ')}. Allowed: ${ALLOWED_TARGET_ROLES.join(', ')}`,
+    });
+  }
+
   if (!req.file) {
     return res.status(400).json({ error: 'A file is required.' });
   }
@@ -81,6 +110,7 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
       title: title.trim(),
       description: description?.trim() || null,
       document_type,
+      target_roles: parsedRoles,
       file_name: req.file.originalname,
       file_path: storagePath,
       file_type: req.file.mimetype,
@@ -92,7 +122,6 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
     .single();
 
   if (insertError) {
-    // Roll back the uploaded file if the DB insert failed.
     await supabase.storage.from(BUCKET).remove([storagePath]);
     return res.status(500).json({ error: 'Failed to save document record: ' + insertError.message });
   }
@@ -100,16 +129,15 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
   return res.status(201).json(data);
 });
 
-// ── GET /api/academic-records/documents — list (any authenticated role) ──
-// Non-dean/admin only ever see status='active'. Dean/admin can pass
-// ?status=archived or ?status=all to see everything.
+// ── GET /api/academic-records/documents — list documents ──
 router.get('/', authenticate, async (req, res) => {
   const { document_type, status } = req.query;
-  const isPrivileged = req.user.role === 'dean' || req.user.role === 'admin';
+  const userRole = req.user.role;
+  const isPrivileged = userRole === 'dean' || userRole === 'admin';
 
   let query = supabase
     .from('academic_documents')
-    .select('id, title, description, document_type, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
+    .select('id, title, description, document_type, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
     .order('created_at', { ascending: false });
 
   if (document_type) {
@@ -122,9 +150,11 @@ router.get('/', authenticate, async (req, res) => {
   if (isPrivileged) {
     if (status === 'archived') query = query.eq('status', 'archived');
     else if (status && status !== 'all') query = query.eq('status', status);
-    // status=all or omitted -> no status filter for privileged users
   } else {
-    query = query.eq('status', 'active'); // non-privileged users never see archived docs
+    // Non-privileged users only see active documents targeted to their specific role
+    query = query
+      .eq('status', 'active')
+      .contains('target_roles', [userRole]);
   }
 
   const { data, error } = await query;
@@ -137,11 +167,12 @@ router.get('/', authenticate, async (req, res) => {
 // ── GET /api/academic-records/documents/:id — single document metadata ──
 router.get('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const isPrivileged = req.user.role === 'dean' || req.user.role === 'admin';
+  const userRole = req.user.role;
+  const isPrivileged = userRole === 'dean' || userRole === 'admin';
 
   const { data, error } = await supabase
     .from('academic_documents')
-    .select('id, title, description, document_type, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
+    .select('id, title, description, document_type, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
     .eq('id', id)
     .maybeSingle();
 
@@ -151,8 +182,12 @@ router.get('/:id', authenticate, async (req, res) => {
   if (!data) {
     return res.status(404).json({ error: 'Document not found.' });
   }
-  if (data.status === 'archived' && !isPrivileged) {
-    return res.status(404).json({ error: 'Document not found.' });
+
+  // Access check: Non-privileged users cannot view archived docs or docs not targeted to them
+  if (!isPrivileged) {
+    if (data.status === 'archived' || !data.target_roles.includes(userRole)) {
+      return res.status(404).json({ error: 'Document not found.' });
+    }
   }
 
   return res.json(data);
@@ -161,11 +196,12 @@ router.get('/:id', authenticate, async (req, res) => {
 // ── GET /api/academic-records/documents/:id/download — signed URL ──
 router.get('/:id/download', authenticate, async (req, res) => {
   const { id } = req.params;
-  const isPrivileged = req.user.role === 'dean' || req.user.role === 'admin';
+  const userRole = req.user.role;
+  const isPrivileged = userRole === 'dean' || userRole === 'admin';
 
   const { data: doc, error: fetchError } = await supabase
     .from('academic_documents')
-    .select('file_path, status, file_name')
+    .select('file_path, status, file_name, target_roles')
     .eq('id', id)
     .maybeSingle();
 
@@ -175,13 +211,17 @@ router.get('/:id/download', authenticate, async (req, res) => {
   if (!doc) {
     return res.status(404).json({ error: 'Document not found.' });
   }
-  if (doc.status === 'archived' && !isPrivileged) {
-    return res.status(404).json({ error: 'Document not found.' });
+
+  // Download check: Ensure the user's role is authorized
+  if (!isPrivileged) {
+    if (doc.status === 'archived' || !doc.target_roles.includes(userRole)) {
+      return res.status(403).json({ error: 'You do not have permission to download this document.' });
+    }
   }
 
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(doc.file_path, 60); // 60-second link
+    .createSignedUrl(doc.file_path, 60); // 60-second valid link
 
   if (signError) {
     return res.status(500).json({ error: 'Failed to generate download link: ' + signError.message });
@@ -193,7 +233,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
 // ── PUT /api/academic-records/documents/:id — update metadata and/or replace file (Dean/Admin only) ──
 router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {
   const { id } = req.params;
-  const { title, description, document_type, status } = req.body;
+  const { title, description, document_type, status, target_roles } = req.body;
 
   const { data: existing, error: fetchError } = await supabase
     .from('academic_documents')
@@ -225,6 +265,20 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
       return res.status(400).json({ error: 'status must be "active" or "archived".' });
     }
     patch.status = status;
+  }
+
+  if (target_roles !== undefined) {
+    const parsedRoles = parseTargetRoles(target_roles);
+    if (!parsedRoles || parsedRoles.length === 0) {
+      return res.status(400).json({ error: 'At least one target audience role must be selected.' });
+    }
+    const invalidRoles = parsedRoles.filter((r) => !ALLOWED_TARGET_ROLES.includes(r));
+    if (invalidRoles.length > 0) {
+      return res.status(400).json({
+        error: `Invalid target role(s): ${invalidRoles.join(', ')}. Allowed: ${ALLOWED_TARGET_ROLES.join(', ')}`,
+      });
+    }
+    patch.target_roles = parsedRoles;
   }
 
   let oldPathToDelete = null;
@@ -265,7 +319,7 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
   }
 
   if (oldPathToDelete) {
-    await supabase.storage.from(BUCKET).remove([oldPathToDelete]); // best-effort cleanup
+    await supabase.storage.from(BUCKET).remove([oldPathToDelete]);
   }
 
   return res.json(data);
@@ -297,7 +351,7 @@ router.delete('/:id', authenticate, requireDeanOrAdmin, async (req, res) => {
     return res.status(500).json({ error: deleteError.message });
   }
 
-  await supabase.storage.from(BUCKET).remove([existing.file_path]); // best-effort cleanup
+  await supabase.storage.from(BUCKET).remove([existing.file_path]);
 
   return res.status(204).send();
 });

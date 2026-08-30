@@ -1981,12 +1981,33 @@ function CalendarActivities() {
 }
 
 // ─── Academic Records ─────────────────────────────────────────────────────────
-// ─── Academic Records ─────────────────────────────────────────────────────────
+interface TargetRoleOption {
+  id: string;
+  label: string;
+}
+
+const DOC_AUDIENCE_ROLES: TargetRoleOption[] = [
+  { id: 'student', label: 'Students' },
+  { id: 'faculty', label: 'Faculty' },
+  { id: 'department_chair', label: 'Department Chairs' },
+  { id: 'staff', label: 'Staff' },
+  { id: 'alumni', label: 'Alumni' },
+];
+
+const DOC_ROLE_LABELS: Record<string, string> = {
+  student: 'Students',
+  faculty: 'Faculty',
+  department_chair: 'Chairs',
+  staff: 'Staff',
+  alumni: 'Alumni',
+};
+
 interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
   document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+  target_roles?: string[];
   file_name: string;
   file_type: string;
   file_size: number;
@@ -2024,7 +2045,12 @@ function AcademicRecords() {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [editingDoc, setEditingDoc] = useState<AcademicDocument | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', document_type: 'handbook' });
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    document_type: 'handbook' as 'handbook' | 'policy' | 'form' | 'memorandum',
+    target_roles: ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+  });
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -2060,28 +2086,75 @@ function AcademicRecords() {
     }
   };
 
-  useEffect(() => { fetchDocuments(); /* eslint-disable-next-line */ }, [typeFilter, statusFilter]);
+  useEffect(() => {
+    fetchDocuments();
+    /* eslint-disable-next-line */
+  }, [typeFilter, statusFilter]);
 
   const resetForm = () => {
-    setForm({ title: '', description: '', document_type: 'handbook' });
+    setForm({
+      title: '',
+      description: '',
+      document_type: 'handbook',
+      target_roles: ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+    });
     setFile(null);
     setFormError('');
     setEditingDoc(null);
   };
 
-  const openUpload = () => { resetForm(); setShowUploadModal(true); };
+  const openUpload = () => {
+    resetForm();
+    setShowUploadModal(true);
+  };
+
   const openEdit = (doc: AcademicDocument) => {
     setEditingDoc(doc);
-    setForm({ title: doc.title, description: doc.description ?? '', document_type: doc.document_type });
+    setForm({
+      title: doc.title,
+      description: doc.description ?? '',
+      document_type: doc.document_type,
+      target_roles: doc.target_roles?.length
+        ? doc.target_roles
+        : ['student', 'faculty', 'department_chair', 'staff', 'alumni'],
+    });
     setFile(null);
     setFormError('');
     setShowUploadModal(true);
   };
 
+  const handleToggleRole = (roleId: string) => {
+    setForm((prev) => {
+      const exists = prev.target_roles.includes(roleId);
+      const updated = exists
+        ? prev.target_roles.filter((r) => r !== roleId)
+        : [...prev.target_roles, roleId];
+      return { ...prev, target_roles: updated };
+    });
+  };
+
+  const handleSelectAllRoles = () => {
+    if (form.target_roles.length === DOC_AUDIENCE_ROLES.length) {
+      setForm((prev) => ({ ...prev, target_roles: [] }));
+    } else {
+      setForm((prev) => ({ ...prev, target_roles: DOC_AUDIENCE_ROLES.map((r) => r.id) }));
+    }
+  };
+
   const handleSave = async () => {
     setFormError('');
-    if (!form.title.trim()) { setFormError('Title is required.'); return; }
-    if (!editingDoc && !file) { setFormError('Please choose a file to upload.'); return; }
+    if (!form.title.trim()) {
+      setFormError('Title is required.');
+      return;
+    }
+    if (form.target_roles.length === 0) {
+      setFormError('Please select at least one target audience role.');
+      return;
+    }
+    if (!editingDoc && !file) {
+      setFormError('Please choose a file to upload.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -2089,6 +2162,7 @@ function AcademicRecords() {
       fd.append('title', form.title.trim());
       fd.append('description', form.description.trim());
       fd.append('document_type', form.document_type);
+      fd.append('target_roles', JSON.stringify(form.target_roles));
       if (file) fd.append('file', file);
 
       const url = editingDoc ? `${DOCS_API_URL}/${editingDoc.id}` : DOCS_API_URL;
@@ -2189,15 +2263,17 @@ function AcademicRecords() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <select
           value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
+          onChange={(e) => setTypeFilter(e.target.value)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="all">All Categories</option>
-          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
         </select>
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as any)}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="active">Active</option>
@@ -2223,57 +2299,98 @@ function AcademicRecords() {
           </div>
         ) : (
           <div className="space-y-3">
-            {documents.map(doc => (
-              <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
-                    <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
-                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">{DOC_TYPE_LABELS[doc.document_type]}</span>
-                      {doc.status === 'archived' && <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>}
-                      <span>{formatDate(doc.created_at)}</span>
-                      <span>· {formatFileSize(doc.file_size)}</span>
+            {documents.map((doc) => {
+              const targetRoles = doc.target_roles || [];
+              const isAllAudience = targetRoles.length === DOC_AUDIENCE_ROLES.length;
+
+              return (
+                <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
+                      <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+                          {DOC_TYPE_LABELS[doc.document_type]}
+                        </span>
+                        {doc.status === 'archived' && (
+                          <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>
+                        )}
+                        <span>{formatDate(doc.created_at)}</span>
+                        <span>· {formatFileSize(doc.file_size)}</span>
+                      </div>
+
+                      {/* Target Audience Badges */}
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                        <span className="text-[11px] font-semibold text-gray-500 mr-1">Audience:</span>
+                        {isAllAudience ? (
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] rounded-md font-medium">
+                            Everyone
+                          </span>
+                        ) : (
+                          targetRoles.map((r: string) => (
+                            <span
+                              key={r}
+                              className="px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 text-[10px] rounded-md font-medium"
+                            >
+                              {DOC_ROLE_LABELS[r] || r}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      disabled={downloadingId === doc.id}
+                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
+                      title="Download"
+                    >
+                      {downloadingId === doc.id ? (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Download className="w-5 h-5" />
+                      )}
+                    </button>
+                    <button onClick={() => openEdit(doc)} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors" title="Edit">
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => toggleArchive(doc)}
+                      className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg transition-colors"
+                      title={doc.status === 'active' ? 'Archive' : 'Restore'}
+                    >
+                      {doc.status === 'active' ? <History className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => setDeleteConfirm(doc)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => handleDownload(doc)}
-                    disabled={downloadingId === doc.id}
-                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
-                    title="Download"
-                  >
-                    {downloadingId === doc.id
-                      ? <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      : <Download className="w-5 h-5" />}
-                  </button>
-                  <button onClick={() => openEdit(doc)} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors" title="Edit">
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => toggleArchive(doc)} className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg transition-colors" title={doc.status === 'active' ? 'Archive' : 'Restore'}>
-                    {doc.status === 'active' ? <History className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
-                  </button>
-                  <button onClick={() => setDeleteConfirm(doc)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Upload / Edit Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
-              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
 
-            {formError && <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{formError}</div>}
+            {formError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+                {formError}
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -2281,30 +2398,73 @@ function AcademicRecords() {
                 <input
                   type="text"
                   value={form.title}
-                  onChange={e => setForm({ ...form, title: e.target.value })}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g. Student Handbook 2026"
                 />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                 <select
                   value={form.document_type}
-                  onChange={e => setForm({ ...form, document_type: e.target.value })}
+                  onChange={(e) => setForm({ ...form, document_type: e.target.value as any })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
                 </select>
               </div>
+
+              {/* Target Audience Selector */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-600">Target Audience *</label>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllRoles}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {form.target_roles.length === DOC_AUDIENCE_ROLES.length ? 'Deselect All' : 'Select Everyone'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                  {DOC_AUDIENCE_ROLES.map((role) => {
+                    const isChecked = form.target_roles.includes(role.id);
+                    return (
+                      <label
+                        key={role.id}
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs font-medium ${
+                          isChecked
+                            ? 'bg-blue-50 border-blue-300 text-blue-800'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRole(role.id)}
+                          className="w-3.5 h-3.5 rounded accent-blue-600 text-blue-600 cursor-pointer"
+                        />
+                        <span>{role.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea
                   value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  rows={3}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={2}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                   {editingDoc ? 'Replace File (optional)' : 'File *'}
@@ -2312,7 +2472,7 @@ function AcademicRecords() {
                 <input
                   type="file"
                   accept=".pdf,.doc,.docx,.xls,.xlsx"
-                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   className="w-full text-sm"
                 />
                 {editingDoc && <p className="text-xs text-gray-400 mt-1">Current file: {editingDoc.file_name}</p>}
@@ -2320,7 +2480,12 @@ function AcademicRecords() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowUploadModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
@@ -2333,7 +2498,7 @@ function AcademicRecords() {
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* Delete Confirm Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -2345,8 +2510,17 @@ function AcademicRecords() {
               This will permanently remove <span className="font-semibold text-gray-800">"{deleteConfirm.title}"</span>. This cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button onClick={handleDelete} disabled={deleting} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
               </button>
             </div>
