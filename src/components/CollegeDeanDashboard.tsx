@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback,  } from 'react';
-import { notifyRole, } from '../notificationService';
+import React, { useState, useEffect, useCallback } from 'react';
+import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
 import { ClubsPage } from './coed/ClubsPage';
@@ -9,7 +9,7 @@ import { AchievementsPage } from './coed/AchievementsPage';
 import { AccreditationPage } from './coed/AccreditationPage';
 import { ContactPage } from './coed/ContactPage';
 import { Footer } from './coed/Footer';
-import  HomePageEditor from './pages/HomePageEditor';
+import HomePageEditor from './pages/HomePageEditor';
 import AboutPageEditor from './pages/AboutPageEditor';
 import DepartmentsPageEditor from './pages/DepartmentsPageEditor';
 import ClubsPageEditor from './pages/ClubsPageEditor';
@@ -19,21 +19,24 @@ import AccreditationPageEditor from './pages/AccreditationPageEditor';
 import ContactPageEditor from './pages/ContactPageEditor';
 import FooterPageEditor from './pages/FooterPageEditor';
 import {
-  getHomepageContent,getHomepageStats,getHomepageFeatures,getHomepageAnnouncements,saveHomepageContent,saveHomepageStats}from '../landing-page/services/homepageService';
-
+  getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats
+} from '../landing-page/services/homepageService';
 import {
-  getAboutContent,getAboutStats,getCoreValues,getCoreValueCards,getFacultyMembers,saveAboutContent,saveAboutStats,saveCoreValues,saveCoreValueCards,saveFacultyMembers} from '../landing-page/services/aboutService';
-
+  getAboutContent, getAboutStats, getCoreValues, getCoreValueCards, getFacultyMembers, saveAboutContent, saveAboutStats, saveCoreValues, saveCoreValueCards, saveFacultyMembers
+} from '../landing-page/services/aboutService';
 import {
-  getDepartmentContent,getColleges,saveDepartmentContent,saveColleges} from '../landing-page/services/departmentService';
-
+  getDepartmentContent, getColleges, saveDepartmentContent, saveColleges
+} from '../landing-page/services/departmentService';
 import {
-  getClubsContent,getClubStatistics,getOrganizations,getCommittees,saveClubsContent,saveClubStatistics,saveOrganizations,saveCommittees} from '../landing-page/services/clubsService';
+  getClubsContent, getClubStatistics, getOrganizations, getCommittees, saveClubsContent, saveClubStatistics, saveOrganizations, saveCommittees
+} from '../landing-page/services/clubsService';
 import type {
-  CoreValue,FacultyMember,AboutStat,CoreValueCard,ClubStatistic,Organization,Committee,} from '../landing-page/services/landingPageTypes';
+  CoreValue, FacultyMember, AboutStat, CoreValueCard, ClubStatistic, Organization, Committee
+} from '../landing-page/services/landingPageTypes';
 import {
-  loadResearchContent,loadResearchPublications,loadAwards,loadFeaturedAlumni,saveResearchPage} from '../landing-page/services/researchService';
-  import { achievementsService} from '../landing-page/services/achievementsService';
+  loadResearchContent, loadResearchPublications, loadAwards, loadFeaturedAlumni, saveResearchPage
+} from '../landing-page/services/researchService';
+import { achievementsService } from '../landing-page/services/achievementsService';
 import { accreditationService } from '../landing-page/services/accreditationService';
 import { contactService } from '../landing-page/services/contactService';
 import { footerService } from '../landing-page/services/footerService';
@@ -81,7 +84,6 @@ import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { ChartsSection } from './ChartsSection';
-import { QuarterlyReportTracker } from './QuarterlyReportTracker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Profile {
@@ -95,9 +97,6 @@ interface Profile {
   created_at: string;
 }
 
-
-// Categories a student can file an inquiry under. Kept in sync with the
-// student-side dashboard so the labels/badges line up.
 const STUDENT_INQUIRY_CATEGORIES = [
   'Academic',
   'Enrollment',
@@ -109,8 +108,6 @@ const STUDENT_INQUIRY_CATEGORIES = [
   'Other',
 ];
 
-// Categories an alumnus can file an inquiry under. Kept in sync with the
-// alumni-side dashboard so the labels/badges line up.
 const ALUMNI_INQUIRY_CATEGORIES = [
   'Documents',
   'Employment',
@@ -135,7 +132,6 @@ interface Inquiry {
   status: 'pending' | 'answered';
   created_at: string;
   replied_at: string | null;
-  // Embedded via the student_id -> profiles(id) foreign key
   profiles: {
     full_name: string;
     id_number: string;
@@ -159,22 +155,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   pending:  { label: 'Pending',  color: '#92400E', bg: '#FEF3C7', dot: '#F59E0B', pulse: true },
 };
 
-const EVENT_COLORS = [
-  { label: 'Blue',   value: '#3B82F6' },
-  { label: 'Green',  value: '#10B981' },
-  { label: 'Purple', value: '#8B5CF6' },
-  { label: 'Orange', value: '#F59E0B' },
-  { label: 'Red',    value: '#EF4444' },
-  { label: 'Teal',   value: '#14B8A6' },
-];
-
 const PAGE_SIZE = 10;
 const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 
-// ─── Menu Items ───────────────────────────────────────────────────────────────
-// Order: core operational items first, then Landing Page → Announcements →
-// Reports & Analytics → Settings as the closing group (per request).
-// Evaluation Management has been removed; Inquiries (student/alumni Q&A) added.
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
   { icon: Users,           label: 'User Management',         id: 'users' },
@@ -190,7 +173,6 @@ const deanMenuItems = [
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
 
-// ─── Props ────────────────────────────────────────────────────────────────────
 interface CollegeDeanDashboardProps {
   onRoleChange: () => void;
   activeMenuItem: string;
@@ -205,7 +187,6 @@ export function CollegeDeanDashboard({
 }: CollegeDeanDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Close sidebar on route change (mobile)
   const handleMenuItemClick = (id: string) => {
     setActiveMenuItem(id);
     setSidebarOpen(false);
@@ -213,7 +194,6 @@ export function CollegeDeanDashboard({
 
   return (
     <div className="flex min-h-screen bg-gray-100">
-     {/* ── Sidebar — handles its own overlay & slide via isOpen/onClose ── */}
       <Sidebar
         menuItems={deanMenuItems}
         activeItem={activeMenuItem}
@@ -224,15 +204,10 @@ export function CollegeDeanDashboard({
         onClose={() => setSidebarOpen(false)}
       />
 
-      {/* ── Desktop spacer so content clears the fixed sidebar ── */}
       <div className="hidden lg:block w-64 shrink-0" />
 
-      {/* ── Main content area ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-        {/* ── Top bar: hamburger + DashboardHeader side by side ── */}
         <div className="sticky top-0 z-20 flex items-stretch bg-white border-b border-gray-200 shadow-sm">
-          {/* Hamburger — only on mobile/tablet, same height as header */}
           <button
             className="lg:hidden flex items-center justify-center px-4 text-gray-600 hover:bg-gray-100 border-r border-gray-200 transition-colors flex-shrink-0"
             onClick={() => setSidebarOpen(true)}
@@ -241,7 +216,6 @@ export function CollegeDeanDashboard({
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* DashboardHeader fills the rest */}
           <div className="flex-1 min-w-0">
             <DashboardHeader
               userRole="College Dean"
@@ -250,7 +224,6 @@ export function CollegeDeanDashboard({
           </div>
         </div>
 
-        {/* ── Page content ── */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {activeMenuItem === 'dashboard'     && <DashboardView onGoToInquiries={() => setActiveMenuItem('inquiries')} />}
           {activeMenuItem === 'users'         && <UserManagement />}
@@ -271,10 +244,6 @@ export function CollegeDeanDashboard({
 }
 
 // ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
-// Sits in the same slot the Notifications panel used to occupy, sized to
-// match the Evaluation Trends card in ChartsSection. Shows how many student
-// and alumni inquiries are still unanswered, with a shortcut to the full
-// Inquiries page.
 function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
   const [studentPending, setStudentPending] = useState(0);
   const [alumniPending, setAlumniPending]   = useState(0);
@@ -324,7 +293,6 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
-        {/* Unreplied count breakdown */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="rounded-xl p-3" style={{ backgroundColor: '#DBEAFE' }}>
             <p className="text-xs font-medium mb-1" style={{ color: '#1D4ED8', opacity: 0.8 }}>Student</p>
@@ -338,7 +306,6 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
           </div>
         </div>
 
-        {/* Recent pending list */}
         <div className="flex-1 space-y-2 min-h-0 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-24 text-gray-400 text-xs">Loading...</div>
@@ -385,282 +352,101 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
-
   const [facultyCount, setFacultyCount] = useState<number>(0);
   const [facultyLoading, setFacultyLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number>(0);
   const [studentLoading, setStudentLoading] = useState(true);
   const [departmentCount, setDepartmentCount] = useState<number>(0);
   const [departmentLoading, setDepartmentLoading] = useState(true);
-  // ============================================
-  // LOAD TOTAL FACULTY FROM SUPABASE
-  // ============================================
+
   useEffect(() => {
-  const loadDepartmentCount = async () => {
-    try {
-      setDepartmentLoading(true);
-
-      const response = await fetch(
-        'http://localhost:5000/api/departments/count'
-      );
-
-      console.log(
-        'Department count HTTP status:',
-        response.status
-      );
-
-      const result = await response.json();
-
-      console.log('Department count API:', result);
-
-      if (!response.ok || !result.success) {
-        console.error(
-          'Department count failed:',
-          result
-        );
-
+    const loadDepartmentCount = async () => {
+      try {
+        setDepartmentLoading(true);
+        const response = await fetch('http://localhost:5000/api/departments/count');
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          setDepartmentCount(0);
+          return;
+        }
+        setDepartmentCount(Number(result.count) || 0);
+      } catch {
         setDepartmentCount(0);
-        return;
+      } finally {
+        setDepartmentLoading(false);
       }
+    };
+    loadDepartmentCount();
+  }, []);
 
-      setDepartmentCount(
-        Number(result.count) || 0
-      );
-
-    } catch (error) {
-      console.error(
-        'Failed to load department count:',
-        error
-      );
-
-      setDepartmentCount(0);
-
-    } finally {
-      setDepartmentLoading(false);
-    }
-  };
-
-  loadDepartmentCount();
-}, []);
-  // ============================================
-// LOAD ACTIVE FACULTY COUNT FROM PROFILES
-// ============================================
-useEffect(() => {
-  const loadFacultyCount = async () => {
-    try {
-      setFacultyLoading(true);
-
-      const response = await fetch(
-        'http://localhost:5000/api/auth/faculty-count'
-      );
-
-      const result = await response.json();
-
-      console.log('Faculty count API:', result);
-
-      if (!response.ok || !result.success) {
-        console.error(
-          'Faculty count failed:',
-          result
-        );
-
-        setFacultyCount(0);
-        return;
-      }
-
-      setFacultyCount(
-        Number(result.count) || 0
-      );
-
-    } catch (error) {
-      console.error(
-        'Failed to load faculty count:',
-        error
-      );
-
-      setFacultyCount(0);
-
-    } finally {
-      setFacultyLoading(false);
-    }
-  };
-
-  loadFacultyCount();
-}, []);
   useEffect(() => {
-  const loadStudentCount = async () => {
-    try {
-      setStudentLoading(true);
-
-      const response = await fetch(
-        'http://localhost:5000/api/auth/student-count'
-      );
-
-      const result = await response.json();
-
-      console.log('Student count API:', result);
-
-      if (!response.ok || !result.success) {
-        console.error('Student count failed:', result);
-        setStudentCount(0);
-        return;
+    const loadFacultyCount = async () => {
+      try {
+        setFacultyLoading(true);
+        const response = await fetch('http://localhost:5000/api/auth/faculty-count');
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          setFacultyCount(0);
+          return;
+        }
+        setFacultyCount(Number(result.count) || 0);
+      } catch {
+        setFacultyCount(0);
+      } finally {
+        setFacultyLoading(false);
       }
+    };
+    loadFacultyCount();
+  }, []);
 
-      setStudentCount(Number(result.count) || 0);
+  useEffect(() => {
+    const loadStudentCount = async () => {
+      try {
+        setStudentLoading(true);
+        const response = await fetch('http://localhost:5000/api/auth/student-count');
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          setStudentCount(0);
+          return;
+        }
+        setStudentCount(Number(result.count) || 0);
+      } catch {
+        setStudentCount(0);
+      } finally {
+        setStudentLoading(false);
+      }
+    };
+    loadStudentCount();
+  }, []);
 
-    } catch (error) {
-      console.error('Failed to load student count:', error);
-      setStudentCount(0);
-    } finally {
-      setStudentLoading(false);
-    }
-  };
-
-  loadStudentCount();
-}, []);
-
-  // Mobile-only metric cards
   const mobileMetrics = [
-    {
-      label: 'Total Faculty',
-      value: facultyLoading ? '...' : facultyCount.toLocaleString(),
-      sub: 'Faculty members',
-      color: '#1E3A8A',
-      bg: '#DBEAFE'
-    },
-    {
-  label: 'Total Students',
-  value: studentLoading
-    ? '...'
-    : studentCount.toLocaleString(),
-  sub: 'Active student accounts',
-  color: '#065F46',
-  bg: '#D1FAE5'
-},
-    {
-  label: 'Active Departments',
-  value: departmentLoading
-    ? '...'
-    : departmentCount.toLocaleString(),
-  sub: 'All operational',
-  color: '#7C3AED',
-  bg: '#EDE9FE'
-},
-    {
-      label: 'Pending Reports',
-      value: '23',
-      sub: '8 newly added',
-      color: '#B45309',
-      bg: '#FEF3C7'
-    },
-    {
-      label: 'Alumni Responses',
-      value: '1,256',
-      sub: '+18.7% response rate',
-      color: '#BE185D',
-      bg: '#FCE7F3'
-    },
-    {
-      label: 'Evaluation Rating',
-      value: '4.6',
-      sub: 'Out of 5.0 avg.',
-      color: '#0369A1',
-      bg: '#E0F2FE'
-    },
-    {
-      label: 'Research Submitted',
-      value: '14',
-      sub: '2 pending approval',
-      color: '#065F46',
-      bg: '#D1FAE5'
-    },
-    {
-      label: 'Completion Rate',
-      value: '94%',
-      sub: 'Student evaluations',
-      color: '#9D174D',
-      bg: '#FCE7F3'
-    },
+    { label: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
+    { label: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'All operational', color: '#7C3AED', bg: '#EDE9FE' },
+    { label: 'Pending Reports', value: '23', sub: '8 newly added', color: '#B45309', bg: '#FEF3C7' },
+    { label: 'Alumni Responses', value: '1,256', sub: '+18.7% response rate', color: '#BE185D', bg: '#FCE7F3' },
+    { label: 'Evaluation Rating', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
+    { label: 'Research Submitted', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Completion Rate', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
   ];
 
   return (
     <div className="flex flex-col h-full">
-
       <div className="mb-4 pb-4 border-b border-gray-200">
-        <p className="text-gray-500 text-sm">
-          Welcome back! Here's your college overview
-        </p>
+        <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
       </div>
 
-      {/* ============================================
-          SUMMARY CARDS
-      ============================================ */}
       <div className="mb-4">
-
         {/* MOBILE */}
-        <div
-          className="flex gap-3 overflow-x-auto pb-4 sm:hidden"
-          style={{
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch'
-          }}
-        >
+        <div className="flex gap-3 overflow-x-auto pb-4 sm:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
           {[
-            {
-              title: 'Total Faculty',
-              value: facultyLoading
-                ? '...'
-                : facultyCount.toLocaleString(),
-              icon: GraduationCap,
-              iconColor: '#2563EB',
-              iconBgColor: '#DBEAFE',
-              trend: undefined,
-              trendUp: undefined
-            },
-            {
-  title: 'Total Students',
-  value: studentLoading
-    ? '...'
-    : studentCount.toLocaleString(),
-  icon: Users,
-  iconColor: '#10B981',
-  iconBgColor: '#D1FAE5',
-  trend: undefined,
-  trendUp: undefined
-},
-            {
-  title: 'Active Departments',
-  value: departmentLoading
-    ? '...'
-    : departmentCount.toLocaleString(),
-  icon: Building2,
-  iconColor: '#8B5CF6',
-  iconBgColor: '#EDE9FE'
-},
-            {
-              title: 'Pending Reports',
-              value: '23',
-              icon: FileText,
-              iconColor: '#F59E0B',
-              iconBgColor: '#FEF3C7',
-              trend: '8',
-              trendUp: false
-            },
-            {
-              title: 'Alumni Responses',
-              value: '1,256',
-              icon: UserCheck,
-              iconColor: '#EF4444',
-              iconBgColor: '#FEE2E2',
-              trend: '18.7%',
-              trendUp: true
-            },
+            { title: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
+            { title: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
+            { title: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
+            { title: 'Pending Reports', value: '23', icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: '8', trendUp: false },
+            { title: 'Alumni Responses', value: '1,256', icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: '18.7%', trendUp: true },
           ].map((card) => (
-            <div
-              key={card.title}
-              className="flex-shrink-0 w-48 h-40"
-            >
+            <div key={card.title} className="flex-shrink-0 w-48 h-40">
               <SummaryCard {...card} />
             </div>
           ))}
@@ -668,167 +454,58 @@ useEffect(() => {
 
         {/* DESKTOP */}
         <div className="hidden sm:grid sm:grid-cols-3 xl:grid-cols-5 gap-4">
-
           <div className="min-h-[160px]">
-            <SummaryCard
-              title="Total Faculty"
-              value={
-                facultyLoading
-                  ? '...'
-                  : facultyCount.toLocaleString()
-              }
-              icon={GraduationCap}
-              iconColor="#2563EB"
-              iconBgColor="#DBEAFE"
-            />
+            <SummaryCard title="Total Faculty" value={facultyLoading ? '...' : facultyCount.toLocaleString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
           </div>
-
           <div className="min-h-[160px]">
-            <SummaryCard
-  title="Total Students"
-  value={
-    studentLoading
-      ? '...'
-      : studentCount.toLocaleString()
-  }
-  icon={Users}
-  iconColor="#10B981"
-  iconBgColor="#D1FAE5"
-/>
+            <SummaryCard title="Total Students" value={studentLoading ? '...' : studentCount.toLocaleString()} icon={Users} iconColor="#10B981" iconBgColor="#D1FAE5" />
           </div>
-
           <div className="min-h-[160px]">
-            <SummaryCard
-  title="Active Departments"
-  value={
-    departmentLoading
-      ? '...'
-      : departmentCount.toLocaleString()
-  }
-  icon={Building2}
-  iconColor="#8B5CF6"
-  iconBgColor="#EDE9FE"
-/>
+            <SummaryCard title="Active Departments" value={departmentLoading ? '...' : departmentCount.toLocaleString()} icon={Building2} iconColor="#8B5CF6" iconBgColor="#EDE9FE" />
           </div>
-
           <div className="min-h-[160px]">
-            <SummaryCard
-              title="Pending Reports"
-              value="23"
-              icon={FileText}
-              iconColor="#F59E0B"
-              iconBgColor="#FEF3C7"
-              trend="8"
-              trendUp={false}
-            />
+            <SummaryCard title="Pending Reports" value="23" icon={FileText} iconColor="#F59E0B" iconBgColor="#FEF3C7" trend="8" trendUp={false} />
           </div>
-
           <div className="min-h-[160px]">
-            <SummaryCard
-              title="Alumni Responses"
-              value="1,256"
-              icon={UserCheck}
-              iconColor="#EF4444"
-              iconBgColor="#FEE2E2"
-              trend="18.7%"
-              trendUp={true}
-            />
+            <SummaryCard title="Alumni Responses" value="1,256" icon={UserCheck} iconColor="#EF4444" iconBgColor="#FEE2E2" trend="18.7%" trendUp={true} />
           </div>
-
         </div>
       </div>
 
-      {/* ============================================
-          MOBILE METRICS
-      ============================================ */}
       <div className="lg:hidden mb-4">
-
         <p className="text-xs text-gray-400 mb-3 flex items-center gap-1.5">
           <BarChart3 className="w-3.5 h-3.5" />
           Key Metrics · Use the web version for full charts &amp; analytics
         </p>
-
         <div className="grid grid-cols-2 gap-3">
-
           {mobileMetrics.map((m) => (
-            <div
-              key={m.label}
-              className="rounded-2xl p-4"
-              style={{ backgroundColor: m.bg }}
-            >
-
-              <p
-                className="text-xs font-medium mb-1"
-                style={{
-                  color: m.color,
-                  opacity: 0.75
-                }}
-              >
-                {m.label}
-              </p>
-
-              <p
-                className="text-2xl font-bold leading-none mb-1"
-                style={{ color: m.color }}
-              >
-                {m.value}
-              </p>
-
-              <p
-                className="text-xs"
-                style={{
-                  color: m.color,
-                  opacity: 0.6
-                }}
-              >
-                {m.sub}
-              </p>
-
+            <div key={m.label} className="rounded-2xl p-4" style={{ backgroundColor: m.bg }}>
+              <p className="text-xs font-medium mb-1" style={{ color: m.color, opacity: 0.75 }}>{m.label}</p>
+              <p className="text-2xl font-bold leading-none mb-1" style={{ color: m.color }}>{m.value}</p>
+              <p className="text-xs" style={{ color: m.color, opacity: 0.6 }}>{m.sub}</p>
             </div>
           ))}
-
         </div>
       </div>
 
-      {/* ============================================
-          DESKTOP CHARTS + SIDE PANEL
-      ============================================ */}
       <div className="hidden lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
-
         <div className="lg:col-span-2 min-h-0 overflow-auto">
           <ChartsSection />
         </div>
-
         <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
-
-          <InquiriesSummaryCard
-            onViewAll={onGoToInquiries}
-          />
-
+          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
         </div>
-
       </div>
 
-      {/* ============================================
-          MOBILE INQUIRIES
-      ============================================ */}
       <div className="lg:hidden flex flex-col gap-4">
-
         <div className="h-80">
-
-          <InquiriesSummaryCard
-            onViewAll={onGoToInquiries}
-          />
-
+          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
         </div>
-
       </div>
-
     </div>
   );
 }
 
-// ─── User Management ──────────────────────────────────────────────────────────
 // ─── User Management ──────────────────────────────────────────────────────────
 function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
@@ -920,35 +597,15 @@ function UserManagement() {
 
   const handleAdd = async () => {
     setFormError('');
-
-    if (!form.full_name.trim()) {
-      setFormError('Full name is required.');
-      return;
-    }
-    if (!form.email.trim()) {
-      setFormError('Email address is required.');
-      return;
-    }
+    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
+    if (!form.email.trim()) { setFormError('Email address is required.'); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email.trim())) {
-      setFormError('Please enter a valid email address.');
-      return;
-    }
-    if (!form.id_number.trim()) {
-      setFormError('ID number is required.');
-      return;
-    }
-    if (!form.password) {
-      setFormError('Password is required.');
-      return;
-    }
-    if (form.password.length < 6) {
-      setFormError('Password must be at least 6 characters.');
-      return;
-    }
+    if (!emailRegex.test(form.email.trim())) { setFormError('Please enter a valid email address.'); return; }
+    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+    if (!form.password) { setFormError('Password is required.'); return; }
+    if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
 
     setSaving(true);
-
     try {
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
@@ -973,8 +630,6 @@ function UserManagement() {
         result = { error: responseText || 'The server returned an invalid response.' };
       }
 
-      console.log('Add user response:', response.status, result);
-
       if (!response.ok) {
         let errorMessage = result.error || result.message || result.details || result.hint;
         if (!errorMessage) {
@@ -991,30 +646,17 @@ function UserManagement() {
         return;
       }
 
-      if (!result || result.success === false) {
-        setFormError(result?.error || result?.message || 'The account could not be created.');
-        return;
-      }
-
-      console.log('User created successfully:', result);
-
       setModal(null);
       setSelected(null);
-      setForm({
-        full_name: '', email: '', role: 'student',
-        id_number: '', department: '', status: 'active', password: '',
-      });
+      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       setShowPassword(false);
       setFormError('');
-
       await fetchUsers();
-
     } catch (error: any) {
-      console.error('Create user error:', error);
       if (error?.name === 'TypeError' && error?.message?.toLowerCase().includes('fetch')) {
-        setFormError('Unable to connect to the backend server. Please make sure your backend is running on http://localhost:5000.');
+        setFormError('Unable to connect to the backend server on http://localhost:5000.');
       } else {
-        setFormError(error?.message || 'Something went wrong while creating the account. Please try again.');
+        setFormError(error?.message || 'Something went wrong. Please try again.');
       }
     } finally {
       setSaving(false);
@@ -1023,22 +665,11 @@ function UserManagement() {
 
   const handleEdit = async () => {
     setFormError('');
-
-    if (!form.full_name.trim()) {
-      setFormError('Full name is required.');
-      return;
-    }
-    if (!form.id_number.trim()) {
-      setFormError('ID number is required.');
-      return;
-    }
-    if (!selected) {
-      setFormError('No user selected.');
-      return;
-    }
+    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
+    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+    if (!selected) return;
 
     setSaving(true);
-
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
@@ -1058,7 +689,6 @@ function UserManagement() {
       });
 
       const result = await response.json();
-
       if (!response.ok) {
         setFormError(result.error || result.message || 'Failed to update user.');
         return;
@@ -1066,15 +696,9 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({
-        full_name: '', email: '', role: 'student',
-        id_number: '', department: '', status: 'active', password: '',
-      });
-
+      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
-
     } catch (error: any) {
-      console.error('Edit user error:', error);
       setFormError(error.message || 'Unable to connect to the backend.');
     } finally {
       setSaving(false);
@@ -1082,19 +706,10 @@ function UserManagement() {
   };
 
   const handleDelete = async () => {
-    if (!selected) {
-      setFormError('No user selected.');
-      return;
-    }
-
+    if (!selected) return;
     setFormError('');
     setSaving(true);
-
     try {
-      console.log('Deleting user:', selected);
-      console.log('Profile ID:', selected.id);
-      console.log('Email:', selected.email);
-
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -1108,27 +723,17 @@ function UserManagement() {
         result = { error: text || 'Server returned an invalid response.' };
       }
 
-      console.log('Delete response:', response.status, result);
-
       if (!response.ok) {
         setFormError(result.error || result.message || `Failed to delete user. Server returned ${response.status}.`);
         return;
       }
 
-      console.log('User deleted successfully.');
-
       setModal(null);
       setSelected(null);
       setFormError('');
-      setForm({
-        full_name: '', email: '', role: 'student',
-        id_number: '', department: '', status: 'active', password: '',
-      });
-
+      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
-
     } catch (error: any) {
-      console.error('Delete user error:', error);
       setFormError(error?.message || 'Unable to connect to the backend server.');
     } finally {
       setSaving(false);
@@ -1139,7 +744,6 @@ function UserManagement() {
     setActivating(user.id);
     try {
       const token = localStorage.getItem('token');
-
       const res = await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
         method: 'PUT',
         headers: {
@@ -1149,25 +753,11 @@ function UserManagement() {
         body: JSON.stringify({ status: 'active' }),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error('Activate profile error:', err);
-        return;
-      }
+      if (!res.ok) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profile) {
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('username', profile.email)
-          .single();
-
+        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.email).single();
         if (!existingUser) {
           await fetch('http://localhost:5000/api/auth/register', {
             method: 'POST',
@@ -1189,9 +779,8 @@ function UserManagement() {
   const toggleStatus = async (user: Profile) => {
     if (user.status === 'pending') return;
     const next = user.status === 'active' ? 'inactive' : 'active';
-
     const token = localStorage.getItem('token');
-    const res = await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
+    await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -1199,19 +788,11 @@ function UserManagement() {
       },
       body: JSON.stringify({ status: next }),
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      console.error('Toggle status error:', err);
-      return;
-    }
-
     fetchUsers();
   };
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">User Management</h1>
@@ -1233,7 +814,6 @@ function UserManagement() {
         <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{fetchError}</div>
       )}
 
-      {/* Pending banner */}
       {pendingCount > 0 && (
         <div className="flex items-start sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-amber-50 border border-amber-200 rounded-2xl">
           <span className="relative flex h-3 w-3 flex-shrink-0 mt-0.5 sm:mt-0">
@@ -1250,7 +830,6 @@ function UserManagement() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
@@ -1272,42 +851,31 @@ function UserManagement() {
               <option value="all">All Status</option>
               {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
-            {(statusFilter !== 'all' || roleFilter !== 'all' || search) && (
-              <button onClick={() => { setSearch(''); setRoleFilter('all'); setStatusFilter('all'); }}
-                className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1 px-3 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors flex-shrink-0">
-                <X className="w-3 h-3" />
-              </button>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Table — scrollable on mobile */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
-              <p className="text-sm text-gray-500">Loading users...</p>
-            </div>
+            <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
           </div>
         ) : paginated.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <Users className="w-12 h-12 mb-3 opacity-30" />
             <p className="font-medium">No users found</p>
-            <p className="text-sm mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[640px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Dept.</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Dept.</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1341,34 +909,24 @@ function UserManagement() {
                         <span className="text-sm text-gray-600">{user.department ?? '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
-                        {isPending ? (
-                          <span className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: status.bg, color: status.color }}>
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: status.dot }} />
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: status.dot }} />
-                            </span>
-                            <span className="hidden sm:inline">{status.label}</span>
-                          </span>
-                        ) : (
-                          <button onClick={() => toggleStatus(user)} title="Click to toggle status"
-                            className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                            style={{ background: status.bg, color: status.color }}>
-                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: status.dot }} />
-                            <span className="hidden sm:inline">{status.label}</span>
-                          </button>
-                        )}
+                        <button onClick={() => toggleStatus(user)}
+                          className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={{ background: status.bg, color: status.color }}>
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: status.dot }} />
+                          <span className="hidden sm:inline">{status.label}</span>
+                        </button>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center justify-center gap-1">
                           {isPending && (
-                            <button onClick={() => activatePending(user)} disabled={isActivating} title="Activate account"
-                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-60">
+                            <button onClick={() => activatePending(user)} disabled={isActivating}
+                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg">
                               {isActivating ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-3 h-3" />}
-                              <span className="hidden sm:inline">{isActivating ? 'Activating…' : 'Activate'}</span>
+                              <span className="hidden sm:inline">Activate</span>
                             </button>
                           )}
-                          <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Edit user"><Edit className="w-3.5 sm:w-4 h-3.5 sm:h-4" /></button>
-                          <button onClick={() => openDelete(user)} className="p-1.5 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete user"><Trash2 className="w-3.5 sm:w-4 h-3.5 sm:h-4" /></button>
+                          <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => openDelete(user)} className="p-1.5 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </td>
                     </tr>
@@ -1379,34 +937,16 @@ function UserManagement() {
           </div>
         )}
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-2">
-            <p className="text-xs sm:text-sm text-gray-500 flex-shrink-0">
+            <p className="text-xs sm:text-sm text-gray-500">
               {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
             </p>
             <div className="flex items-center gap-1 sm:gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 sm:p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 sm:p-2 rounded-lg border border-gray-200">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-                .reduce<(number | '...')[]>((acc, p, i, arr) => {
-                  if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push('...');
-                  acc.push(p);
-                  return acc;
-                }, [])
-                .map((p, i) =>
-                  p === '...' ? (
-                    <span key={`ellipsis-${i}`} className="px-1 text-gray-400 text-sm">…</span>
-                  ) : (
-                    <button key={p} onClick={() => setPage(p as number)}
-                      className={`w-7 h-7 sm:w-9 sm:h-9 rounded-lg text-xs sm:text-sm font-medium transition-colors ${page === p ? 'bg-[#1E3A8A] text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                      {p}
-                    </button>
-                  )
-                )}
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 sm:p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 sm:p-2 rounded-lg border border-gray-200">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -1414,157 +954,82 @@ function UserManagement() {
         )}
       </div>
 
-      {/* Add / Edit Modal */}
       {(modal === 'add' || modal === 'edit') && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModal(null)} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5 sm:mb-6">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">{modal === 'add' ? 'Add New User' : 'Edit User'}</h2>
-              <button onClick={() => setModal(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">{modal === 'add' ? 'Add New User' : 'Edit User'}</h2>
+              <button onClick={() => setModal(null)}><X className="w-5 h-5 text-gray-500" /></button>
             </div>
-            {formError && <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{formError}</div>}
+            {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="col-span-1 sm:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name *</label>
-                  <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Juan Dela Cruz" />
-                </div>
-                {modal === 'add' && (
-                  <div className="col-span-1 sm:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address *</label>
-                    <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="user@example.com" />
-                  </div>
-                )}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
+                <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-sm" />
+              </div>
+              {modal === 'add' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">ID Number *</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Email Address *</label>
+                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">ID Number *</label>
                   <input type="text" value={form.id_number} onChange={e => setForm({ ...form, id_number: e.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="2024-12345" />
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
                   <input type="text" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Computer Science" />
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Role *</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Role *</label>
                   <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    className="w-full px-3 py-2 border rounded-xl text-sm">
                     {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status *</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Status *</label>
                   <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    className="w-full px-3 py-2 border rounded-xl text-sm">
                     {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
-                {modal === 'add' && (
-                  <div className="col-span-1 sm:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Password *</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={form.password}
-                        onChange={e => setForm({ ...form, password: e.target.value })}
-                        className="w-full px-3 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Min. 6 characters"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        title={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1.5">Password must be at least 6 characters.</p>
-                  </div>
-                )}
               </div>
+              {modal === 'add' && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Password *</label>
+                  <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="Min. 6 characters" />
+                </div>
+              )}
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setModal(null)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving}
-                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
-                {saving ? 'Saving...' : modal === 'add' ? 'Add User' : 'Save Changes'}
+              <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
+              <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving} className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm">
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete Modal */}
       {modal === 'delete' && selected && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => {
-              if (!saving) {
-                setModal(null);
-                setFormError('');
-              }
-            }}
-          />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 z-10">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-6 h-6 text-red-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Delete User</h2>
-                <p className="text-sm text-gray-500">This action cannot be undone.</p>
-              </div>
-            </div>
-
-            {formError && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-sm text-red-700">{formError}</p>
-              </div>
-            )}
-
-            <div className="bg-gray-50 rounded-xl p-4 mb-6">
-              <p className="font-semibold text-gray-900">{selected.full_name}</p>
-              <p className="text-sm text-gray-500">{selected.email}</p>
-              <p className="text-xs text-gray-400 mt-1">{selected.id_number}</p>
-            </div>
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Delete User</h2>
+            <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete {selected.full_name}?</p>
             <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!saving) {
-                    setModal(null);
-                    setFormError('');
-                  }
-                }}
-                disabled={saving}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={saving}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {saving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4" />
-                    Delete User
-                  </>
-                )}
+              <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
+              <button onClick={handleDelete} disabled={saving} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm">
+                {saving ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
@@ -1575,12 +1040,11 @@ function UserManagement() {
 }
 
 // ─── Calendar & Activities ────────────────────────────────────────────────────
-// ─── Calendar & Activities ────────────────────────────────────────────────────
 interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
-  event_date: string; // "YYYY-MM-DDTHH:mm:ss"
+  event_date: string;
   department_ids: string[] | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
   status: string | null;
@@ -1592,7 +1056,6 @@ interface CalendarEvent {
 interface DeptOption { id: string; name: string; }
 
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
-
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -1790,7 +1253,6 @@ function CalendarActivities() {
         </div>
       )}
 
-      {/* Calendar */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
           <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
@@ -1851,7 +1313,6 @@ function CalendarActivities() {
         )}
       </div>
 
-      {/* Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex border-b border-gray-100">
           <button
@@ -1887,9 +1348,9 @@ function CalendarActivities() {
                   <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                     <div className="text-xs text-gray-500 mt-0.5">
-                       {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
-                       </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                    </div>
                     {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                   </div>
                   <button onClick={() => deleteEvent(ev.id)} disabled={deletingId === ev.id} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40">
@@ -1913,7 +1374,7 @@ function CalendarActivities() {
                     <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
                     <div className="text-xs text-gray-400 mt-0.5">
                       {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
-                      </div>
+                    </div>
                     {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                   </div>
                   <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1924,7 +1385,6 @@ function CalendarActivities() {
         </div>
       </div>
 
-      {/* Add Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
@@ -1952,7 +1412,6 @@ function CalendarActivities() {
                   <option value="">All Departments</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-                <p className="text-xs text-gray-400 mt-1">If set, only chairs/faculty in this department will see the event.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
@@ -2086,7 +1545,6 @@ function AcademicRecords() {
 
   useEffect(() => {
     fetchDocuments();
-    /* eslint-disable-next-line */
   }, [typeFilter, statusFilter]);
 
   const resetForm = () => {
@@ -2318,7 +1776,6 @@ function AcademicRecords() {
                         <span>· {formatFileSize(doc.file_size)}</span>
                       </div>
 
-                      {/* Target Audience Badges */}
                       <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                         <span className="text-[11px] font-semibold text-gray-500 mr-1">Audience:</span>
                         {isAllAudience ? (
@@ -2373,7 +1830,6 @@ function AcademicRecords() {
         )}
       </div>
 
-      {/* Upload / Edit Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
@@ -2415,7 +1871,6 @@ function AcademicRecords() {
                 </select>
               </div>
 
-              {/* Target Audience Selector */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-gray-600">Target Audience *</label>
@@ -2496,7 +1951,6 @@ function AcademicRecords() {
         </div>
       )}
 
-      {/* Delete Confirm Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -2528,608 +1982,186 @@ function AcademicRecords() {
     </div>
   );
 }
+
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
-  const [facultyList, setFacultyList] =
-    useState<Profile[]>([]);
+  const [facultyList, setFacultyList] = useState<Profile[]>([]);
+  const [staffList, setStaffList] = useState<Profile[]>([]);
+  const [facultyCount, setFacultyCount] = useState(0);
+  const [staffCount, setStaffCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingList, setLoadingList] = useState(false);
+  const [viewModal, setViewModal] = useState<'faculty' | 'staff' | null>(null);
+  const [search, setSearch] = useState('');
 
-  const [staffList, setStaffList] =
-    useState<Profile[]>([]);
-
-  const [facultyCount, setFacultyCount] =
-    useState(0);
-
-  const [staffCount, setStaffCount] =
-    useState(0);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [loadingList, setLoadingList] =
-    useState(false);
-
-  const [viewModal, setViewModal] =
-    useState<'faculty' | 'staff' | null>(null);
-
-  const [search, setSearch] =
-    useState('');
-
-  // ============================================
-  // LOAD ACTIVE FACULTY + STAFF COUNTS
-  // FROM PROFILES TABLE
-  // ============================================
   const loadCounts = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
+      const facultyResponse = await fetch('http://localhost:5000/api/auth/faculty-count');
+      const facultyResult = await facultyResponse.json();
+      if (!facultyResponse.ok || !facultyResult.success) {
+        setFacultyCount(0);
+      } else {
+        setFacultyCount(Number(facultyResult.count) || 0);
+      }
 
-    // ========================================
-    // LOAD FACULTY COUNT
-    // ========================================
-    const facultyResponse = await fetch(
-      'http://localhost:5000/api/auth/faculty-count'
-    );
-
-    const facultyResult =
-      await facultyResponse.json();
-
-    console.log(
-      'Faculty count API:',
-      facultyResult
-    );
-
-    if (
-      !facultyResponse.ok ||
-      !facultyResult.success
-    ) {
-      console.error(
-        'Faculty count failed:',
-        facultyResult
-      );
-
+      const staffResponse = await fetch('http://localhost:5000/api/auth/staff-count');
+      const staffResult = await staffResponse.json();
+      if (!staffResponse.ok || !staffResult.success) {
+        setStaffCount(0);
+      } else {
+        setStaffCount(Number(staffResult.count) || 0);
+      }
+    } catch {
       setFacultyCount(0);
-
-    } else {
-
-      setFacultyCount(
-        Number(facultyResult.count) || 0
-      );
-    }
-
-
-    // ========================================
-    // LOAD STAFF COUNT
-    // ========================================
-    const staffResponse = await fetch(
-      'http://localhost:5000/api/auth/staff-count'
-    );
-
-    const staffResult =
-      await staffResponse.json();
-
-    console.log(
-      'Staff count API:',
-      staffResult
-    );
-
-    if (
-      !staffResponse.ok ||
-      !staffResult.success
-    ) {
-      console.error(
-        'Staff count failed:',
-        staffResult
-      );
-
       setStaffCount(0);
-
-    } else {
-
-      setStaffCount(
-        Number(staffResult.count) || 0
-      );
+    } finally {
+      setLoading(false);
     }
+  };
 
-  } catch (error) {
+  useEffect(() => { loadCounts(); }, []);
 
-    console.error(
-      'Failed to load faculty/staff counts:',
-      error
-    );
-
-    setFacultyCount(0);
-    setStaffCount(0);
-
-  } finally {
-
-    setLoading(false);
-
-  }
-};
-
-
-  // ============================================
-  // LOAD COUNTS WHEN COMPONENT OPENS
-  // ============================================
-  useEffect(() => {
-    loadCounts();
-  }, []);
-
-
-  // ============================================
-  // OPEN FACULTY / STAFF LIST
-  // IMPORTANT:
-  // This MUST be outside loadCounts()
-  // ============================================
- const openList = async (
-  type: 'faculty' | 'staff'
-) => {
-  setViewModal(type);
-  setSearch('');
-  setLoadingList(true);
-
-  try {
-
-    // ========================================
-    // FACULTY
-    // ========================================
-    if (type === 'faculty') {
-
-      const response = await fetch(
-        'http://localhost:5000/api/auth/faculty'
-      );
-
-      const result = await response.json();
-
-      console.log(
-        'FACULTY LIST RESPONSE:',
-        result
-      );
-
-      if (!response.ok || !result.success) {
-
-        console.error(
-          'Faculty list failed:',
-          result
-        );
-
-        setFacultyList([]);
-
-        return;
+  const openList = async (type: 'faculty' | 'staff') => {
+    setViewModal(type);
+    setSearch('');
+    setLoadingList(true);
+    try {
+      if (type === 'faculty') {
+        const response = await fetch('http://localhost:5000/api/auth/faculty');
+        const result = await response.json();
+        setFacultyList(result.success && Array.isArray(result.data) ? result.data : []);
+      } else {
+        const response = await fetch('http://localhost:5000/api/auth/staff');
+        const result = await response.json();
+        setStaffList(result.success && Array.isArray(result.data) ? result.data : []);
       }
-
-      console.log(
-        'Faculty data:',
-        result.data
-      );
-
-      setFacultyList(
-        Array.isArray(result.data)
-          ? result.data
-          : []
-      );
-
+    } catch {
+      if (type === 'faculty') setFacultyList([]);
+      else setStaffList([]);
+    } finally {
+      setLoadingList(false);
     }
+  };
 
-    // ========================================
-    // STAFF
-    // ========================================
-    else {
-
-      const response = await fetch(
-        'http://localhost:5000/api/auth/staff'
-      );
-
-      const result = await response.json();
-
-      console.log(
-        'STAFF LIST RESPONSE:',
-        result
-      );
-
-      if (!response.ok || !result.success) {
-
-        console.error(
-          'Staff list failed:',
-          result
-        );
-
-        setStaffList([]);
-
-        return;
-      }
-
-      setStaffList(
-        Array.isArray(result.data)
-          ? result.data
-          : []
-      );
-    }
-
-  } catch (error) {
-
-    console.error(
-      'Unexpected error loading faculty/staff:',
-      error
-    );
-
-    if (type === 'faculty') {
-      setFacultyList([]);
-    } else {
-      setStaffList([]);
-    }
-
-  } finally {
-
-    setLoadingList(false);
-
-  }
-};
-
-  // ============================================
-  // CLOSE MODAL
-  // ============================================
   const closeList = () => {
     setViewModal(null);
     setSearch('');
   };
 
-
-  // ============================================
-  // DETERMINE WHICH LIST TO DISPLAY
-  // ============================================
-  const activeList =
-    viewModal === 'faculty'
-      ? facultyList
-      : viewModal === 'staff'
-        ? staffList
-        : [];
-
-
-  // ============================================
-  // SEARCH FACULTY / STAFF
-  // ============================================
+  const activeList = viewModal === 'faculty' ? facultyList : viewModal === 'staff' ? staffList : [];
   const filteredList = search.trim()
     ? activeList.filter((person) => {
-
-        const searchText =
-          search
-            .toLowerCase()
-            .trim();
-
+        const searchText = search.toLowerCase().trim();
         return (
-          (person.full_name ?? '')
-            .toLowerCase()
-            .includes(searchText) ||
-
-          (person.email ?? '')
-            .toLowerCase()
-            .includes(searchText) ||
-
-          (person.id_number ?? '')
-            .toLowerCase()
-            .includes(searchText) ||
-
-          (person.department ?? '')
-            .toLowerCase()
-            .includes(searchText)
+          (person.full_name ?? '').toLowerCase().includes(searchText) ||
+          (person.email ?? '').toLowerCase().includes(searchText) ||
+          (person.id_number ?? '').toLowerCase().includes(searchText) ||
+          (person.department ?? '').toLowerCase().includes(searchText)
         );
       })
     : activeList;
 
+  const accent = viewModal === 'faculty' ? '#2563EB' : '#16A34A';
+  const accentBg = viewModal === 'faculty' ? '#DBEAFE' : '#D1FAE5';
 
-  // ============================================
-  // COLORS
-  // ============================================
-  const accent =
-    viewModal === 'faculty'
-      ? '#2563EB'
-      : '#16A34A';
-
-  const accentBg =
-    viewModal === 'faculty'
-      ? '#DBEAFE'
-      : '#D1FAE5';
-
-
-  // ============================================
-  // UI
-  // ============================================
   return (
     <div>
-
-      {/* ========================================
-          PAGE TITLE
-      ======================================== */}
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">
-        Faculty & Staff Management
-      </h1>
-
-
-      {/* ========================================
-          SUMMARY CARDS
-      ======================================== */}
+      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-
-        {/* ======================================
-            FACULTY CARD
-        ====================================== */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-            Faculty Profiles
-          </h2>
-
-          <p className="text-3xl font-bold text-blue-600 mb-2">
-            {loading
-              ? '...'
-              : facultyCount.toLocaleString()}
-          </p>
-
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">
-            Active Faculty Members
-          </p>
-
-          <button
-            onClick={() =>
-              openList('faculty')
-            }
-            className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
+          <p className="text-3xl font-bold text-blue-600 mb-2">{loading ? '...' : facultyCount.toLocaleString()}</p>
+          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Faculty Members</p>
+          <button onClick={() => openList('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             View All Faculty
           </button>
-
         </div>
 
-
-        {/* ======================================
-            STAFF CARD
-        ====================================== */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-            Staff Profiles
-          </h2>
-
-          <p className="text-3xl font-bold text-green-600 mb-2">
-            {loading
-              ? '...'
-              : staffCount.toLocaleString()}
-          </p>
-
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">
-            Active Staff Members
-          </p>
-
-          <button
-            onClick={() =>
-              openList('staff')
-            }
-            className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
+          <p className="text-3xl font-bold text-green-600 mb-2">{loading ? '...' : staffCount.toLocaleString()}</p>
+          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Staff Members</p>
+          <button onClick={() => openList('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
             View All Staff
           </button>
-
         </div>
-
       </div>
 
-
-      {/* ========================================
-          VIEW ALL MODAL
-      ======================================== */}
       {viewModal && (
-
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-
-          {/* BACKDROP */}
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={closeList}
-          />
-
-
-          {/* MODAL */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeList} />
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
-
-            {/* ==================================
-                HEADER
-            ================================== */}
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
-
               <div>
-
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">
-
-                  {viewModal === 'faculty'
-                    ? 'All Faculty'
-                    : 'All Staff'}
-
-                  <span className="ml-2 text-sm font-semibold text-gray-400">
-                    ({filteredList.length})
-                  </span>
-
+                  {viewModal === 'faculty' ? 'All Faculty' : 'All Staff'}
+                  <span className="ml-2 text-sm font-semibold text-gray-400">({filteredList.length})</span>
                 </h2>
-
                 <p className="text-xs text-gray-500 mt-1">
-
-                  {viewModal === 'faculty'
-                    ? 'Active faculty members registered in the system'
-                    : 'Active staff members registered in the system'}
-
+                  {viewModal === 'faculty' ? 'Active faculty members registered in the system' : 'Active staff members registered in the system'}
                 </p>
-
               </div>
-
-
-              <button
-                onClick={closeList}
-                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-
+              <button onClick={closeList} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
 
-
-            {/* ==================================
-                SEARCH
-            ================================== */}
             <div className="relative mb-4 flex-shrink-0">
-
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-
               <input
                 type="text"
                 value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
-                }
-                placeholder={
-                  viewModal === 'faculty'
-                    ? 'Search faculty name, email, department...'
-                    : 'Search staff name, email, department...'
-                }
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={viewModal === 'faculty' ? 'Search faculty name, email, department...' : 'Search staff name, email, department...'}
                 className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
               />
-
             </div>
 
-
-            {/* ==================================
-                LIST
-            ================================== */}
             <div className="flex-1 overflow-y-auto space-y-2 -mx-1 px-1">
-
-              {/* LOADING */}
               {loadingList ? (
-
                 <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-
                   <div className="w-7 h-7 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-3" />
-
-                  <p className="text-sm">
-                    Loading {viewModal}...
-                  </p>
-
+                  <p className="text-sm">Loading {viewModal}...</p>
                 </div>
-
               ) : filteredList.length === 0 ? (
-
-                /* EMPTY */
                 <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-
                   <Users className="w-10 h-10 mb-2 opacity-40" />
-
                   <p className="text-sm text-gray-400">
-
-                    {search
-                      ? `No ${viewModal} found matching "${search}"`
-                      : `No active ${viewModal} found`}
-
+                    {search ? `No ${viewModal} found matching "${search}"` : `No active ${viewModal} found`}
                   </p>
-
                 </div>
-
               ) : (
-
-                /* RESULTS */
                 filteredList.map((person) => {
-
-                  const isFaculty =
-                    viewModal === 'faculty';
-
-                  const name =
-                    person.full_name ||
-                    'Unnamed User';
-
-                  const role =
-                    person.department ||
-                    (isFaculty
-                      ? 'Faculty'
-                      : 'Staff');
-
-                  const initial =
-                    name
-                      .charAt(0)
-                      .toUpperCase();
-
+                  const isFaculty = viewModal === 'faculty';
+                  const name = person.full_name || 'Unnamed User';
+                  const role = person.department || (isFaculty ? 'Faculty' : 'Staff');
+                  const initial = name.charAt(0).toUpperCase();
 
                   return (
-
-                    <div
-                      key={person.id}
-                      className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-
-                      {/* AVATAR */}
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
-                        style={{
-                          background: accentBg,
-                          color: accent
-                        }}
-                      >
+                    <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
                         {initial}
                       </div>
-
-
-                      {/* INFORMATION */}
                       <div className="min-w-0 flex-1">
-
-                        <p className="font-semibold text-gray-900 text-sm truncate">
-                          {name}
-                        </p>
-
-                        <p className="text-xs text-gray-500 truncate">
-                          {role}
-                        </p>
-
-                        {person.email && (
-                          <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                            {person.email}
-                          </p>
-                        )}
-
-                        {person.id_number && (
-                          <p className="text-[11px] text-gray-400 truncate">
-                            ID: {person.id_number}
-                          </p>
-                        )}
-
+                        <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
+                        <p className="text-xs text-gray-500 truncate">{role}</p>
+                        {person.email && <p className="text-[11px] text-gray-400 truncate mt-0.5">{person.email}</p>}
+                        {person.id_number && <p className="text-[11px] text-gray-400 truncate">ID: {person.id_number}</p>}
                       </div>
-
-
-                      {/* TYPE */}
-                      <span
-                        className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize"
-                        style={{
-                          backgroundColor: accentBg,
-                          color: accent
-                        }}
-                      >
-                        {isFaculty
-                          ? 'Faculty'
-                          : 'Staff'}
+                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
+                        {isFaculty ? 'Faculty' : 'Staff'}
                       </span>
-
                     </div>
-
                   );
                 })
-
               )}
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 }
+
 // ─── Research & Achievements ──────────────────────────────────────────────────
 interface ResearchSubmissionRow {
   id: string;
@@ -3146,7 +2178,6 @@ interface ResearchSubmissionRow {
 }
 
 const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
-
 const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   pending:  { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
   approved: { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
@@ -3189,7 +2220,7 @@ function ResearchAchievements() {
     }
   };
 
-  useEffect(() => { fetchSubmissions(); /* eslint-disable-next-line */ }, [statusFilter]);
+  useEffect(() => { fetchSubmissions(); }, [statusFilter]);
 
   const decide = async (submission: ResearchSubmissionRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
     setActionId(submission.id);
@@ -3218,7 +2249,6 @@ function ResearchAchievements() {
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   const typeLabel = (t: string) => t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement';
-
   const filtered = typeFilter === 'all' ? submissions : submissions.filter(s => s.type === typeFilter);
 
   return (
@@ -3274,12 +2304,12 @@ function ResearchAchievements() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
-                        <div className="text-sm text-gray-600">
-                          {item.submitter?.full_name ?? 'Unknown'}
-                          {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
-                          {' · '}{typeLabel(item.type)}
-                          {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
-                       </div>
+                      <div className="text-sm text-gray-600">
+                        {item.submitter?.full_name ?? 'Unknown'}
+                        {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
+                        {' · '}{typeLabel(item.type)}
+                        {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
+                      </div>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
                           {cfg.label}
@@ -3379,11 +2409,6 @@ function AlumniTracer() {
 }
 
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
-// Two-column layout: Alumni inquiries on the LEFT, Student inquiries on the
-// RIGHT, as requested. Each column is its own scrollable panel so the dean
-// can browse and reply to both groups without switching pages. Each
-// inquiry now carries a `category` (set by the sender) shown as a badge
-// in the list and a category filter dropdown per column.
 function InquiriesManagement() {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
@@ -3413,7 +2438,6 @@ function InquiriesManagement() {
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
 
-  // Realtime updates so new inquiries show up without a manual refresh
   useEffect(() => {
     const channelName = `inquiries-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
@@ -3473,7 +2497,6 @@ function InquiriesManagement() {
   const pendingStudentCount = studentInquiries.filter(i => i.status === 'pending').length;
   const pendingAlumniCount  = alumniInquiries.filter(i => i.status === 'pending').length;
 
-  // Reusable column so both sides stay visually identical and easy to scan
   const InquiryColumn = ({
     title, accentColor, accentBg, list, statusFilter, setStatusFilter,
     categoryFilter, setCategoryFilter, categories, pendingCount, emptyIcon: EmptyIcon,
@@ -3493,7 +2516,6 @@ function InquiriesManagement() {
     const shown = filterList(list, statusFilter, categoryFilter);
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-        {/* Column header */}
         <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3" style={{ backgroundColor: accentBg }}>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
@@ -3507,7 +2529,6 @@ function InquiriesManagement() {
           )}
         </div>
 
-        {/* Filter tabs + category dropdown */}
         <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50 space-y-2">
           <div className="flex gap-1">
             {(['all', 'pending', 'answered'] as const).map(f => (
@@ -3533,7 +2554,6 @@ function InquiriesManagement() {
           </select>
         </div>
 
-        {/* List */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 py-10">
@@ -3593,7 +2613,6 @@ function InquiriesManagement() {
         </button>
       </div>
 
-      {/* Two-column layout: Alumni (left) / Student (right) — full height, scrollable independently */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
         <div className="min-h-[420px] lg:min-h-0">
           <InquiryColumn
@@ -3627,7 +2646,6 @@ function InquiriesManagement() {
         </div>
       </div>
 
-      {/* Reply modal */}
       {activeInquiry && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeInquiry} />
@@ -3696,79 +2714,107 @@ function InquiriesManagement() {
     </div>
   );
 }
+// ─── Consolidated Reports & Analytics ─────────────────────────────────────────
+const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
+const USERS_API_URL = 'http://localhost:5000/api/auth/users';
 
-// ─── Reports & Analytics ──────────────────────────────────────────────────────
-// Quarterly Report tracker: the dean sets a deadline, watches per-faculty
-// submission progress, sends bulk or individual reminders, and opens each
-// faculty member's uploaded document once they submit.
-interface QuarterlyReport {
+interface AccomplishmentReportRow {
   id: string;
-  faculty_id: string;
+  submitted_by: string;
   quarter: string;
-  status: 'not_started' | 'in_progress' | 'submitted';
+  year: string;
+  program_chair?: string | null;
+  program?: string | null;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected';
   progress: number;
-  file_url: string | null;
-  file_name: string | null;
-  submitted_at: string | null;
-  updated_at: string | null;
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  pi1_data?: any[]; pi2_data?: any[]; pi3_data?: any[]; pi4_data?: any[];
+  pi5_data?: any[]; pi6_data?: any[]; pi7_data?: any[]; pi8_data?: any[];
+  mfo3_pi1_data?: any[]; mfo3_pi2_data?: any[]; mfo3_pi3_data?: any[]; mfo3_pi4_data?: any[];
+  mfo4_pi1_data?: any[]; mfo4_pi2_data?: any[]; other_data?: any[]; awards_data?: any[];
+  doc_entries_data?: any[];
+  other_accomplishments?: string | null;
+  rows?: any[];
 }
 
-interface FacultyReportRow {
-  faculty: Profile;
-  report: QuarterlyReport | null;
+interface ExtensionReportRow {
+  id: string;
+  submitted_by: string;
+  quarter: string;
+  year: string;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  progress: number;
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  rows?: any[];
 }
+
+interface ConsolidatedReportRow {
+  profile: Profile & { program?: string | null };
+  departmentName: string;
+  accomplishmentReport: AccomplishmentReportRow | null;
+  extensionReport: ExtensionReportRow | null;
+  effectiveStatus: 'not_started' | 'draft' | 'submitted' | 'approved' | 'rejected';
+  effectiveProgress: number;
+  lastUpdated: string | null;
+}
+
+function parseQuarterYear(selected: string): { quarter: string; year: string } {
+  const [q, y] = selected.split(' ');
+  const qMap: Record<string, string> = {
+    Q1: '1st',
+    Q2: '2nd',
+    Q3: '3rd',
+    Q4: '4th',
+  };
+  return {
+    quarter: qMap[q] || '1st',
+    year: y || '2026',
+  };
+}
+
+const REPORT_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+  not_started: { label: 'Not Started', color: '#991B1B', bg: '#FEE2E2' },
+  draft:       { label: 'Draft',       color: '#6B7280', bg: '#F3F4F6' },
+  submitted:   { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
+  approved:    { label: 'Approved',    color: '#065F46', bg: '#D1FAE5' },
+  rejected:    { label: 'Rejected',    color: '#B91C1C', bg: '#FEE2E2' },
+};
 
 function ReportsAnalytics() {
-  const [topTab, setTopTab] = useState<'faculty' | 'chair'>('faculty');
+  const [rows, setRows] = useState<ConsolidatedReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [quarterSelect, setQuarterSelect] = useState('Q1 2026');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'not_started' | 'draft' | 'submitted' | 'approved' | 'rejected'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'faculty' | 'department_chair'>('all');
+  const [search, setSearch] = useState('');
 
-  return (
-    <div>
-      <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit mb-6">
-        <button
-          onClick={() => setTopTab('faculty')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            topTab === 'faculty' ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Faculty Quarterly Reports
-        </button>
-        <button
-          onClick={() => setTopTab('chair')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            topTab === 'chair' ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Chair Reports
-        </button>
-      </div>
-
-      {topTab === 'faculty' && <FacultyQuarterlyReportsTracker />}
-      {topTab === 'chair' && <ChairReportsSection />}
-    </div>
-  );
-}
-
-// ─── Faculty Quarterly Reports (unchanged — just renamed) ────────────────────
-function FacultyQuarterlyReportsTracker() {
-  // ... PASTE THE ENTIRE ORIGINAL BODY OF ReportsAnalytics HERE, UNCHANGED ...
-  // (everything from `const [facultyRows, setFacultyRows] = useState...`
-  // down through the final closing `return ( ... );` and `}`)
-  const [facultyRows, setFacultyRows]     = useState<FacultyReportRow[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [quarter, setQuarter]             = useState('Q1 2026');
-  const [statusFilter, setStatusFilter]   = useState<'all' | 'not_started' | 'in_progress' | 'submitted'>('all');
-  const [search, setSearch]               = useState('');
-
-  const [deadline, setDeadlineState]      = useState<{ id: string; due_date: string } | null>(null);
+  const [deadline, setDeadlineState] = useState<{ id: string; due_date: string } | null>(null);
   const [deadlineInput, setDeadlineInput] = useState('');
   const [savingDeadline, setSavingDeadline] = useState(false);
 
-  const [sendingBulk, setSendingBulk]     = useState(false);
-  const [remindingId, setRemindingId]     = useState<string | null>(null);
+  const [sendingBulk, setSendingBulk] = useState(false);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
-  const [docModal, setDocModal]           = useState<FacultyReportRow | null>(null);
-  const [modalTitle, setModalTitle]       = useState('');
-  const [modalMessage, setModalMessage]   = useState('');
+  const [selectedReport, setSelectedReport] = useState<{
+    type: 'accomplishment' | 'extension';
+    report: AccomplishmentReportRow | ExtensionReportRow;
+    profile: Profile;
+  } | null>(null);
+
+  const [rejectFor, setRejectFor] = useState<{
+    type: 'accomplishment' | 'extension';
+    report: AccomplishmentReportRow | ExtensionReportRow;
+  } | null>(null);
+  const [remarksInput, setRemarksInput] = useState('');
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
   const [showInfoModal, setShowInfoModal] = useState(false);
 
   const showInfo = (title: string, message: string) => {
@@ -3777,14 +2823,17 @@ function FacultyQuarterlyReportsTracker() {
     setShowInfoModal(true);
   };
 
+  const getToken = () => localStorage.getItem('token');
+
   const fetchDeadline = useCallback(async () => {
     const { data } = await supabase
       .from('report_deadlines')
       .select('*')
-      .eq('title', `Quarterly Report – ${quarter}`)
+      .eq('title', `Quarterly Report – ${quarterSelect}`)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
     if (data) {
       setDeadlineState({ id: data.id, due_date: data.due_date });
       setDeadlineInput(data.due_date ? data.due_date.slice(0, 16) : '');
@@ -3792,84 +2841,201 @@ function FacultyQuarterlyReportsTracker() {
       setDeadlineState(null);
       setDeadlineInput('');
     }
-  }, [quarter]);
+  }, [quarterSelect]);
 
-  const fetchFacultyReports = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    const { data: faculty } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'faculty')
-      .order('full_name', { ascending: true });
+    const { quarter, year } = parseQuarterYear(quarterSelect);
+    const token = getToken();
+    const headers = { Authorization: `Bearer ${token}` };
 
-    const { data: reports } = await supabase
-      .from('quarterly_reports')
-      .select('*')
-      .eq('quarter', quarter);
+    try {
+      // 1. Fetch Users / Profiles
+      let personnelList: (Profile & { program?: string | null })[] = [];
+      const userRes = await fetch(USERS_API_URL, { headers });
+      if (userRes.ok) {
+        const usersData = await userRes.json();
+        personnelList = (usersData ?? []).filter((u: any) =>
+          ['faculty', 'chair', 'department_chair'].includes(u.role?.toLowerCase())
+        );
+      } else {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('role', ['faculty', 'chair', 'department_chair']);
+        personnelList = profiles || [];
+      }
 
-    const rows: FacultyReportRow[] = (faculty ?? []).map((f: Profile) => ({
-      faculty: f,
-      report: (reports ?? []).find((r: QuarterlyReport) => r.faculty_id === f.id) ?? null,
-    }));
+      // 2. Fetch Reports (Accomplishment & Extension)
+      const [accRes, extRes] = await Promise.all([
+        fetch(ACCOMPLISHMENT_API_URL, { headers }).catch(() => null),
+        fetch(EXTENSION_API_URL, { headers }).catch(() => null),
+      ]);
 
-    setFacultyRows(rows);
-    setLoading(false);
-  }, [quarter]);
+      let accomplishmentList: AccomplishmentReportRow[] = [];
+      let extensionList: ExtensionReportRow[] = [];
 
-  useEffect(() => { fetchDeadline(); fetchFacultyReports(); }, [fetchDeadline, fetchFacultyReports]);
+      if (accRes && accRes.ok) {
+        const data = await accRes.json();
+        accomplishmentList = Array.isArray(data) ? data : [];
+      } else {
+        const { data: dbAcc } = await supabase
+          .from('accomplishment_reports')
+          .select('*')
+          .eq('quarter', quarter)
+          .eq('year', year);
+        accomplishmentList = (dbAcc as any) ?? [];
+      }
 
-  // Realtime — reflect faculty submissions as they happen
+      if (extRes && extRes.ok) {
+        const data = await extRes.json();
+        extensionList = Array.isArray(data) ? data : [];
+      } else {
+        const { data: dbExt } = await supabase
+          .from('extension_reports')
+          .select('*')
+          .eq('quarter', quarter)
+          .eq('year', year);
+        extensionList = (dbExt as any) ?? [];
+      }
+
+      const accMap = new Map(
+        accomplishmentList
+          .filter((r) => r.quarter === quarter && String(r.year) === String(year))
+          .map((r) => [r.submitted_by, r])
+      );
+
+      const extMap = new Map(
+        extensionList
+          .filter((r) => r.quarter === quarter && String(r.year) === String(year))
+          .map((r) => [r.submitted_by, r])
+      );
+
+      // 3. Consolidate rows
+      const consolidated: ConsolidatedReportRow[] = personnelList.map((p) => {
+        const departmentName = p.department || p.program || 'General';
+        const acc = accMap.get(p.id) ?? null;
+        const ext = extMap.get(p.id) ?? null;
+
+        let effectiveStatus: ConsolidatedReportRow['effectiveStatus'] = 'not_started';
+        let progress = 0;
+
+        if (acc || ext) {
+          const statuses = [acc?.status, ext?.status].filter(Boolean);
+          if (statuses.includes('submitted')) effectiveStatus = 'submitted';
+          else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
+          else if (statuses.includes('approved')) effectiveStatus = 'approved';
+          else if (statuses.includes('draft')) effectiveStatus = 'draft';
+
+          const validProgress = [acc?.progress, ext?.progress].filter((v) => typeof v === 'number') as number[];
+          progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
+        }
+
+        return {
+          profile: p,
+          departmentName,
+          accomplishmentReport: acc,
+          extensionReport: ext,
+          effectiveStatus,
+          effectiveProgress: progress,
+          lastUpdated: acc?.updated_at || ext?.updated_at || null,
+        };
+      });
+
+      setRows(consolidated);
+    } catch (err: any) {
+      showInfo('Error', err?.message || 'Failed to load reports.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [quarterSelect]);
+
   useEffect(() => {
-    const channelName = `quarterly-reports-channel-${Math.random().toString(36).slice(2)}`;
+    fetchDeadline();
+    fetchData();
+  }, [fetchDeadline, fetchData]);
+
+  useEffect(() => {
+    const channelName = `dean-consolidated-reports-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quarterly_reports' }, () => fetchFacultyReports())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accomplishment_reports' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'extension_reports' }, () => fetchData())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [fetchFacultyReports]);
 
-  const getStatus = (row: FacultyReportRow): 'not_started' | 'in_progress' | 'submitted' =>
-    row.report?.status ?? 'not_started';
-  const getProgress = (row: FacultyReportRow): number =>
-    row.report?.status === 'submitted' ? 100 : (row.report?.progress ?? 0);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
-  const filteredRows = facultyRows.filter(row => {
-    if (statusFilter !== 'all' && getStatus(row) !== statusFilter) return false;
-    if (search.trim() && !row.faculty.full_name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const decideReport = async (
+    type: 'accomplishment' | 'extension',
+    id: string,
+    status: 'approved' | 'rejected',
+    remarks?: string
+  ) => {
+    setActionId(id);
+    const targetUrl = type === 'accomplishment' ? ACCOMPLISHMENT_API_URL : EXTENSION_API_URL;
+    try {
+      const res = await fetch(`${targetUrl}/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ status, dean_remarks: remarks }),
+      });
 
-  const submittedCount   = facultyRows.filter(r => getStatus(r) === 'submitted').length;
-  const inProgressCount  = facultyRows.filter(r => getStatus(r) === 'in_progress').length;
-  const notStartedCount  = facultyRows.filter(r => getStatus(r) === 'not_started').length;
-  const overallProgress  = facultyRows.length
-    ? Math.round(facultyRows.reduce((sum, r) => sum + getProgress(r), 0) / facultyRows.length)
-    : 0;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showInfo('Error', err.error || 'Failed to update report status.');
+        return;
+      }
 
-  const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-    not_started: { label: 'Not Started', color: '#991B1B', bg: '#FEE2E2' },
-    in_progress: { label: 'In Progress', color: '#92400E', bg: '#FEF3C7' },
-    submitted:   { label: 'Submitted',   color: '#065F46', bg: '#D1FAE5' },
+      showInfo('Success', `Report successfully marked as ${status}.`);
+      setSelectedReport(null);
+      setRejectFor(null);
+      setRemarksInput('');
+      await fetchData();
+    } catch {
+      showInfo('Error', 'Could not reach the server. Please try again.');
+    } finally {
+      setActionId(null);
+    }
   };
 
-  // ── Deadline ──
   const saveDeadline = async () => {
-    if (!deadlineInput) { showInfo('Error', 'Please choose a deadline date and time.'); return; }
+    if (!deadlineInput) {
+      showInfo('Error', 'Please select a valid deadline date and time.');
+      return;
+    }
     setSavingDeadline(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const title = `Quarterly Report – ${quarter}`;
+      const title = `Quarterly Report – ${quarterSelect}`;
       const { error } = await supabase.from('report_deadlines').upsert(
         deadline
-          ? { id: deadline.id, title, description: `Submit your ${quarter} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
-          : { title, description: `Submit your ${quarter} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
+          ? { id: deadline.id, title, description: `Submit your ${quarterSelect} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
+          : { title, description: `Submit your ${quarterSelect} quarterly report.`, due_date: deadlineInput, created_by: user?.id }
       );
       if (error) throw error;
 
-      await notifyRole('faculty', title, `The deadline for the ${quarter} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`);
+      await Promise.all([
+        notifyRole(
+          'faculty',
+          title,
+          `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+        ),
+        notifyRole(
+          'department_chair',
+          title,
+          `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+        ),
+      ]);
 
       await fetchDeadline();
-      showInfo('Success', 'Deadline saved and faculty notified.');
+      showInfo('Success', 'Deadline saved and notified to all Faculty and Department Chairs.');
     } catch (err: any) {
       showInfo('Error', err.message || 'Failed to save deadline.');
     } finally {
@@ -3877,15 +3043,31 @@ function FacultyQuarterlyReportsTracker() {
     }
   };
 
-  // ── Reminders ──
   const sendBulkReminder = async () => {
-    const pending = facultyRows.filter(r => getStatus(r) !== 'submitted');
-    if (pending.length === 0) { showInfo('All Done', 'Every faculty member has already submitted this quarter\'s report.'); return; }
+    const pending = rows.filter((r) => r.effectiveStatus !== 'submitted' && r.effectiveStatus !== 'approved');
+    if (pending.length === 0) {
+      showInfo('All Done', 'Every faculty member and department chair has completed this quarter\'s report.');
+      return;
+    }
     setSendingBulk(true);
     try {
-      const dueText = deadline ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.` : '';
-      await notifyRole('faculty', `Reminder: ${quarter} Quarterly Report`, `Please complete and submit your ${quarter} quarterly report.${dueText}`);
-      showInfo('Reminder Sent', `Sent a reminder to ${pending.length} faculty member${pending.length !== 1 ? 's' : ''} who haven't submitted yet.`);
+      const dueText = deadline
+        ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+        : '';
+
+      await Promise.all([
+        notifyRole(
+          'faculty',
+          `Reminder: ${quarterSelect} Quarterly Report`,
+          `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`
+        ),
+        notifyRole(
+          'department_chair',
+          `Reminder: ${quarterSelect} Quarterly Report`,
+          `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`
+        ),
+      ]);
+      showInfo('Reminder Sent', `Sent a reminder to ${pending.length} pending academic personnel.`);
     } catch (err: any) {
       showInfo('Error', err.message || 'Failed to send reminders.');
     } finally {
@@ -3893,19 +3075,21 @@ function FacultyQuarterlyReportsTracker() {
     }
   };
 
-  const sendIndividualReminder = async (row: FacultyReportRow) => {
-    setRemindingId(row.faculty.id);
+  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+    setRemindingId(row.profile.id);
     try {
-      const dueText = deadline ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.` : '';
+      const dueText = deadline
+        ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+        : '';
       const { error } = await supabase.from('notifications').insert({
-        user_id: row.faculty.id,
-        title: `Reminder: ${quarter} Quarterly Report`,
-        message: `Hi ${row.faculty.full_name}, please complete and submit your ${quarter} quarterly report.${dueText}`,
+        user_id: row.profile.id,
+        title: `Reminder: ${quarterSelect} Quarterly Report`,
+        message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
         type: 'announcement',
         is_read: false,
       });
       if (error) throw error;
-      showInfo('Reminder Sent', `Sent a reminder to ${row.faculty.full_name}.`);
+      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
     } catch (err: any) {
       showInfo('Error', err.message || 'Failed to send reminder.');
     } finally {
@@ -3913,38 +3097,75 @@ function FacultyQuarterlyReportsTracker() {
     }
   };
 
+  // ── Multi-criteria Filtering (Search, Role, Status) ──
+  const filteredRows = rows.filter((row) => {
+    if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
+
+    if (roleFilter !== 'all') {
+      const isChair = row.profile.role === 'chair' || row.profile.role === 'department_chair';
+      if (roleFilter === 'department_chair' && !isChair) return false;
+      if (roleFilter === 'faculty' && isChair) return false;
+    }
+
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      const matchName = (row.profile.full_name || '').toLowerCase().includes(query);
+      const matchDept = (row.departmentName || '').toLowerCase().includes(query);
+      if (!matchName && !matchDept) return false;
+    }
+
+    return true;
+  });
+
+  const submittedCount = rows.filter((r) => r.effectiveStatus === 'submitted').length;
+  const approvedCount  = rows.filter((r) => r.effectiveStatus === 'approved').length;
+  const inProgressCount = rows.filter((r) => r.effectiveStatus === 'draft').length;
+  const notStartedCount = rows.filter((r) => r.effectiveStatus === 'not_started').length;
+  const overallProgress = rows.length
+    ? Math.round(rows.reduce((sum, r) => sum + r.effectiveProgress, 0) / rows.length)
+    : 0;
+
   const formatDateTime = (dateStr: string) =>
     new Date(dateStr).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
   return (
     <div>
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Quarterly Report Tracker</h1>
-          <p className="text-gray-500 text-sm mt-1">Monitor faculty submission progress and manage deadlines</p>
+          <p className="text-gray-500 text-sm mt-1">
+            Consolidated submission monitoring and approval for Faculty and Department Chairs
+          </p>
         </div>
         <select
-          value={quarter}
-          onChange={e => setQuarter(e.target.value)}
+          value={quarterSelect}
+          onChange={(e) => setQuarterSelect(e.target.value)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
-          {['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'].map(q => <option key={q} value={q}>{q}</option>)}
+          {['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'].map((q) => (
+            <option key={q} value={q}>{q}</option>
+          ))}
         </select>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mb-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
           <p className="text-xs font-medium text-gray-500 mb-1">Overall Progress</p>
           <p className="text-2xl sm:text-3xl font-bold text-[#1E3A8A]">{overallProgress}%</p>
         </div>
         <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#D1FAE5' }}>
-          <p className="text-xs font-medium mb-1" style={{ color: '#065F46', opacity: 0.8 }}>Submitted</p>
-          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#065F46' }}>{submittedCount}</p>
+          <p className="text-xs font-medium mb-1" style={{ color: '#065F46', opacity: 0.8 }}>Approved</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#065F46' }}>{approvedCount}</p>
         </div>
         <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEF3C7' }}>
-          <p className="text-xs font-medium mb-1" style={{ color: '#92400E', opacity: 0.8 }}>In Progress</p>
-          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#92400E' }}>{inProgressCount}</p>
+          <p className="text-xs font-medium mb-1" style={{ color: '#92400E', opacity: 0.8 }}>Pending Review</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#92400E' }}>{submittedCount}</p>
+        </div>
+        <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#F3F4F6' }}>
+          <p className="text-xs font-medium mb-1" style={{ color: '#4B5563', opacity: 0.8 }}>Draft / In Progress</p>
+          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#4B5563' }}>{inProgressCount}</p>
         </div>
         <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEE2E2' }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#991B1B', opacity: 0.8 }}>Not Started</p>
@@ -3952,151 +3173,255 @@ function FacultyQuarterlyReportsTracker() {
         </div>
       </div>
 
-      {/* Deadline + Bulk reminder */}
+      {/* Deadline & Reminder Action Row */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
-        <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Set Deadline for {quarter}</label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="datetime-local"
-                value={deadlineInput}
-                onChange={e => setDeadlineInput(e.target.value)}
-                className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={saveDeadline}
-                disabled={savingDeadline}
-                className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
-              >
-                {savingDeadline ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Calendar className="w-4 h-4" />}
-                {savingDeadline ? 'Saving...' : deadline ? 'Update Deadline' : 'Set Deadline'}
-              </button>
-            </div>
-            {deadline && (
-              <p className="text-xs text-gray-500 mt-2">Current deadline: <span className="font-semibold text-gray-700">{formatDateTime(deadline.due_date)}</span></p>
+        <label className="block text-xs font-semibold text-gray-600 mb-2">
+          Set Deadline for {quarterSelect}
+        </label>
+        
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <input
+            type="datetime-local"
+            value={deadlineInput}
+            onChange={(e) => setDeadlineInput(e.target.value)}
+            className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          />
+          <button
+            onClick={saveDeadline}
+            disabled={savingDeadline}
+            className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
+          >
+            {savingDeadline ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Calendar className="w-4 h-4" />
             )}
-          </div>
+            {savingDeadline ? 'Saving...' : deadline ? 'Update Deadline' : 'Set Deadline'}
+          </button>
           <button
             onClick={sendBulkReminder}
             disabled={sendingBulk}
             className="px-4 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
           >
-            {sendingBulk ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Megaphone className="w-4 h-4" />}
+            {sendingBulk ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Megaphone className="w-4 h-4" />
+            )}
             {sendingBulk ? 'Sending...' : 'Send Bulk Reminder'}
           </button>
         </div>
+
+        {deadline && (
+          <p className="text-xs text-gray-500 mt-2.5">
+            Current deadline: <span className="font-semibold text-gray-700">{formatDateTime(deadline.due_date)}</span>
+          </p>
+        )}
       </div>
 
-      {/* Filters */}
+      {/* Filters (Search, Role, Status) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center">
-          <div className="relative flex-1 min-w-0">
+        <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search faculty name..."
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search personnel, department..."
               className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
             />
           </div>
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-          >
-            <option value="all">All Status</option>
-            <option value="not_started">Not Started</option>
-            <option value="in_progress">In Progress</option>
-            <option value="submitted">Submitted</option>
-          </select>
-          <button onClick={fetchFacultyReports} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
+            {/* Role Filter */}
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as any)}
+              className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+            >
+              <option value="all">All Roles</option>
+              <option value="faculty">Faculty</option>
+              <option value="department_chair">Department Chairs</option>
+            </select>
+
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+            >
+              <option value="all">All Status</option>
+              <option value="not_started">Not Started</option>
+              <option value="draft">Draft</option>
+              <option value="submitted">Pending Review</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+
+            <button
+              onClick={fetchData}
+              className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0"
+              title="Refresh"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Faculty progress table */}
+      {/* Main Consolidated Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
-              <p className="text-sm text-gray-500">Loading faculty reports...</p>
+              <div
+                className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin"
+                style={{ borderWidth: 3, borderStyle: 'solid' }}
+              />
+              <p className="text-sm text-gray-500">Loading quarterly reports...</p>
             </div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
-            <p className="font-medium">No faculty found</p>
-            <p className="text-sm mt-1">Try adjusting your search or filters</p>
+            <p className="font-medium">No reports or personnel found</p>
+            <p className="text-sm mt-1">Try adjusting your filters</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px]">
+            <table className="w-full min-w-[800px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Faculty</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Personnel</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submissions</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Submitted</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredRows.map(row => {
-                  const status   = getStatus(row);
-                  const progress = getProgress(row);
-                  const cfg      = STATUS_LABEL[status];
+                {filteredRows.map((row) => {
+                  const isChair = row.profile.role === 'chair' || row.profile.role === 'department_chair';
+                  const cfg = REPORT_STATUS_BADGE[row.effectiveStatus] || REPORT_STATUS_BADGE.not_started;
+
                   return (
-                    <tr key={row.faculty.id} className="hover:bg-blue-50/30 transition-colors">
+                    <tr key={row.profile.id} className="hover:bg-blue-50/30 transition-colors">
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: '#D1FAE5', color: '#065F46' }}>
-                            {row.faculty.full_name.charAt(0).toUpperCase()}
+                          <div
+                            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+                            style={{ background: '#D1FAE5', color: '#065F46' }}
+                          >
+                            {(row.profile.full_name || 'U').charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-gray-900 text-sm truncate max-w-[140px] sm:max-w-none">{row.faculty.full_name}</div>
-                            <div className="text-xs text-gray-400 truncate max-w-[140px] sm:max-w-none">{row.faculty.department ?? 'Faculty'}</div>
+                            <div className="font-semibold text-gray-900 text-sm truncate max-w-[140px] sm:max-w-none">
+                              {row.profile.full_name}
+                            </div>
+                            <div className="text-xs text-gray-400 truncate max-w-[140px] sm:max-w-none">
+                              {row.departmentName}
+                            </div>
                           </div>
                         </div>
                       </td>
+
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <div className="flex items-center gap-2 min-w-[120px]">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                            isChair ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {isChair ? 'Department Chair' : 'Faculty'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {row.accomplishmentReport ? (
+                            <button
+                              onClick={() => setSelectedReport({ type: 'accomplishment', report: row.accomplishmentReport!, profile: row.profile })}
+                              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1"
+                            >
+                              <FileText className="w-3 h-3" /> Accomplishment
+                            </button>
+                          ) : null}
+                          {row.extensionReport ? (
+                            <button
+                              onClick={() => setSelectedReport({ type: 'extension', report: row.extensionReport!, profile: row.profile })}
+                              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1"
+                            >
+                              <FileText className="w-3 h-3" /> Extension
+                            </button>
+                          ) : null}
+                          {!row.accomplishmentReport && !row.extensionReport && (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <div className="flex items-center gap-2 min-w-[110px]">
                           <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
-                              style={{ width: `${progress}%`, backgroundColor: status === 'submitted' ? '#10B981' : progress > 0 ? '#F59E0B' : '#D1D5DB' }}
+                              style={{
+                                width: `${row.effectiveProgress}%`,
+                                backgroundColor:
+                                  row.effectiveStatus === 'approved'
+                                    ? '#10B981'
+                                    : row.effectiveProgress > 0
+                                    ? '#F59E0B'
+                                    : '#D1D5DB',
+                              }}
                             />
                           </div>
-                          <span className="text-xs font-semibold text-gray-600 w-9 text-right">{progress}%</span>
+                          <span className="text-xs font-semibold text-gray-600 w-8 text-right">
+                            {row.effectiveProgress}%
+                          </span>
                         </div>
                       </td>
+
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
+                        <span
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                          style={{ background: cfg.bg, color: cfg.color }}
+                        >
                           {cfg.label}
                         </span>
                       </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6 hidden md:table-cell">
-                        <span className="text-sm text-gray-600">{row.report?.submitted_at ? formatDateTime(row.report.submitted_at) : '—'}</span>
-                      </td>
+
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center justify-center gap-1">
-                          {row.report?.file_url ? (
-                            <button onClick={() => setDocModal(row)} className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="View submitted document">
-                              <FileText className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">View</span>
+                          {row.accomplishmentReport || row.extensionReport ? (
+                            <button
+                              onClick={() =>
+                                setSelectedReport(
+                                  row.accomplishmentReport
+                                    ? { type: 'accomplishment', report: row.accomplishmentReport, profile: row.profile }
+                                    : { type: 'extension', report: row.extensionReport!, profile: row.profile }
+                                )
+                              }
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                              title="Review submission details"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View</span>
                             </button>
                           ) : (
                             <button
                               onClick={() => sendIndividualReminder(row)}
-                              disabled={remindingId === row.faculty.id}
-                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-60"
-                              title="Send individual reminder"
+                              disabled={remindingId === row.profile.id}
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-60"
+                              title="Send reminder notice"
                             >
-                              {remindingId === row.faculty.id ? <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
-                              <span className="hidden sm:inline">{remindingId === row.faculty.id ? 'Sending…' : 'Remind'}</span>
+                              {remindingId === row.profile.id ? (
+                                <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <Megaphone className="w-3.5 h-3.5" />
+                              )}
+                              <span>{remindingId === row.profile.id ? 'Sending…' : 'Remind'}</span>
                             </button>
                           )}
                         </div>
@@ -4110,327 +3435,35 @@ function FacultyQuarterlyReportsTracker() {
         )}
       </div>
 
-      {/* Document viewer modal */}
-      {docModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDocModal(null)} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-10">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Submitted Report</h2>
-              <button onClick={() => setDocModal(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-blue-600" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-gray-900 text-sm truncate">{docModal.faculty.full_name}</p>
-                <p className="text-xs text-gray-500 truncate">{docModal.report?.file_name || `${quarter} Quarterly Report`}</p>
-                {docModal.report?.submitted_at && (
-                  <p className="text-xs text-gray-400 mt-0.5">Submitted {formatDateTime(docModal.report.submitted_at)}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setDocModal(null)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Close</button>
-              {docModal.report?.file_url && (
-                <a
-                  href={docModal.report.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Download className="w-4 h-4" /> Open Document
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Info modal (success / error) */}
-      {showInfoModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <h3 className="text-xl font-semibold text-gray-900">{modalTitle}</h3>
-              <p className="mt-2 text-gray-600">{modalMessage}</p>
-            </div>
-            <div className="border-t p-4 flex justify-end">
-              <button onClick={() => setShowInfoModal(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg">OK</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-// ─── Chair Reports (Accomplishment / Extension, Dean approval) ───────────────
-const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_API_URL_DEAN = 'http://localhost:5000/api/extension-reports';
-
-interface ChairReportRow {
-  id: string;
-  quarter: string;
-  year: string;
-  status: 'submitted' | 'approved' | 'rejected';
-  progress: number;
-  dean_remarks: string | null;
-  updated_at: string;
-  submitter: { full_name: string; department: string | null } | null;
-  // accomplishment-only
-  program?: string | null;
-  program_chair?: string | null;
-  pi1_data?: any[]; pi2_data?: any[]; pi3_data?: any[]; pi4_data?: any[];
-  pi5_data?: any[]; pi6_data?: any[]; pi7_data?: any[]; pi8_data?: any[];
-  mfo3_pi1_data?: any[]; mfo3_pi2_data?: any[]; mfo3_pi3_data?: any[]; mfo3_pi4_data?: any[];
-  mfo4_pi1_data?: any[]; mfo4_pi2_data?: any[]; other_data?: any[]; awards_data?: any[];
-  doc_entries_data?: any[];
-  other_accomplishments?: string | null;
-  // extension-only
-  rows?: any[];
-}
-
-const CHAIR_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  submitted: { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
-  approved:  { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
-  rejected:  { label: 'Rejected',       color: '#991B1B', bg: '#FEE2E2' },
-};
-
-function getDeanToken() {
-  return localStorage.getItem('token');
-}
-
-function ChairReportsSection() {
-  const [reportType, setReportType] = useState<'accomplishment' | 'extension'>('accomplishment');
-  const [statusFilter, setStatusFilter] = useState<'submitted' | 'approved' | 'rejected' | 'all'>('submitted');
-  const [reports, setReports] = useState<ChairReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [selected, setSelected] = useState<ChairReportRow | null>(null);
-  const [actionId, setActionId] = useState<string | null>(null);
-  const [rejectFor, setRejectFor] = useState<ChairReportRow | null>(null);
-  const [remarksInput, setRemarksInput] = useState('');
-
-  const apiUrl = reportType === 'accomplishment' ? ACCOMPLISHMENT_API_URL : EXTENSION_API_URL_DEAN;
-
-  const fetchReports = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const url = statusFilter === 'all' ? apiUrl : `${apiUrl}?status=${statusFilter}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${getDeanToken()}` } });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load reports.');
-        setReports([]);
-        return;
-      }
-      const data = await res.json();
-      setReports(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setReports([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchReports(); /* eslint-disable-next-line */ }, [reportType, statusFilter]);
-
-  const decide = async (report: ChairReportRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
-    setActionId(report.id);
-    try {
-      const res = await fetch(`${apiUrl}/${report.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getDeanToken()}` },
-        body: JSON.stringify({ status, dean_remarks }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to update report status.');
-        return;
-      }
-      setReports(prev => prev.filter(r => r.id !== report.id)); // leaves the "submitted" list once decided
-      setSelected(null);
-      setRejectFor(null);
-      setRemarksInput('');
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-    } finally {
-      setActionId(null);
-    }
-  };
-
-  const formatDateTime = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-
-  return (
-    <div>
-      {/* Type + status filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {(['accomplishment', 'extension'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setReportType(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
-                reportType === t ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t === 'accomplishment' ? 'Accomplishment Reports' : 'Extension Reports'}
-            </button>
-          ))}
-        </div>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as any)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="submitted">Pending Review</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="all">All</option>
-        </select>
-      </div>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
-      )}
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-56">
-            <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
-          </div>
-        ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-56 text-gray-400">
-            <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
-            <p className="font-medium">No reports found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Chair</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Period</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {reports.map(r => {
-                  const cfg = CHAIR_STATUS_LABEL[r.status];
-                  return (
-                    <tr key={r.id} className="hover:bg-blue-50/30 transition-colors">
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <div className="font-semibold text-gray-900 text-sm">{r.submitter?.full_name ?? 'Unknown'}</div>
-                        <div className="text-xs text-gray-400">{r.submitter?.department ?? '—'}</div>
-                      </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-sm text-gray-600">{r.quarter} Quarter, {r.year}</td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <div className="flex items-center gap-2 min-w-[100px]">
-                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-[#1E3A8A]" style={{ width: `${r.progress}%` }} />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-600 w-9 text-right">{r.progress}%</span>
-                        </div>
-                      </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
-                        <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
-                          {cfg.label}
-                        </span>
-                      </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={() => setSelected(r)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="View report">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {r.status === 'submitted' && (
-                            <>
-                              <button
-                                onClick={() => decide(r, 'approved')}
-                                disabled={actionId === r.id}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-60"
-                              >
-                                <Check className="w-3.5 h-3.5" /> Approve
-                              </button>
-                              <button
-                                onClick={() => { setRejectFor(r); setRemarksInput(''); }}
-                                disabled={actionId === r.id}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-600 hover:text-white rounded-lg transition-colors disabled:opacity-60"
-                              >
-                                <X className="w-3.5 h-3.5" /> Reject
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Reject reason modal */}
-      {rejectFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Report?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Rejecting <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s {rejectFor.quarter} Quarter {rejectFor.year} report.
-            </p>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reason (optional)</label>
-            <textarea
-              value={remarksInput}
-              onChange={e => setRemarksInput(e.target.value)}
-              rows={3}
-              placeholder="Let the chair know what needs revision..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
-            />
-            <div className="flex gap-3">
-              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button
-                onClick={() => decide(rejectFor, 'rejected', remarksInput)}
-                disabled={actionId === rejectFor.id}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
-              >
-                {actionId === rejectFor.id ? 'Rejecting...' : 'Confirm Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail viewer */}
-      {selected && (
+      {/* Detail & Review Modal */}
+      {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
               <div>
-                <h3 className="font-bold text-gray-900">
-                  {reportType === 'accomplishment' ? 'Accomplishment Report' : 'Extension Report'} — {selected.submitter?.full_name}
+                <h3 className="font-bold text-gray-900 capitalize">
+                  {selectedReport.type} Report — {selectedReport.profile.full_name}
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">{selected.quarter} Quarter, {selected.year} · Last updated {formatDateTime(selected.updated_at)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {selectedReport.report.quarter} Quarter, {selectedReport.report.year} · Status:{' '}
+                  <span className="font-semibold uppercase">{selectedReport.report.status}</span>
+                </p>
               </div>
-              <button onClick={() => setSelected(null)} className="p-2 hover:bg-gray-100 rounded-xl"><X className="w-5 h-5 text-gray-500" /></button>
+              <button onClick={() => setSelectedReport(null)} className="p-2 hover:bg-gray-100 rounded-xl">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
 
             <div className="p-6 space-y-5">
-              {selected.dean_remarks && (
+              {selectedReport.report.dean_remarks && (
                 <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
-                  <span className="font-semibold">Dean's remarks:</span> {selected.dean_remarks}
+                  <span className="font-semibold">Dean's remarks:</span> {selectedReport.report.dean_remarks}
                 </div>
               )}
 
-              {reportType === 'extension' ? (
+              {selectedReport.type === 'extension' ? (
                 <GenericJsonTable
-                  rows={selected.rows ?? []}
+                  rows={selectedReport.report.rows ?? []}
                   columns={[
                     { key: 'extension_project', label: 'Project/Activity' },
                     { key: 'highlights', label: 'Highlights' },
@@ -4441,84 +3474,94 @@ function ChairReportsSection() {
                   ]}
                 />
               ) : (
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><span className="font-semibold text-gray-600">Program Chairperson:</span> {selected.program_chair}</div>
-                    <div><span className="font-semibold text-gray-600">Program:</span> {selected.program}</div>
-                  </div>
-
+                <div className="space-y-4">
                   {[
-                    { title: 'PI 1: Licensure Exam Passers', rows: selected.pi1_data, cols: [['date_exam','Date'],['no_first_time','First-time Takers'],['no_passers','Passers'],['passing_pct_first','Passing % (First-time)'],['total_takers','Total Takers'],['total_passers','Total Passers'],['overall_pct','Overall %']] },
-                    { title: 'PI 2: Graduate Employment', rows: selected.pi2_data, cols: [['no_graduates','Graduates'],['no_employed','Employed'],['percentage','Percentage']] },
-                    { title: 'PI 3: Priority Program Enrollment', rows: selected.pi3_data, cols: [['class_section','Section'],['no_enrolled','Enrolled'],['name_adviser','Adviser']] },
-                    { title: 'PI 4: Syllabus Submission', rows: selected.pi4_data, cols: [['name_faculty','Faculty'],['courses_taught','Courses'],['status_syllabus','Status'],['remarks','Remarks']] },
-                    { title: 'PI 5: Certifications', rows: selected.pi5_data, cols: [['name_faculty','Faculty'],['nature_cert','Certification'],['granting_agency','Agency'],['date_granted','Date']] },
-                    { title: 'PI 6: Post-Graduate Education', rows: selected.pi6_data, cols: [['name_faculty','Faculty'],['program_enrolled','Program'],['total_units','Total Units'],['units_this_sem','Units This Sem'],['institution','Institution']] },
-                    { title: 'PI 7: Trainings/Seminars', rows: selected.pi7_data, cols: [['name_faculty','Faculty'],['title_training','Title'],['date','Date'],['venue','Venue'],['sponsoring_agency','Agency'],['role','Role']] },
-                    { title: 'PI 8: Instructional Materials', rows: selected.pi8_data, cols: [['name_faculty','Authors'],['title_im','Title'],['type_im','Type'],['courses_utilizing','Courses'],['ip_protection','IP Protection']] },
-                    { title: 'MFO3 PI1: Research Utilization', rows: selected.mfo3_pi1_data, cols: [['title_research','Title'],['proponents','Proponents'],['nature_utilization','Nature'],['partner_community','Partner'],['address','Address']] },
-                    { title: 'MFO3 PI2: Research Completed', rows: selected.mfo3_pi2_data, cols: [['title_research','Title'],['proponents','Proponents'],['date_completed','Date'],['funding_source','Funding']] },
-                    { title: 'MFO3 PI3: Publications', rows: selected.mfo3_pi3_data, cols: [['title_research','Title'],['proponents','Proponents'],['name_publication','Publication'],['date_published','Date'],['funding_source','Funding']] },
-                    { title: 'MFO3 PI4: Conference Presentations', rows: selected.mfo3_pi4_data, cols: [['title_research','Title'],['proponents','Proponents'],['date','Date'],['sponsoring_agency','Agency'],['venue','Venue']] },
-                    { title: 'MFO4 PI1: Active Partnerships', rows: selected.mfo4_pi1_data, cols: [['title_project','Project'],['proponents','Proponents'],['partner','Partner'],['project_locale','Locale']] },
-                    { title: 'MFO4 PI2: Training Manhours', rows: selected.mfo4_pi2_data, cols: [['title_training','Title'],['no_beneficiaries','Beneficiaries'],['length_training','Length'],['total_manhours','Manhours'],['partner_agency','Agency']] },
-                    { title: 'Other Initiatives', rows: selected.other_data, cols: [['title_activity','Activity'],['date_conducted','Date'],['venue','Venue'],['sponsoring_agency','Agency'],['students_involved','Students'],['faculty_involved','Faculty']] },
-                    { title: 'Awards', rows: selected.awards_data, cols: [['title_award','Award'],['nature_award','Nature'],['granting_agency','Agency'],['date_awarding','Date']] },
-                  ].filter(section => section.rows && section.rows.length > 0).map(section => (
+                    { title: 'PI 1: Licensure Exam Passers', rows: (selectedReport.report as AccomplishmentReportRow).pi1_data, cols: [['date_exam','Date'],['no_first_time','First-time Takers'],['no_passers','Passers'],['passing_pct_first','Passing %']] },
+                    { title: 'PI 2: Graduate Employment', rows: (selectedReport.report as AccomplishmentReportRow).pi2_data, cols: [['no_graduates','Graduates'],['no_employed','Employed'],['percentage','Percentage']] },
+                    { title: 'PI 4: Syllabus Submission', rows: (selectedReport.report as AccomplishmentReportRow).pi4_data, cols: [['name_faculty','Faculty'],['courses_taught','Courses'],['status_syllabus','Status']] },
+                    { title: 'PI 7: Trainings/Seminars', rows: (selectedReport.report as AccomplishmentReportRow).pi7_data, cols: [['name_faculty','Faculty'],['title_training','Title'],['date','Date'],['venue','Venue']] },
+                    { title: 'Research & Publications', rows: (selectedReport.report as AccomplishmentReportRow).mfo3_pi3_data, cols: [['title_research','Title'],['proponents','Proponents'],['name_publication','Publication']] },
+                  ].filter(s => s.rows && s.rows.length > 0).map(section => (
                     <div key={section.title}>
-                      <p className="font-semibold text-sm text-gray-800 mb-2">{section.title}</p>
+                      <p className="font-semibold text-sm text-gray-800 mb-1">{section.title}</p>
                       <GenericJsonTable rows={section.rows!} columns={section.cols.map(([key, label]) => ({ key, label }))} />
                     </div>
                   ))}
 
-                  {selected.other_accomplishments && (
+                  {(selectedReport.report as AccomplishmentReportRow).other_accomplishments && (
                     <div>
                       <p className="font-semibold text-sm text-gray-800 mb-1">Other Accomplishments</p>
-                      <p className="text-sm text-gray-600">{selected.other_accomplishments}</p>
-                    </div>
-                  )}
-
-                  {(selected.doc_entries_data ?? []).length > 0 && (
-                    <div>
-                      <p className="font-semibold text-sm text-gray-800 mb-2">Documentation Photos</p>
-                      <div className="space-y-4">
-                        {selected.doc_entries_data!.map((entry: any) => (
-                          <div key={entry.id} className="border border-gray-100 rounded-xl p-3">
-                            <p className="text-sm font-medium text-gray-800">{entry.title} — {entry.venue} ({entry.date})</p>
-                            {entry.description && <p className="text-xs text-gray-500 mt-1">{entry.description}</p>}
-                            {entry.photos?.length > 0 && (
-                              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-2">
-                                {entry.photos.map((p: any) => (
-                                  <img key={p.path} src={p.url} alt="" className="w-full h-24 object-cover rounded-lg" />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      <p className="text-sm text-gray-600">{(selectedReport.report as AccomplishmentReportRow).other_accomplishments}</p>
                     </div>
                   )}
                 </div>
               )}
 
-              {selected.status === 'submitted' && (
-                <div className="flex gap-3 pt-2 border-t border-gray-100">
+              {selectedReport.report.status === 'submitted' && (
+                <div className="flex gap-3 pt-4 border-t border-gray-100">
                   <button
-                    onClick={() => decide(selected, 'approved')}
-                    disabled={actionId === selected.id}
+                    onClick={() => decideReport(selectedReport.type, selectedReport.report.id, 'approved')}
+                    disabled={actionId === selectedReport.report.id}
                     className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-60"
                   >
-                    Approve
+                    {actionId === selectedReport.report.id ? 'Approving...' : 'Approve Submission'}
                   </button>
                   <button
-                    onClick={() => { setRejectFor(selected); setRemarksInput(''); }}
-                    disabled={actionId === selected.id}
+                    onClick={() => {
+                      setRejectFor({ type: selectedReport.type, report: selectedReport.report });
+                      setRemarksInput('');
+                    }}
+                    disabled={actionId === selectedReport.report.id}
                     className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
                   >
-                    Reject
+                    Reject Submission
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Report?</h3>
+            <p className="text-sm text-gray-500 mb-4">Provide reasons or revisions needed for the submitter.</p>
+            <textarea
+              value={remarksInput}
+              onChange={(e) => setRemarksInput(e.target.value)}
+              rows={3}
+              placeholder="Enter remarks..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border rounded-xl text-sm">Cancel</button>
+              <button
+                onClick={() => decideReport(rejectFor.type, rejectFor.report.id, 'rejected', remarksInput)}
+                disabled={actionId === rejectFor.report.id}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionId === rejectFor.report.id ? 'Rejecting...' : 'Confirm Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Modal */}
+      {showInfoModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <h3 className="text-xl font-semibold text-gray-900">{modalTitle}</h3>
+              <p className="mt-2 text-gray-600">{modalMessage}</p>
+            </div>
+            <div className="border-t p-4 flex justify-end">
+              <button onClick={() => setShowInfoModal(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg">
+                OK
+              </button>
             </div>
           </div>
         </div>
@@ -4527,23 +3570,36 @@ function ChairReportsSection() {
   );
 }
 
-// Small reusable read-only table for rendering jsonb row arrays.
 function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: string; label: string }[] }) {
   if (!rows || rows.length === 0) {
-    return <p className="text-xs text-gray-400 italic">No entries.</p>;
+    return <p className="text-xs text-gray-400 italic py-1">No entries recorded.</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr className="bg-gray-50">
-            {columns.map(c => <th key={c.key} className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-600">{c.label}</th>)}
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                className="border border-gray-200 px-2.5 py-1.5 text-left font-semibold text-gray-600"
+              >
+                {c.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-              {columns.map(c => <td key={c.key} className="border border-gray-200 px-2 py-1.5 align-top text-gray-700">{row[c.key] || '—'}</td>)}
+              {columns.map((c) => (
+                <td
+                  key={c.key}
+                  className="border border-gray-200 px-2.5 py-1.5 align-top text-gray-700"
+                >
+                  {row[c.key] || '—'}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -4551,10 +3607,7 @@ function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: stri
     </div>
   );
 }
-  
 // ─── Announcements ────────────────────────────────────────────────────────────
-interface DeptOption { id: string; name: string; }
-
 const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
 const ALL_ROLES = ['department_chair', 'faculty', 'student', 'alumni'];
 
@@ -4607,8 +3660,6 @@ function AnnouncementsContent() {
   };
 
   const loadDepartments = async () => {
-    // Read-only lookup for the dropdown — same pattern as other
-    // non-sensitive reference-data reads elsewhere in this dashboard.
     const { data, error } = await supabase.from('departments').select('id, name').order('name');
     if (!error && data) setDepartments(data);
   };
@@ -4669,14 +3720,6 @@ function AnnouncementsContent() {
         return;
       }
 
-      const data = await res.json();
-
-      // Notify only the roles actually targeted — and, if a department was
-      // targeted, only members of that department within those roles.
-      const targetDeptName = targetDepartmentId
-        ? departments.find(d => d.id === targetDepartmentId)?.name ?? null
-        : null;
-
       setTitle('');
       setContent('');
       setSelectedRoles([...ALL_ROLES]);
@@ -4685,9 +3728,7 @@ function AnnouncementsContent() {
       setModalTitle('Success');
       setModalMessage('Announcement published successfully.');
       setShowModal(true);
-
       await loadAnnouncements();
-
     } catch (err: any) {
       setModalTitle('Error');
       setModalMessage(err?.message || 'Failed to publish announcement.');
@@ -4794,9 +3835,6 @@ function AnnouncementsContent() {
               <option value="">All Departments</option>
               {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
-            <p className="text-xs text-gray-400 mt-1">
-              If set, only people in this department (among the selected roles) will see and be notified of this announcement.
-            </p>
           </div>
 
           <button
@@ -4882,128 +3920,61 @@ function AnnouncementsContent() {
     </div>
   );
 }
-  
+
 // ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
-function updateClubsField(
-  section: string,
-  field: string,
-  value: string
-) {
-  setClubsContent((prev: any) => ({
-    ...prev,
-    [section]: {
-      ...prev[section],
-      [field]: value,
-    },
-  }));
-}
-const [footerContent, setFooterContent] =
-  useState<any>({});
+  function updateClubsField(section: string, field: string, value: string) {
+    setClubsContent((prev: any) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  }
 
-const [footerQuickLinks, setFooterQuickLinks] =
-  useState<any[]>([]);
-
-const [footerSocialLinks, setFooterSocialLinks] =
-  useState<any[]>([]);
-const [contactContent, setContactContent] =
-  useState<any>({});
-
-const [officeHours, setOfficeHours] =
-  useState<any[]>([]);
-
-const [socialLinks, setSocialLinks] =
-  useState<any[]>([]);
-const [accreditationContent, setAccreditationContent] =
-  useState<any>(null);
-
-const [overviewItems, setOverviewItems] =
-  useState<any[]>([]);
-
-const [levels, setLevels] =
-  useState<any[]>([]);
-
-const [programs, setPrograms] =
-  useState<any[]>([]);
-
-const [certifications, setCertifications] =
-  useState<any[]>([]);
-const [achievementPageContent, setAchievementPageContent] =
-  useState<any>(null);
-
-const [achievementBanner, setAchievementBanner] =
-  useState<any>(null);
-
-const [achievementBannerStats, setAchievementBannerStats] =
-  useState<any[]>([]);
-
-const [achievementStatistics, setAchievementStatistics] =
-  useState<any[]>([]);
-
-const [achievementTopnotchers, setAchievementTopnotchers] =
-  useState<any[]>([]);
-
-const [achievementCollegeAchievements, setAchievementCollegeAchievements] =
-  useState<any[]>([]);
-const [clubsContent, setClubsContent] =
-  useState<any>({});
-
-const [clubsStatistics, setClubsStatistics] =
-  useState<ClubStatistic[]>([]);
-
-const [organizations, setOrganizations] =
-  useState<Organization[]>([]);
-
-const [committees, setCommittees] =
-  useState<Committee[]>([]);
-const [coreValueCards, setCoreValueCards] =
-  useState<CoreValueCard[]>([]);
-const [aboutStats, setAboutStats] =
-  useState<AboutStat[]>([]);
-  const [homeContent, setHomeContent] =
-  useState<any>({});
-  const [facultyMembers, setFacultyMembers] =
-  useState<FacultyMember[]>([]);
-  const [departmentContent, setDepartmentContent] =
-  useState<any>({});
-const [dean, setDean] =
-  useState<FacultyMember | null>(null);
-  const [colleges, setColleges] =
-  useState<any[]>([]);
-  const [departments, setDepartments] =
-  useState<any[]>([]);
-  const [aboutContent, setAboutContent] =
-  useState<any>({});
+  const [footerContent, setFooterContent] = useState<any>({});
+  const [footerQuickLinks, setFooterQuickLinks] = useState<any[]>([]);
+  const [footerSocialLinks, setFooterSocialLinks] = useState<any[]>([]);
+  const [contactContent, setContactContent] = useState<any>({});
+  const [officeHours, setOfficeHours] = useState<any[]>([]);
+  const [socialLinks, setSocialLinks] = useState<any[]>([]);
+  const [accreditationContent, setAccreditationContent] = useState<any>(null);
+  const [overviewItems, setOverviewItems] = useState<any[]>([]);
+  const [levels, setLevels] = useState<any[]>([]);
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [certifications, setCertifications] = useState<any[]>([]);
+  const [achievementPageContent, setAchievementPageContent] = useState<any>(null);
+  const [achievementBanner, setAchievementBanner] = useState<any>(null);
+  const [achievementBannerStats, setAchievementBannerStats] = useState<any[]>([]);
+  const [achievementStatistics, setAchievementStatistics] = useState<any[]>([]);
+  const [achievementTopnotchers, setAchievementTopnotchers] = useState<any[]>([]);
+  const [achievementCollegeAchievements, setAchievementCollegeAchievements] = useState<any[]>([]);
+  const [clubsContent, setClubsContent] = useState<any>({});
+  const [clubsStatistics, setClubsStatistics] = useState<ClubStatistic[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [committees, setCommittees] = useState<Committee[]>([]);
+  const [coreValueCards, setCoreValueCards] = useState<CoreValueCard[]>([]);
+  const [aboutStats, setAboutStats] = useState<AboutStat[]>([]);
+  const [homeContent, setHomeContent] = useState<any>({});
+  const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>([]);
+  const [departmentContent, setDepartmentContent] = useState<any>({});
+  const [dean, setDean] = useState<FacultyMember | null>(null);
+  const [colleges, setColleges] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [aboutContent, setAboutContent] = useState<any>({});
   const [showPreview, setShowPreview] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] =
-  useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [features, setFeatures] = useState<any[]>([]);
   const [stats, setStats] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [coreValues, setCoreValues] =
-  useState<CoreValue[]>([]);
-  const [researchContent, setResearchContent] =
-  useState<any>({});
-  const [researchPublications, setResearchPublications] =
-  useState<any[]>([]);
-  const [researchAwards, setResearchAwards] =
-  useState<any[]>([]);
-  const [featuredAlumni, setFeaturedAlumni] =
-  useState<any[]>([]);
-  const [activePage, setActivePage] =
-useState<
-  'homepage' |
-  'about' |
-  'departments' |
-  'clubs' |
-  'research' |
-    'achievements' |
-    'accreditation' |
-    'contact' |
-    'footer'
->('homepage');
-  const [modalMessage, setModalMessage] =
-  useState('');
+  const [coreValues, setCoreValues] = useState<CoreValue[]>([]);
+  const [researchContent, setResearchContent] = useState<any>({});
+  const [researchPublications, setResearchPublications] = useState<any[]>([]);
+  const [researchAwards, setResearchAwards] = useState<any[]>([]);
+  const [featuredAlumni, setFeaturedAlumni] = useState<any[]>([]);
+  const [activePage, setActivePage] = useState<
+    'homepage' | 'about' | 'departments' | 'clubs' | 'research' | 'achievements' | 'accreditation' | 'contact' | 'footer'
+  >('homepage');
+  const [modalMessage, setModalMessage] = useState('');
+
   useEffect(() => {
     loadHomepageContent();
     loadAboutContent();
@@ -5026,1002 +3997,536 @@ useState<
     loadAccreditationData();
     loadContactData();
     loadFooterData();
-
   }, []);
+
   const pages = [
-  {
-    key: 'homepage',
-    label: 'Homepage',
-  },
-  {
-    key: 'about',
-    label: 'About Page',
-  },
-  {
-    key: 'departments',
-    label: 'Departments Page',
-  },
-  {
-    key: 'clubs',
-    label: 'Clubs Page',
-  },
-  {
-    key: 'research',
-    label: 'Research Page',
-  },
-  {
-  key: 'achievements',
-  label: 'Achievements Page',
-},
-{
-  key: 'accreditation',
-  label: 'Accreditation Page',
-},
-{
-  key: 'contact',
-  label: 'Contact Page',
-},
-{
-  key: 'footer',
-  label: 'Footer'
-},
-];
+    { key: 'homepage', label: 'Homepage' },
+    { key: 'about', label: 'About Page' },
+    { key: 'departments', label: 'Departments Page' },
+    { key: 'clubs', label: 'Clubs Page' },
+    { key: 'research', label: 'Research Page' },
+    { key: 'achievements', label: 'Achievements Page' },
+    { key: 'accreditation', label: 'Accreditation Page' },
+    { key: 'contact', label: 'Contact Page' },
+    { key: 'footer', label: 'Footer' },
+  ];
+
   const pageTitles = {
-  homepage: 'Homepage',
-  about: 'About Page',
-  departments: 'Departments Page',
-  clubs: 'Clubs Page',
-  research: 'Research Page',
-  achievements: 'Achievements Page',
-  accreditation: 'Accreditation Page',
-  contact: 'Contact Page',
-  footer: 'Footer',
-};
+    homepage: 'Homepage',
+    about: 'About Page',
+    departments: 'Departments Page',
+    clubs: 'Clubs Page',
+    research: 'Research Page',
+    achievements: 'Achievements Page',
+    accreditation: 'Accreditation Page',
+    contact: 'Contact Page',
+    footer: 'Footer',
+  };
+
   const saveHandlers = {
-  homepage: saveHomePage,
-  about: saveAboutPage,
-  departments: saveDepartmentsPage,
-  clubs: saveClubsPage,
-  research: handleSaveResearchPage,
-  achievements: saveAchievementsPage,
-  accreditation : saveAccreditationPage,
-  contact: saveContactPage,
-  footer: saveFooterPage,
-};
-async function loadFooterData() {
-
-  const [
-    content,
-    quickLinks,
-    socialLinks
-  ] = await Promise.all([
-
-    footerService.getFooterContent(),
-
-    footerService.getQuickLinks(),
-
-    footerService.getSocialLinks()
-
-  ]);
-
-  setFooterContent(content || {});
-
-  setFooterQuickLinks(quickLinks || []);
-
-  setFooterSocialLinks(socialLinks || []);
-}
-async function saveFooterPage() {
-
-  try {
-
-    await footerService.saveFooterContent(
-      footerContent
-    );
-
-    await footerService.saveQuickLinks(
-      footerQuickLinks
-    );
-
-    await footerService.saveSocialLinks(
-      footerSocialLinks
-    );
-
-    setModalMessage(
-      'Footer Updated Successfully!'
-    );
-
-    setShowSuccessModal(true);
-
-  } catch (error) {
-
-    console.error(error);
-
-    setModalMessage(
-      'Failed to save footer'
-    );
-
-    setShowSuccessModal(true);
-  }
-}
-async function loadContactData() {
-
-  const [
-    content,
-    hours,
-    socials
-  ] = await Promise.all([
-
-    contactService.getPageContent(),
-
-    contactService.getOfficeHours(),
-
-    contactService.getSocialLinks(),
-
-  ]);
-
-  setContactContent(content);
-
-  setOfficeHours(hours || []);
-
-  setSocialLinks(socials || []);
-}
-async function saveContactPage() {
-  try {
-
-    await contactService.savePageContent(
-      contactContent
-    );
-
-    await contactService.saveOfficeHours(
-      officeHours
-    );
-
-    await contactService.saveSocialLinks(
-      socialLinks
-    );
-
-    setModalMessage(
-      'Contact Page Updated Successfully!'
-    );
-
-    setShowSuccessModal(true);
-
-  } catch (error) {
-
-    console.error(error);
-
-    setModalMessage(
-      'Failed to save contact page'
-    );
-
-    setShowSuccessModal(true);
-  }
-}
-async function saveAccreditationPage() {
-  try {
-
-    await accreditationService.savePageContent(
-      accreditationContent
-    );
-
-    await accreditationService.saveOverview(
-      overviewItems
-    );
-
-    await accreditationService.saveLevels(
-      levels
-    );
-
-    await accreditationService.savePrograms(
-      programs
-    );
-
-    await accreditationService.saveCertifications(
-      certifications
-    );
-
-    setModalMessage(
-      'Accreditation Page Updated Successfully!'
-    );
-
-    setShowSuccessModal(true);
-
-  } catch (error) {
-
-    console.error(error);
-
-    setModalMessage(
-      'Failed to save accreditation page'
-    );
-
-    setShowSuccessModal(true);
-  }
-}
-async function saveAchievementsPage() {
-  try {
-    await achievementsService.savePageContent(
-      achievementPageContent
-    );
-
-    await achievementsService.saveBanner(
-      achievementBanner
-    );
-
-    await achievementsService.saveBannerStats(
-      achievementBannerStats
-    );
-
-    await achievementsService.saveStatistics(
-      achievementStatistics
-    );
-
-    await achievementsService.saveTopnotchers(
-      achievementTopnotchers
-    );
-
-    await achievementsService.saveCollegeAchievements(
-      achievementCollegeAchievements
-    );
-
-    setModalMessage(
-      'Achievements Page Updated Successfully!'
-    );
-
-    setShowSuccessModal(true);
-
-  } catch (error) {
-    console.error(error);
-
-    setModalMessage(
-      'Failed to save achievements page'
-    );
-
-    setShowSuccessModal(true);
-  }
-}
-async function loadAccreditationData() {
-  const [
-    content,
-    overview,
-    levelData,
-    programData,
-    certificationData
-  ] = await Promise.all([
-    accreditationService.getPageContent(),
-    accreditationService.getOverview(),
-    accreditationService.getLevels(),
-    accreditationService.getPrograms(),
-    accreditationService.getCertifications(),
-  ]);
-
-  setAccreditationContent(content);
- setOverviewItems(overview || []);
-setLevels(levelData || []);
-setPrograms(programData || []);
-setCertifications(certificationData || []);
-}
-
-
-
-async function loadResearchPageData() {
-  const content =
-    await loadResearchContent();
-
-  const publications =
-    await loadResearchPublications();
-
-  const achievements =
-    await loadAwards();
-
-  const alumni =
-    await loadFeaturedAlumni();
-
-  setResearchContent(content);
-
-  setResearchPublications(publications);
-
-  setResearchAwards(achievements);
-  
-  setFeaturedAlumni(alumni);
-}
-
-async function handleSaveResearchPage() {
-
-  await saveResearchPage(
-    researchContent,
-    researchPublications,
-    researchAwards,
-    featuredAlumni
-  );
-
-  setModalMessage(
-    'Research Page Updated Successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-  function updateResearchField(
-  section: string,
-  field: string,
-  value: string
-) {
-  setResearchContent((prev: any) => ({
-    ...prev,
-    [section]: {
-      ...prev[section],
-      [field]: value,
-    },
-  }));
-}
-async function saveClubsPage() {
-
-  await saveClubsContent(
-    clubsContent
-  );
-
-  await saveClubStatistics(
-    clubsStatistics
-  );
-
-  await saveOrganizations(
-    organizations
-  );
-
-  await saveCommittees(
-    committees
-  );
-
-  setModalMessage(
-    'Clubs Page Updated Successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-
-function updateDepartmentField(
-  section: string,
-  field: string,
-  value: string
-) {
-  setDepartmentContent((prev: any) => ({
-    ...prev,
-    [section]: {
-      ...prev[section],
-      [field]: value,
-    },
-  }));
-}
-
-async function loadClubsContent() {
-
-  const { data } =
-    await getClubsContent();
-
-  const formatted:any = {};
-
-  data?.forEach(item => {
-    formatted[item.section_name] =
-      item;
-  });
-
-  setClubsContent(formatted);
-}
-
-async function loadClubsStatistics() {
-
-  const { data } =
-    await getClubStatistics();
-
-  setClubsStatistics(data || []);
-}
-
-async function loadOrganizations() {
-
-  const { data } =
-    await getOrganizations();
-
-  setOrganizations(data || []);
-}
-async function loadCommittees() {
-
-  const { data } =
-    await getCommittees();
-
-  setCommittees(data || []);
-}
-async function loadColleges() {
-
-  const { data } =
-    await getColleges();
-
-  setColleges(data || []);
-}
-  async function loadDepartmentContent() {
-
-  const { data } =
-    await getDepartmentContent();
-
-  const formatted:any = {};
-
-  data?.forEach(item => {
-    formatted[item.section_name] =
-      item;
-  });
-
-  setDepartmentContent(formatted);
-}
-  async function loadAboutStats() {
-
-  const { data } =
-    await getAboutStats();
-
-  setAboutStats(data || []);
-}
-  async function loadFeatures() {
-  const { data } = await getHomepageFeatures();
-
-  setFeatures(data || []);
-}
-async function loadCoreValues() {
-
-  const { data } =
-    await getCoreValues();
-
-  setCoreValues(data || []);
-}
-async function loadFacultyMembers() {
-
-  const { data } =
-    await getFacultyMembers();
-
-  setFacultyMembers(data || []);
-
-  const deanMember =
-    data?.find(
-      member =>
-        member.member_type === 'dean'
-    );
-
-  setDean(deanMember || null);
-}
-
-async function loadDepartments() {
-  const { data, error } = await supabase
-    .from('departments')
-    .select('*')
-    .order('name');
-
-  if (error) {
-    console.error(error);
-    return;
-  }
-
-  setDepartments(data || []);
-}
-async function loadStats() {
-  const { data } = await getHomepageStats();
-
-  setStats(data || []);
-}
-async function loadCoreValueCards() {
-
-  const { data } =
-    await getCoreValueCards();
-
-  setCoreValueCards(data || []);
-}
-async function loadAnnouncements() {
-  const { data } = await getHomepageAnnouncements();
-
-  setAnnouncements(data || []);
-}
-  async function loadHomepageContent() {
-  const { data } = await getHomepageContent();
-
-  const formatted: any = {};
-
-  data?.forEach(item => {
-    formatted[item.section_name] = item;
-  });
-
-  setHomeContent(formatted);
-}
-
-async function loadAboutContent() {
-
-  const { data } =
-    await getAboutContent();
-
-  const formatted:any = {};
-
-  data?.forEach(item => {
-    formatted[item.section_name] = {
-      title: item.title,
-      description: item.description,
-      content: item.content,
-      image: item.image,
-      badge_number: item.badge_number,
-    };
-  });
-
-  setAboutContent(formatted);
-}
-
-async function saveAboutPage() {
-  console.log(
-    "FACULTY BEFORE SAVE",
-    facultyMembers
-  );
-  await saveCoreValues(coreValues);
-
-  await saveAboutStats(aboutStats);
-
-  await saveFacultyMembers(
-  facultyMembers
-);
-
-  await saveCoreValueCards(
-    coreValueCards
-  );
-
-  const { error } =
-    await saveAboutContent(
-      aboutContent
-    );
-
-  if (error) {
-    setModalMessage(error.message);
-    setShowSuccessModal(true);
-    return;
-  }
-
-  setModalMessage(
-    'About Page Updated Successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-async function saveHomePage() {
-  const { error: contentError } =
-    await saveHomepageContent(homeContent);
-
-  if (contentError) {
-    setModalMessage(
-      `Error: ${contentError.message}`
-    );
-
-    setShowSuccessModal(true);
-    return;
-  }
-
-  const { error: statsError } =
-    await saveHomepageStats(stats);
-
-  if (statsError) {
-    setModalMessage(
-      `Error: ${statsError.message}`
-    );
-
-    setShowSuccessModal(true);
-    return;
-  }
-
-  setModalMessage(
-    'Homepage updated successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-async function saveDepartmentsPage() {
-
-  await saveColleges(
-    colleges
-  );
-
-  await saveDepartmentContent(
-    departmentContent
-  );
-
-  setModalMessage(
-    'Departments Page Updated Successfully!'
-  );
-
-  setShowSuccessModal(true);
-}
-  function updateHomepageField(
-  section: string,
-  field: string,
-  value: string
-) {
-  setHomeContent((prev: any) => ({
-    ...prev,
-    [section]: {
-      ...prev[section],
-      [field]: value,
-    },
-  }));
-}
-
-function updateAboutField(
-  section: string,
-  field: string,
-  value: string
-) {
-  setAboutContent((prev: any) => ({
-    ...prev,
-    [section]: {
-      ...prev[section],
-      [field]: value,
-    },
-  }));
-}
-
-function updateDean(
-  field: string,
-  value: any
-) {
-  setDean(prev => {
-    if (!prev) return prev;
-
-    return {
-      ...prev,
-      [field]: value
-    };
-  });
-}
-  
-async function loadAchievementsPage() {
-  try {
-    const [
-      pageContent,
-      banner,
-      bannerStats,
-      statistics,
-      topnotchers,
-      collegeAchievements
-    ] = await Promise.all([
-      achievementsService.getPageContent(),
-      achievementsService.getBanner(),
-      achievementsService.getBannerStats(),
-      achievementsService.getStatistics(),
-      achievementsService.getTopnotchers(),
-      achievementsService.getCollegeAchievements(),
+    homepage: saveHomePage,
+    about: saveAboutPage,
+    departments: saveDepartmentsPage,
+    clubs: saveClubsPage,
+    research: handleSaveResearchPage,
+    achievements: saveAchievementsPage,
+    accreditation: saveAccreditationPage,
+    contact: saveContactPage,
+    footer: saveFooterPage,
+  };
+
+  async function loadFooterData() {
+    const [content, quickLinks, socialLinks] = await Promise.all([
+      footerService.getFooterContent(),
+      footerService.getQuickLinks(),
+      footerService.getSocialLinks(),
     ]);
-
-    setAchievementPageContent(pageContent);
-    setAchievementBanner(banner);
-    setAchievementBannerStats(bannerStats || []);
-    setAchievementStatistics(statistics || []);
-    setAchievementTopnotchers(topnotchers || []);
-    setAchievementCollegeAchievements(
-      collegeAchievements || []
-    );
-
-  } catch (error) {
-    console.error(
-      'Failed loading achievements',
-      error
-    );
+    setFooterContent(content || {});
+    setFooterQuickLinks(quickLinks || []);
+    setFooterSocialLinks(socialLinks || []);
   }
-}
+
+  async function saveFooterPage() {
+    try {
+      await footerService.saveFooterContent(footerContent);
+      await footerService.saveQuickLinks(footerQuickLinks);
+      await footerService.saveSocialLinks(footerSocialLinks);
+      setModalMessage('Footer Updated Successfully!');
+      setShowSuccessModal(true);
+    } catch (error) {
+      setModalMessage('Failed to save footer');
+      setShowSuccessModal(true);
+    }
+  }
+
+  async function loadContactData() {
+    const [content, hours, socials] = await Promise.all([
+      contactService.getPageContent(),
+      contactService.getOfficeHours(),
+      contactService.getSocialLinks(),
+    ]);
+    setContactContent(content);
+    setOfficeHours(hours || []);
+    setSocialLinks(socials || []);
+  }
+
+  async function saveContactPage() {
+    try {
+      await contactService.savePageContent(contactContent);
+      await contactService.saveOfficeHours(officeHours);
+      await contactService.saveSocialLinks(socialLinks);
+      setModalMessage('Contact Page Updated Successfully!');
+      setShowSuccessModal(true);
+    } catch (error) {
+      setModalMessage('Failed to save contact page');
+      setShowSuccessModal(true);
+    }
+  }
+
+  async function saveAccreditationPage() {
+    try {
+      await accreditationService.savePageContent(accreditationContent);
+      await accreditationService.saveOverview(overviewItems);
+      await accreditationService.saveLevels(levels);
+      await accreditationService.savePrograms(programs);
+      await accreditationService.saveCertifications(certifications);
+      setModalMessage('Accreditation Page Updated Successfully!');
+      setShowSuccessModal(true);
+    } catch (error) {
+      setModalMessage('Failed to save accreditation page');
+      setShowSuccessModal(true);
+    }
+  }
+
+  async function saveAchievementsPage() {
+    try {
+      await achievementsService.savePageContent(achievementPageContent);
+      await achievementsService.saveBanner(achievementBanner);
+      await achievementsService.saveBannerStats(achievementBannerStats);
+      await achievementsService.saveStatistics(achievementStatistics);
+      await achievementsService.saveTopnotchers(achievementTopnotchers);
+      await achievementsService.saveCollegeAchievements(achievementCollegeAchievements);
+      setModalMessage('Achievements Page Updated Successfully!');
+      setShowSuccessModal(true);
+    } catch (error) {
+      setModalMessage('Failed to save achievements page');
+      setShowSuccessModal(true);
+    }
+  }
+
+  async function loadAccreditationData() {
+    const [content, overview, levelData, programData, certificationData] = await Promise.all([
+      accreditationService.getPageContent(),
+      accreditationService.getOverview(),
+      accreditationService.getLevels(),
+      accreditationService.getPrograms(),
+      accreditationService.getCertifications(),
+    ]);
+    setAccreditationContent(content);
+    setOverviewItems(overview || []);
+    setLevels(levelData || []);
+    setPrograms(programData || []);
+    setCertifications(certificationData || []);
+  }
+
+  async function loadResearchPageData() {
+    const content = await loadResearchContent();
+    const publications = await loadResearchPublications();
+    const achievements = await loadAwards();
+    const alumni = await loadFeaturedAlumni();
+    setResearchContent(content);
+    setResearchPublications(publications);
+    setResearchAwards(achievements);
+    setFeaturedAlumni(alumni);
+  }
+
+  async function handleSaveResearchPage() {
+    await saveResearchPage(researchContent, researchPublications, researchAwards, featuredAlumni);
+    setModalMessage('Research Page Updated Successfully!');
+    setShowSuccessModal(true);
+  }
+
+  function updateResearchField(section: string, field: string, value: string) {
+    setResearchContent((prev: any) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  }
+
+  async function saveClubsPage() {
+    await saveClubsContent(clubsContent);
+    await saveClubStatistics(clubsStatistics);
+    await saveOrganizations(organizations);
+    await saveCommittees(committees);
+    setModalMessage('Clubs Page Updated Successfully!');
+    setShowSuccessModal(true);
+  }
+
+  function updateDepartmentField(section: string, field: string, value: string) {
+    setDepartmentContent((prev: any) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  }
+
+  async function loadClubsContent() {
+    const { data } = await getClubsContent();
+    const formatted: any = {};
+    data?.forEach(item => { formatted[item.section_name] = item; });
+    setClubsContent(formatted);
+  }
+
+  async function loadClubsStatistics() {
+    const { data } = await getClubStatistics();
+    setClubsStatistics(data || []);
+  }
+
+  async function loadOrganizations() {
+    const { data } = await getOrganizations();
+    setOrganizations(data || []);
+  }
+
+  async function loadCommittees() {
+    const { data } = await getCommittees();
+    setCommittees(data || []);
+  }
+
+  async function loadColleges() {
+    const { data } = await getColleges();
+    setColleges(data || []);
+  }
+
+  async function loadDepartmentContent() {
+    const { data } = await getDepartmentContent();
+    const formatted: any = {};
+    data?.forEach(item => { formatted[item.section_name] = item; });
+    setDepartmentContent(formatted);
+  }
+
+  async function loadAboutStats() {
+    const { data } = await getAboutStats();
+    setAboutStats(data || []);
+  }
+
+  async function loadFeatures() {
+    const { data } = await getHomepageFeatures();
+    setFeatures(data || []);
+  }
+
+  async function loadCoreValues() {
+    const { data } = await getCoreValues();
+    setCoreValues(data || []);
+  }
+
+  async function loadFacultyMembers() {
+    const { data } = await getFacultyMembers();
+    setFacultyMembers(data || []);
+    const deanMember = data?.find(member => member.member_type === 'dean');
+    setDean(deanMember || null);
+  }
+
+  async function loadDepartments() {
+    const { data, error } = await supabase.from('departments').select('*').order('name');
+    if (!error && data) setDepartments(data || []);
+  }
+
+  async function loadStats() {
+    const { data } = await getHomepageStats();
+    setStats(data || []);
+  }
+
+  async function loadCoreValueCards() {
+    const { data } = await getCoreValueCards();
+    setCoreValueCards(data || []);
+  }
+
+  async function loadAnnouncements() {
+    const { data } = await getHomepageAnnouncements();
+    setAnnouncements(data || []);
+  }
+
+  async function loadHomepageContent() {
+    const { data } = await getHomepageContent();
+    const formatted: any = {};
+    data?.forEach(item => { formatted[item.section_name] = item; });
+    setHomeContent(formatted);
+  }
+
+  async function loadAboutContent() {
+    const { data } = await getAboutContent();
+    const formatted: any = {};
+    data?.forEach(item => {
+      formatted[item.section_name] = {
+        title: item.title,
+        description: item.description,
+        content: item.content,
+        image: item.image,
+        badge_number: item.badge_number,
+      };
+    });
+    setAboutContent(formatted);
+  }
+
+  async function saveAboutPage() {
+    await saveCoreValues(coreValues);
+    await saveAboutStats(aboutStats);
+    await saveFacultyMembers(facultyMembers);
+    await saveCoreValueCards(coreValueCards);
+    const { error } = await saveAboutContent(aboutContent);
+    if (error) {
+      setModalMessage(error.message);
+      setShowSuccessModal(true);
+      return;
+    }
+    setModalMessage('About Page Updated Successfully!');
+    setShowSuccessModal(true);
+  }
+
+  async function saveHomePage() {
+    const { error: contentError } = await saveHomepageContent(homeContent);
+    if (contentError) {
+      setModalMessage(`Error: ${contentError.message}`);
+      setShowSuccessModal(true);
+      return;
+    }
+    const { error: statsError } = await saveHomepageStats(stats);
+    if (statsError) {
+      setModalMessage(`Error: ${statsError.message}`);
+      setShowSuccessModal(true);
+      return;
+    }
+    setModalMessage('Homepage updated successfully!');
+    setShowSuccessModal(true);
+  }
+
+  async function saveDepartmentsPage() {
+    await saveColleges(colleges);
+    await saveDepartmentContent(departmentContent);
+    setModalMessage('Departments Page Updated Successfully!');
+    setShowSuccessModal(true);
+  }
+
+  function updateHomepageField(section: string, field: string, value: string) {
+    setHomeContent((prev: any) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  }
+
+  function updateAboutField(section: string, field: string, value: string) {
+    setAboutContent((prev: any) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value },
+    }));
+  }
+
+  async function loadAchievementsPage() {
+    try {
+      const [pageContent, banner, bannerStats, statistics, topnotchers, collegeAchievements] = await Promise.all([
+        achievementsService.getPageContent(),
+        achievementsService.getBanner(),
+        achievementsService.getBannerStats(),
+        achievementsService.getStatistics(),
+        achievementsService.getTopnotchers(),
+        achievementsService.getCollegeAchievements(),
+      ]);
+      setAchievementPageContent(pageContent);
+      setAchievementBanner(banner);
+      setAchievementBannerStats(bannerStats || []);
+      setAchievementStatistics(statistics || []);
+      setAchievementTopnotchers(topnotchers || []);
+      setAchievementCollegeAchievements(collegeAchievements || []);
+    } catch (error) {
+      console.error('Failed loading achievements', error);
+    }
+  }
+
   return (
-    
     <div>
-
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">
-  Landing Page Management
-</h1>
-
-<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mb-8">
-  {pages.map((page) => (
-    <button
-      key={page.key}
-      onClick={() => setActivePage(page.key as any)}
-      className={`
-        h-14
-        w-full
-        rounded-2xl
-        flex
-        items-center
-        justify-center
-        font-semibold
-        text-sm
-        transition-all
-        duration-300
-        border
-        shadow-sm
-
-        ${
-          activePage === page.key
-            ? `
-              bg-[#27469C]
-              text-white
-              border-[#27469C]
-              shadow-lg
-              scale-[1.02]
-            `
-            : `
-              bg-[#F8FBFF]
-              text-[#2563EB]
-              border-[#D6E4FF]
-              hover:bg-[#EEF5FF]
-              hover:border-[#7BA8FF]
-              hover:shadow-md
-            `
-        }
-      `}
-    >
-      {page.label}
-    </button>
-  ))}
-</div>
-      {activePage === "homepage" && (
-  <HomePageEditor
-    homeContent={homeContent}
-    updateHomepageField={updateHomepageField}
-    features={features}
-    setFeatures={setFeatures}
-    stats={stats}
-    setStats={setStats}
-    announcements={announcements}
-    setAnnouncements={setAnnouncements}
-  />
-)}
-{activePage === "about" && (
-  <AboutPageEditor
-    aboutContent={aboutContent}
-    updateAboutField={updateAboutField}
-    coreValues={coreValues}
-    setCoreValues={setCoreValues}
-    facultyMembers={facultyMembers}
-    setFacultyMembers={setFacultyMembers}
-    departments={departments}
-    aboutStats={aboutStats}
-    setAboutStats={setAboutStats}
-    coreValueCards={coreValueCards}
-    setCoreValueCards={setCoreValueCards}
-  />
-)}
-  {activePage === "departments" && (
-  <DepartmentsPageEditor
-    departmentContent={departmentContent}
-    updateDepartmentField={updateDepartmentField}
-    colleges={colleges}
-    setColleges={setColleges}
-  />
-)}
-
-{activePage === "clubs" && (
-  <ClubsPageEditor
-    clubsContent={clubsContent}
-    updateClubsField={updateClubsField}
-    statistics={clubsStatistics}
-    setStatistics={setClubsStatistics}
-    organizations={organizations}
-    setOrganizations={setOrganizations}
-    committees={committees}
-    setCommittees={setCommittees}
-  />
-)}
-
-{activePage === "research" && (
-  <ResearchPageEditor
-    researchContent={researchContent}
-    updateResearchField={updateResearchField}
-    publications={researchPublications}
-    setPublications={setResearchPublications}
-    awards={researchAwards}
-    setAwards={setResearchAwards}
-    alumni={featuredAlumni}
-    setAlumni={setFeaturedAlumni}
-  />
-)}
-{activePage === "achievements" && (
-  <AchievementsPageEditor
-    content={achievementPageContent}
-    setContent={setAchievementPageContent}
-    statistics={achievementStatistics}
-    setStatistics={setAchievementStatistics}
-    topnotchers={achievementTopnotchers}
-    setTopnotchers={setAchievementTopnotchers}
-    achievements={achievementCollegeAchievements}
-    setAchievements={setAchievementCollegeAchievements}
-    banner={achievementBanner}
-    setBanner={setAchievementBanner}
-    bannerStats={achievementBannerStats}
-    setBannerStats={setAchievementBannerStats}
-  />
-)}
-{activePage === "accreditation" && (
-  <AccreditationPageEditor
-    content={accreditationContent}
-    setContent={setAccreditationContent}
-    overview={overviewItems}
-    setOverview={setOverviewItems}
-    levels={levels}
-    setLevels={setLevels}
-    programs={programs}
-    setPrograms={setPrograms}
-    certifications={certifications}
-    setCertifications={setCertifications}
-  />
-)}
-{activePage === "contact" && (
-  <ContactPageEditor
-    content={contactContent}
-    setContent={setContactContent}
-    officeHours={officeHours}
-    setOfficeHours={setOfficeHours}
-    socialLinks={socialLinks}
-    setSocialLinks={setSocialLinks}
-  />
-)}
-{activePage === "footer" && (
-  <FooterPageEditor
-    content={footerContent}
-    setContent={setFooterContent}
-    quickLinks={footerQuickLinks}
-    setQuickLinks={setFooterQuickLinks}
-    socialLinks={footerSocialLinks}
-    setSocialLinks={setFooterSocialLinks}
-  />
-)}
-
-      <div className="flex gap-4">
-
-        <div className="flex gap-4">
-
-  <button
-  onClick={() => setShowPreview(true)}
-  className="px-6 py-3 bg-gray-700 text-white rounded-lg"
->
-  Preview {pageTitles[activePage]}
-</button>
-
-  <button
-  onClick={() =>
-    saveHandlers[activePage]()
-  }
-  className="px-6 py-3 bg-blue-600 text-white rounded-lg"
->
-  Save {pageTitles[activePage]}
-</button>
-
-</div>
-
+      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Landing Page Management</h1>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mb-8">
+        {pages.map((page) => (
+          <button
+            key={page.key}
+            onClick={() => setActivePage(page.key as any)}
+            className={`h-14 w-full rounded-2xl flex items-center justify-center font-semibold text-sm transition-all duration-300 border shadow-sm ${
+              activePage === page.key
+                ? 'bg-[#27469C] text-white border-[#27469C] shadow-lg scale-[1.02]'
+                : 'bg-[#F8FBFF] text-[#2563EB] border-[#D6E4FF] hover:bg-[#EEF5FF] hover:border-[#7BA8FF] hover:shadow-md'
+            }`}
+          >
+            {page.label}
+          </button>
+        ))}
       </div>
-      {showSuccessModal && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
 
-      <h2 className="text-xl font-bold mb-4">
-        Success
-      </h2>
+      {activePage === "homepage" && (
+        <HomePageEditor
+          homeContent={homeContent}
+          updateHomepageField={updateHomepageField}
+          features={features}
+          setFeatures={setFeatures}
+          stats={stats}
+          setStats={setStats}
+          announcements={announcements}
+          setAnnouncements={setAnnouncements}
+        />
+      )}
+      {activePage === "about" && (
+        <AboutPageEditor
+          aboutContent={aboutContent}
+          updateAboutField={updateAboutField}
+          coreValues={coreValues}
+          setCoreValues={setCoreValues}
+          facultyMembers={facultyMembers}
+          setFacultyMembers={setFacultyMembers}
+          departments={departments}
+          aboutStats={aboutStats}
+          setAboutStats={setAboutStats}
+          coreValueCards={coreValueCards}
+          setCoreValueCards={setCoreValueCards}
+        />
+      )}
+      {activePage === "departments" && (
+        <DepartmentsPageEditor
+          departmentContent={departmentContent}
+          updateDepartmentField={updateDepartmentField}
+          colleges={colleges}
+          setColleges={setColleges}
+        />
+      )}
+      {activePage === "clubs" && (
+        <ClubsPageEditor
+          clubsContent={clubsContent}
+          updateClubsField={updateClubsField}
+          statistics={clubsStatistics}
+          setStatistics={setClubsStatistics}
+          organizations={organizations}
+          setOrganizations={setOrganizations}
+          committees={committees}
+          setCommittees={setCommittees}
+        />
+      )}
+      {activePage === "research" && (
+        <ResearchPageEditor
+          researchContent={researchContent}
+          updateResearchField={updateResearchField}
+          publications={researchPublications}
+          setPublications={setResearchPublications}
+          awards={researchAwards}
+          setAwards={setResearchAwards}
+          alumni={featuredAlumni}
+          setAlumni={setFeaturedAlumni}
+        />
+      )}
+      {activePage === "achievements" && (
+        <AchievementsPageEditor
+          content={achievementPageContent}
+          setContent={setAchievementPageContent}
+          statistics={achievementStatistics}
+          setStatistics={setAchievementStatistics}
+          topnotchers={achievementTopnotchers}
+          setTopnotchers={setAchievementTopnotchers}
+          achievements={achievementCollegeAchievements}
+          setAchievements={setAchievementCollegeAchievements}
+          banner={achievementBanner}
+          setBanner={setAchievementBanner}
+          bannerStats={achievementBannerStats}
+          setBannerStats={setAchievementBannerStats}
+        />
+      )}
+      {activePage === "accreditation" && (
+        <AccreditationPageEditor
+          content={accreditationContent}
+          setContent={setAccreditationContent}
+          overview={overviewItems}
+          setOverview={setOverviewItems}
+          levels={levels}
+          setLevels={setLevels}
+          programs={programs}
+          setPrograms={setPrograms}
+          certifications={certifications}
+          setCertifications={setCertifications}
+        />
+      )}
+      {activePage === "contact" && (
+        <ContactPageEditor
+          content={contactContent}
+          setContent={setContactContent}
+          officeHours={officeHours}
+          setOfficeHours={setOfficeHours}
+          socialLinks={socialLinks}
+          setSocialLinks={setSocialLinks}
+        />
+      )}
+      {activePage === "footer" && (
+        <FooterPageEditor
+          content={footerContent}
+          setContent={setFooterContent}
+          quickLinks={footerQuickLinks}
+          setQuickLinks={setFooterQuickLinks}
+          socialLinks={footerSocialLinks}
+          setSocialLinks={setFooterSocialLinks}
+        />
+      )}
 
-      <p className="text-gray-600 mb-6">
-        {modalMessage}
-      </p>
-
-      <div className="flex justify-end">
-        <button
-          onClick={() => setShowSuccessModal(false)}
-          className="px-5 py-2 bg-blue-600 text-white rounded-lg"
-        >
-          OK
+      <div className="flex gap-4 mt-6">
+        <button onClick={() => setShowPreview(true)} className="px-6 py-3 bg-gray-700 text-white rounded-lg">
+          Preview {pageTitles[activePage]}
+        </button>
+        <button onClick={() => saveHandlers[activePage]()} className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+          Save {pageTitles[activePage]}
         </button>
       </div>
 
-    </div>
-  </div>
-)}
-{showPreview && (
- <div className="fixed inset-0 z-50 bg-black/50">
-  <div className="bg-white h-screen flex flex-col">
-      {/* Preview Header */}
-<div className="sticky top-0 z-50 flex items-center justify-between bg-white border-b border-gray-200 px-6 py-3">
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Success</h2>
+            <p className="text-gray-600 mb-6">{modalMessage}</p>
+            <div className="flex justify-end">
+              <button onClick={() => setShowSuccessModal(false)} className="px-5 py-2 bg-blue-600 text-white rounded-lg">OK</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-  {/* Title */}
-  <div>
-    <h2 className="text-lg font-semibold text-[#1E3A8A]">
-      Website Preview
-    </h2>
-    <p className="text-xs text-gray-500">
-      Previewing: <span className="capitalize">{activePage}</span>
-    </p>
-  </div>
-
-  {/* Close */}
-  <button
-    onClick={() => setShowPreview(false)}
-    className="px-4 py-2 bg-[#1E3A8A] text-white text-sm font-medium rounded-lg hover:bg-[#172554] transition"
-  >
-    Close Preview
-  </button>
-
-</div>
-<div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-      {activePage === 'homepage' ? (
-        <HomePage
-          previewMode
-          previewContent={homeContent}
-          previewFeatures={features}
-          previewStats={stats}
-          previewAnnouncements={announcements}
-        />
-      ) : activePage === 'about' ? (
-        <AboutPage
-  previewMode
-  previewContent={aboutContent}
-  previewStats={aboutStats}
-  previewFacultyMembers={facultyMembers}
-  previewCoreValues={coreValues}
-  previewCoreValueCards={coreValueCards}
-  previewDepartments={departments}
-/>
-      ) : activePage === 'departments' ? (
-        <DepartmentsPage
-          previewMode
-          previewContent={departmentContent}
-          previewColleges={colleges}
-        />
-      ) : activePage === 'clubs' ? (
-        <ClubsPage
-          previewMode
-          previewContent={clubsContent}
-          previewStatistics={clubsStatistics}
-          previewOrganizations={organizations}
-          previewCommittees={committees}
-        />
-      ) : activePage === 'research' ? (
-        <ResearchPage
-          previewMode
-          previewContent={researchContent}
-          previewPublications={researchPublications}
-          previewAchievements={researchAwards}
-          previewAlumni={featuredAlumni}
-        />
-      ) : activePage === 'achievements' ? (
-  <AchievementsPage
-    previewMode
-    previewContent={achievementPageContent}
-    previewBanner={achievementBanner}
-    previewBannerStats={achievementBannerStats}
-    previewStatistics={achievementStatistics}
-    previewTopnotchers={achievementTopnotchers}
-    previewCollegeAchievements={
-      achievementCollegeAchievements
-    }
-  />
-) : activePage === 'accreditation' ? (
-  <AccreditationPage
-    previewMode
-    previewContent={accreditationContent}
-    previewOverview={overviewItems}
-    previewLevels={levels}
-    previewPrograms={programs}
-    previewCertifications={certifications}
-  />
-)  : activePage === 'footer' ? (
-<Footer
-    previewMode
-    previewContent={footerContent}
-    previewQuickLinks={footerQuickLinks}
-    previewSocialLinks={footerSocialLinks}
-  />
-) : activePage === 'contact' ? (
-  <ContactPage
-    previewMode
-  previewContent={contactContent}
-  previewOfficeHours={officeHours}
-  previewSocialLinks={socialLinks}
-  />
-) : null}
-
-
-    </div>
-  </div>
-  </div>
-)}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 bg-black/50">
+          <div className="bg-white h-screen flex flex-col">
+            <div className="sticky top-0 z-50 flex items-center justify-between bg-white border-b border-gray-200 px-6 py-3">
+              <div>
+                <h2 className="text-lg font-semibold text-[#1E3A8A]">Website Preview</h2>
+                <p className="text-xs text-gray-500">Previewing: <span className="capitalize">{activePage}</span></p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-[#1E3A8A] text-white text-sm font-medium rounded-lg hover:bg-[#172554] transition">
+                Close Preview
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              {activePage === 'homepage' ? (
+                <HomePage previewMode previewContent={homeContent} previewFeatures={features} previewStats={stats} previewAnnouncements={announcements} />
+              ) : activePage === 'about' ? (
+                <AboutPage previewMode previewContent={aboutContent} previewStats={aboutStats} previewFacultyMembers={facultyMembers} previewCoreValues={coreValues} previewCoreValueCards={coreValueCards} previewDepartments={departments} />
+              ) : activePage === 'departments' ? (
+                <DepartmentsPage previewMode previewContent={departmentContent} previewColleges={colleges} />
+              ) : activePage === 'clubs' ? (
+                <ClubsPage previewMode previewContent={clubsContent} previewStatistics={clubsStatistics} previewOrganizations={organizations} previewCommittees={committees} />
+              ) : activePage === 'research' ? (
+                <ResearchPage previewMode previewContent={researchContent} previewPublications={researchPublications} previewAchievements={researchAwards} previewAlumni={featuredAlumni} />
+              ) : activePage === 'achievements' ? (
+                <AchievementsPage previewMode previewContent={achievementPageContent} previewBanner={achievementBanner} previewBannerStats={achievementBannerStats} previewStatistics={achievementStatistics} previewTopnotchers={achievementTopnotchers} previewCollegeAchievements={achievementCollegeAchievements} />
+              ) : activePage === 'accreditation' ? (
+                <AccreditationPage previewMode previewContent={accreditationContent} previewOverview={overviewItems} previewLevels={levels} previewPrograms={programs} previewCertifications={certifications} />
+              ) : activePage === 'footer' ? (
+                <Footer previewMode previewContent={footerContent} previewQuickLinks={footerQuickLinks} previewSocialLinks={footerSocialLinks} />
+              ) : activePage === 'contact' ? (
+                <ContactPage previewMode previewContent={contactContent} previewOfficeHours={officeHours} previewSocialLinks={socialLinks} />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6055,7 +4560,6 @@ function SystemSettings() {
     <div>
       <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">System Settings</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Academic Year */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Academic Year Setup</h2>
           <div className="space-y-4">
@@ -6075,7 +4579,6 @@ function SystemSettings() {
           </div>
         </div>
 
-        {/* Programs Management */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Programs Management</h2>
           <div className="space-y-2 mb-4">
@@ -6110,7 +4613,6 @@ function SystemSettings() {
           </div>
         </div>
 
-        {/* Backup */}
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 md:col-span-2">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Backup & Maintenance</h2>
           <div className="flex flex-col sm:flex-row gap-3">
