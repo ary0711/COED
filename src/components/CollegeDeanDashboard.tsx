@@ -2758,13 +2758,34 @@ interface ConsolidatedReportRow {
   departmentName: string;
   accomplishmentReport: AccomplishmentReportRow | null;
   extensionReport: ExtensionReportRow | null;
-  effectiveStatus: 'not_started' | 'draft' | 'submitted' | 'approved' | 'rejected';
+  effectiveStatus: 'not_started' | 'submitted' | 'approved' | 'rejected';
   effectiveProgress: number;
   lastUpdated: string | null;
 }
 
+function getCurrentQuarterString(): string {
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  const quarterNum = Math.floor(month / 3) + 1;
+  return `Q${quarterNum} ${year}`;
+}
+
+function getDynamicQuarterOptions(): string[] {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear + 1, currentYear, currentYear - 1];
+  const options: string[] = [];
+  years.forEach((y) => {
+    ['Q4', 'Q3', 'Q2', 'Q1'].forEach((q) => {
+      options.push(`${q} ${y}`);
+    });
+  });
+  return options;
+}
+
 function parseQuarterYear(selected: string): { quarter: string; year: string } {
   const [q, y] = selected.split(' ');
+  const currentYear = String(new Date().getFullYear());
   const qMap: Record<string, string> = {
     Q1: '1st',
     Q2: '2nd',
@@ -2773,13 +2794,12 @@ function parseQuarterYear(selected: string): { quarter: string; year: string } {
   };
   return {
     quarter: qMap[q] || '1st',
-    year: y || '2026',
+    year: y || currentYear,
   };
 }
 
 const REPORT_STATUS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   not_started: { label: 'Not Started', color: '#991B1B', bg: '#FEE2E2' },
-  draft:       { label: 'Draft',       color: '#6B7280', bg: '#F3F4F6' },
   submitted:   { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
   approved:    { label: 'Approved',    color: '#065F46', bg: '#D1FAE5' },
   rejected:    { label: 'Rejected',    color: '#B91C1C', bg: '#FEE2E2' },
@@ -2788,8 +2808,8 @@ const REPORT_STATUS_BADGE: Record<string, { label: string; color: string; bg: st
 function ReportsAnalytics() {
   const [rows, setRows] = useState<ConsolidatedReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [quarterSelect, setQuarterSelect] = useState('Q1 2026');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'not_started' | 'draft' | 'submitted' | 'approved' | 'rejected'>('all');
+  const [quarterSelect, setQuarterSelect] = useState<string>(() => getCurrentQuarterString());
+  const [statusFilter, setStatusFilter] = useState<'all' | 'not_started' | 'submitted' | 'approved' | 'rejected'>('all');
   const [roleFilter, setRoleFilter] = useState<'all' | 'faculty' | 'department_chair'>('all');
   const [search, setSearch] = useState('');
 
@@ -2816,6 +2836,8 @@ function ReportsAnalytics() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
   const [showInfoModal, setShowInfoModal] = useState(false);
+
+  const dynamicQuarterOptions = getDynamicQuarterOptions();
 
   const showInfo = (title: string, message: string) => {
     setModalTitle(title);
@@ -2899,15 +2921,16 @@ function ReportsAnalytics() {
         extensionList = (dbExt as any) ?? [];
       }
 
+      // Exclude draft status
       const accMap = new Map(
         accomplishmentList
-          .filter((r) => r.quarter === quarter && String(r.year) === String(year))
+          .filter((r) => r.quarter === quarter && String(r.year) === String(year) && r.status !== 'draft')
           .map((r) => [r.submitted_by, r])
       );
 
       const extMap = new Map(
         extensionList
-          .filter((r) => r.quarter === quarter && String(r.year) === String(year))
+          .filter((r) => r.quarter === quarter && String(r.year) === String(year) && r.status !== 'draft')
           .map((r) => [r.submitted_by, r])
       );
 
@@ -2925,7 +2948,6 @@ function ReportsAnalytics() {
           if (statuses.includes('submitted')) effectiveStatus = 'submitted';
           else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
           else if (statuses.includes('approved')) effectiveStatus = 'approved';
-          else if (statuses.includes('draft')) effectiveStatus = 'draft';
 
           const validProgress = [acc?.progress, ext?.progress].filter((v) => typeof v === 'number') as number[];
           progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
@@ -3097,7 +3119,6 @@ function ReportsAnalytics() {
     }
   };
 
-  // ── Multi-criteria Filtering (Search, Role, Status) ──
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
 
@@ -3119,7 +3140,6 @@ function ReportsAnalytics() {
 
   const submittedCount = rows.filter((r) => r.effectiveStatus === 'submitted').length;
   const approvedCount  = rows.filter((r) => r.effectiveStatus === 'approved').length;
-  const inProgressCount = rows.filter((r) => r.effectiveStatus === 'draft').length;
   const notStartedCount = rows.filter((r) => r.effectiveStatus === 'not_started').length;
   const overallProgress = rows.length
     ? Math.round(rows.reduce((sum, r) => sum + r.effectiveProgress, 0) / rows.length)
@@ -3143,14 +3163,14 @@ function ReportsAnalytics() {
           onChange={(e) => setQuarterSelect(e.target.value)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
-          {['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'].map((q) => (
+          {dynamicQuarterOptions.map((q) => (
             <option key={q} value={q}>{q}</option>
           ))}
         </select>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mb-6">
+      {/* Summary cards (without Draft) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
           <p className="text-xs font-medium text-gray-500 mb-1">Overall Progress</p>
           <p className="text-2xl sm:text-3xl font-bold text-[#1E3A8A]">{overallProgress}%</p>
@@ -3162,10 +3182,6 @@ function ReportsAnalytics() {
         <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEF3C7' }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#92400E', opacity: 0.8 }}>Pending Review</p>
           <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#92400E' }}>{submittedCount}</p>
-        </div>
-        <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#F3F4F6' }}>
-          <p className="text-xs font-medium mb-1" style={{ color: '#4B5563', opacity: 0.8 }}>Draft / In Progress</p>
-          <p className="text-2xl sm:text-3xl font-bold" style={{ color: '#4B5563' }}>{inProgressCount}</p>
         </div>
         <div className="rounded-xl p-4 sm:p-5" style={{ backgroundColor: '#FEE2E2' }}>
           <p className="text-xs font-medium mb-1" style={{ color: '#991B1B', opacity: 0.8 }}>Not Started</p>
@@ -3219,7 +3235,7 @@ function ReportsAnalytics() {
         )}
       </div>
 
-      {/* Filters (Search, Role, Status) */}
+      {/* Filters (Search, Role, Status - without Draft) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
         <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center">
           <div className="relative flex-1 min-w-[200px]">
@@ -3245,7 +3261,7 @@ function ReportsAnalytics() {
               <option value="department_chair">Department Chairs</option>
             </select>
 
-            {/* Status Filter */}
+            {/* Status Filter (without Draft) */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -3253,7 +3269,6 @@ function ReportsAnalytics() {
             >
               <option value="all">All Status</option>
               <option value="not_started">Not Started</option>
-              <option value="draft">Draft</option>
               <option value="submitted">Pending Review</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
@@ -3481,7 +3496,7 @@ function ReportsAnalytics() {
                     { title: 'PI 4: Syllabus Submission', rows: (selectedReport.report as AccomplishmentReportRow).pi4_data, cols: [['name_faculty','Faculty'],['courses_taught','Courses'],['status_syllabus','Status']] },
                     { title: 'PI 7: Trainings/Seminars', rows: (selectedReport.report as AccomplishmentReportRow).pi7_data, cols: [['name_faculty','Faculty'],['title_training','Title'],['date','Date'],['venue','Venue']] },
                     { title: 'Research & Publications', rows: (selectedReport.report as AccomplishmentReportRow).mfo3_pi3_data, cols: [['title_research','Title'],['proponents','Proponents'],['name_publication','Publication']] },
-                  ].filter(s => s.rows && s.rows.length > 0).map(section => (
+                  ].filter((s) => s.rows && s.rows.length > 0).map(section => (
                     <div key={section.title}>
                       <p className="font-semibold text-sm text-gray-800 mb-1">{section.title}</p>
                       <GenericJsonTable rows={section.rows!} columns={section.cols.map(([key, label]) => ({ key, label }))} />
