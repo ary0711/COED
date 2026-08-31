@@ -139,8 +139,7 @@ export default function App() {
   // LOGOUT
   // =====================================================
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user_role');
+    localStorage.clear(); // Clears all session keys (token, user_role, userId, etc.)
     setCurrentUser(null);
     setCurrentRole(null);
     setAppMode('public');

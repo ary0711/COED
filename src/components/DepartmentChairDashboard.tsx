@@ -104,8 +104,19 @@ interface AccountApplicant {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: DepartmentChairDashboardProps) {
+
+export function DepartmentChairDashboard({ 
+  activeMenuItem, 
+  setActiveMenuItem, 
+  onLogout 
+}: DepartmentChairDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   // Kuhaon ang userId, fullName, ug program gikan sa JWT token, susama sa
   // Faculty Dashboard, para magamit sa Chair's own Reports (Accomplishment /
@@ -126,6 +137,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
         userRole="Department Chair"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       <div className="hidden lg:block w-64 shrink-0" />
@@ -141,7 +153,12 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={userName} departmentNames={departmentNames} />
+              <DashboardHeader 
+                userRole="Department Chair" 
+                userName={userName} 
+                departmentNames={departmentNames} 
+                onLogout={handleInternalLogout}
+              />
             </div>
           </div>
         </div>
@@ -239,11 +256,7 @@ const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
 
-// calendar_events.event_type is constrained to meeting/activity/deadline/holiday/exam
-// (nullable). The modal's color swatches are kept exactly as-is, so each color is
-// mapped to the closest matching type for storage; the one swatch with no natural
-// match (#1E3A8A) is simply stored with a null event_type and falls back to that
-// same color on redraw, so nothing is visually lost.
+
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -267,18 +280,8 @@ function colorForEvent(ev: CalendarEvent): string {
   return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
 }
 
-// Writes (insert/delete) go through the Express backend so the request is
-// authenticated with the chair's JWT and the insert runs with the service
-// role, bypassing RLS. Reads still go straight through Supabase since the
-// calendar is open for anyone to view.
-// Adjust this if your Express server runs on a different host/port.
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
 
-// event_date / end_date are stored as "YYYY-MM-DDTHH:mm:ss" (no timezone
-// suffix), so Postgres interprets them using the column/session timezone
-// instead of shifting the calendar date around the browser's local offset.
-// We always pull the date portion back out the same way, via string slicing,
-// so the day a user picks is always the day it lands on and shows up on.
 function dateOnly(isoLike: string): string {
   return isoLike.split('T')[0];
 }

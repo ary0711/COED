@@ -101,8 +101,14 @@ interface StudentDashboardProps {
   userName?: string;
 }
 
-export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Student' }: StudentDashboardProps) {
+export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
   const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
 
   // ── Logged-in student's profile data ──
@@ -184,6 +190,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
         userRole="Student"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       {/* ── Desktop spacer so content clears the fixed sidebar ── */}
@@ -207,6 +214,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
               <DashboardHeader
                 userRole="Student"
                 userName={profile?.full_name ?? userName}
+                onLogout={handleInternalLogout}
               />
             </div>
           </div>

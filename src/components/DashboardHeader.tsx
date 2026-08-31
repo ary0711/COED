@@ -14,11 +14,12 @@ interface DashboardHeaderProps {
   userName: string;
   onMenuClick?: () => void;
   departmentNames?: string[];
+  onLogout?: () => void;
 }
 
 const NOTIFICATIONS_API_URL = 'http://localhost:5000/api/notifications';
 
-export function DashboardHeader({ userRole, userName, onMenuClick, departmentNames }: DashboardHeaderProps) {
+export function DashboardHeader({ userRole, userName, onMenuClick, departmentNames, onLogout, }: DashboardHeaderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);

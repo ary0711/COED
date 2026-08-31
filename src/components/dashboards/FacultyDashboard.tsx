@@ -57,8 +57,14 @@ import {
 
 const ME_API_URL = 'http://localhost:5000/api/me';
 
-export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Faculty' }: FacultyDashboardProps) {
+export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   // Kuhaon ang userId gikan sa JWT token
   const token = localStorage.getItem('token');
@@ -105,6 +111,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           userRole="Faculty Member"
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          onLogout={handleInternalLogout}
         />
 
         {/* ── Desktop spacer so content clears the fixed sidebar ── */}
@@ -125,7 +132,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <Menu className="w-5 h-5" />
               </button>
               <div className="flex-1">
-                <DashboardHeader userRole="Faculty" userName={userName} departmentNames={departmentNames} />
+                <DashboardHeader userRole="Faculty" userName={userName} onLogout={handleInternalLogout} departmentNames={departmentNames} />
               </div>
             </div>
           </div>
