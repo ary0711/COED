@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LogOut } from 'lucide-react';
 import { CollegeDeanDashboard } from './components/CollegeDeanDashboard';
 import { DepartmentChairDashboard } from './components/DepartmentChairDashboard';
 import { FacultyDashboard } from './components/dashboards/FacultyDashboard';
@@ -40,6 +41,7 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<UserRole>(null);
   const [currentPage, setCurrentPage] = useState<PublicPage>('home');
   const [activeMenuItem, setActiveMenuItem] = useState('dashboard');
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const [currentUser, setCurrentUser] = useState<{
     username: string;
@@ -51,7 +53,6 @@ export default function App() {
   // RESTORE SESSION ON BROWSER REFRESH
   // =====================================================
   useEffect(() => {
-    // 1. Handle Password Reset Route
     if (window.location.pathname === '/reset-password') {
       setAppMode('public');
       setCurrentPage('reset-password');
@@ -59,7 +60,6 @@ export default function App() {
       return;
     }
 
-    // 2. Restore User & Dashboard State from stored session token
     const token = localStorage.getItem('token');
     const savedRole = localStorage.getItem('user_role') as UserRole;
 
@@ -67,7 +67,7 @@ export default function App() {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const rawRole = (payload.role || savedRole || '').toLowerCase();
-        
+
         let normalizedRole: UserRole = null;
         if (rawRole === 'dean') normalizedRole = 'dean';
         else if (rawRole === 'chair' || rawRole === 'department_chair') normalizedRole = 'chair';
@@ -88,8 +88,7 @@ export default function App() {
         }
       } catch (error) {
         console.error('Failed to parse active session:', error);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user_role');
+        localStorage.clear();
         setAppMode('public');
       }
     } else {
@@ -129,7 +128,7 @@ export default function App() {
     if (normalizedRole) {
       localStorage.setItem('user_role', normalizedRole);
     }
-    
+
     setCurrentRole(normalizedRole);
     setAppMode('dashboard');
     setActiveMenuItem('dashboard');
@@ -139,11 +138,16 @@ export default function App() {
   // LOGOUT
   // =====================================================
   const handleLogout = () => {
-    localStorage.clear(); // Clears all session keys (token, user_role, userId, etc.)
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
+    localStorage.clear();
     setCurrentUser(null);
     setCurrentRole(null);
     setAppMode('public');
     setCurrentPage('home');
+    setShowLogoutModal(false);
   };
 
   // =====================================================
@@ -295,6 +299,37 @@ export default function App() {
           userName={currentUser?.username ?? 'Alumni'}
           idNumber={currentUser?.idNumber ?? ''}
         />
+      )}
+
+      {/* GLOBAL LOGOUT CONFIRMATION MODAL */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-7 h-7 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Sign Out</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Are you sure you want to end your current session and return to the home page?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmLogout}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors shadow-sm"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
