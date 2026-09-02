@@ -1095,10 +1095,37 @@ function CalendarActivities() {
 
   const emptyForm = { title: '', date: '', description: '', event_type: 'meeting', target_department_id: '' };
   const [form, setForm] = useState(emptyForm);
-  const [formError, setFormError] = useState('');
-
+  
+const [formError, setFormError] = useState('');
+const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
   const getToken = () => localStorage.getItem('token');
+const DEPARTMENT_COLORS: Record<string, string> = {
+  'All Departments': '#3B82F6', // Blue
+  'Bachelor of Technology and Livelihood Education Program': '#EAB308', // Yellow
+  'Bachelor of Education Major in Math & English Program': '#F97316', // Orange
+  'Bachelor of Elementary Education Program': '#22C55E', // Green
+};
 
+const getDepartmentColor = (name: string) => {
+  if (name === 'All Departments') return '#3B82F6';
+
+  if (name.toLowerCase().includes('technology and livelihood')) {
+    return '#EAB308';
+  }
+
+  if (
+    name.toLowerCase().includes('math') &&
+    name.toLowerCase().includes('english')
+  ) {
+    return '#F97316';
+  }
+
+  if (name.toLowerCase().includes('elementary education')) {
+    return '#22C55E';
+  }
+
+  return '#8B5CF6';
+};
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
@@ -1386,9 +1413,12 @@ function CalendarActivities() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
+        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+          <div
+  className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+  onClick={() => setShowModal(false)}
+/>
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add New Event</h2>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
@@ -1405,14 +1435,133 @@ function CalendarActivities() {
                 <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department</label>
-                <select value={form.target_department_id} onChange={e => setForm({ ...form, target_department_id: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">All Departments</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </div>
+              <div className="relative">
+  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+    Target Department
+  </label>
+
+  {/* Selected Department */}
+  <button
+    type="button"
+    onClick={() =>
+      setShowDepartmentDropdown(!showDepartmentDropdown)
+    }
+    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between text-left"
+  >
+    <div className="flex items-center gap-2 min-w-0">
+      <span
+        className="w-3 h-3 rounded-full flex-shrink-0"
+        style={{
+          backgroundColor: getDepartmentColor(
+            form.target_department_id
+              ? departments.find(
+                  d => d.id === form.target_department_id
+                )?.name || ''
+              : 'All Departments'
+          )
+        }}
+      />
+
+      <span className="truncate">
+        {form.target_department_id
+          ? departments.find(
+              d => d.id === form.target_department_id
+            )?.name || 'All Departments'
+          : 'All Departments'}
+      </span>
+    </div>
+
+    <svg
+      className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${
+        showDepartmentDropdown ? 'rotate-180' : ''
+      }`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 9l-7 7-7-7"
+      />
+    </svg>
+  </button>
+
+  {/* Dropdown */}
+  {showDepartmentDropdown && (
+    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+      
+      {/* All Departments */}
+      <button
+        type="button"
+        onClick={() => {
+          setForm({
+            ...form,
+            target_department_id: ''
+          });
+          setShowDepartmentDropdown(false);
+        }}
+        className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
+          form.target_department_id === ''
+            ? 'bg-blue-50'
+            : ''
+        }`}
+      >
+        <span
+          className="w-3 h-3 rounded-full flex-shrink-0"
+          style={{ backgroundColor: '#3B82F6' }}
+        />
+
+        <span className="truncate">
+          All Departments
+        </span>
+
+        {form.target_department_id === '' && (
+          <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
+        )}
+      </button>
+
+      {/* Departments */}
+      {departments.map(d => {
+        const isSelected =
+          form.target_department_id === d.id;
+
+        return (
+          <button
+            key={d.id}
+            type="button"
+            onClick={() => {
+              setForm({
+                ...form,
+                target_department_id: d.id
+              });
+              setShowDepartmentDropdown(false);
+            }}
+            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
+              isSelected ? 'bg-blue-50' : ''
+            }`}
+          >
+            <span
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{
+                backgroundColor: getDepartmentColor(d.name)
+              }}
+            />
+
+            <span className="truncate">
+              {d.name}
+            </span>
+
+            {isSelected && (
+              <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  )}
+</div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
