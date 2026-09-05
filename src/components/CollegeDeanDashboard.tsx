@@ -144,6 +144,32 @@ interface Inquiry {
   } | null;
 }
 
+// ── ADD THIS ──
+interface ContactMessage {
+  id: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  category: string | null;
+  message: string;
+  reply: string | null;
+  status: 'pending' | 'answered';
+  created_at: string;
+  replied_at: string | null;
+}
+
+const CONTACT_API_TABLE = 'contact_messages';
+
+const CONTACT_INQUIRY_CATEGORIES = [
+  'General',
+  'Admissions',
+  'Partnership',
+  'Feedback',
+  'Technical',
+  'Other',
+];
+
+
 // ─── Role & Status Config ─────────────────────────────────────────────────────
 const ROLE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   dean:             { label: 'Dean',        color: '#1E3A8A', bg: '#DBEAFE', icon: <ShieldCheck   className="w-3 h-3" /> },
@@ -2707,11 +2733,14 @@ function InquiriesManagement() {
     { id: 'contact' as const, label: 'Contact Messages',  pending: pendingContactCount },
   ];
 
-  // Reusable column so both sides stay visually identical and easy to scan
+  // Reusable column so all three sections stay visually identical and easy to scan
   const InquiryColumn = ({
+    title, pendingCount,
     accentColor, accentBg, list, statusFilter, setStatusFilter,
     categoryFilter, setCategoryFilter, categories, onOpen, emptyIcon: EmptyIcon,
   }: {
+    title: string;
+    pendingCount: number;
     accentColor: string;
     accentBg: string;
     list: (Inquiry | ContactMessage)[];
@@ -2833,54 +2862,85 @@ function InquiriesManagement() {
           </button>
         </div>
 
-      {/* Two-column layout: Alumni (left) / Student (right) — full height, scrollable independently */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
-        <div className="min-h-[420px] lg:min-h-0">
-          <InquiryColumn
-            accentColor="#1D4ED8"
-            accentBg="#DBEAFE"
-            list={studentInquiries}
-            statusFilter={studentFilter}
-            setStatusFilter={setStudentFilter}
-            categoryFilter={studentCategoryFilter}
-            setCategoryFilter={setStudentCategoryFilter}
-            categories={STUDENT_INQUIRY_CATEGORIES}
-            onOpen={openInquiry}
-            emptyIcon={Inbox}
-          />
+        {/* Section tabs — lets the dean switch between Student / Alumni / Contact */}
+        <div className="flex gap-2 flex-wrap">
+          {SECTION_TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSection(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                activeSection === tab.id ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {tab.label}
+              {tab.pending > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{tab.pending}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Active section panel — full height, scrollable independently */}
+      <div className="grid grid-cols-1 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
+        {activeSection === 'student' && (
+          <div className="min-h-[420px] lg:min-h-0">
+            <InquiryColumn
+              title="Student Inquiries"
+              pendingCount={pendingStudentCount}
+              accentColor="#1D4ED8"
+              accentBg="#DBEAFE"
+              list={studentInquiries}
+              statusFilter={studentFilter}
+              setStatusFilter={setStudentFilter}
+              categoryFilter={studentCategoryFilter}
+              setCategoryFilter={setStudentCategoryFilter}
+              categories={STUDENT_INQUIRY_CATEGORIES}
+              onOpen={openInquiry}
+              emptyIcon={Inbox}
+            />
+          </div>
         )}
         {activeSection === 'alumni' && (
-          <InquiryColumn
-            accentColor="#BE185D"
-            accentBg="#FCE7F3"
-            list={alumniInquiries}
-            statusFilter={alumniFilter}
-            setStatusFilter={setAlumniFilter}
-            categoryFilter={alumniCategoryFilter}
-            setCategoryFilter={setAlumniCategoryFilter}
-            categories={ALUMNI_INQUIRY_CATEGORIES}
-            onOpen={openInquiry}
-            emptyIcon={Inbox}
-          />
+          <div className="min-h-[420px] lg:min-h-0">
+            <InquiryColumn
+              title="Alumni Inquiries"
+              pendingCount={pendingAlumniCount}
+              accentColor="#BE185D"
+              accentBg="#FCE7F3"
+              list={alumniInquiries}
+              statusFilter={alumniFilter}
+              setStatusFilter={setAlumniFilter}
+              categoryFilter={alumniCategoryFilter}
+              setCategoryFilter={setAlumniCategoryFilter}
+              categories={ALUMNI_INQUIRY_CATEGORIES}
+              onOpen={openInquiry}
+              emptyIcon={Inbox}
+            />
+          </div>
         )}
         {activeSection === 'contact' && (
-          <InquiryColumn
-            accentColor="#059669"
-            accentBg="#D1FAE5"
-            list={contactMessages}
-            statusFilter={contactFilter}
-            setStatusFilter={setContactFilter}
-            categoryFilter={contactCategoryFilter}
-            setCategoryFilter={setContactCategoryFilter}
-            categories={CONTACT_INQUIRY_CATEGORIES}
-            onOpen={openContact}
-            emptyIcon={MessageCircle}
-          />
+          <div className="min-h-[420px] lg:min-h-0">
+            <InquiryColumn
+              title="Contact Messages"
+              pendingCount={pendingContactCount}
+              accentColor="#059669"
+              accentBg="#D1FAE5"
+              list={contactMessages}
+              statusFilter={contactFilter}
+              setStatusFilter={setContactFilter}
+              categoryFilter={contactCategoryFilter}
+              setCategoryFilter={setContactCategoryFilter}
+              categories={CONTACT_INQUIRY_CATEGORIES}
+              onOpen={openContact}
+              emptyIcon={MessageCircle}
+            />
+          </div>
         )}
       </div>
 
       {/* Reply modal */}
-      {activeInquiry && (
+      {(activeInquiry || activeContact) && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal} />
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
@@ -2900,25 +2960,25 @@ function InquiriesManagement() {
                     {activeIsContact ? 'Contact Form' : activeInquiry!.sender_role === 'alumni' ? 'Alumni' : 'Student'}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
-                    {activeItem.category || 'Other'}
+                    {activeItem?.category || 'Other'}
                   </span>
                 </div>
-                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem.subject}</h2>
+                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem?.subject}</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
                   From {activeIsContact ? activeContact!.sender_name : (activeInquiry!.profiles?.full_name ?? activeInquiry!.sender_name)}
                   {activeIsContact && activeContact!.sender_email && <> · {activeContact!.sender_email}</>}
                   {!activeIsContact && activeInquiry!.profiles?.id_number && <> · {activeInquiry!.profiles.id_number}</>}
-                  {' '}· {formatDate(activeItem.created_at)}
+                  {' '}· {activeItem ? formatDate(activeItem.created_at) : ''}
                 </p>
               </div>
               <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem.message}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem?.message}</p>
             </div>
 
-            {activeItem.reply && (
+            {activeItem?.reply && (
               <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100">
                 <p className="text-xs font-semibold text-blue-700 mb-1">Previous reply</p>
                 <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeItem.reply}</p>
