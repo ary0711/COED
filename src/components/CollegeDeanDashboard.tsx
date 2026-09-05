@@ -74,6 +74,12 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  User,
+  Lock,
+  Bell,
+  LogOut,
+  Info,
+  KeyRound,
 } from 'lucide-react';
 
 import { supabase } from '../supabaseClient';
@@ -579,11 +585,6 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   return (
     <div className="flex flex-col h-full">
 
-      <div className="mb-4 pb-4 border-b border-gray-200">
-        <p className="text-gray-500 text-sm">
-          Welcome back! Here's your college overview
-        </p>
-      </div>
 
       {/* ============================================
           SUMMARY CARDS
@@ -2789,16 +2790,49 @@ function AlumniTracer() {
 // can browse and reply to both groups without switching pages. Each
 // inquiry now carries a `category` (set by the sender) shown as a badge
 // in the list and a category filter dropdown per column.
+// Add 'contact' as a possible sender_role/source if you extend the Inquiry type,
+// or use this separate interface for contact form submissions.
+interface ContactMessage {
+  id: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  category: string | null;
+  message: string;
+  reply: string | null;
+  status: 'pending' | 'answered';
+  created_at: string;
+  replied_at: string | null;
+}
+
+const CONTACT_INQUIRY_CATEGORIES = [
+  'General',
+  'Admissions',
+  'Partnership',
+  'Feedback',
+  'Technical Issue',
+  'Other',
+];
+
+const CONTACT_API_TABLE = 'contact_messages';
+
 function InquiriesManagement() {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
+  const [contactMessages, setContactMessages]   = useState<ContactMessage[]>([]);
   const [loading, setLoading]                   = useState(true);
+
+  const [activeSection, setActiveSection] = useState<'student' | 'alumni' | 'contact'>('student');
+
   const [studentFilter, setStudentFilter]       = useState<'all' | 'pending' | 'answered'>('all');
   const [alumniFilter, setAlumniFilter]         = useState<'all' | 'pending' | 'answered'>('all');
+  const [contactFilter, setContactFilter]       = useState<'all' | 'pending' | 'answered'>('all');
   const [studentCategoryFilter, setStudentCategoryFilter] = useState('all');
   const [alumniCategoryFilter, setAlumniCategoryFilter]   = useState('all');
+  const [contactCategoryFilter, setContactCategoryFilter] = useState('all');
 
   const [activeInquiry, setActiveInquiry] = useState<Inquiry | null>(null);
+  const [activeContact, setActiveContact] = useState<ContactMessage | null>(null);
   const [replyText, setReplyText]         = useState('');
   const [sending, setSending]             = useState(false);
 
@@ -2813,17 +2847,30 @@ function InquiriesManagement() {
       setStudentInquiries(data.filter((i: Inquiry) => i.sender_role === 'student'));
       setAlumniInquiries(data.filter((i: Inquiry) => i.sender_role === 'alumni'));
     }
+
+    const { data: contactData, error: contactError } = await supabase
+      .from(CONTACT_API_TABLE)
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!contactError && contactData) {
+      setContactMessages(contactData);
+    }
+
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
 
-  // Realtime updates so new inquiries show up without a manual refresh
+  // Realtime updates so new inquiries/contact messages show up without a manual refresh
   useEffect(() => {
     const channelName = `inquiries-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => {
+        fetchInquiries();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: CONTACT_API_TABLE }, () => {
         fetchInquiries();
       })
       .subscribe();
@@ -2832,27 +2879,49 @@ function InquiriesManagement() {
 
   const openInquiry = (inquiry: Inquiry) => {
     setActiveInquiry(inquiry);
+    setActiveContact(null);
     setReplyText(inquiry.reply ?? '');
   };
-  const closeInquiry = () => { setActiveInquiry(null); setReplyText(''); };
+  const openContact = (contact: ContactMessage) => {
+    setActiveContact(contact);
+    setActiveInquiry(null);
+    setReplyText(contact.reply ?? '');
+  };
+  const closeModal = () => { setActiveInquiry(null); setActiveContact(null); setReplyText(''); };
 
   const sendReply = async () => {
-    if (!activeInquiry || !replyText.trim()) return;
+    if (!replyText.trim()) return;
     setSending(true);
     try {
-      const { error } = await supabase
-        .from('inquiries')
-        .update({
-          reply: replyText.trim(),
-          status: 'answered',
-          replied_at: new Date().toISOString(),
-        })
-        .eq('id', activeInquiry.id);
+      if (activeInquiry) {
+        const { error } = await supabase
+          .from('inquiries')
+          .update({
+            reply: replyText.trim(),
+            status: 'answered',
+            replied_at: new Date().toISOString(),
+          })
+          .eq('id', activeInquiry.id);
 
-      if (!error) {
-        await notifyRole(activeInquiry.sender_role, 'Your inquiry has been answered', replyText.trim());
-        closeInquiry();
-        fetchInquiries();
+        if (!error) {
+          await notifyRole(activeInquiry.sender_role, 'Your inquiry has been answered', replyText.trim());
+          closeModal();
+          fetchInquiries();
+        }
+      } else if (activeContact) {
+        const { error } = await supabase
+          .from(CONTACT_API_TABLE)
+          .update({
+            reply: replyText.trim(),
+            status: 'answered',
+            replied_at: new Date().toISOString(),
+          })
+          .eq('id', activeContact.id);
+
+        if (!error) {
+          closeModal();
+          fetchInquiries();
+        }
       }
     } finally {
       setSending(false);
@@ -2864,8 +2933,8 @@ function InquiriesManagement() {
       timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
     });
 
-  const filterList = (
-    list: Inquiry[],
+  const filterList = <T extends { status: string; category?: string | null }>(
+    list: T[],
     statusF: 'all' | 'pending' | 'answered',
     categoryF: string,
   ) => {
@@ -2877,41 +2946,33 @@ function InquiriesManagement() {
 
   const pendingStudentCount = studentInquiries.filter(i => i.status === 'pending').length;
   const pendingAlumniCount  = alumniInquiries.filter(i => i.status === 'pending').length;
+  const pendingContactCount = contactMessages.filter(i => i.status === 'pending').length;
 
-  // Reusable column so both sides stay visually identical and easy to scan
+  const SECTION_TABS = [
+    { id: 'student' as const, label: 'Student Inquiries', pending: pendingStudentCount },
+    { id: 'alumni'  as const, label: 'Alumni Inquiries',  pending: pendingAlumniCount },
+    { id: 'contact' as const, label: 'Contact Messages',  pending: pendingContactCount },
+  ];
+
+  // Reusable column so all three sections stay visually identical and easy to scan
   const InquiryColumn = ({
-    title, accentColor, accentBg, list, statusFilter, setStatusFilter,
-    categoryFilter, setCategoryFilter, categories, pendingCount, emptyIcon: EmptyIcon,
+    accentColor, accentBg, list, statusFilter, setStatusFilter,
+    categoryFilter, setCategoryFilter, categories, onOpen, emptyIcon: EmptyIcon,
   }: {
-    title: string;
     accentColor: string;
     accentBg: string;
-    list: Inquiry[];
+    list: (Inquiry | ContactMessage)[];
     statusFilter: 'all' | 'pending' | 'answered';
     setStatusFilter: (f: 'all' | 'pending' | 'answered') => void;
     categoryFilter: string;
     setCategoryFilter: (c: string) => void;
     categories: string[];
-    pendingCount: number;
+    onOpen: (item: any) => void;
     emptyIcon: React.ComponentType<{ className?: string }>;
   }) => {
-    const shown = filterList(list, statusFilter, categoryFilter);
+    const shown = filterList(list as any, statusFilter, categoryFilter);
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-        {/* Column header */}
-        <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3" style={{ backgroundColor: accentBg }}>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
-            <h2 className="font-bold text-gray-900 text-sm sm:text-base">{title}</h2>
-            <span className="text-xs font-semibold text-gray-500 bg-white/70 px-2 py-0.5 rounded-full">{list.length}</span>
-          </div>
-          {pendingCount > 0 && (
-            <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full text-white flex-shrink-0" style={{ backgroundColor: accentColor }}>
-              <CircleDot className="w-3 h-3" /> {pendingCount} new
-            </span>
-          )}
-        </div>
-
         {/* Filter tabs + category dropdown */}
         <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50 space-y-2">
           <div className="flex gap-1">
@@ -2931,7 +2992,7 @@ function InquiriesManagement() {
           <select
             value={categoryFilter}
             onChange={e => setCategoryFilter(e.target.value)}
-            className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+            className="w-full sm:w-64 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
           >
             <option value="all">All Categories</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -2939,29 +3000,29 @@ function InquiriesManagement() {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 content-start">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+            <div className="col-span-full flex flex-col items-center justify-center h-full text-gray-400 py-10">
               <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2" />
-              <p className="text-xs">Loading inquiries...</p>
+              <p className="text-xs">Loading...</p>
             </div>
           ) : shown.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
+            <div className="col-span-full flex flex-col items-center justify-center h-full text-gray-300 py-10">
               <EmptyIcon className="w-10 h-10 mb-2 opacity-40" />
-              <p className="text-sm text-gray-400">No matching inquiries</p>
+              <p className="text-sm text-gray-400">No matching items</p>
             </div>
           ) : (
-            shown.map(inquiry => (
+            shown.map((item: any) => (
               <button
-                key={inquiry.id}
-                onClick={() => openInquiry(inquiry)}
+                key={item.id}
+                onClick={() => onOpen(item)}
                 className="w-full text-left p-3 sm:p-3.5 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors group"
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <span className="font-semibold text-gray-900 text-sm truncate">
-                    {inquiry.profiles?.full_name ?? inquiry.sender_name}
+                    {item.profiles?.full_name ?? item.sender_name}
                   </span>
-                  {inquiry.status === 'pending' ? (
+                  {item.status === 'pending' ? (
                     <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
                   ) : (
                     <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
@@ -2969,15 +3030,18 @@ function InquiriesManagement() {
                 </div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                    {inquiry.category || 'Other'}
+                    {item.category || 'Other'}
                   </span>
-                  {inquiry.profiles?.id_number && (
-                    <span className="text-[10px] font-mono text-gray-400">{inquiry.profiles.id_number}</span>
+                  {item.profiles?.id_number && (
+                    <span className="text-[10px] font-mono text-gray-400">{item.profiles.id_number}</span>
+                  )}
+                  {item.sender_email && (
+                    <span className="text-[10px] font-mono text-gray-400 truncate">{item.sender_email}</span>
                   )}
                 </div>
-                <p className="text-xs font-medium text-gray-700 truncate mb-0.5">{inquiry.subject}</p>
-                <p className="text-xs text-gray-400 truncate">{inquiry.message}</p>
-                <p className="text-[10px] text-gray-300 mt-1.5">{formatDate(inquiry.created_at)}</p>
+                <p className="text-xs font-medium text-gray-700 truncate mb-0.5">{item.subject}</p>
+                <p className="text-xs text-gray-400 truncate">{item.message}</p>
+                <p className="text-[10px] text-gray-300 mt-1.5">{formatDate(item.created_at)}</p>
               </button>
             ))
           )}
@@ -2986,38 +3050,49 @@ function InquiriesManagement() {
     );
   };
 
+  const activeItem = activeInquiry ?? activeContact;
+  const activeIsContact = !!activeContact;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="mb-4 pb-4 border-b border-gray-200 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Inquiries</h1>
-          <p className="text-gray-500 text-sm mt-1">Answer questions from students and alumni in one place</p>
+      <div className="mb-4 pb-4 border-b border-gray-200">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Inquiries</h1>
+            <p className="text-gray-500 text-sm mt-1">Answer questions from students, alumni, and website visitors</p>
+          </div>
+          <button onClick={fetchInquiries} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
-        <button onClick={fetchInquiries} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
-          <RefreshCw className="w-4 h-4" />
-        </button>
+
+        {/* Sliding tab switcher */}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {SECTION_TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSection(tab.id)}
+              className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                activeSection === tab.id ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+              {tab.pending > 0 && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  activeSection === tab.id ? 'bg-[#1E3A8A] text-white' : 'bg-gray-300 text-gray-700'
+                }`}>
+                  {tab.pending}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Two-column layout: Alumni (left) / Student (right) — full height, scrollable independently */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
-        <div className="min-h-[420px] lg:min-h-0">
+      {/* Active section — full width, single column */}
+      <div className="flex-1 min-h-0 lg:max-h-[calc(100vh-260px)]">
+        {activeSection === 'student' && (
           <InquiryColumn
-            title="Alumni Inquiries"
-            accentColor="#BE185D"
-            accentBg="#FCE7F3"
-            list={alumniInquiries}
-            statusFilter={alumniFilter}
-            setStatusFilter={setAlumniFilter}
-            categoryFilter={alumniCategoryFilter}
-            setCategoryFilter={setAlumniCategoryFilter}
-            categories={ALUMNI_INQUIRY_CATEGORIES}
-            pendingCount={pendingAlumniCount}
-            emptyIcon={Inbox}
-          />
-        </div>
-        <div className="min-h-[420px] lg:min-h-0">
-          <InquiryColumn
-            title="Student Inquiries"
             accentColor="#1D4ED8"
             accentBg="#DBEAFE"
             list={studentInquiries}
@@ -3026,50 +3101,83 @@ function InquiriesManagement() {
             categoryFilter={studentCategoryFilter}
             setCategoryFilter={setStudentCategoryFilter}
             categories={STUDENT_INQUIRY_CATEGORIES}
-            pendingCount={pendingStudentCount}
+            onOpen={openInquiry}
             emptyIcon={Inbox}
           />
-        </div>
+        )}
+        {activeSection === 'alumni' && (
+          <InquiryColumn
+            accentColor="#BE185D"
+            accentBg="#FCE7F3"
+            list={alumniInquiries}
+            statusFilter={alumniFilter}
+            setStatusFilter={setAlumniFilter}
+            categoryFilter={alumniCategoryFilter}
+            setCategoryFilter={setAlumniCategoryFilter}
+            categories={ALUMNI_INQUIRY_CATEGORIES}
+            onOpen={openInquiry}
+            emptyIcon={Inbox}
+          />
+        )}
+        {activeSection === 'contact' && (
+          <InquiryColumn
+            accentColor="#059669"
+            accentBg="#D1FAE5"
+            list={contactMessages}
+            statusFilter={contactFilter}
+            setStatusFilter={setContactFilter}
+            categoryFilter={contactCategoryFilter}
+            setCategoryFilter={setContactCategoryFilter}
+            categories={CONTACT_INQUIRY_CATEGORIES}
+            onOpen={openContact}
+            emptyIcon={MessageCircle}
+          />
+        )}
       </div>
 
-      {/* Reply modal */}
-      {activeInquiry && (
+      {/* Reply modal — shared by all three sections */}
+      {activeItem && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeInquiry} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal} />
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between mb-4 gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-2">
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                    style={activeInquiry.sender_role === 'alumni'
-                      ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
-                      : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }}
+                    style={
+                      activeIsContact
+                        ? { backgroundColor: '#D1FAE5', color: '#059669' }
+                        : activeInquiry!.sender_role === 'alumni'
+                          ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
+                          : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }
+                    }
                   >
-                    {activeInquiry.sender_role === 'alumni' ? 'Alumni' : 'Student'}
+                    {activeIsContact ? 'Contact Form' : activeInquiry!.sender_role === 'alumni' ? 'Alumni' : 'Student'}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
-                    {activeInquiry.category || 'Other'}
+                    {activeItem.category || 'Other'}
                   </span>
                 </div>
-                <h2 className="text-lg font-bold text-gray-900 truncate">{activeInquiry.subject}</h2>
+                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem.subject}</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  From {activeInquiry.profiles?.full_name ?? activeInquiry.sender_name}
-                  {activeInquiry.profiles?.id_number && <> · {activeInquiry.profiles.id_number}</>}
-                  {' '}· {formatDate(activeInquiry.created_at)}
+                  From {activeIsContact ? activeContact!.sender_name : (activeInquiry!.profiles?.full_name ?? activeInquiry!.sender_name)}
+                  {activeIsContact && activeContact!.sender_email && <> · {activeContact!.sender_email}</>}
+                  {!activeIsContact && activeInquiry!.profiles?.id_number && <> · {activeInquiry!.profiles.id_number}</>}
+                  {' '}· {formatDate(activeItem.created_at)}
                 </p>
               </div>
-              <button onClick={closeInquiry} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
+              <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeInquiry.message}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem.message}</p>
             </div>
 
-            {activeInquiry.reply && (
+            {activeItem.reply && (
               <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100">
                 <p className="text-xs font-semibold text-blue-700 mb-1">Previous reply</p>
-                <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeInquiry.reply}</p>
+                <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeItem.reply}</p>
               </div>
             )}
 
@@ -3085,7 +3193,7 @@ function InquiriesManagement() {
             </div>
 
             <div className="flex gap-3 mt-5">
-              <button onClick={closeInquiry} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={closeModal} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
               <button
                 onClick={sendReply}
                 disabled={sending || !replyText.trim()}
@@ -5490,11 +5598,59 @@ async function loadAchievementsPage() {
 }
 
 // ─── System Settings ──────────────────────────────────────────────────────────
+const NOTIF_DEFAULTS = {
+  inquiries: true,
+  reports: true,
+  announcements: true,
+  staffUpdates: false,
+  systemNotifs: true,
+};
+
+interface Delegate {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+const SETTINGS_TABS = [
+  { id: 'profile',       label: 'Profile Information', icon: User },
+  { id: 'security',      label: 'Password & Security',  icon: KeyRound },
+  { id: 'notifications', label: 'Notifications',        icon: Bell },
+  { id: 'academic',      label: 'Academic Settings',     icon: GraduationCap },
+  { id: 'delegates',     label: 'Delegate Access',       icon: UserCheck },
+  { id: 'backup',        label: 'Backup & Maintenance',  icon: Settings },
+  { id: 'account',       label: 'Account Actions',       icon: LogOut },
+] as const;
+
+type SettingsTabId = typeof SETTINGS_TABS[number]['id'];
+
+function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <button
+        onClick={onChange}
+        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${checked ? 'translate-x-4' : ''}`} />
+      </button>
+    </div>
+  );
+}
+
 function SystemSettings() {
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
+
   const [programs, setPrograms] = useState<string[]>([...DEFAULT_PROGRAMS]);
   const [newProgram, setNewProgram] = useState('');
-  const [editIdx, setEditIdx]       = useState<number | null>(null);
-  const [editVal, setEditVal]       = useState('');
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editVal, setEditVal] = useState('');
+  const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
+
+  const [delegates, setDelegates] = useState<Delegate[]>([]);
+  const [delegateEmail, setDelegateEmail] = useState('');
+  const [delegateError, setDelegateError] = useState('');
 
   const addProgram = () => {
     const trimmed = newProgram.trim().toUpperCase();
@@ -5506,90 +5662,271 @@ function SystemSettings() {
   const deleteProgram = (idx: number) => setPrograms(prev => prev.filter((_, i) => i !== idx));
 
   const startEdit = (idx: number) => { setEditIdx(idx); setEditVal(programs[idx]); };
-  const saveEdit  = () => {
+  const saveEdit = () => {
     if (editIdx === null) return;
     const trimmed = editVal.trim().toUpperCase();
     if (!trimmed) return;
-    setPrograms(prev => prev.map((p, i) => i === editIdx ? trimmed : p));
+    setPrograms(prev => prev.map((p, i) => (i === editIdx ? trimmed : p)));
     setEditIdx(null);
   };
 
+  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
+    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const addDelegate = () => {
+    const trimmed = delegateEmail.trim();
+    setDelegateError('');
+    if (!trimmed) { setDelegateError('Please enter an email address.'); return; }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) { setDelegateError('Please enter a valid email address.'); return; }
+    if (delegates.some(d => d.email.toLowerCase() === trimmed.toLowerCase())) {
+      setDelegateError('This person is already a delegate.');
+      return;
+    }
+    setDelegates(prev => [...prev, { id: Date.now().toString(), name: trimmed.split('@')[0], email: trimmed, role: 'Delegate' }]);
+    setDelegateEmail('');
+  };
+
+  const removeDelegate = (id: string) => setDelegates(prev => prev.filter(d => d.id !== id));
+
+  const activeLabel = SETTINGS_TABS.find(t => t.id === activeTab)?.label ?? '';
+
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">System Settings</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Academic Year */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Academic Year Setup</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Current Academic Year</label>
-              <input type="text" defaultValue="2025-2026" className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
-              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base">
-                <option>Second Semester</option>
-                <option>First Semester</option>
-                <option>Summer</option>
-              </select>
-            </div>
-            <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Update Settings</button>
+    <div className="flex flex-col h-full">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-gray-400 text-xs sm:text-sm mt-0.5">Manage your account and system preferences.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors shadow-sm">
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 sm:gap-6 flex-1 min-h-0">
+        {/* Left nav */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 sm:p-3 h-fit lg:h-full">
+          <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+            {SETTINGS_TABS.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-colors flex-shrink-0 ${
+                    isActive ? 'bg-[#EFF3FC] text-[#1E3A8A]' : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Programs Management */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Programs Management</h2>
-          <div className="space-y-2 mb-4">
-            {programs.map((prog, idx) => (
-              <div key={prog} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
-                {editIdx === idx ? (
-                  <>
-                    <input value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                      className="flex-1 px-2 py-1 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditIdx(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm font-semibold text-gray-800">{prog}</span>
-                    <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => deleteProgram(idx)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </>
-                )}
+        {/* Content panel */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 overflow-y-auto">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-1">{activeLabel}</h2>
+          <p className="text-xs sm:text-sm text-gray-400 mb-6">
+            {activeTab === 'profile'       && 'Update your name, email, and role.'}
+            {activeTab === 'security'      && 'Change your password and manage device sessions.'}
+            {activeTab === 'notifications' && 'Choose which alerts you receive.'}
+            {activeTab === 'academic'      && 'Set the academic year, semester, and manage programs.'}
+            {activeTab === 'delegates'     && 'Give trusted staff access to act on your behalf.'}
+            {activeTab === 'backup'        && 'Create backups and run system maintenance.'}
+            {activeTab === 'account'       && 'Log out of your account.'}
+          </p>
+
+          {/* ── Profile Information ── */}
+          {activeTab === 'profile' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Full Name</label>
+                <input type="text" placeholder="Full name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]" />
               </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input value={newProgram} onChange={e => setNewProgram(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addProgram()}
-              placeholder="New program (e.g. BSED-SCIENCE)"
-              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={addProgram} className="px-3 sm:px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1">
-              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Backup */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 md:col-span-2">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Backup & Maintenance</h2>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button className="flex-1 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
-              <Download className="w-5 h-5" /> Create Backup
-            </button>
-            <button className="flex-1 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
-              <Settings className="w-5 h-5" /> System Maintenance
-            </button>
-          </div>
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              Last backup: February 13, 2026 at 2:00 AM
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Email Address</label>
+                <input type="email" placeholder="name@ctu.edu.ph" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Position/Role</label>
+                <input type="text" disabled placeholder="e.g. College Dean" className="w-full px-3 py-2.5 border border-gray-200 bg-gray-50 rounded-xl text-sm text-gray-500" />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* ── Password & Security ── */}
+          {activeTab === 'security' && (
+            <div className="space-y-2.5 max-w-md">
+              <button className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                Change Password <Lock className="w-4 h-4 text-gray-400" />
+              </button>
+              <button className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                Two-Factor Authentication <ShieldCheck className="w-4 h-4 text-gray-400" />
+              </button>
+              <button className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Log Out of All Devices <LogOut className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          )}
+
+          {/* ── Notifications ── */}
+          {activeTab === 'notifications' && (
+            <div className="max-w-md">
+              <ToggleRow label="New Inquiries" checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} />
+              <ToggleRow label="Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
+              <ToggleRow label="New Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
+              <ToggleRow label="Faculty/Staff Updates" checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} />
+              <ToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+            </div>
+          )}
+
+          {/* ── Academic Settings + Programs ── */}
+          {activeTab === 'academic' && (
+            <div className="space-y-6 max-w-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">Academic Year</label>
+                  <input type="text" defaultValue="2025-2026" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">Current Semester</label>
+                  <select className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]">
+                    <option>Second Semester</option>
+                    <option>First Semester</option>
+                    <option>Summer</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-3">College/Department (Programs)</p>
+                <div className="space-y-1.5 mb-3 max-h-40 overflow-y-auto pr-1">
+                  {programs.map((prog, idx) => (
+                    <div key={prog} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-100">
+                      {editIdx === idx ? (
+                        <>
+                          <input
+                            value={editVal}
+                            onChange={e => setEditVal(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                            className="flex-1 px-2 py-1 border border-[#1E3A8A] rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                          />
+                          <button onClick={saveEdit} className="p-1 text-[#1E3A8A] hover:bg-blue-50 rounded-md"><Check className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => setEditIdx(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded-md"><X className="w-3.5 h-3.5" /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-xs font-semibold text-gray-800">{prog}</span>
+                          <button onClick={() => startEdit(idx)} className="p-1 text-[#1E3A8A] hover:bg-blue-50 rounded-md"><Edit className="w-3 h-3" /></button>
+                          <button onClick={() => deleteProgram(idx)} className="p-1 text-red-500 hover:bg-red-50 rounded-md"><Trash2 className="w-3 h-3" /></button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={newProgram}
+                    onChange={e => setNewProgram(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addProgram()}
+                    placeholder="New program"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                  />
+                  <button onClick={addProgram} className="px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Delegate Access ── */}
+          {activeTab === 'delegates' && (
+            <div className="max-w-2xl">
+              <p className="text-sm text-gray-500 mb-4">
+                Add a staff member as a delegate to let them act on your behalf — for example, approving reports or replying to inquiries while you're unavailable.
+              </p>
+
+              {delegateError && (
+                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">{delegateError}</div>
+              )}
+
+              <div className="flex gap-2 mb-5">
+                <input
+                  type="email"
+                  value={delegateEmail}
+                  onChange={e => setDelegateEmail(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addDelegate()}
+                  placeholder="Enter staff email address"
+                  className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                />
+                <button onClick={addDelegate} className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1.5 flex-shrink-0">
+                  <Plus className="w-4 h-4" /> Add Delegate
+                </button>
+              </div>
+
+              {delegates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-gray-300 border border-dashed border-gray-200 rounded-xl">
+                  <UserCheck className="w-9 h-9 mb-2 opacity-40" />
+                  <p className="text-sm text-gray-400">No delegates added yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {delegates.map(d => (
+                    <div key={d.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="w-9 h-9 rounded-full bg-[#DBEAFE] text-[#1E3A8A] flex items-center justify-center text-sm font-bold flex-shrink-0">
+                        {d.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{d.name}</p>
+                        <p className="text-xs text-gray-400 truncate">{d.email}</p>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#DBEAFE] text-[#1E3A8A] flex-shrink-0">
+                        {d.role}
+                      </span>
+                      <button onClick={() => removeDelegate(d.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0" title="Remove delegate">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Backup & Maintenance ── */}
+          {activeTab === 'backup' && (
+            <div className="max-w-md space-y-3">
+              <button className="w-full py-3 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+                <Download className="w-4 h-4" /> Create Backup
+              </button>
+              <button className="w-full py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+                <Settings className="w-4 h-4" /> System Maintenance
+              </button>
+              <div className="p-3 bg-blue-50 rounded-xl flex items-center gap-2 text-xs text-gray-700">
+                <CheckCircle className="w-4 h-4 text-[#1E3A8A] flex-shrink-0" />
+                Last backup: February 13, 2026 at 2:00 AM
+              </div>
+            </div>
+          )}
+
+          {/* ── Account Actions ── */}
+          {activeTab === 'account' && (
+            <div className="max-w-md">
+              <button className="w-full py-3 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+                <LogOut className="w-4 h-4" /> Log Out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
