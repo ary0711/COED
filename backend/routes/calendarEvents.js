@@ -42,16 +42,28 @@ async function getDepartmentIdsForUser(req) {
     if (error || !data?.department_id) return [];
     return [data.department_id];
   }
+  // NEW — students are scoped to their own approved program's department.
+  if (req.user.role === 'student') {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select('department_id')
+      .eq('user_id', req.user.userId)
+      .single();
+
+    if (error || !data?.department_id) return [];
+    return [data.department_id];
+  }
 
   return [];
 }
+
 
 // GET /api/calendar-events
 // - dean/admin: all events
 // - department_chair / faculty: only events whose department_ids overlaps
 //   the requester's own department(s)
 router.get('/', authenticate, async (req, res) => {
-  const isScoped = ['department_chair', 'faculty'].includes(req.user.role);
+  const isScoped = ['department_chair', 'faculty', 'student'].includes(req.user.role);
 
   let query = supabase
     .from('calendar_events')
@@ -59,33 +71,39 @@ router.get('/', authenticate, async (req, res) => {
     .order('event_date', { ascending: true });
 
   if (isScoped) {
-    const departmentIds = await getDepartmentIdsForUser(req);
-    if (departmentIds.length === 0) {
-      // No department on record — return nothing rather than leaking
-      // every department's events by accident.
-      return res.json([]);
-    }
-    // overlaps: true if calendar_events.department_ids shares at least
-    // one id with the requester's department_ids.
-    query = query.overlaps('department_ids', departmentIds);
+  const departmentIds = await getDepartmentIdsForUser(req);
+  if (departmentIds.length === 0) {
+    return res.json([]);
   }
-
+  // Match events scoped to (at least one of) the user's own department(s),
+  // OR events with no department restriction at all (department_ids null
+  // means "all departments" — e.g. a dean-wide announcement).
+  query = query.or(
+    `department_ids.is.null,department_ids.ov.{${departmentIds.join(',')}}`
+  );
+}
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
   return res.json(data);
 });
 
 // POST /api/calendar-events
-// department_ids is ALWAYS derived server-side from the creating chair's
-// own department(s) — never trusted from the request body. Letting the
-// client specify which department(s) an event posts to would let a
-// chair (or a modified request) post into a department they don't own.
+// - department_chair: department_ids is ALWAYS derived server-side from
+//   the creating chair's own department(s) — never trusted from the
+//   request body, same as before.
+// - dean/admin: MAY target a single specific department by id, or leave
+//   it targeting all departments (department_ids = null, meaning "no
+//   restriction" — matches how the GET route already treats an
+//   unscoped/dean/admin request: no overlap filter applied at all).
 router.post('/', authenticate, async (req, res) => {
-  if (req.user.role !== 'department_chair') {
-    return res.status(403).json({ error: 'Only Department Chairs can create calendar events.' });
+  const isChair = req.user.role === 'department_chair';
+  const isDeanOrAdmin = req.user.role === 'dean' || req.user.role === 'admin';
+
+  if (!isChair && !isDeanOrAdmin) {
+    return res.status(403).json({ error: 'Only Department Chairs or the Dean can create calendar events.' });
   }
 
-  const { title, description, event_date, event_type, status } = req.body;
+  const { title, description, event_date, event_type, status, target_department_id } = req.body;
 
   if (!title || !String(title).trim()) {
     return res.status(400).json({ error: 'Event title is required.' });
@@ -97,9 +115,34 @@ router.post('/', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Invalid event_type.' });
   }
 
-  const departmentIds = await getDepartmentIdsForUser(req);
-  if (departmentIds.length === 0) {
-    return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
+  let department_ids;
+
+  if (isChair) {
+    // Unchanged from before: a chair can never choose — always their own.
+    department_ids = await getDepartmentIdsForUser(req);
+    if (department_ids.length === 0) {
+      return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
+    }
+  } else {
+    // Dean/admin: either target one specific real department, or null
+    // (visible to everyone, matching the GET route's unscoped case).
+    if (target_department_id) {
+      const { data: dept, error: deptError } = await supabase
+        .from('departments')
+        .select('id')
+        .eq('id', target_department_id)
+        .maybeSingle();
+
+      if (deptError) {
+        return res.status(500).json({ error: deptError.message });
+      }
+      if (!dept) {
+        return res.status(400).json({ error: 'Invalid target_department_id.' });
+      }
+      department_ids = [target_department_id];
+    } else {
+      department_ids = null; // no restriction — everyone sees it
+    }
   }
 
   const { data, error } = await supabase
@@ -108,15 +151,10 @@ router.post('/', authenticate, async (req, res) => {
       title: String(title).trim(),
       description: description || null,
       event_date,
-      department_ids: departmentIds,
+      department_ids,
       event_type: event_type || null,
-      // organizer_id intentionally omitted: it has a foreign key to
-      // public.profiles(id), but chair/faculty accounts live in
-      // public.users (custom JWT auth), not in profiles. Sending
-      // req.user.userId here throws a FK violation. See the note
-      // below for how to properly attribute events once the schema
-      // question is resolved.
       status: status || 'upcoming',
+      posted_by_role: req.user.role,
     })
     .select()
     .single();

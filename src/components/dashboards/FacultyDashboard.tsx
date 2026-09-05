@@ -41,7 +41,6 @@ import {
   { icon: BookOpen,    label: 'Teaching Load',       id: 'teaching-load' },
   { icon: FileText,    label: 'Research & Extension',id: 'research' },
   { icon: Award,       label: 'Achievements',        id: 'achievements' },
-  { icon: FileText,    label: 'Academic Records',    id: 'records' },
   { icon: GraduationCap, label: "Dean's List",       id: 'deans-list' },
   { icon: FileText,    label: 'Reports',             id: 'reports' },
   { icon: Calendar,    label: 'Calendar',            id: 'calendar' },
@@ -58,8 +57,14 @@ import {
 
 const ME_API_URL = 'http://localhost:5000/api/me';
 
-export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Faculty' }: FacultyDashboardProps) {
+export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   // Kuhaon ang userId gikan sa JWT token
   const token = localStorage.getItem('token');
@@ -106,6 +111,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           userRole="Faculty Member"
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          onLogout={handleInternalLogout}
         />
 
         {/* ── Desktop spacer so content clears the fixed sidebar ── */}
@@ -126,7 +132,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                 <Menu className="w-5 h-5" />
               </button>
               <div className="flex-1">
-                <DashboardHeader userRole="Faculty" userName={userName} departmentNames={departmentNames} />
+                <DashboardHeader userRole="Faculty" userName={userName} onLogout={handleInternalLogout} departmentNames={departmentNames} />
               </div>
             </div>
           </div>
@@ -136,7 +142,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             {activeMenuItem === 'teaching-load' && <TeachingLoad />}
             {activeMenuItem === 'research'      && <ResearchExtension userId={userId} />}
             {activeMenuItem === 'achievements'  && <FacultyAchievements />}
-            {activeMenuItem === 'records'       && <AcademicRecordsView />}
             {activeMenuItem === 'deans-list'    && <DeansListGenerator userId={userId} userName={userName} />}
             {activeMenuItem === 'reports' && <ReportsView userId={userId} userName={userName} />}
             {activeMenuItem === 'calendar'      && <FacultyCalendar />}
@@ -226,9 +231,25 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
   }
 
   // ====================== 5.1 TEACHING LOAD ======================
+  interface ClassListFile {
+    name: string;
+    size: number;
+    type: string;
+    uploadedAt: string;
+  }
+
   function TeachingLoad() {
     const [view, setView] = useState<'list' | 'students'>('list');
     const [selectedSubject, setSelectedSubject] = useState<any>(null);
+
+    // Class list files uploaded per subject (keyed by course code).
+    // These contain the roster of students for that subject and can be
+    // an Excel, PDF, or Word file.
+    const [classListFiles, setClassListFiles] = useState<Record<string, ClassListFile>>({});
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
+    const [uploadSubjectCode, setUploadSubjectCode] = useState('');
+
+    const ACCEPTED_CLASS_LIST_TYPES = '.xlsx,.xls,.pdf,.doc,.docx';
 
     const subjects = [
       { code: 'CS101', name: 'Introduction to Computer Science', units: 3, studentCount: 45, schedule: 'MWF 8:00–9:00 AM',   room: 'Room 201', semester: '2nd Semester AY 2025–2026' },
@@ -245,62 +266,197 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
       { id: '2023-211', name: 'Reyes, Ana Liza',        year: '2nd Year', status: 'Irregular' },
     ];
 
-    if (view === 'students' && selectedSubject) {
-      return (
-        <div className="animate-in slide-in-from-right duration-300">
-          <div className="flex items-center gap-3 sm:gap-4 mb-6">
-            <button onClick={() => { setView('list'); setSelectedSubject(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
-              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Enrolled Students</h1>
-              <p className="text-gray-600 text-sm sm:text-base truncate">{selectedSubject.code} – {selectedSubject.name}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 bg-blue-50 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-              <div className="flex items-center gap-2 text-blue-800 font-medium text-sm sm:text-base">
-                <Users size={18} />
-                <span>Total Enrolled: {selectedSubject.studentCount} Students</span>
-              </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-all w-fit">
-                <Download size={16} /> Export Class List
+    const formatFileSize = (bytes: number) => {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    const openUploadModal = (subjectCode?: string) => {
+      setUploadSubjectCode(subjectCode ?? '');
+      setUploadModalOpen(true);
+    };
+
+    const closeUploadModal = () => {
+      setUploadModalOpen(false);
+      setUploadSubjectCode('');
+    };
+
+    const handleClassListFile = (file: File) => {
+      if (!uploadSubjectCode) {
+        alert('Please select a subject first.');
+        return;
+      }
+      setClassListFiles(prev => ({
+        ...prev,
+        [uploadSubjectCode]: {
+          name: file.name,
+          size: file.size,
+          type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
+          uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        },
+      }));
+      closeUploadModal();
+      alert('✅ Class list uploaded successfully!');
+    };
+
+    const UploadModal = () => (
+      uploadModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Upload Class List</h2>
+              <button onClick={closeUploadModal} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[480px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year Level</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrolledStudents.map((student, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{student.id}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{student.name}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{student.year}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
-                        <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold uppercase ${student.status === 'Regular' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {student.status}
-                        </span>
-                      </td>
-                    </tr>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                <select
+                  value={uploadSubjectCode}
+                  onChange={(e) => setUploadSubjectCode(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a subject</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.code} value={sub.code}>{sub.code} – {sub.name}</option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Class List File</label>
+                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                  <p className="text-xs text-gray-400 mt-1">Excel, PDF, or Word up to 10MB</p>
+                  <input
+                    type="file"
+                    accept={ACCEPTED_CLASS_LIST_TYPES}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleClassListFile(f);
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </div>
+      ) : null
+    );
+
+    if (view === 'students' && selectedSubject) {
+      const uploadedFile = classListFiles[selectedSubject.code];
+
+      return (
+        <>
+          <div className="animate-in slide-in-from-right duration-300">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6">
+              <button onClick={() => { setView('list'); setSelectedSubject(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
+                <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Enrolled Students</h1>
+                <p className="text-gray-600 text-sm sm:text-base truncate">{selectedSubject.code} – {selectedSubject.name}</p>
+              </div>
+            </div>
+
+            {/* ── Uploaded class list file details ── */}
+            <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
+              {uploadedFile ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm truncate">{uploadedFile.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {uploadedFile.type} · {formatFileSize(uploadedFile.size)} · Uploaded {uploadedFile.uploadedAt}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openUploadModal(selectedSubject.code)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-4 flex-shrink-0"
+                  >
+                    Replace File
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm text-gray-500">No class list file uploaded for this subject yet.</p>
+                  <button
+                    onClick={() => openUploadModal(selectedSubject.code)}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors flex-shrink-0"
+                  >
+                    <Upload size={14} /> Upload Class List
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 bg-blue-50 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                <div className="flex items-center gap-2 text-blue-800 font-medium text-sm sm:text-base">
+                  <Users size={18} />
+                  <span>Total Enrolled: {selectedSubject.studentCount} Students</span>
+                </div>
+                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-all w-fit">
+                  <Download size={16} /> Export Class List
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[480px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year Level</th>
+                      <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrolledStudents.map((student, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{student.id}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{student.name}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{student.year}</td>
+                        <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
+                          <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold uppercase ${student.status === 'Regular' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {student.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <UploadModal />
+        </>
       );
     }
 
     return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Teaching Load</h1>
+      <>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Teaching Load</h1>
+        </div>
+
+        {/* ── Upload class list button — top left ── */}
+        <div className="mb-6">
+          <button
+            onClick={() => openUploadModal()}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors w-fit"
+          >
+            <Upload size={16} /> Upload Class List
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
             <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Academic Year</div>
@@ -323,24 +479,32 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
           {/* Mobile card layout */}
           <div className="divide-y divide-gray-100 sm:hidden">
-            {subjects.map((sub, i) => (
-              <div key={i} className="p-4 space-y-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-medium text-gray-900 text-sm">{sub.code}</span>
-                    <p className="text-gray-700 text-sm">{sub.name}</p>
+            {subjects.map((sub, i) => {
+              const hasClassList = !!classListFiles[sub.code];
+              return (
+                <div key={i} className="p-4 space-y-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-medium text-gray-900 text-sm">{sub.code}</span>
+                      <p className="text-gray-700 text-sm">{sub.name}</p>
+                    </div>
+                    <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0">{sub.units} units</span>
                   </div>
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0">{sub.units} units</span>
+                  <div className="text-xs text-gray-500">{sub.schedule} · {sub.room}</div>
+                  {hasClassList && (
+                    <div className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle size={12} /> Class list uploaded
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-xs text-gray-600">{sub.studentCount} students</span>
+                    <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline underline-offset-4">
+                      View Students
+                    </button>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">{sub.schedule} · {sub.room}</div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-xs text-gray-600">{sub.studentCount} students</span>
-                  <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline underline-offset-4">
-                    View Students
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Table layout for sm+ */}
@@ -348,36 +512,52 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
             <table className="w-full text-left min-w-[640px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Code</th>
-                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Course Name</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Course Code</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700">Descriptive Name</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Units</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Students</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700">Schedule</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700">Room</th>
+                  <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Class List</th>
                   <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {subjects.map((sub, i) => (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 px-6 font-medium text-gray-900">{sub.code}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.name}</td>
-                    <td className="py-4 px-6 text-center text-gray-700">{sub.units}</td>
-                    <td className="py-4 px-6 text-center font-bold text-gray-900">{sub.studentCount}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.schedule}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.room}</td>
-                    <td className="py-4 px-6 text-center">
-                      <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-sm font-semibold underline underline-offset-4">
-                        View Students
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {subjects.map((sub, i) => {
+                  const hasClassList = !!classListFiles[sub.code];
+                  return (
+                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-4 px-6 font-medium text-gray-900">{sub.code}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.name}</td>
+                      <td className="py-4 px-6 text-center text-gray-700">{sub.units}</td>
+                      <td className="py-4 px-6 text-center font-bold text-gray-900">{sub.studentCount}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.schedule}</td>
+                      <td className="py-4 px-6 text-gray-700">{sub.room}</td>
+                      <td className="py-4 px-6 text-center">
+                        {hasClassList ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                            <CheckCircle size={12} /> Uploaded
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400">
+                            Not uploaded
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-sm font-semibold underline underline-offset-4">
+                          View Students
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-      </div>
+        <UploadModal />
+      </>
     );
   }
 
@@ -402,620 +582,835 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     updated_at: string;
   }
 
-  function ResearchExtension({ userId }: { userId: string }) {
-    const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
-    const [researchTitle, setResearchTitle] = useState('');
-    const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
 
-    useEffect(() => {
-      const load = async () => {
-        try {
-          const res = await fetch(`${RESEARCH_API_URL}/mine`, {
-            headers: { Authorization: `Bearer ${getResearchToken()}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setSubmissions(data ?? []);
-          }
-        } catch {
-          // silent — same as the reports components' load-error behavior
-        } finally {
-          setLoading(false);
+ function ResearchExtension({ userId }: { userId: string }) {
+  const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
+  const [researchTitle, setResearchTitle] = useState('');
+  const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [modal, setModal] = useState<ModalState>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getResearchToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSubmissions((data ?? []).filter((s: any) => s.type === 'research' || s.type === 'extension'));
         }
-      };
-      load();
-    }, [userId]);
-
-    const approved = submissions.filter(s => s.status === 'approved');
-    const pendingCount = submissions.filter(s => s.status === 'pending').length;
-    const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
-
-    const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
-    const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
-    const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    const statusBadge = (status: string) => {
-      const map: Record<string, string> = {
-        pending:  'bg-yellow-100 text-yellow-700',
-        approved: 'bg-green-100 text-green-700',
-        rejected: 'bg-red-100 text-red-700',
-      };
-      return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
+      } catch {
+        // silent — same as the reports components' load-error behavior
+      } finally {
+        setLoading(false);
+      }
     };
+    load();
+  }, [userId]);
 
-    const statusIcon = (status: string) => {
-      if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
-      if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
-      return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+  const approved = submissions.filter(s => s.status === 'approved');
+  const pendingCount = submissions.filter(s => s.status === 'pending').length;
+  const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
+
+  const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
+  const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-700',
+      approved: 'bg-green-100 text-green-700',
+      rejected: 'bg-red-100 text-red-700',
     };
+    return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
+  };
 
-    const handleSubmit = async () => {
-      if (!researchTitle.trim()) {
-        alert('Please enter a title.');
+  const statusIcon = (status: string) => {
+    if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
+    if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
+    return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+  };
+
+  const handleSubmit = async () => {
+    if (!researchTitle.trim()) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'Missing Required Field',
+        message: 'Please enter a title before submitting.',
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', researchTitle.trim());
+      formData.append('type', researchType);
+      if (selectedFile) formData.append('file', selectedFile);
+
+      const res = await fetch(RESEARCH_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getResearchToken()}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setModal({
+          isOpen: true,
+          type: 'error',
+          title: 'Submission Failed',
+          message: err.error || res.statusText || 'Failed to submit.',
+        });
         return;
       }
 
-      setSubmitting(true);
-      try {
-        const formData = new FormData();
-        formData.append('title', researchTitle.trim());
-        formData.append('type', researchType);
-        if (selectedFile) formData.append('file', selectedFile);
+      const data: ResearchSubmission = await res.json();
+      setSubmissions(prev => [data, ...prev]);
+      setResearchTitle('');
+      setSelectedFile(null);
+      setModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Output Submitted',
+        message: 'Your submission has been sent for approval!',
+      });
+    } catch {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not reach the server. Please try again.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        const res = await fetch(RESEARCH_API_URL, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${getResearchToken()}` },
-          body: formData,
-        });
+  const handleDownload = (s: ResearchSubmission) => {
+    if (s.file_url) {
+      window.open(s.file_url, '_blank');
+    } else {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'No File Found',
+        message: 'No file was attached to this submission.',
+      });
+    }
+  };
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          alert('❌ Failed to submit: ' + (err.error || res.statusText));
-          return;
-        }
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
+      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
+        {[{ id: 'submit', label: 'Submit' }, { id: 'track', label: 'Track Status' }, { id: 'approved', label: 'Approved' }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        const data: ResearchSubmission = await res.json();
-        setSubmissions(prev => [data, ...prev]);
-        setResearchTitle('');
-        setSelectedFile(null);
-        alert('✅ Submission sent for approval!');
-      } catch {
-        alert('❌ Could not reach the server. Please try again.');
-      } finally {
-        setSubmitting(false);
-      }
-    };
+      {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2">
+          {tab === 'submit' && (
+            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
+                  <div className="flex gap-3 sm:gap-4">
+                    <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
+                    <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                  <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
+                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                </div>
+                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+                  {submitting ? 'Submitting...' : 'Submit for Approval'}
+                </button>
+              </div>
+            </div>
+          )}
 
-    const handleDownload = (s: ResearchSubmission) => {
-      if (s.file_url) {
-        window.open(s.file_url, '_blank');
-      } else {
-        alert('No file was attached to this submission.');
-      }
-    };
+          {tab === 'track' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : submissions.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {submissions.map((s) => (
+                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        {statusIcon(s.status)}
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">{statusBadge(s.status)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
-        <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
-          {[{ id: 'submit', label: 'Submit' }, { id: 'track', label: 'Track Status' }, { id: 'approved', label: 'Approved' }].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as any)}
-              className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-              {t.label}
-            </button>
-          ))}
+          {tab === 'approved' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : approved.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {approved.map((s) => (
+                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
+                        </div>
+                      </div>
+                      <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                        <Download size={14} /> Download
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-2">
-            {tab === 'submit' && (
-              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
-                    <div className="flex gap-3 sm:gap-4">
-                      <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
-                      <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                    <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
-                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                      <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
-                      <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
-                    </label>
-                    {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
-                  </div>
-                  <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
-                    {submitting ? 'Submitting...' : 'Submit for Approval'}
-                  </button>
-                </div>
+        {/* ── Side panel: fills the empty space on wide screens ── */}
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="text-sm text-gray-600">Total Submitted</span>
+                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
               </div>
-            )}
-
-            {tab === 'track' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
-                </div>
-                {loading ? (
-                  <div className="p-12 text-center text-gray-400">Loading…</div>
-                ) : submissions.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400">No submissions yet.</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {submissions.map((s) => (
-                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                          {statusIcon(s.status)}
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0">{statusBadge(s.status)}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-lg font-bold text-green-700">{approved.length}</span>
               </div>
-            )}
-
-            {tab === 'approved' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
-                </div>
-                {loading ? (
-                  <div className="p-12 text-center text-gray-400">Loading…</div>
-                ) : approved.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {approved.map((s) => (
-                      <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                        <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                            <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
-                          </div>
-                        </div>
-                        <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                          <Download size={14} /> Download
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
               </div>
-            )}
+              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+              </div>
+            </div>
           </div>
 
-          {/* ── Side panel: fills the empty space on wide screens ── */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Total Submitted</span>
-                  <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
-                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
-                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
-                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
-              </h3>
-              <ul className="space-y-3 text-sm text-gray-600">
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
-              </ul>
-            </div>
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
+            </h3>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+            </ul>
           </div>
         </div>
       </div>
-    );
-  }
 
-
-  // ====================== 5.3 ACHIEVEMENTS ======================
-  function FacultyAchievements() {
-    const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
-    const [awardTitle, setAwardTitle] = useState('');
-    const [awardDate, setAwardDate] = useState('');
-    const [fileName, setFileName] = useState('');
-
-    const achievements = [
-      { title: 'Best Paper Award – ICEICE 2025',  date: 'Nov 2025', status: 'Approved', category: 'Research'   },
-      { title: 'Outstanding Faculty Awardee',      date: 'Jan 2026', status: 'Pending',  category: 'Teaching'   },
-      { title: 'Community Service Medal',          date: 'Mar 2025', status: 'Approved', category: 'Extension'  },
-      { title: 'Innovation Grant Recipient',       date: 'Oct 2024', status: 'Approved', category: 'Research'   },
-    ];
-
-    const approved = achievements.filter(a => a.status === 'Approved');
-    const pendingCount = achievements.filter(a => a.status === 'Pending').length;
-    const rejectedCount = achievements.filter(a => a.status === 'Rejected').length;
-
-    return (
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
-        <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-          {[{ id: 'submit', label: 'Submit' }, { id: 'approved', label: 'Approved' }, { id: 'history', label: 'History' }].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as any)}
-              className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-              {t.label}
+      {/* Confirmation & Status Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X size={20} />
             </button>
-          ))}
-        </div>
 
-        {/* ── Main content (2/3) + side panel (1/3) so wide screens aren't left empty ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-2">
-            {tab === 'submit' && (
-              <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
-                    <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
-                    <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
-                    <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                      <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                      <input type="file" className="hidden" onChange={e => setFileName(e.target.files?.[0]?.name || '')} />
-                    </label>
-                    {fileName && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {fileName}</p>}
-                  </div>
-                  <button onClick={() => alert('✅ Achievement submitted for review!')} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base">
-                    Submit for Review
-                  </button>
-                </div>
+            <div className="flex flex-col items-center text-center">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                modal.type === 'success' ? 'bg-green-100 text-green-600' :
+                modal.type === 'error' ? 'bg-red-100 text-red-600' :
+                'bg-yellow-100 text-yellow-600'
+              }`}>
+                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
+                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
+                {modal.type === 'validation' && <Info className="w-6 h-6" />}
               </div>
-            )}
 
-            {tab === 'approved' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
-                  <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {modal.title}
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {modal.message}
+              </p>
+
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+ // ====================== 5.3 ACHIEVEMENTS ======================
+interface AchievementSubmission {
+  id: string;
+  title: string;
+  type: 'achievement';
+  category: string | null;
+  date_received: string | null;
+  file_name: string | null;
+  file_url: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
+
+export default function FacultyAchievements() {
+  const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
+  const [awardTitle, setAwardTitle] = useState('');
+  const [awardCategory, setAwardCategory] = useState('Research');
+  const [awardDate, setAwardDate] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [submissions, setSubmissions] = useState<AchievementSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [modal, setModal] = useState<ModalState>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getResearchToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSubmissions((data ?? []).filter((s: any) => s.type === 'achievement'));
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const approved = submissions.filter(a => a.status === 'approved');
+  const pendingCount = submissions.filter(a => a.status === 'pending').length;
+  const rejectedCount = submissions.filter(a => a.status === 'rejected').length;
+
+  const displayStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+  const handleSubmit = async () => {
+    if (!awardTitle.trim()) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'Missing Required Field',
+        message: 'Please enter an award/achievement title before submitting.',
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', awardTitle.trim());
+      formData.append('type', 'achievement');
+      formData.append('category', awardCategory);
+      if (awardDate) formData.append('date_received', awardDate);
+      if (selectedFile) formData.append('file', selectedFile);
+
+      const res = await fetch(RESEARCH_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getResearchToken()}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setModal({
+          isOpen: true,
+          type: 'error',
+          title: 'Submission Failed',
+          message: err.error || res.statusText || 'Failed to submit achievement.',
+        });
+        return;
+      }
+
+      const data: AchievementSubmission = await res.json();
+      setSubmissions(prev => [data, ...prev]);
+      setAwardTitle('');
+      setAwardCategory('Research');
+      setAwardDate('');
+      setSelectedFile(null);
+
+      setModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Achievement Submitted',
+        message: 'Your achievement has been successfully submitted for review!',
+      });
+    } catch {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not reach the server. Please check your connection and try again.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownload = (a: AchievementSubmission) => {
+    if (a.file_url) {
+      window.open(a.file_url, '_blank');
+    } else {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'No File Found',
+        message: 'No file was attached to this submission.',
+      });
+    }
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
+      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        {[{ id: 'submit', label: 'Submit' }, { id: 'approved', label: 'Approved' }, { id: 'history', label: 'History' }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2">
+          {tab === 'submit' && (
+            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
+                  <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <select value={awardCategory} onChange={e => setAwardCategory(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                    <option>Research</option>
+                    <option>Teaching</option>
+                    <option>Extension</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
+                  <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                </div>
+                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+                  {submitting ? 'Submitting...' : 'Submit for Review'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tab === 'approved' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
+                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
+              </div>
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : approved.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No approved achievements yet.</div>
+              ) : (
                 <div className="divide-y divide-gray-100">
-                  {approved.map((a, i) => (
-                    <div key={i} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
+                  {approved.map((a) => (
+                    <div key={a.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
                       <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
                         <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
                           <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
                         </div>
                         <div className="min-w-0">
                           <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{a.category} · {a.date}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
                         </div>
                       </div>
-                      <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
+                      <button onClick={() => handleDownload(a)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
                         <Download size={14} /> Download
                       </button>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {tab === 'history' && (
-              <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-gray-100">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
-                </div>
-                <div className="divide-y divide-gray-100 sm:hidden">
-                  {achievements.map((a, i) => (
-                    <div key={i} className="p-4 space-y-1">
-                      <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                      <div className="text-xs text-gray-500">{a.category} · {a.date}</div>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {a.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="hidden sm:block overflow-x-auto">
-                  <table className="w-full text-left min-w-[480px]">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
-                        <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {achievements.map((a, i) => (
-                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                          <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
-                          <td className="py-4 px-6 text-gray-600">{a.category}</td>
-                          <td className="py-4 px-6 text-gray-600">{a.date}</td>
-                          <td className="py-4 px-6 text-center">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'Approved' ? 'bg-green-100 text-green-700' : a.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                              {a.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          {tab === 'history' && (
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-100">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
               </div>
-            )}
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">Loading…</div>
+              ) : submissions.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+              ) : (
+                <>
+                  <div className="divide-y divide-gray-100 sm:hidden">
+                    {submissions.map((a) => (
+                      <div key={a.id} className="p-4 space-y-1">
+                        <div className="font-medium text-gray-900 text-sm">{a.title}</div>
+                        <div className="text-xs text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {displayStatus(a.status)}
+                        </span>
+                        {a.dean_remarks && <p className="text-xs text-red-600 mt-1">Remarks: {a.dean_remarks}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full text-left min-w-[480px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
+                          <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {submissions.map((a) => (
+                          <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
+                            <td className="py-4 px-6 text-gray-600">{a.category ?? '—'}</td>
+                            <td className="py-4 px-6 text-gray-600">{formatDate(a.date_received)}</td>
+                            <td className="py-4 px-6 text-center">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                {displayStatus(a.status)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="text-sm text-gray-600">Total Submitted</span>
+                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-lg font-bold text-green-700">{approved.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+              </div>
+            </div>
           </div>
 
-          {/* ── Side panel: fills the empty space on wide screens ── */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm text-gray-600">Total Submitted</span>
-                  <span className="text-lg font-bold text-gray-900">{achievements.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
-                  <span className="text-lg font-bold text-green-700">{approved.length}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
-                  <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
-                  <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-md p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
-              </h3>
-              <ul className="space-y-3 text-sm text-gray-600">
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
-                <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
-              </ul>
-            </div>
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
+            </h3>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+            </ul>
           </div>
         </div>
       </div>
-    );
-  }
 
-  // ====================== 5.4 ACADEMIC RECORDS ======================
-  function AcademicRecordsView() {
-  interface AcademicDoc {
-    id: string;
-    title: string;
-    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
-    file_size: number;
-  }
+      {/* Confirmation & Status Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X size={20} />
+            </button>
 
-  const DOC_TYPE_LABELS: Record<string, string> = {
-    handbook: 'Handbook',
-    policy: 'Policy',
-    memorandum: 'Memorandum',
-    form: 'Form',
-  };
+            <div className="flex flex-col items-center text-center">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                modal.type === 'success' ? 'bg-green-100 text-green-600' :
+                modal.type === 'error' ? 'bg-red-100 text-red-600' :
+                'bg-yellow-100 text-yellow-600'
+              }`}>
+                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
+                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
+                {modal.type === 'validation' && <Info className="w-6 h-6" />}
+              </div>
 
-  const categoryColor: Record<string, string> = {
-    Handbook:   'bg-blue-100 text-blue-700',
-    Policy:     'bg-purple-100 text-purple-700',
-    Memorandum: 'bg-orange-100 text-orange-700',
-    Form:       'bg-green-100 text-green-700',
-  };
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {modal.title}
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {modal.message}
+              </p>
 
-  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+  // ─── My Drafts (shared: works for both Chair and Faculty) ────────────────────
+interface DraftSummary {
+  id: string;
+  quarter: string;
+  year: string;
+  progress: number;
+  updated_at: string;
+  created_at: string;
+}
 
-  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
+const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
+
+function getDraftsToken() {
+  return localStorage.getItem('token');
+}
+
+function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
+  const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
+  const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const categories = ['All', 'Handbook', 'Policy', 'Memorandum', 'Form'];
-
-  const fetchDocuments = async () => {
+  const fetchDrafts = async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(DOCS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load documents.');
-        setDocuments([]);
-        return;
-      }
-      const data = await res.json();
-      setDocuments(data ?? []);
+      const token = getDraftsToken();
+      const [accRes, extRes] = await Promise.all([
+        fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      let hadError = false;
+      if (accRes.ok) setAccDraft(await accRes.json());
+      else hadError = true;
+      if (extRes.ok) setExtDraft(await extRes.json());
+      else hadError = true;
+      if (hadError) setLoadError('Failed to load one or more drafts.');
     } catch {
       setLoadError('Could not reach the server. Please try again.');
-      setDocuments([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchDocuments(); }, []);
+  useEffect(() => { fetchDrafts(); }, []);
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  const handleDownload = async (doc: AcademicDoc) => {
-    setDownloadingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
-      }
-      const { url } = await res.json();
-      window.open(url, '_blank');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const filtered = activeCategory === 'All'
-    ? documents
-    : documents.filter(d => DOC_TYPE_LABELS[d.document_type] === activeCategory);
+  const cards = [
+    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
+    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
+  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
 
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map(c => (
-          <button key={c} onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-            {c}
-          </button>
-        ))}
-      </div>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
+      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
 
       {loadError && (
         <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading documents...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No documents found.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filtered.map((doc) => {
-              const label = DOC_TYPE_LABELS[doc.document_type];
-              return (
-                <div key={doc.id} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[label]}`}>{label}</span>
-                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDownload(doc)}
-                    disabled={downloadingId === doc.id}
-                    className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
-                  >
-                    {downloadingId === doc.id
-                      ? <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      : <Download size={14} />}
-                    <span className="hidden xs:inline sm:inline">Download</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading drafts...</span>
+        </div>
+      ) : cards.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map(({ type, label, draft }) => (
+            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 text-sm">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
+                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
+              </div>
+              <button
+                onClick={() => onEdit(type)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
+              >
+                Continue Editing
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-  // ====================== 5.6 REPORTS ======================
+  // ====================== 5.4 REPORTS ======================
   function ReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'accomplishment' | 'extension' | 'monitoring'>('accomplishment');
+  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension' | 'monitoring'>('drafts');
 
-
-    return (
+  return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        <button onClick={() => setTab('drafts')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+          My Drafts
+        </button>
         <button onClick={() => setTab('accomplishment')}
-  className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-  Accomplishment Report
-</button>
-<button onClick={() => setTab('extension')}
-  className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
-  Extension Report
-</button>
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+          Accomplishment Report
+        </button>
+        <button onClick={() => setTab('extension')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+          Extension Report
+        </button>
       </div>
+
+      {tab === 'drafts' && (
+        <MyDraftsPanel onEdit={(type) => setTab(type)} />
+      )}
 
       {tab === 'accomplishment' && (
         <AccomplishmentReport userId={userId} userName={userName} />
       )}
 
       {tab === 'extension' && (
-  <ExtensionReport userId={userId} userName={userName} />
-)}
-
+        <ExtensionReport userId={userId} userName={userName} />
+      )}
     </div>
   );
 }
 
 
-  // ====================== 5.7 CALENDAR ======================
-  // Reads department-scoped events from the backend (GET /api/calendar-events,
-  // same endpoint the Department Chair calendar uses). The backend already
-  // restricts results to the requesting faculty member's own department(s)
-  // via faculty_profiles.department_id — no client-side filtering needed
-  // or trusted. Faculty are read-only here: only chairs can create/delete
-  // events (enforced server-side too).
+  // ====================== 5.5 CALENDAR ======================
 
   interface CalendarEvent {
     id: string;
@@ -1029,6 +1424,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     department: string | null;
     department_ids: string[] | null;
     status: string | null;
+    posted_by_role: string | null;
     created_at: string;
     updated_at: string;
   }
@@ -1043,6 +1439,11 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     exam: '#EF4444',
   };
   const DEFAULT_EVENT_COLOR = '#1E3A8A';
+  const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
   function colorForEvent(ev: CalendarEvent): string {
     return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
@@ -1247,7 +1648,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                         </div>
                       {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                     </div>
                   </div>
@@ -1265,7 +1668,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForEvent(ev) }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{formatDate(dateOnly(ev.event_date))}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                         {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                          </div>
                       {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                     </div>
                     <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1320,6 +1725,12 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
                     </span>
                   </div>
                 )}
+                {selectedEvent.posted_by_role && (
+  <div>
+    <p className="text-xs font-medium text-gray-500 mb-1">Posted By</p>
+    <p className="text-sm text-gray-900">{ROLE_DISPLAY_LABEL[selectedEvent.posted_by_role] ?? selectedEvent.posted_by_role}</p>
+  </div>
+)}
               </div>
             </div>
           </div>
@@ -1328,14 +1739,119 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
     );
   }
 
-  // ====================== 5.8 SETTINGS ======================
-  function FacultySettings() {
+  // ====================== 5.6 SETTINGS ======================
+ function FacultySettings() {
     const [announcementAlerts, setAnnouncementAlerts] = useState(true);
     const [departmentNotices, setDepartmentNotices] = useState(true);
+
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const [fullNameInput, setFullNameInput] = useState('');
+    const [emailInput, setEmailInput] = useState('');
+    const [contactEmailInput, setContactEmailInput] = useState('');
+    const [contactNoInput, setContactNoInput] = useState('');
+    const [specializationInput, setSpecializationInput] = useState('');
+
+    const [readOnly, setReadOnly] = useState({
+      facultyId: '',
+      position: '',
+      departmentName: '',
+      dateHired: '',
+      status: '',
+    });
+
+    const fetchMe = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          setLoadError('Failed to load your profile.');
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+
+        setFullNameInput(data.fullName ?? '');
+        setEmailInput(data.email ?? '');
+        setContactEmailInput(data.contactEmail ?? '');
+        setContactNoInput(data.contactNo ?? '');
+        setSpecializationInput(data.specialization ?? '');
+        setReadOnly({
+          facultyId: data.facultyId ?? '—',
+          position: data.position ?? '—',
+          departmentName: data.departmentNames?.[0] ?? '—',
+          dateHired: data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—',
+          status: data.status ?? '—',
+        });
+      } catch {
+        setLoadError('Could not reach the server. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => { fetchMe(); }, []);
+
+    const handleSaveChanges = async () => {
+      const trimmedName = fullNameInput.trim();
+      if (!trimmedName) {
+        setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+        return;
+      }
+
+      setSaving(true);
+      setSaveMessage(null);
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/me', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            contact_email: contactEmailInput.trim(),
+            contact_no: contactNoInput.trim(),
+            specialization: specializationInput.trim(),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes.' });
+          return;
+        }
+
+        setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+        await fetchMe();
+      } catch {
+        setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const handleCancel = () => {
+      fetchMe();
+      setSaveMessage(null);
+    };
 
     return (
       <div>
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
+
+        {loadError && (
+          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        )}
 
         {/* ⚙️ BASIC SETTINGS */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
@@ -1346,20 +1862,92 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           {/* Profile Information */}
           <div className="mb-8">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <input type="text" defaultValue="Prof. Sarah Johnson" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+
+            {loading ? (
+              <div className="animate-pulse space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                </div>
+                <div className="h-10 bg-gray-100 rounded-lg" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
-                <input type="text" defaultValue="FAC-2018-001" disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-              <input type="email" defaultValue="sarah.johnson@university.edu.ph" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      value={fullNameInput}
+                      onChange={(e) => setFullNameInput(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                    <input type="text" value={readOnly.facultyId} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
+                    <input type="email" value={emailInput} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
+                    <input
+                      type="email"
+                      value={contactEmailInput}
+                      onChange={(e) => setContactEmailInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                    <input
+                      type="text"
+                      value={contactNoInput}
+                      onChange={(e) => setContactNoInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
+                    <input
+                      type="text"
+                      value={specializationInput}
+                      onChange={(e) => setSpecializationInput(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                    <input type="text" value={readOnly.position} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                    <input type="text" value={readOnly.departmentName} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
+                    <input type="text" value={readOnly.dateHired} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {saveMessage && (
+              <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                {saveMessage.text}
+              </p>
+            )}
           </div>
 
           {/* Password / Security */}
@@ -1385,35 +1973,33 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
           </h2>
 
           <div className="space-y-4">
-            {/* Announcement Alerts */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-gray-900">Announcements</p>
                 <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={announcementAlerts} 
-                  onChange={(e) => setAnnouncementAlerts(e.target.checked)} 
-                  className="sr-only peer" 
+                <input
+                  type="checkbox"
+                  checked={announcementAlerts}
+                  onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                  className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
 
-            {/* Department Notices */}
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-gray-900">Department Notices</p>
                 <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={departmentNotices} 
-                  onChange={(e) => setDepartmentNotices(e.target.checked)} 
-                  className="sr-only peer" 
+                <input
+                  type="checkbox"
+                  checked={departmentNotices}
+                  onChange={(e) => setDepartmentNotices(e.target.checked)}
+                  className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
@@ -1437,10 +2023,18 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, userName =
 
         {/* Save Button */}
         <div className="mt-8 flex gap-3">
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-            Save Changes
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving || loading}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <button className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+          <button
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
+          >
             Cancel
           </button>
         </div>

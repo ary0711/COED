@@ -80,6 +80,7 @@ interface CalendarEvent {
   organizer_id: string | null;
   department: string | null;
   status: string | null;
+  posted_by_role: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -103,8 +104,19 @@ interface AccountApplicant {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: DepartmentChairDashboardProps) {
+
+export function DepartmentChairDashboard({ 
+  activeMenuItem, 
+  setActiveMenuItem, 
+  onLogout 
+}: DepartmentChairDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   // Kuhaon ang userId, fullName, ug program gikan sa JWT token, susama sa
   // Faculty Dashboard, para magamit sa Chair's own Reports (Accomplishment /
@@ -125,6 +137,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
         userRole="Department Chair"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       <div className="hidden lg:block w-64 shrink-0" />
@@ -140,7 +153,12 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={userName} departmentNames={departmentNames} />
+              <DashboardHeader 
+                userRole="Department Chair" 
+                userName={userName} 
+                departmentNames={departmentNames} 
+                onLogout={handleInternalLogout}
+              />
             </div>
           </div>
         </div>
@@ -166,10 +184,6 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
 function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
   return (
     <div>
-      <div className="mb-6 pb-6 border-b border-gray-200">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">Department Chair Dashboard</h1>
-        <p className="text-gray-600">Computer Science Department Overview</p>
-      </div>
 
       <div className="mb-6">
         <div
@@ -242,11 +256,7 @@ const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
 
-// calendar_events.event_type is constrained to meeting/activity/deadline/holiday/exam
-// (nullable). The modal's color swatches are kept exactly as-is, so each color is
-// mapped to the closest matching type for storage; the one swatch with no natural
-// match (#1E3A8A) is simply stored with a null event_type and falls back to that
-// same color on redraw, so nothing is visually lost.
+
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -255,6 +265,11 @@ const TYPE_TO_COLOR: Record<string, string> = {
   exam: '#EF4444',
 };
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
+const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
 function eventTypeForColor(color: string): CalendarEvent['event_type'] | null {
   const entry = Object.entries(TYPE_TO_COLOR).find(([, c]) => c === color);
@@ -265,18 +280,8 @@ function colorForEvent(ev: CalendarEvent): string {
   return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
 }
 
-// Writes (insert/delete) go through the Express backend so the request is
-// authenticated with the chair's JWT and the insert runs with the service
-// role, bypassing RLS. Reads still go straight through Supabase since the
-// calendar is open for anyone to view.
-// Adjust this if your Express server runs on a different host/port.
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
 
-// event_date / end_date are stored as "YYYY-MM-DDTHH:mm:ss" (no timezone
-// suffix), so Postgres interprets them using the column/session timezone
-// instead of shifting the calendar date around the browser's local offset.
-// We always pull the date portion back out the same way, via string slicing,
-// so the day a user picks is always the day it lands on and shows up on.
 function dateOnly(isoLike: string): string {
   return isoLike.split('T')[0];
 }
@@ -578,7 +583,9 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                     {formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                       </div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
@@ -1244,9 +1251,7 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
 }
 
 
-/* ─────────────────────────────────────────────
-   Faculty Monitoring
-───────────────────────────────────────────── */
+/*Faculty Monitoring */
 function FacultyMonitoring() {
   return (
     <div>
@@ -1256,13 +1261,107 @@ function FacultyMonitoring() {
   );
 }
 
-/* ─────────────────────────────────────────────
-   Chair's own Reports (Accomplishment / Extension)
+// ─── My Drafts (shared: works for both Chair and Faculty) ────────────────────
+interface DraftSummary {
+  id: string;
+  quarter: string;
+  year: string;
+  progress: number;
+  updated_at: string;
+  created_at: string;
+}
+
+const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
+
+function getDraftsToken() {
+  return localStorage.getItem('token');
+}
+
+function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
+  const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
+  const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const fetchDrafts = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = getDraftsToken();
+      const [accRes, extRes] = await Promise.all([
+        fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      let hadError = false;
+      if (accRes.ok) setAccDraft(await accRes.json());
+      else hadError = true;
+      if (extRes.ok) setExtDraft(await extRes.json());
+      else hadError = true;
+      if (hadError) setLoadError('Failed to load one or more drafts.');
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDrafts(); }, []);
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  const cards = [
+    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
+    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
+  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
+      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading drafts...</span>
+        </div>
+      ) : cards.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map(({ type, label, draft }) => (
+            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 text-sm">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
+                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
+              </div>
+              <button
+                onClick={() => onEdit(type)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
+              >
+                Continue Editing
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Chair's own Reports (Accomplishment / Extension)
    — separate from "Reports Monitoring" below, which
-   is for reviewing faculty submissions.
-───────────────────────────────────────────── */
+   is for reviewing faculty submissions.*/
 function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'accomplishment' | 'extension'>('accomplishment');
+  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension'>('drafts');
 
   return (
     <div>
@@ -1272,6 +1371,12 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
       </div>
 
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setTab('drafts')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          My Drafts
+        </button>
         <button
           onClick={() => setTab('accomplishment')}
           className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
@@ -1286,6 +1391,10 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
         </button>
       </div>
 
+      {tab === 'drafts' && (
+        <MyDraftsPanel onEdit={(type) => setTab(type)} />
+      )}
+
       {tab === 'accomplishment' && (
         <AccomplishmentReport userId={userId} userName={userName} />
       )}
@@ -1296,6 +1405,7 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
     </div>
   );
 }
+
 
 /* ─────────────────────────────────────────────
    Reports Monitoring
@@ -1455,22 +1565,27 @@ function AnnouncementsView() {
   const [formError, setFormError] = useState('');
 
   const fetchAnnouncements = async () => {
-    setLoading(true);
-    setLoadError('');
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      setLoadError('Failed to load announcements: ' + error.message);
+  setLoading(true);
+  setLoadError('');
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch(ANNOUNCEMENTS_API_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
       setAnnouncements([]);
-    } else {
-      setAnnouncements((data ?? []) as Announcement[]);
+      return;
     }
-    setLoading(false);
-  };
-
+    const data = await res.json();
+    setAnnouncements((data ?? []) as Announcement[]);
+  } catch {
+    setLoadError('Could not reach the server. Please try again.');
+    setAnnouncements([]);
+  }
+  setLoading(false);
+};
   useEffect(() => {
     fetchAnnouncements();
     // eslint-disable-next-line react-hooks/exhaustive-deps

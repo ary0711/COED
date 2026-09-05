@@ -25,10 +25,6 @@ import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
-// NOTE: getAlumniNews/getSingleNewsArticle removed — Alumni News tab replaced by Alumni Calendar.
-// NOTE: Alumni Calendar currently uses local hardcoded event data (matching the
-// Student dashboard's Achievements & Activities calendar pattern). Wire this up
-// to a Supabase table the Dean's dashboard writes to once that table exists.
 
 // ====================== TRACER SURVEY API HELPERS ======================
 interface TracerSurveyData {
@@ -113,16 +109,14 @@ const alumniMenuItems = [
   { icon: Award,        label: 'Achievements',            id: 'achievements'},
   { icon: FileText,     label: 'Documents & Resources',   id: 'documents'   },
   { icon: MessageSquare,label: 'Inquiry / Contact',       id: 'inquiry'     },
-  { icon: Settings,    label: 'Settings',            id: 'settings' },
+  { icon: Settings,     label: 'Settings',               id: 'settings'    },
 ];
 
 interface AlumniDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
-
   onRoleChange?: () => void;
   onLogout?: () => void;
-
   userName?: string;
   idNumber?: string;
 }
@@ -130,15 +124,26 @@ interface AlumniDashboardProps {
 export function AlumniDashboard({
   activeMenuItem,
   setActiveMenuItem,
+  onLogout,
   userName,
   idNumber,
 }: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Profile state — shared between AlumniSettings and (future) other views
+  // Profile state
   const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
+
+  const handleInternalLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('userFullName');
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   const fetchProfile = async () => {
     setProfileLoading(true);
@@ -183,6 +188,7 @@ export function AlumniDashboard({
         userRole="Alumni"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       {/* ── Desktop spacer so content clears the fixed sidebar ── */}
@@ -204,11 +210,11 @@ export function AlumniDashboard({
             </button>
             <div className="flex-1">
               <DashboardHeader
-                 userRole="Alumni"
-                 userName={userName ?? 'Alumni'}
-                />
+                userRole="Alumni"
+                userName={userName ?? 'Alumni'}
+                onLogout={handleInternalLogout}
+              />
             </div>
-            
           </div>
         </div>
 
@@ -220,26 +226,23 @@ export function AlumniDashboard({
           {activeMenuItem === 'achievements' && <AlumniAchievements />}
           {activeMenuItem === 'documents'    && <DocumentsResources />}
           {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
-         {activeMenuItem === 'settings'    && (
+          {activeMenuItem === 'settings'     && (
             <AlumniSettings
               profile={profile}
               userEmail={userEmail}
               loading={profileLoading}
               onProfileUpdated={fetchProfile}
               idNumber={idNumber || ''}
+              onLogout={handleInternalLogout}
             />
           )}
-          </main>
+        </main>
       </div>
     </div>
   );
 }
 
 // ====================== NOTIFICATION BELL ======================
-// Self-contained: reads/writes the shared `notifications` table, scoped
-// to the logged-in user via localStorage('userId') (this app uses a
-// custom JWT login, not Supabase Auth, so there's no auth session to
-// read the user from). Updates live via a realtime subscription.
 interface NotificationRow {
   id: string;
   title: string;
@@ -403,9 +406,6 @@ function AlumniDashboardView({
 
   return (
     <div>
-      
-
-
       {/* Tracer Status */}
       <div className="grid grid-cols-3 gap-3 sm:gap-6 mb-6">
         <div className="bg-white rounded-xl shadow-md p-3 sm:p-6">
@@ -438,7 +438,7 @@ function AlumniDashboardView({
         </div>
       </div>
 
-      {/* Announcements & Achivements */}
+      {/* Announcements & Achievements */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -640,7 +640,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
           {isEditing && (
             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
               <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">{isNew ? 'Save' : 'Save Changes'}</button>
-               {!isNew && (
+              {!isNew && (
                 <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm">Cancel</button>
               )}
             </div>
@@ -677,9 +677,6 @@ function AlumniCalendar() {
     color?: string;
   }
 
-  // NOTE: hardcoded for now — wire this up to a Supabase `alumni_calendar_events`
-  // table (e.g. getAlumniCalendarEvents) the same way TracerSurvey reads from
-  // its table, once the Dean's dashboard can write events to it.
   const calendarEventsData: CalendarEvent[] = [
     { id: '1', title: 'Alumni Homecoming 2026',       date: 30, type: 'homecoming', description: 'Annual alumni homecoming celebration', location: 'College Grounds', color: '#3B82F6' },
     { id: '2', title: 'Career Mentorship Kickoff',     date: 8,  type: 'mentorship', description: "Orientation for this year's mentorship program", location: 'COED Conference Hall', color: '#10B981' },
@@ -954,7 +951,6 @@ function AlumniCalendar() {
   );
 }
 
-
 // ====================== DOCUMENTS & RESOURCES ======================
 interface DocumentItem {
   id: string;
@@ -965,7 +961,6 @@ interface DocumentItem {
   created_at: string;
 }
 
-// RETRIEVE — display downloadable files
 async function getDocuments() {
   const { data, error } = await supabase
     .from('alumni_documents')
@@ -975,7 +970,6 @@ async function getDocuments() {
   return data as DocumentItem[];
 }
 
-// DOWNLOAD — handle secure file downloads (open the stored file URL)
 function downloadDocument(fileUrl: string, name: string) {
   const link = document.createElement('a');
   link.href = fileUrl;
@@ -1080,13 +1074,6 @@ function DocumentsResources() {
 }
 
 // ====================== INQUIRY / CONTACT ======================
-// FIXED: now writes directly to the shared `inquiries` table — the same
-// table the Student side and the Dean's InquiriesManagement page use —
-// instead of the old `alumniInquiry.ts` service (which pointed at a
-// different table the Dean never reads, and looked up history using the
-// placeholder "ALU-2020-0458" id instead of the real logged-in user).
-// Identity comes from localStorage('userId'), set by LoginPage.tsx at
-// login (this app uses a custom JWT login, not Supabase Auth).
 const INQUIRY_CATEGORIES = [
   'Documents',
   'Employment',
@@ -1165,7 +1152,6 @@ function AlumniInquiry() {
     loadHistory();
   }, []);
 
-  // Realtime — reflect the dean's reply as soon as it's saved
   useEffect(() => {
     const channelName = `alumni-inquiries-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
@@ -1201,8 +1187,6 @@ function AlumniInquiry() {
         category,
         message: message.trim(),
         status: 'pending',
-        // student_id kept for backward compatibility with the original
-        // NOT NULL column on this shared table
         student_id: currentUserId,
       });
 
@@ -1385,6 +1369,7 @@ function AlumniInquiry() {
     </div>
   );
 }
+
 // ====================== COLLEGE INFORMATION ======================
 function CollegeInformation() {
   return (
@@ -1451,9 +1436,6 @@ const DEFAULT_AWARDS: AwardItem[] = [
 ];
 
 function AlumniAchievements() {
-  // NOTE: awards are local state for now — wire this up to a Supabase
-  // `achievements` table (e.g. getAwards/saveAward/updateAward/deleteAward)
-  // the same way TracerSurvey and AlumniInquiry are, once that table exists.
   const [awards, setAwards] = useState<AwardItem[]>(DEFAULT_AWARDS);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -1651,9 +1633,10 @@ interface AlumniSettingsProps {
   loading: boolean;
   onProfileUpdated: () => void;
   idNumber: string;
+  onLogout?: () => void;
 }
 
-function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumber }: AlumniSettingsProps) {
+function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumber, onLogout }: AlumniSettingsProps) {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
@@ -1822,10 +1805,13 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
         </h2>
 
         <div className="space-y-3">
-          <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
-            Log Out from All Devices
+          <button 
+            onClick={onLogout}
+            className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
+          >
+            Log Out from Account
           </button>
-          <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+          <p className="text-xs text-gray-500 text-center">This will sign you out from your session and return to the home page</p>
         </div>
       </div>
 
