@@ -1,22 +1,10 @@
 // routes/tracerSurvey.js
-//
-// All reads/writes for graduate_tracer_survey go through here,
-// authenticated via JWT, using the service-role Supabase client.
-//
-// Your login route (routes/auth.js) already puts idNumber directly into
-// the JWT payload (sourced from profiles.id_number), so authenticate
-// middleware exposes it as req.user.idNumber on every request — no
-// extra database lookup needed here.
-
 const express = require('express');
 const router = express.Router();
 const authenticate = require('../middleware/authenticate');
 const supabase = require('../supabaseClient');
 
 function requireAlumniId(req, res) {
-  // Prefers alumniId (sourced directly from users.alumni_id at login) —
-  // falls back to idNumber (sourced from the profiles table) in case
-  // an older token or a different login path only set that instead.
   const alumniId = req.user.alumniId || req.user.idNumber;
   if (!alumniId) {
     res.status(400).json({ error: 'No alumni ID on this account. Contact support to have your profile linked.' });
@@ -25,7 +13,7 @@ function requireAlumniId(req, res) {
   return alumniId;
 }
 
-// GET /api/tracer-survey/mine
+// GET /api/tracer-survey/mine (Alumni personal survey)
 router.get('/mine', authenticate, async (req, res) => {
   const alumniId = requireAlumniId(req, res);
   if (!alumniId) return;
@@ -42,8 +30,37 @@ router.get('/mine', authenticate, async (req, res) => {
   return res.json(data ?? null);
 });
 
-// GET /api/tracer-survey/dashboard-stats
+// GET /api/tracer-survey/dashboard-stats (Dual-mode: Alumni vs Dean/Admin)
 router.get('/dashboard-stats', authenticate, async (req, res) => {
+  const userRole = (req.user.role || '').toLowerCase();
+
+  // ── DEAN / ADMIN AGGREGATE STATS ──
+  if (userRole === 'dean' || userRole === 'admin' || userRole === 'college_dean') {
+    const { data: surveys, error } = await supabase
+      .from('graduate_tracer_survey')
+      .select('employment_status, relevance, is_completed');
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    const totalResponses = surveys.length;
+    const employed = surveys.filter(
+      (s) => s.employment_status === 'employed' || s.employment_status === 'self-employed'
+    ).length;
+    const relevant = surveys.filter(
+      (s) => s.relevance === 'very-relevant' || s.relevance === 'relevant'
+    ).length;
+
+    return res.json({
+      totalResponses,
+      employedCount: employed,
+      employmentRate: totalResponses > 0 ? Math.round((employed / totalResponses) * 100) : 0,
+      alignmentRate: totalResponses > 0 ? Math.round((relevant / totalResponses) * 100) : 0,
+    });
+  }
+
+  // ── ALUMNI PERSONAL STATS ──
   const alumniId = requireAlumniId(req, res);
   if (!alumniId) return;
 
@@ -67,7 +84,26 @@ router.get('/dashboard-stats', authenticate, async (req, res) => {
   });
 });
 
-// POST /api/tracer-survey  (first-time save)
+// GET /api/tracer-survey/all (Dean/Admin view all records)
+router.get('/all', authenticate, async (req, res) => {
+  const userRole = (req.user.role || '').toLowerCase();
+  if (userRole !== 'dean' && userRole !== 'admin' && userRole !== 'college_dean') {
+    return res.status(403).json({ error: 'Access denied: Dean privilege required.' });
+  }
+
+  const { data, error } = await supabase
+    .from('graduate_tracer_survey')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  return res.json(data ?? []);
+});
+
+// POST /api/tracer-survey (First-time save)
 router.post('/', authenticate, async (req, res) => {
   const alumniId = requireAlumniId(req, res);
   if (!alumniId) return;
@@ -77,7 +113,7 @@ router.post('/', authenticate, async (req, res) => {
   const { data, error } = await supabase
     .from('graduate_tracer_survey')
     .insert({
-      alumni_id: alumniId, // always server-derived from the JWT, never trusted from the body
+      alumni_id: alumniId,
       employment_status,
       job_title,
       employer,
@@ -95,7 +131,7 @@ router.post('/', authenticate, async (req, res) => {
   return res.status(201).json(data);
 });
 
-// PUT /api/tracer-survey  (update existing survey)
+// PUT /api/tracer-survey (Update existing survey)
 router.put('/', authenticate, async (req, res) => {
   const alumniId = requireAlumniId(req, res);
   if (!alumniId) return;
@@ -104,7 +140,15 @@ router.put('/', authenticate, async (req, res) => {
 
   const { data, error } = await supabase
     .from('graduate_tracer_survey')
-    .update({ employment_status, job_title, employer, years_employed, monthly_salary, relevance })
+    .update({ 
+      employment_status, 
+      job_title, 
+      employer, 
+      years_employed, 
+      monthly_salary, 
+      relevance,
+      updated_at: new Date().toISOString() 
+    })
     .eq('alumni_id', alumniId)
     .select()
     .single();

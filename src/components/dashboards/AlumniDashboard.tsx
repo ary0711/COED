@@ -20,6 +20,7 @@ import {
   Settings,
   Lock,
   LogOut,
+  Check,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -480,13 +481,29 @@ function AlumniDashboardView({
   );
 }
 
-// ====================== TRACER SURVEY ======================
+// ====================== TRACER SURVEY (ALUMNI DASHBOARD) ======================
 function TracerSurvey({ alumniId }: { alumniId: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isNew, setIsNew] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Modal State
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    open: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({
+    open: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
   const [formData, setFormData] = useState({
     employmentStatus: 'employed',
     jobTitle: '',
@@ -496,31 +513,38 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     relevance: 'very-relevant',
   });
 
+  // Load existing survey through your existing Express route: GET /api/tracer-survey/mine
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const existing = await getTracerSurvey(alumniId);
-      if (existing) {
-        setFormData({
-          employmentStatus: existing.employment_status,
-          jobTitle: existing.job_title || '',
-          employer: existing.employer || '',
-          yearsEmployed: String(existing.years_employed ?? ''),
-          monthlySalary: existing.monthly_salary || '25000-30000',
-          relevance: existing.relevance || 'very-relevant',
-        });
-        setLastUpdated(existing.updated_at);
-        setIsNew(false);
-        setIsEditing(false);
-      } else {
-        setIsNew(true);
-        setIsEditing(true);
+      try {
+        const existing = await getTracerSurvey(alumniId);
+        if (existing) {
+          setFormData({
+            employmentStatus: existing.employment_status || 'employed',
+            jobTitle: existing.job_title || '',
+            employer: existing.employer || '',
+            yearsEmployed: String(existing.years_employed ?? ''),
+            monthlySalary: existing.monthly_salary || '25000-30000',
+            relevance: existing.relevance || 'very-relevant',
+          });
+          setLastUpdated(existing.updated_at);
+          setIsNew(false);
+          setIsEditing(false);
+        } else {
+          setIsNew(true);
+          setIsEditing(true);
+        }
+      } catch (err) {
+        console.error('Failed to load existing survey:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, [alumniId]);
 
-  const handleSave = async () => {
+  // Trigger modal validation
+  const initiateSubmit = () => {
     const payload = {
       alumni_id: alumniId,
       employment_status: formData.employmentStatus,
@@ -534,9 +558,26 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     const validationErrors = validateTracerSurvey(payload);
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
     setErrors([]);
+    setShowConfirmModal(true);
+  };
+
+  // Confirmed submission to POST /api/tracer-survey or PUT /api/tracer-survey
+  const handleConfirmedSave = async () => {
+    setSaving(true);
+    const payload = {
+      alumni_id: alumniId,
+      employment_status: formData.employmentStatus,
+      job_title: formData.jobTitle,
+      employer: formData.employer,
+      years_employed: Number(formData.yearsEmployed) || 0,
+      monthly_salary: formData.monthlySalary,
+      relevance: formData.relevance,
+    };
 
     try {
       if (isNew) {
@@ -544,120 +585,343 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       } else {
         await updateTracerSurvey(alumniId, payload);
       }
+
       setLastUpdated(new Date().toISOString());
       setIsNew(false);
       setIsEditing(false);
-      alert('✅ Tracer information updated successfully!');
-    } catch (err) {
-      alert('❌ Error saving survey. Check console for details.');
-      console.error(err);
+      setShowConfirmModal(false);
+
+      setFeedbackModal({
+        open: true,
+        type: 'success',
+        title: 'Survey Recorded Successfully',
+        message: 'Your employment and career details have been synchronized with the College Dean registry.',
+      });
+    } catch (err: any) {
+      setShowConfirmModal(false);
+      setFeedbackModal({
+        open: true,
+        type: 'error',
+        title: 'Submission Error',
+        message: err?.message || 'Could not save survey response. Please try again.',
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
   if (loading) {
-    return <p className="text-gray-600">Loading survey...</p>;
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center shadow-sm">
+        <RefreshCw className="w-8 h-8 text-[#1E3A8A] animate-spin mx-auto mb-3" />
+        <p className="text-sm font-semibold text-gray-800">Retrieving Graduate Tracer Profile</p>
+        <p className="text-xs text-gray-400 mt-1">Connecting to institutional records...</p>
+      </div>
+    );
   }
 
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Graduate Tracer Survey</h1>
+  const isEmployedType =
+    formData.employmentStatus === 'employed' || formData.employmentStatus === 'self-employed';
 
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Your Tracer Information</h2>
-            {lastUpdated && (
-              <p className="text-xs sm:text-sm text-gray-600">
-                Last updated: {new Date(lastUpdated).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            )}
+  return (
+    <div className="space-y-6">
+      {/* ── Section Header Banner ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl text-[#1E3A8A]">
+            <FileText className="w-6 h-6" />
           </div>
-          {!isNew && (
-            <button
-              onClick={() => setIsEditing(!isEditing)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm w-fit"
-            >
-              {isEditing ? 'Cancel Edit' : 'Edit Information'}
-            </button>
-          )}
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">
+              Institutional Graduate Tracer
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+              Accreditation & CHED Compliance Career Tracking System
+            </p>
+          </div>
         </div>
 
-        {errors.length > 0 && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-4 text-sm">
-            {errors.map((err) => <p key={err}>{err}</p>)}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {!isNew && !isEditing ? (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Update Information
+            </button>
+          ) : !isNew && isEditing ? (
+            <button
+              onClick={() => setIsEditing(false)}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+            >
+              Cancel Edit
+            </button>
+          ) : null}
+        </div>
+      </div>
 
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+      {/* ── Active Status Banner ── */}
+      {!isNew && !isEditing && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-sm">
+              <CheckCircle className="w-5 h-5" />
+            </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Employment Status</label>
+              <h3 className="text-sm font-bold text-emerald-900">Tracer Profile is Active</h3>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                Last updated on{' '}
+                <span className="font-semibold">
+                  {lastUpdated
+                    ? new Date(lastUpdated).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })
+                    : 'Recent Session'}
+                </span>
+                . Your responses are officially counted in college analytics.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full w-fit">
+            Verified Record
+          </span>
+        </div>
+      )}
+
+      {/* ── Validation Alerts ── */}
+      {errors.length > 0 && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs sm:text-sm space-y-1">
+          <p className="font-bold flex items-center gap-1.5">
+            <X className="w-4 h-4 text-rose-600" /> Missing Required Fields:
+          </p>
+          <ul className="list-disc pl-5 space-y-0.5">
+            {errors.map((err) => (
+              <li key={err}>{err}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Form Card ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
+        <div className="px-6 py-4 bg-gray-50/70 border-b border-gray-200/80 flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-700">
+            Professional & Employment Profile
+          </span>
+          <span className="text-xs text-gray-400">Alumni ID: {alumniId}</span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Employment Status */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Current Employment Status <span className="text-rose-500">*</span>
+              </label>
               <select
                 value={formData.employmentStatus}
                 onChange={(e) => setFormData({ ...formData, employmentStatus: e.target.value })}
                 disabled={!isEditing}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
               >
-                <option value="employed">Employed</option>
-                <option value="self-employed">Self-Employed</option>
-                <option value="unemployed">Unemployed but looking</option>
-                <option value="further-study">Pursuing further studies</option>
+                <option value="employed">Employed (Government / Private / NGO)</option>
+                <option value="self-employed">Self-Employed / Entrepreneur / Freelancer</option>
+                <option value="unemployed">Unemployed (Actively Seeking Employment)</option>
+                <option value="further-study">Pursuing Advanced Degree / Graduate Studies</option>
               </select>
             </div>
+
+            {/* Relevance to Degree */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Job Title / Position</label>
-              <input type="text" value={formData.jobTitle} onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} disabled={!isEditing} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm" />
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Degree Alignment & Relevance
+              </label>
+              <select
+                value={formData.relevance}
+                onChange={(e) => setFormData({ ...formData, relevance: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              >
+                <option value="very-relevant">Directly Relevant (Education / Teaching Field)</option>
+                <option value="relevant">Relevant (Related Discipline or Instructional Role)</option>
+                <option value="somewhat-relevant">Somewhat Relevant (General Skills Applied)</option>
+                <option value="not-relevant">Not Relevant (Different Industry)</option>
+              </select>
             </div>
+
+            {/* Position / Job Title */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Employer / Company</label>
-              <input type="text" value={formData.employer} onChange={(e) => setFormData({ ...formData, employer: e.target.value })} disabled={!isEditing} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm" />
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Designation / Position Title {isEmployedType && <span className="text-rose-500">*</span>}
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Master Teacher I, Secondary Math Teacher"
+                value={formData.jobTitle}
+                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
             </div>
+
+            {/* Employer / Institution */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Years in Current Position</label>
-              <input type="number" value={formData.yearsEmployed} onChange={(e) => setFormData({ ...formData, yearsEmployed: e.target.value })} disabled={!isEditing} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm" />
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Employer / Institution Name {isEmployedType && <span className="text-rose-500">*</span>}
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Department of Education / St. Theresa Academy"
+                value={formData.employer}
+                onChange={(e) => setFormData({ ...formData, employer: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
             </div>
+
+            {/* Years in Position */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Salary Range</label>
-              <select value={formData.monthlySalary} onChange={(e) => setFormData({ ...formData, monthlySalary: e.target.value })} disabled={!isEditing} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Tenure in Role (Years)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0"
+                value={formData.yearsEmployed}
+                onChange={(e) => setFormData({ ...formData, yearsEmployed: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
+            </div>
+
+            {/* Monthly Salary Bracket */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Monthly Compensation Bracket
+              </label>
+              <select
+                value={formData.monthlySalary}
+                onChange={(e) => setFormData({ ...formData, monthlySalary: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              >
                 <option value="below-20000">Below ₱20,000</option>
-                <option value="20000-25000">₱20,000 - ₱25,000</option>
-                <option value="25000-30000">₱25,000 - ₱30,000</option>
-                <option value="30000-40000">₱30,000 - ₱40,000</option>
+                <option value="20000-25000">₱20,000 – ₱25,000</option>
+                <option value="25000-30000">₱25,000 – ₱30,000</option>
+                <option value="30000-40000">₱30,000 – ₱40,000</option>
                 <option value="above-40000">Above ₱40,000</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Job Relevance to Degree</label>
-              <select value={formData.relevance} onChange={(e) => setFormData({ ...formData, relevance: e.target.value })} disabled={!isEditing} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 text-sm">
-                <option value="very-relevant">Very Relevant</option>
-                <option value="relevant">Relevant</option>
-                <option value="somewhat-relevant">Somewhat Relevant</option>
-                <option value="not-relevant">Not Relevant</option>
               </select>
             </div>
           </div>
 
+          {/* Submission Buttons */}
           {isEditing && (
-            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
-              <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">{isNew ? 'Save' : 'Save Changes'}</button>
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-5 border-t border-gray-100">
               {!isNew && (
-                <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Discard Changes
+                </button>
               )}
+              <button
+                type="button"
+                onClick={initiateSubmit}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold shadow-sm transition-all"
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                {isNew ? 'Submit Survey Response' : 'Save Changes'}
+              </button>
             </div>
           )}
         </div>
       </div>
 
-      {!isNew && !isEditing && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 sm:p-6">
-          <div className="flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mt-1 flex-shrink-0" />
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Survey Completed</h3>
-              <p className="text-xs sm:text-sm text-gray-700">
-                Thank you for keeping your information updated. Your responses help us improve our programs and track alumni success.
-              </p>
+      {/* ── Submission Confirmation Modal ── */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E3A8A] flex items-center justify-center mx-auto mb-3.5">
+              <FileText className="w-6 h-6" />
             </div>
+
+            <h3 className="text-base font-bold text-gray-900 mb-1">Confirm Tracer Submission</h3>
+            <p className="text-xs text-gray-500 leading-relaxed mb-4">
+              You are about to save your employment details under{' '}
+              <span className="font-semibold text-gray-800">
+                {formData.jobTitle || formData.employmentStatus}
+              </span>{' '}
+              at{' '}
+              <span className="font-semibold text-gray-800">
+                {formData.employer || 'Self / N/A'}
+              </span>
+              . This information will be aggregated in the Dean's accreditation report.
+            </p>
+
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={saving}
+                className="flex-1 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Review Again
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmedSave}
+                disabled={saving}
+                className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-all shadow-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Confirm & Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Status Feedback Modal ── */}
+      {feedbackModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
+                feedbackModal.type === 'success'
+                  ? 'bg-emerald-100 text-emerald-600'
+                  : 'bg-rose-100 text-rose-600'
+              }`}
+            >
+              {feedbackModal.type === 'success' ? (
+                <CheckCircle className="w-6 h-6" />
+              ) : (
+                <X className="w-6 h-6" />
+              )}
+            </div>
+
+            <h3 className="text-base font-bold text-gray-900 mb-1">{feedbackModal.title}</h3>
+            <p className="text-xs text-gray-500 leading-relaxed mb-5">{feedbackModal.message}</p>
+
+            <button
+              type="button"
+              onClick={() => setFeedbackModal((prev) => ({ ...prev, open: false }))}
+              className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-colors shadow-sm"
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

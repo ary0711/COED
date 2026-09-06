@@ -389,6 +389,14 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   const [departmentCount, setDepartmentCount] = useState<number>(0);
   const [departmentLoading, setDepartmentLoading] = useState(true);
 
+  // Dynamic live state for reports & tracer
+  const [pendingReportsCount, setPendingReportsCount] = useState<number>(0);
+  const [pendingReportsLoading, setPendingReportsLoading] = useState(true);
+  const [alumniResponsesCount, setAlumniResponsesCount] = useState<number>(0);
+  const [tracerLoading, setTracerLoading] = useState(true);
+  const [tracerResponseRate, setTracerResponseRate] = useState<number>(0);
+
+  // 1. Department count
   useEffect(() => {
     const loadDepartmentCount = async () => {
       try {
@@ -396,12 +404,14 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         const response = await fetch('http://localhost:5000/api/departments/count');
         const result = await response.json();
         if (!response.ok || !result.success) {
-          setDepartmentCount(0);
+          const { count } = await supabase.from('departments').select('*', { count: 'exact', head: true });
+          setDepartmentCount(count ?? 0);
           return;
         }
         setDepartmentCount(Number(result.count) || 0);
       } catch {
-        setDepartmentCount(0);
+        const { count } = await supabase.from('departments').select('*', { count: 'exact', head: true });
+        setDepartmentCount(count ?? 0);
       } finally {
         setDepartmentLoading(false);
       }
@@ -409,6 +419,7 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
     loadDepartmentCount();
   }, []);
 
+  // 2. Faculty count
   useEffect(() => {
     const loadFacultyCount = async () => {
       try {
@@ -416,12 +427,14 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         const response = await fetch('http://localhost:5000/api/auth/faculty-count');
         const result = await response.json();
         if (!response.ok || !result.success) {
-          setFacultyCount(0);
+          const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'faculty');
+          setFacultyCount(count ?? 0);
           return;
         }
         setFacultyCount(Number(result.count) || 0);
       } catch {
-        setFacultyCount(0);
+        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'faculty');
+        setFacultyCount(count ?? 0);
       } finally {
         setFacultyLoading(false);
       }
@@ -429,6 +442,7 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
     loadFacultyCount();
   }, []);
 
+  // 3. Student count
   useEffect(() => {
     const loadStudentCount = async () => {
       try {
@@ -436,12 +450,14 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         const response = await fetch('http://localhost:5000/api/auth/student-count');
         const result = await response.json();
         if (!response.ok || !result.success) {
-          setStudentCount(0);
+          const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student');
+          setStudentCount(count ?? 0);
           return;
         }
         setStudentCount(Number(result.count) || 0);
       } catch {
-        setStudentCount(0);
+        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student');
+        setStudentCount(count ?? 0);
       } finally {
         setStudentLoading(false);
       }
@@ -449,12 +465,88 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
     loadStudentCount();
   }, []);
 
+  // 4. Pending Accomplishment Reports count (Backend API + Supabase fallback)
+  const loadPendingReports = useCallback(async () => {
+    setPendingReportsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/accomplishment-reports', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const pending = (data || []).filter((r: any) => r.status === 'submitted').length;
+        setPendingReportsCount(pending);
+      } else {
+        const { count } = await supabase
+          .from('accomplishment_reports')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'submitted');
+        setPendingReportsCount(count ?? 0);
+      }
+    } catch {
+      const { count } = await supabase
+        .from('accomplishment_reports')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'submitted');
+      setPendingReportsCount(count ?? 0);
+    } finally {
+      setPendingReportsLoading(false);
+    }
+  }, []);
+
+  // 5. Accurate Graduate Tracer Survey responses from public.graduate_tracer_survey
+  const loadTracerStats = useCallback(async () => {
+    setTracerLoading(true);
+    try {
+      const { count: alumniTotal } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'alumni');
+
+      const { count: surveyCount } = await supabase
+        .from('graduate_tracer_survey')
+        .select('*', { count: 'exact', head: true });
+
+      const responses = surveyCount ?? 0;
+      setAlumniResponsesCount(responses);
+
+      if (alumniTotal && alumniTotal > 0) {
+        setTracerResponseRate(Math.round((responses / alumniTotal) * 100));
+      } else {
+        setTracerResponseRate(0);
+      }
+    } catch (err) {
+      console.error('Failed to load tracer count:', err);
+    } finally {
+      setTracerLoading(false);
+    }
+  }, []);
+
+  // Initial load & Realtime sync
+  useEffect(() => {
+    loadPendingReports();
+    loadTracerStats();
+
+    const channelName = `dashboard-metrics-channel-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'graduate_tracer_survey' }, () => loadTracerStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accomplishment_reports' }, () => loadPendingReports())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadTracerStats())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadPendingReports, loadTracerStats]);
+
   const mobileMetrics = [
     { label: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
     { label: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
     { label: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'All operational', color: '#7C3AED', bg: '#EDE9FE' },
-    { label: 'Pending Reports', value: '23', sub: '8 newly added', color: '#B45309', bg: '#FEF3C7' },
-    { label: 'Alumni Responses', value: '1,256', sub: '+18.7% response rate', color: '#BE185D', bg: '#FCE7F3' },
+    { label: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), sub: 'Awaiting Dean review', color: '#B45309', bg: '#FEF3C7' },
+    { label: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), sub: `${tracerResponseRate}% response rate`, color: '#BE185D', bg: '#FCE7F3' },
     { label: 'Evaluation Rating', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
     { label: 'Research Submitted', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
     { label: 'Completion Rate', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
@@ -473,8 +565,8 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
             { title: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
             { title: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
             { title: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
-            { title: 'Pending Reports', value: '23', icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: '8', trendUp: false },
-            { title: 'Alumni Responses', value: '1,256', icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: '18.7%', trendUp: true },
+            { title: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: String(pendingReportsCount), trendUp: false },
+            { title: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: `${tracerResponseRate}%`, trendUp: true },
           ].map((card) => (
             <div key={card.title} className="flex-shrink-0 w-48 h-40">
               <SummaryCard {...card} />
@@ -494,10 +586,10 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
             <SummaryCard title="Active Departments" value={departmentLoading ? '...' : departmentCount.toLocaleString()} icon={Building2} iconColor="#8B5CF6" iconBgColor="#EDE9FE" />
           </div>
           <div className="min-h-[160px]">
-            <SummaryCard title="Pending Reports" value="23" icon={FileText} iconColor="#F59E0B" iconBgColor="#FEF3C7" trend="8" trendUp={false} />
+            <SummaryCard title="Pending Reports" value={pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString()} icon={FileText} iconColor="#F59E0B" iconBgColor="#FEF3C7" trend={String(pendingReportsCount)} trendUp={false} />
           </div>
           <div className="min-h-[160px]">
-            <SummaryCard title="Alumni Responses" value="1,256" icon={UserCheck} iconColor="#EF4444" iconBgColor="#FEE2E2" trend="18.7%" trendUp={true} />
+            <SummaryCard title="Alumni Responses" value={tracerLoading ? '...' : alumniResponsesCount.toLocaleString()} icon={UserCheck} iconColor="#EF4444" iconBgColor="#FEE2E2" trend={`${tracerResponseRate}%`} trendUp={true} />
           </div>
         </div>
       </div>
@@ -2524,27 +2616,401 @@ function ResearchAchievements() {
   );
 }
 
-// ─── Alumni Tracer ────────────────────────────────────────────────────────────
+// ─── Alumni Tracer (COLLEGE DEAN DASHBOARD) ───────────────────────────────────
+
+const TRACER_API_BASE = 'http://localhost:5000/api/tracer-survey';
+
+interface TracerRecord {
+  id: string;
+  alumni_id: string;
+  employment_status: string;
+  job_title: string | null;
+  employer: string | null;
+  years_employed: number | null;
+  monthly_salary: string | null;
+  relevance: string | null;
+  is_completed?: boolean;
+  updated_at: string;
+}
+
+interface DeanTracerStats {
+  totalResponses: number;
+  employedCount: number;
+  employmentRate: number;
+  alignmentRate: number;
+}
+
 function AlumniTracer() {
+  const [records, setRecords] = useState<TracerRecord[]>([]);
+  const [backendStats, setBackendStats] = useState<DeanTracerStats | null>(null);
+  const [totalAlumniCount, setTotalAlumniCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+
+      // 1. Fetch aggregate stats from backend: GET /api/tracer-survey/dashboard-stats
+      const statsRes = await fetch(`${TRACER_API_BASE}/dashboard-stats`, { headers: authHeaders });
+      if (statsRes.ok) {
+        const statsData: DeanTracerStats = await statsRes.json();
+        setBackendStats(statsData);
+      }
+
+      // 2. Fetch full records array from backend: GET /api/tracer-survey/all
+      const recordsRes = await fetch(`${TRACER_API_BASE}/all`, { headers: authHeaders });
+      if (recordsRes.ok) {
+        const recordsData: TracerRecord[] = await recordsRes.json();
+        setRecords(recordsData ?? []);
+      }
+
+      // 3. Fetch registered alumni denominator for global response rate
+      const { count: alumniTotal } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'alumni');
+      setTotalAlumniCount(alumniTotal ?? 0);
+    } catch (err) {
+      console.error('Failed to load tracer records from Express backend:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    // Supabase Realtime channel only triggers a backend refetch on changes
+    const channel = supabase
+      .channel('dean-tracer-survey-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'graduate_tracer_survey' },
+        () => {
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Filtered entries for search & status select
+  const filtered = records.filter((r) => {
+    const query = search.toLowerCase();
+    const matchesSearch =
+      (r.job_title || '').toLowerCase().includes(query) ||
+      (r.employer || '').toLowerCase().includes(query) ||
+      (r.alumni_id || '').toLowerCase().includes(query);
+
+    const matchesFilter = statusFilter === 'all' ? true : r.employment_status === statusFilter;
+    return matchesSearch && matchesFilter;
+  });
+
+  // Display metrics (prefers backend calculations, falls back to records length)
+  const responsesCount = backendStats?.totalResponses ?? records.length;
+  const employedCount =
+    backendStats?.employedCount ??
+    records.filter((r) => r.employment_status === 'employed' || r.employment_status === 'self-employed').length;
+  const unemployedCount = records.filter((r) => r.employment_status === 'unemployed').length;
+  const furtherStudyCount = records.filter((r) => r.employment_status === 'further-study').length;
+
+  const employmentRate =
+    backendStats?.employmentRate ??
+    (responsesCount > 0 ? Math.round((employedCount / responsesCount) * 100) : 0);
+  const alignmentRate =
+    backendStats?.alignmentRate ??
+    (responsesCount > 0
+      ? Math.round(
+          (records.filter((r) => r.relevance === 'very-relevant' || r.relevance === 'relevant').length /
+            responsesCount) *
+            100
+        )
+      : 0);
+  const responseRate = totalAlumniCount > 0 ? Math.round((responsesCount / totalAlumniCount) * 100) : 0;
+
+  // Export CSV Report for Accreditation / CHED
+  const exportToCSV = () => {
+    if (records.length === 0) {
+      alert('No survey records available to export.');
+      return;
+    }
+
+    const headers = [
+      'Alumni ID',
+      'Employment Status',
+      'Job Title',
+      'Employer / Institution',
+      'Years Employed',
+      'Monthly Compensation Bracket',
+      'Curriculum Relevance',
+      'Last Updated',
+    ];
+
+    const rows = records.map((r) => [
+      `"${r.alumni_id}"`,
+      `"${r.employment_status}"`,
+      `"${r.job_title || 'N/A'}"`,
+      `"${r.employer || 'N/A'}"`,
+      `"${r.years_employed ?? 0}"`,
+      `"${r.monthly_salary || 'N/A'}"`,
+      `"${r.relevance || 'N/A'}"`,
+      `"${r.updated_at ? new Date(r.updated_at).toLocaleDateString('en-US') : 'N/A'}"`,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Graduate_Tracer_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Alumni Tracer Management</h1>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6 mb-6">
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6"><h3 className="text-xs sm:text-sm font-medium text-gray-600 mb-2">Total Alumni</h3><p className="text-2xl sm:text-3xl font-bold text-blue-600">5,234</p></div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6"><h3 className="text-xs sm:text-sm font-medium text-gray-600 mb-2">Responses</h3><p className="text-2xl sm:text-3xl font-bold text-green-600">1,256</p></div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6"><h3 className="text-xs sm:text-sm font-medium text-gray-600 mb-2">Employed</h3><p className="text-2xl sm:text-3xl font-bold text-purple-600">98%</p></div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6"><h3 className="text-xs sm:text-sm font-medium text-gray-600 mb-2">Response Rate</h3><p className="text-2xl sm:text-3xl font-bold text-orange-600">24%</p></div>
-      </div>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Employment Statistics</h2>
-          <button className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
-            <Download className="w-4 h-4" /> Export Report
+    <div className="space-y-6">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">
+            Alumni Tracer Management
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+            CHED / AACCUP Institutional Graduate Career & Employment Intelligence
+          </p>
+        </div>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={exportToCSV}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export Report
           </button>
         </div>
-        <div className="h-48 sm:h-64 bg-gray-100 rounded-lg flex items-center justify-center">
-          <BarChart3 className="w-12 sm:w-16 h-12 sm:h-16 text-gray-400" />
+      </div>
+
+      {/* ── Backend Metric Cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Alumni Registry</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1.5">
+            {loading ? '...' : totalAlumniCount.toLocaleString()}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1">Verified alumni accounts</p>
         </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm">
+          <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Responses Logged</p>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-600 mt-1.5">
+            {loading ? '...' : responsesCount.toLocaleString()}
+          </p>
+          <p className="text-[11px] text-emerald-700/80 mt-1">Completed tracer profiles</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm">
+          <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Employment Rate</p>
+          <p className="text-2xl sm:text-3xl font-black text-blue-600 mt-1.5">
+            {loading ? '...' : `${employmentRate}%`}
+          </p>
+          <p className="text-[11px] text-blue-600/80 mt-1">{employedCount} employed or self-employed</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm">
+          <p className="text-xs font-bold text-purple-600 uppercase tracking-wider">Curriculum Alignment</p>
+          <p className="text-2xl sm:text-3xl font-black text-purple-600 mt-1.5">
+            {loading ? '...' : `${alignmentRate}%`}
+          </p>
+          <p className="text-[11px] text-purple-600/80 mt-1">In education or related field</p>
+        </div>
+      </div>
+
+      {/* ── Visual Distribution Bar ── */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-gray-900">Employment Distribution Breakdown</h3>
+            <p className="text-xs text-gray-500">Live proportional distribution of surveyed graduates</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg self-start sm:self-auto">
+            {responseRate}% Global Response Rate
+          </span>
+        </div>
+
+        {responsesCount > 0 ? (
+          <div className="space-y-3">
+            <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden">
+              <div
+                style={{ width: `${(employedCount / responsesCount) * 100}%` }}
+                className="bg-emerald-500 transition-all duration-500"
+                title={`Employed: ${employedCount}`}
+              />
+              <div
+                style={{ width: `${(furtherStudyCount / responsesCount) * 100}%` }}
+                className="bg-blue-500 transition-all duration-500"
+                title={`Further Study: ${furtherStudyCount}`}
+              />
+              <div
+                style={{ width: `${(unemployedCount / responsesCount) * 100}%` }}
+                className="bg-rose-500 transition-all duration-500"
+                title={`Unemployed: ${unemployedCount}`}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-xs pt-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-emerald-500" />
+                <span className="font-medium text-gray-700">
+                  Employed: {employedCount} ({Math.round((employedCount / responsesCount) * 100)}%)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="font-medium text-gray-700">
+                  Further Studies: {furtherStudyCount} ({Math.round((furtherStudyCount / responsesCount) * 100)}%)
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-rose-500" />
+                <span className="font-medium text-gray-700">
+                  Unemployed: {unemployedCount} ({Math.round((unemployedCount / responsesCount) * 100)}%)
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs text-gray-400">
+            No survey records logged yet to render analytics breakdown.
+          </div>
+        )}
+      </div>
+
+      {/* ── Table Toolbar & Records ── */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-sm space-y-4 p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-gray-900">Alumni Response Log</h3>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+              {filtered.length} entries
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-2.5">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search alumni ID, job, or employer..."
+                className="w-full pl-9 pr-3.5 py-1.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white"
+              />
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full sm:w-auto px-3 py-1.5 text-xs rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20"
+            >
+              <option value="all">All Employment Statuses</option>
+              <option value="employed">Employed</option>
+              <option value="self-employed">Self-Employed</option>
+              <option value="unemployed">Unemployed</option>
+              <option value="further-study">Further Study</option>
+            </select>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-12 flex flex-col items-center justify-center text-center">
+            <RefreshCw className="w-6 h-6 text-[#1E3A8A] animate-spin mb-2" />
+            <p className="text-xs text-gray-500">Loading survey records from Express server...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-gray-400 border border-dashed border-gray-200 rounded-xl">
+            <Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm font-semibold text-gray-700">No matching tracer entries found</p>
+            <p className="text-xs text-gray-400 mt-0.5">Records will appear as alumni submit responses.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-y border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  <th className="py-3 px-4">Alumni Reference</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Designation & Institution</th>
+                  <th className="py-3 px-4">Monthly Compensation</th>
+                  <th className="py-3 px-4">Field Relevance</th>
+                  <th className="py-3 px-4 text-right">Recorded Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
+                {filtered.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="py-3.5 px-4 font-semibold text-gray-900">{item.alumni_id}</td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          item.employment_status === 'employed' || item.employment_status === 'self-employed'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : item.employment_status === 'unemployed'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                        }`}
+                      >
+                        {item.employment_status}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-gray-900">{item.job_title || 'N/A'}</div>
+                      <div className="text-[11px] text-gray-500">{item.employer || '—'}</div>
+                    </td>
+                    <td className="py-3.5 px-4 font-medium text-gray-600">
+                      {item.monthly_salary ? `₱${item.monthly_salary}` : 'Unspecified'}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold ${
+                          item.relevance === 'very-relevant' || item.relevance === 'relevant'
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                            : 'bg-gray-100 text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {item.relevance || 'Not Specified'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right text-[11px] text-gray-400">
+                      {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
