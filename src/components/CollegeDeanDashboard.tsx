@@ -125,6 +125,17 @@ const ALUMNI_INQUIRY_CATEGORIES = [
   'Other',
 ];
 
+const CONTACT_INQUIRY_CATEGORIES = [
+  'General',
+  'Admissions',
+  'Partnerships',
+  'Careers',
+  'Feedback',
+  'Other',
+];
+
+const CONTACT_API_TABLE = 'contact_messages';
+
 interface Inquiry {
   id: string;
   student_id: string;
@@ -144,31 +155,18 @@ interface Inquiry {
   } | null;
 }
 
-// ── ADD THIS ──
 interface ContactMessage {
   id: string;
   sender_name: string;
-  sender_email: string;
+  sender_email?: string;
   subject: string;
-  category: string | null;
+  category?: string | null;
   message: string;
   reply: string | null;
   status: 'pending' | 'answered';
   created_at: string;
   replied_at: string | null;
 }
-
-const CONTACT_API_TABLE = 'contact_messages';
-
-const CONTACT_INQUIRY_CATEGORIES = [
-  'General',
-  'Admissions',
-  'Partnership',
-  'Feedback',
-  'Technical',
-  'Other',
-];
-
 
 // ─── Role & Status Config ─────────────────────────────────────────────────────
 const ROLE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
@@ -612,6 +610,7 @@ function UserManagement() {
 
   const openAdd = () => {
     setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+    setShowPassword(false);
     setFormError('');
     setModal('add');
   };
@@ -622,6 +621,7 @@ function UserManagement() {
       id_number: user.id_number, department: user.department ?? '',
       status: user.status, password: '',
     });
+    setShowPassword(false);
     setFormError('');
     setModal('edit');
   };
@@ -1038,8 +1038,22 @@ function UserManagement() {
               {modal === 'add' && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Password *</label>
-                  <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="Min. 6 characters" />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={e => setForm({ ...form, password: e.target.value })}
+                      className="w-full px-3 py-2 pr-10 border rounded-xl text-sm"
+                      placeholder="Min. 6 characters"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1128,36 +1142,18 @@ function CalendarActivities() {
   const emptyForm = { title: '', date: '', description: '', event_type: 'meeting', target_department_id: '' };
   const [form, setForm] = useState(emptyForm);
   
-const [formError, setFormError] = useState('');
-const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
   const getToken = () => localStorage.getItem('token');
-const DEPARTMENT_COLORS: Record<string, string> = {
-  'All Departments': '#3B82F6', // Blue
-  'Bachelor of Technology and Livelihood Education Program': '#EAB308', // Yellow
-  'Bachelor of Education Major in Math & English Program': '#F97316', // Orange
-  'Bachelor of Elementary Education Program': '#22C55E', // Green
-};
 
-const getDepartmentColor = (name: string) => {
-  if (name === 'All Departments') return '#3B82F6';
+  const getDepartmentColor = (name: string) => {
+    if (name === 'All Departments') return '#3B82F6';
+    if (name.toLowerCase().includes('technology and livelihood')) return '#EAB308';
+    if (name.toLowerCase().includes('math') && name.toLowerCase().includes('english')) return '#F97316';
+    if (name.toLowerCase().includes('elementary education')) return '#22C55E';
+    return '#8B5CF6';
+  };
 
-  if (name.toLowerCase().includes('technology and livelihood')) {
-    return '#EAB308';
-  }
-
-  if (
-    name.toLowerCase().includes('math') &&
-    name.toLowerCase().includes('english')
-  ) {
-    return '#F97316';
-  }
-
-  if (name.toLowerCase().includes('elementary education')) {
-    return '#22C55E';
-  }
-
-  return '#8B5CF6';
-};
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
@@ -1447,9 +1443,9 @@ const getDepartmentColor = (name: string) => {
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div
-  className="fixed inset-0 bg-black/40 backdrop-blur-sm"
-  onClick={() => setShowModal(false)}
-/>
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowModal(false)}
+          />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add New Event</h2>
@@ -1468,132 +1464,97 @@ const getDepartmentColor = (name: string) => {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="relative">
-  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-    Target Department
-  </label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Target Department
+                </label>
 
-  {/* Selected Department */}
-  <button
-    type="button"
-    onClick={() =>
-      setShowDepartmentDropdown(!showDepartmentDropdown)
-    }
-    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between text-left"
-  >
-    <div className="flex items-center gap-2 min-w-0">
-      <span
-        className="w-3 h-3 rounded-full flex-shrink-0"
-        style={{
-          backgroundColor: getDepartmentColor(
-            form.target_department_id
-              ? departments.find(
-                  d => d.id === form.target_department_id
-                )?.name || ''
-              : 'All Departments'
-          )
-        }}
-      />
+                <button
+                  type="button"
+                  onClick={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: getDepartmentColor(
+                          form.target_department_id
+                            ? departments.find(d => d.id === form.target_department_id)?.name || ''
+                            : 'All Departments'
+                        )
+                      }}
+                    />
+                    <span className="truncate">
+                      {form.target_department_id
+                        ? departments.find(d => d.id === form.target_department_id)?.name || 'All Departments'
+                        : 'All Departments'}
+                    </span>
+                  </div>
 
-      <span className="truncate">
-        {form.target_department_id
-          ? departments.find(
-              d => d.id === form.target_department_id
-            )?.name || 'All Departments'
-          : 'All Departments'}
-      </span>
-    </div>
+                  <svg
+                    className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${
+                      showDepartmentDropdown ? 'rotate-180' : ''
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
 
-    <svg
-      className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${
-        showDepartmentDropdown ? 'rotate-180' : ''
-      }`}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M19 9l-7 7-7-7"
-      />
-    </svg>
-  </button>
+                {showDepartmentDropdown && (
+                  <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm({ ...form, target_department_id: '' });
+                        setShowDepartmentDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
+                        form.target_department_id === '' ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#3B82F6' }} />
+                      <span className="truncate">All Departments</span>
+                      {form.target_department_id === '' && (
+                        <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
+                      )}
+                    </button>
 
-  {/* Dropdown */}
-  {showDepartmentDropdown && (
-    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-      
-      {/* All Departments */}
-      <button
-        type="button"
-        onClick={() => {
-          setForm({
-            ...form,
-            target_department_id: ''
-          });
-          setShowDepartmentDropdown(false);
-        }}
-        className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-          form.target_department_id === ''
-            ? 'bg-blue-50'
-            : ''
-        }`}
-      >
-        <span
-          className="w-3 h-3 rounded-full flex-shrink-0"
-          style={{ backgroundColor: '#3B82F6' }}
-        />
-
-        <span className="truncate">
-          All Departments
-        </span>
-
-        {form.target_department_id === '' && (
-          <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
-        )}
-      </button>
-
-      {/* Departments */}
-      {departments.map(d => {
-        const isSelected =
-          form.target_department_id === d.id;
-
-        return (
-          <button
-            key={d.id}
-            type="button"
-            onClick={() => {
-              setForm({
-                ...form,
-                target_department_id: d.id
-              });
-              setShowDepartmentDropdown(false);
-            }}
-            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-              isSelected ? 'bg-blue-50' : ''
-            }`}
-          >
-            <span
-              className="w-3 h-3 rounded-full flex-shrink-0"
-              style={{
-                backgroundColor: getDepartmentColor(d.name)
-              }}
-            />
-
-            <span className="truncate">
-              {d.name}
-            </span>
-
-            {isSelected && (
-              <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  )}
-</div>
+                    {departments.map(d => {
+                      const isSelected = form.target_department_id === d.id;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => {
+                            setForm({ ...form, target_department_id: d.id });
+                            setShowDepartmentDropdown(false);
+                          }}
+                          className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
+                            isSelected ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <span
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: getDepartmentColor(d.name) }}
+                          />
+                          <span className="truncate">{d.name}</span>
+                          {isSelected && (
+                            <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
@@ -1601,7 +1562,7 @@ const getDepartmentColor = (name: string) => {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Type</label>
-                <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
+                <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value as any })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {Object.keys(TYPE_TO_COLOR).map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                 </select>
@@ -2590,11 +2551,6 @@ function AlumniTracer() {
 }
 
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
-// Two-column layout: Alumni inquiries on the LEFT, Student inquiries on the
-// RIGHT, as requested. Each column is its own scrollable panel so the dean
-// can browse and reply to both groups without switching pages. Each
-// inquiry now carries a `category` (set by the sender) shown as a badge
-// in the list and a category filter dropdown per column.
 function InquiriesManagement() {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
@@ -2641,7 +2597,6 @@ function InquiriesManagement() {
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
 
-  // Realtime updates so new inquiries show up without a manual refresh
   useEffect(() => {
     const channelName = `inquiries-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
@@ -2733,11 +2688,19 @@ function InquiriesManagement() {
     { id: 'contact' as const, label: 'Contact Messages',  pending: pendingContactCount },
   ];
 
-  // Reusable column so all three sections stay visually identical and easy to scan
   const InquiryColumn = ({
-    title, pendingCount,
-    accentColor, accentBg, list, statusFilter, setStatusFilter,
-    categoryFilter, setCategoryFilter, categories, onOpen, emptyIcon: EmptyIcon,
+    title,
+    pendingCount,
+    accentColor,
+    accentBg,
+    list,
+    statusFilter,
+    setStatusFilter,
+    categoryFilter,
+    setCategoryFilter,
+    categories,
+    onOpen,
+    emptyIcon: EmptyIcon,
   }: {
     title: string;
     pendingCount: number;
@@ -2755,7 +2718,6 @@ function InquiriesManagement() {
     const shown = filterList(list as any, statusFilter, categoryFilter);
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-        {/* Column header */}
         <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3" style={{ backgroundColor: accentBg }}>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
@@ -2769,7 +2731,6 @@ function InquiriesManagement() {
           )}
         </div>
 
-        {/* Filter tabs + category dropdown */}
         <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50 space-y-2">
           <div className="flex gap-1">
             {(['all', 'pending', 'answered'] as const).map(f => (
@@ -2795,7 +2756,6 @@ function InquiriesManagement() {
           </select>
         </div>
 
-        {/* List */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
           {loading ? (
             <div className="col-span-full flex flex-col items-center justify-center h-full text-gray-400 py-10">
@@ -2862,85 +2822,82 @@ function InquiriesManagement() {
           </button>
         </div>
 
-        {/* Section tabs — lets the dean switch between Student / Alumni / Contact */}
-        <div className="flex gap-2 flex-wrap">
-          {SECTION_TABS.map(tab => (
+        <div className="flex gap-2">
+          {SECTION_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveSection(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                activeSection === tab.id ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2 ${
+                activeSection === tab.id
+                  ? 'bg-[#1E3A8A] text-white'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
               {tab.pending > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{tab.pending}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  activeSection === tab.id ? 'bg-red-500 text-white' : 'bg-red-100 text-red-600'
+                }`}>
+                  {tab.pending}
+                </span>
               )}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Active section panel — full height, scrollable independently */}
-      <div className="grid grid-cols-1 gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
+      <div className="flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
         {activeSection === 'student' && (
-          <div className="min-h-[420px] lg:min-h-0">
-            <InquiryColumn
-              title="Student Inquiries"
-              pendingCount={pendingStudentCount}
-              accentColor="#1D4ED8"
-              accentBg="#DBEAFE"
-              list={studentInquiries}
-              statusFilter={studentFilter}
-              setStatusFilter={setStudentFilter}
-              categoryFilter={studentCategoryFilter}
-              setCategoryFilter={setStudentCategoryFilter}
-              categories={STUDENT_INQUIRY_CATEGORIES}
-              onOpen={openInquiry}
-              emptyIcon={Inbox}
-            />
-          </div>
+          <InquiryColumn
+            title="Student Inquiries"
+            pendingCount={pendingStudentCount}
+            accentColor="#1D4ED8"
+            accentBg="#DBEAFE"
+            list={studentInquiries}
+            statusFilter={studentFilter}
+            setStatusFilter={setStudentFilter}
+            categoryFilter={studentCategoryFilter}
+            setCategoryFilter={setStudentCategoryFilter}
+            categories={STUDENT_INQUIRY_CATEGORIES}
+            onOpen={openInquiry}
+            emptyIcon={Inbox}
+          />
         )}
         {activeSection === 'alumni' && (
-          <div className="min-h-[420px] lg:min-h-0">
-            <InquiryColumn
-              title="Alumni Inquiries"
-              pendingCount={pendingAlumniCount}
-              accentColor="#BE185D"
-              accentBg="#FCE7F3"
-              list={alumniInquiries}
-              statusFilter={alumniFilter}
-              setStatusFilter={setAlumniFilter}
-              categoryFilter={alumniCategoryFilter}
-              setCategoryFilter={setAlumniCategoryFilter}
-              categories={ALUMNI_INQUIRY_CATEGORIES}
-              onOpen={openInquiry}
-              emptyIcon={Inbox}
-            />
-          </div>
+          <InquiryColumn
+            title="Alumni Inquiries"
+            pendingCount={pendingAlumniCount}
+            accentColor="#BE185D"
+            accentBg="#FCE7F3"
+            list={alumniInquiries}
+            statusFilter={alumniFilter}
+            setStatusFilter={setAlumniFilter}
+            categoryFilter={alumniCategoryFilter}
+            setCategoryFilter={setAlumniCategoryFilter}
+            categories={ALUMNI_INQUIRY_CATEGORIES}
+            onOpen={openInquiry}
+            emptyIcon={Inbox}
+          />
         )}
         {activeSection === 'contact' && (
-          <div className="min-h-[420px] lg:min-h-0">
-            <InquiryColumn
-              title="Contact Messages"
-              pendingCount={pendingContactCount}
-              accentColor="#059669"
-              accentBg="#D1FAE5"
-              list={contactMessages}
-              statusFilter={contactFilter}
-              setStatusFilter={setContactFilter}
-              categoryFilter={contactCategoryFilter}
-              setCategoryFilter={setContactCategoryFilter}
-              categories={CONTACT_INQUIRY_CATEGORIES}
-              onOpen={openContact}
-              emptyIcon={MessageCircle}
-            />
-          </div>
+          <InquiryColumn
+            title="Contact Messages"
+            pendingCount={pendingContactCount}
+            accentColor="#059669"
+            accentBg="#D1FAE5"
+            list={contactMessages}
+            statusFilter={contactFilter}
+            setStatusFilter={setContactFilter}
+            categoryFilter={contactCategoryFilter}
+            setCategoryFilter={setContactCategoryFilter}
+            categories={CONTACT_INQUIRY_CATEGORIES}
+            onOpen={openContact}
+            emptyIcon={MessageCircle}
+          />
         )}
       </div>
 
-      {/* Reply modal */}
-      {(activeInquiry || activeContact) && (
+      {activeItem && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal} />
           <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
@@ -2952,33 +2909,33 @@ function InquiriesManagement() {
                     style={
                       activeIsContact
                         ? { backgroundColor: '#D1FAE5', color: '#059669' }
-                        : activeInquiry!.sender_role === 'alumni'
+                        : (activeInquiry as Inquiry).sender_role === 'alumni'
                           ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
                           : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }
                     }
                   >
-                    {activeIsContact ? 'Contact Form' : activeInquiry!.sender_role === 'alumni' ? 'Alumni' : 'Student'}
+                    {activeIsContact ? 'Contact Form' : (activeInquiry as Inquiry).sender_role === 'alumni' ? 'Alumni' : 'Student'}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
-                    {activeItem?.category || 'Other'}
+                    {activeItem.category || 'Other'}
                   </span>
                 </div>
-                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem?.subject}</h2>
+                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem.subject}</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
                   From {activeIsContact ? activeContact!.sender_name : (activeInquiry!.profiles?.full_name ?? activeInquiry!.sender_name)}
                   {activeIsContact && activeContact!.sender_email && <> · {activeContact!.sender_email}</>}
                   {!activeIsContact && activeInquiry!.profiles?.id_number && <> · {activeInquiry!.profiles.id_number}</>}
-                  {' '}· {activeItem ? formatDate(activeItem.created_at) : ''}
+                  {' '}· {formatDate(activeItem.created_at)}
                 </p>
               </div>
               <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem?.message}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem.message}</p>
             </div>
 
-            {activeItem?.reply && (
+            {activeItem.reply && (
               <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100">
                 <p className="text-xs font-semibold text-blue-700 mb-1">Previous reply</p>
                 <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeItem.reply}</p>
@@ -3013,6 +2970,7 @@ function InquiriesManagement() {
     </div>
   );
 }
+
 // ─── Consolidated Reports & Analytics ─────────────────────────────────────────
 const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
 const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
@@ -3171,7 +3129,6 @@ function ReportsAnalytics() {
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      // 1. Fetch Users / Profiles
       let personnelList: (Profile & { program?: string | null })[] = [];
       const userRes = await fetch(USERS_API_URL, { headers });
       if (userRes.ok) {
@@ -3187,7 +3144,6 @@ function ReportsAnalytics() {
         personnelList = profiles || [];
       }
 
-      // 2. Fetch Reports (Accomplishment & Extension)
       const [accRes, extRes] = await Promise.all([
         fetch(ACCOMPLISHMENT_API_URL, { headers }).catch(() => null),
         fetch(EXTENSION_API_URL, { headers }).catch(() => null),
@@ -3220,7 +3176,6 @@ function ReportsAnalytics() {
         extensionList = (dbExt as any) ?? [];
       }
 
-      // Exclude draft status
       const accMap = new Map(
         accomplishmentList
           .filter((r) => r.quarter === quarter && String(r.year) === String(year) && r.status !== 'draft')
@@ -3233,7 +3188,6 @@ function ReportsAnalytics() {
           .map((r) => [r.submitted_by, r])
       );
 
-      // 3. Consolidate rows
       const consolidated: ConsolidatedReportRow[] = personnelList.map((p) => {
         const departmentName = p.department || p.program || 'General';
         const acc = accMap.get(p.id) ?? null;
@@ -3449,7 +3403,6 @@ function ReportsAnalytics() {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Quarterly Report Tracker</h1>
@@ -3468,7 +3421,6 @@ function ReportsAnalytics() {
         </select>
       </div>
 
-      {/* Summary cards (without Draft) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
           <p className="text-xs font-medium text-gray-500 mb-1">Overall Progress</p>
@@ -3488,7 +3440,6 @@ function ReportsAnalytics() {
         </div>
       </div>
 
-      {/* Deadline & Reminder Action Row */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
         <label className="block text-xs font-semibold text-gray-600 mb-2">
           Set Deadline for {quarterSelect}
@@ -3534,7 +3485,6 @@ function ReportsAnalytics() {
         )}
       </div>
 
-      {/* Filters (Search, Role, Status - without Draft) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
         <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center">
           <div className="relative flex-1 min-w-[200px]">
@@ -3549,7 +3499,6 @@ function ReportsAnalytics() {
           </div>
 
           <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-            {/* Role Filter */}
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as any)}
@@ -3560,7 +3509,6 @@ function ReportsAnalytics() {
               <option value="department_chair">Department Chairs</option>
             </select>
 
-            {/* Status Filter (without Draft) */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -3584,7 +3532,6 @@ function ReportsAnalytics() {
         </div>
       </div>
 
-      {/* Main Consolidated Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -3749,7 +3696,6 @@ function ReportsAnalytics() {
         )}
       </div>
 
-      {/* Detail & Review Modal */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
@@ -3837,7 +3783,6 @@ function ReportsAnalytics() {
         </div>
       )}
 
-      {/* Reject Modal */}
       {rejectFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
@@ -3864,7 +3809,6 @@ function ReportsAnalytics() {
         </div>
       )}
 
-      {/* Info Modal */}
       {showInfoModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
@@ -3921,6 +3865,7 @@ function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: stri
     </div>
   );
 }
+
 // ─── Announcements ────────────────────────────────────────────────────────────
 const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
 const ALL_ROLES = ['department_chair', 'faculty', 'student', 'alumni'];
@@ -3952,35 +3897,24 @@ const ANNOUNCEMENT_ROLE_CONFIG: Record<string, { label: string; bg: string; text
   },
 };
 
-interface DeptOption {
-  id: string;
-  name: string;
-}
-
 function AnnouncementsContent() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Modal display for announcement composer
   const [isComposerOpen, setIsComposerOpen] = useState(false);
-
-  // Search & Filter UI state
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
 
-  // Deletion state
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<{ id: string; title: string } | null>(null);
 
-  // Status & Feedback modal
   const [showModal, setShowModal] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
   const [modalType, setModalType] = useState<'success' | 'error'>('success');
 
-  // Form State
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [selectedRoles, setSelectedRoles] = useState<string[]>([...ALL_ROLES]);
@@ -4178,7 +4112,6 @@ function AnnouncementsContent() {
 
   return (
     <div className="space-y-6">
-      {/* ── Top Header Bar ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-[#1E3A8A]">
@@ -4194,9 +4127,7 @@ function AnnouncementsContent() {
           </div>
         </div>
 
-        {/* Action Controls */}
         <div className="flex items-center gap-3 self-start sm:self-auto">
-          
           <button
             type="button"
             onClick={() => setIsComposerOpen(true)}
@@ -4208,7 +4139,6 @@ function AnnouncementsContent() {
         </div>
       </div>
 
-      {/* ── Filter & Search Toolbar ── */}
       <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-gray-700">Total Records:</span>
@@ -4247,7 +4177,6 @@ function AnnouncementsContent() {
         </div>
       </div>
 
-      {/* Error Alert */}
       {loadError && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs sm:text-sm flex items-start gap-2.5">
           <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
@@ -4258,7 +4187,6 @@ function AnnouncementsContent() {
         </div>
       )}
 
-      {/* ── Feed List ── */}
       {loading ? (
         <div className="bg-white rounded-2xl border border-gray-200/80 p-16 flex flex-col items-center justify-center text-center">
           <RefreshCw className="w-8 h-8 text-[#1E3A8A] animate-spin mb-3" />
@@ -4298,7 +4226,6 @@ function AnnouncementsContent() {
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="space-y-2 min-w-0 flex-1">
-                    {/* Meta Row */}
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 bg-gray-100/80 px-2 py-0.5 rounded-md">
                         <Calendar className="w-3 h-3 text-gray-400" />
@@ -4331,7 +4258,6 @@ function AnnouncementsContent() {
                       {announcement.content}
                     </div>
 
-                    {/* Target Roles */}
                     <div className="pt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] font-semibold text-gray-400 mr-1 flex items-center gap-1">
                         <Users className="w-3 h-3" />
@@ -4355,7 +4281,6 @@ function AnnouncementsContent() {
                     </div>
                   </div>
 
-                  {/* Actions Column */}
                   <div className="flex sm:flex-col items-center justify-end gap-2 shrink-0 sm:pl-3 sm:border-l sm:border-gray-100">
                     <button
                       type="button"
@@ -4379,11 +4304,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
-      {/* ── CREATE ANNOUNCEMENT MODAL ── */}
       {isComposerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-100 overflow-hidden">
-            {/* Modal Header */}
             <div className="px-6 py-4 bg-gray-50/80 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-2 text-gray-900 font-bold text-base">
                 <Megaphone className="w-5 h-5 text-[#1E3A8A]" />
@@ -4399,9 +4322,7 @@ function AnnouncementsContent() {
               </button>
             </div>
 
-            {/* Modal Scrollable Content */}
             <div className="p-6 space-y-5 overflow-y-auto">
-              {/* Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Title <span className="text-rose-500">*</span>
@@ -4415,7 +4336,6 @@ function AnnouncementsContent() {
                 />
               </div>
 
-              {/* Content */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Content / Memorandum <span className="text-rose-500">*</span>
@@ -4429,7 +4349,6 @@ function AnnouncementsContent() {
                 />
               </div>
 
-              {/* Roles Section */}
               <div className="p-4 bg-gray-50/80 rounded-xl border border-gray-200/70 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -4481,7 +4400,6 @@ function AnnouncementsContent() {
                 </div>
               </div>
 
-              {/* Department Restriction */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Building2 className="w-3.5 h-3.5 text-gray-500" />
@@ -4502,7 +4420,6 @@ function AnnouncementsContent() {
               </div>
             </div>
 
-            {/* Modal Actions Footer */}
             <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex items-center justify-end gap-3">
               <button
                 type="button"
@@ -4535,7 +4452,6 @@ function AnnouncementsContent() {
         </div>
       )}
 
-      {/* ── Confirm Deletion Modal ── */}
       {itemToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
@@ -4570,7 +4486,6 @@ function AnnouncementsContent() {
         </div>
       )}
 
-      {/* ── Feedback Status Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
