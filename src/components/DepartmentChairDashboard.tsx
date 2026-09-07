@@ -69,22 +69,26 @@ interface DepartmentChairDashboardProps {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 // Mirrors public.calendar_events exactly.
-interface CalendarEvent {
+export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
+export type CalendarAudience = 'all' | 'students' | 'faculty' | 'alumni';
+
+export interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
-  event_date: string;   // timestamptz, stored/read as "YYYY-MM-DDTHH:mm:ss"
+  event_date: string; // ISO timestamptz string (e.g., "YYYY-MM-DDTHH:mm:ss.sssZ")
   end_date: string | null;
   location: string | null;
-  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
-  organizer_id: string | null;
-  department: string | null;
-  status: string | null;
-  posted_by_role: string | null;
+  event_type: StandardEventType | string | null; // Allows standard or custom types
+  audience: CalendarAudience | string | null;   // Audience scoping flag
+  department_ids: string[] | null;              // uuid[] matching departments(id)
+  organizer_id: string | null;                  // references profiles(id)
+  department?: string | null;                   // Legacy string field (optional)
+  status: string | null;                        // e.g., 'upcoming' | 'completed'
+  posted_by_role: string | null;                // e.g., 'dean' | 'department_chair'
   created_at: string;
   updated_at: string;
 }
-
 // Mirrors public.profiles (role='student'|'faculty'|'alumni') joined with
 // that role's own profile table (student_profiles / faculty_profiles /
 // alumni_profiles). NOTE: profiles.status uses 'pending' / 'active' /
@@ -256,7 +260,6 @@ const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
 
-
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -309,23 +312,23 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const emptyForm = { title: '', date: '', description: '', color: '#3B82F6' };
+  const emptyForm = {
+    title: '',
+    date: '',
+    description: '',
+    color: '#3B82F6',
+    audience: 'all',
+  };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
-  const monthName    = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
-  const daysInMonth  = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-  const firstDay     = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
-  // ── Fetch events via the backend (department-scoped server-side) ──
-  // Previously this queried Supabase directly and unfiltered, returning
-  // every department's events to every chair. Reads now go through the
-  // same backend route as writes, since department scoping has to be
-  // enforced server-side against the chair's own departmentIds — the
-  // anon client can't be trusted to only ask for its own department.
   const fetchEvents = async () => {
     setLoading(true);
     setLoadError('');
@@ -384,6 +387,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
       description: form.description.trim() || null,
       event_date: toTimestamp(form.date),
       event_type: eventTypeForColor(form.color),
+      audience: form.audience,
       status: 'upcoming',
     };
 
@@ -584,8 +588,13 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
                   <div className="text-xs text-gray-500 mt-0.5">
-                     {formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
-                       </div>
+                    {formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                    {ev.audience && (
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
+                        Audience: {ev.audience}
+                      </span>
+                    )}
+                  </div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
@@ -645,7 +654,24 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                   {departmentNames.length > 0 ? departmentNames.join(', ') : 'No department assigned'}
                 </div>
                 <p className="text-xs text-gray-400 mt-1">
-                  Events are automatically posted to faculty in your own department — this isn't editable here.
+                  Events are automatically scoped to your department on the server.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience *</label>
+                <select
+                  value={form.audience}
+                  onChange={e => setForm({ ...form, audience: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
+                >
+                  <option value="all">Everyone in Department (General)</option>
+                  <option value="students">Students Only (Exams, Deadlines, Class Activities)</option>
+                  <option value="faculty">Faculty & Staff Only (Department Meetings)</option>
+                  <option value="alumni">Alumni Only (Department Homecoming/Reunions)</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Choosing "Students Only" or "Faculty Only" prevents this event from showing on the Alumni calendar.
                 </p>
               </div>
 
@@ -699,7 +725,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
     </div>
   );
 }
-
 /* ─────────────────────────────────────────────
    Account Approvals (Student / Faculty / Alumni)
    — Real data: fetched from GET /api/accounts/:role

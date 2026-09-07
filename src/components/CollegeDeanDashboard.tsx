@@ -1177,23 +1177,32 @@ function UserManagement() {
   );
 }
 
-// ─── Calendar & Activities ────────────────────────────────────────────────────
+// ─── Calendar & Activities (DEAN DASHBOARD) ───────────────────────────────────
+
 interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
   event_date: string;
+  end_date?: string | null;
+  location: string | null;
   department_ids: string[] | null;
-  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
+  event_type: string | null;
+  audience?: string | null;
   status: string | null;
   posted_by_role: string | null;
+  organizer_id?: string | null;
   created_at: string;
   updated_at: string;
 }
 
-interface DeptOption { id: string; name: string; }
+interface DeptOption {
+  id: string;
+  name: string;
+}
 
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -1202,17 +1211,31 @@ const TYPE_TO_COLOR: Record<string, string> = {
   exam: '#EF4444',
 };
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
+
+const STANDARD_EVENT_TYPES = [
+  { value: 'activity', label: 'Activity' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'deadline', label: 'Deadline' },
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'exam', label: 'Exam' },
+  { value: 'other', label: 'Other (Enter custom type)...' },
+];
+
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
   dean: 'Dean',
   admin: 'Admin',
+  college_dean: 'Dean',
   department_chair: 'Dept. Chair',
+  faculty: 'Faculty',
 };
 
 function colorForCalendarEvent(ev: CalendarEvent): string {
-  return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
+  const t = ev.event_type?.toLowerCase() || '';
+  return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
 }
 
 function dateOnlyStr(isoLike: string): string {
+  if (!isoLike) return '';
   return isoLike.split('T')[0];
 }
 
@@ -1231,17 +1254,26 @@ function CalendarActivities() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const emptyForm = { title: '', date: '', description: '', event_type: 'meeting', target_department_id: '' };
+  const emptyForm = {
+    title: '',
+    date: '',
+    location: '',
+    description: '',
+    event_type: 'activity',
+    custom_event_type: '',
+    audience: 'all',
+    target_department_id: '',
+  };
   const [form, setForm] = useState(emptyForm);
-  
   const [formError, setFormError] = useState('');
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
+
   const getToken = () => localStorage.getItem('token');
 
   const getDepartmentColor = (name: string) => {
     if (name === 'All Departments') return '#3B82F6';
     if (name.toLowerCase().includes('technology and livelihood')) return '#EAB308';
-    if (name.toLowerCase().includes('math') && name.toLowerCase().includes('english')) return '#F97316';
+    if (name.toLowerCase().includes('math') || name.toLowerCase().includes('english')) return '#F97316';
     if (name.toLowerCase().includes('elementary education')) return '#22C55E';
     return '#8B5CF6';
   };
@@ -1284,18 +1316,34 @@ function CalendarActivities() {
   useEffect(() => {
     fetchEvents();
     fetchDepartments();
+
+    const channel = supabase
+      .channel('dean-calendar-events-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'calendar_events' },
+        () => {
+          fetchEvents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter(e => dateOnlyStr(e.event_date) === dateStr);
+    return events.filter((e) => dateOnlyStr(e.event_date) === dateStr);
   };
 
   const upcomingEvents = events
-    .filter(e => dateOnlyStr(e.event_date) >= todayStr)
+    .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
     .sort((a, b) => a.event_date.localeCompare(b.event_date));
+
   const historyEvents = events
-    .filter(e => dateOnlyStr(e.event_date) < todayStr)
+    .filter((e) => dateOnlyStr(e.event_date) < todayStr)
     .sort((a, b) => b.event_date.localeCompare(a.event_date));
 
   const resetForm = () => {
@@ -1305,8 +1353,23 @@ function CalendarActivities() {
 
   const handleAddEvent = async () => {
     setFormError('');
-    if (!form.title.trim()) { setFormError('Event title is required.'); return; }
-    if (!form.date)          { setFormError('Please select a date.'); return; }
+    if (!form.title.trim()) {
+      setFormError('Event title is required.');
+      return;
+    }
+    if (!form.date) {
+      setFormError('Please select a date.');
+      return;
+    }
+
+    let finalEventType = form.event_type;
+    if (form.event_type === 'other') {
+      if (!form.custom_event_type.trim()) {
+        setFormError('Please specify the custom event type.');
+        return;
+      }
+      finalEventType = form.custom_event_type.trim().toLowerCase();
+    }
 
     setSubmitting(true);
     try {
@@ -1319,8 +1382,10 @@ function CalendarActivities() {
         body: JSON.stringify({
           title: form.title.trim(),
           description: form.description.trim() || null,
-          event_date: `${form.date}T00:00:00`,
-          event_type: form.event_type,
+          location: form.location.trim() || null,
+          event_date: `${form.date}T08:00:00.000Z`,
+          event_type: finalEventType,
+          audience: form.audience,
           status: 'upcoming',
           target_department_id: form.target_department_id || null,
         }),
@@ -1332,8 +1397,7 @@ function CalendarActivities() {
         return;
       }
 
-      const data = await res.json();
-      setEvents(prev => [...prev, data as CalendarEvent]);
+      await fetchEvents();
       resetForm();
       setShowModal(false);
     } catch {
@@ -1344,6 +1408,7 @@ function CalendarActivities() {
   };
 
   const deleteEvent = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this event?')) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${CALENDAR_API_URL}/${id}`, {
@@ -1355,7 +1420,7 @@ function CalendarActivities() {
         setLoadError('Failed to delete event: ' + (err.error || res.statusText));
         return;
       }
-      setEvents(prev => prev.filter(e => e.id !== id));
+      setEvents((prev) => prev.filter((e) => e.id !== id));
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -1364,13 +1429,14 @@ function CalendarActivities() {
   };
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const departmentLabel = (ev: CalendarEvent) => {
     if (!ev.department_ids || ev.department_ids.length === 0) return 'All Departments';
-    const names = ev.department_ids.map(id => departments.find(d => d.id === id)?.name ?? 'Unknown');
+    const names = ev.department_ids.map((id) => departments.find((d) => d.id === id)?.name ?? 'Department');
     return names.join(', ');
   };
 
@@ -1385,7 +1451,10 @@ function CalendarActivities() {
           <p className="text-gray-500 text-sm mt-1">Manage events and track activity history</p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowModal(true); }}
+          onClick={() => {
+            resetForm();
+            setShowModal(true);
+          }}
           className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -1400,12 +1469,18 @@ function CalendarActivities() {
         </div>
       )}
 
+      {/* Calendar Grid View */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
-          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <ChevronLeft className="w-5 h-5 text-gray-600" />
+          </button>
           <h2 className="text-base sm:text-lg font-bold text-gray-900">{monthName}</h2>
-          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <ChevronRight className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
+
         <div className="grid grid-cols-7 border-b border-gray-100">
           {DAYS.map((d, i) => (
             <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -1414,6 +1489,7 @@ function CalendarActivities() {
             </div>
           ))}
         </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
             <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -1424,33 +1500,52 @@ function CalendarActivities() {
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
               <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
             ))}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
               const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayEvents = getEventsForDay(day);
               const isToday = dateStr === todayStr;
-              const isPast  = dateStr < todayStr;
+              const isPast = dateStr < todayStr;
+
               return (
-                <div key={day} className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${isPast ? 'bg-gray-50/60' : 'bg-white'}`}>
-                  <div className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                    isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
-                  }`}>
+                <div
+                  key={day}
+                  className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${
+                    isPast ? 'bg-gray-50/60' : 'bg-white'
+                  }`}
+                >
+                  <div
+                    className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
+                      isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
+                    }`}
+                  >
                     {day}
                   </div>
                   <div className="space-y-0.5">
-                    {dayEvents.slice(0, 1).map(ev => (
-                      <div key={ev.id} className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block" style={{ backgroundColor: colorForCalendarEvent(ev) }} title={ev.title}>
+                    {dayEvents.slice(0, 1).map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block"
+                        style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                        title={ev.title}
+                      >
                         {ev.title}
                       </div>
                     ))}
                     {dayEvents.length > 0 && (
                       <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
-                        {dayEvents.slice(0, 3).map(ev => (
-                          <span key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
+                        {dayEvents.slice(0, 3).map((ev) => (
+                          <span
+                            key={ev.id}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                          />
                         ))}
                       </div>
                     )}
                     {dayEvents.length > 1 && (
-                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">+{dayEvents.length - 1} more</div>
+                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">
+                        +{dayEvents.length - 1} more
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1460,25 +1555,42 @@ function CalendarActivities() {
         )}
       </div>
 
+      {/* Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex border-b border-gray-100">
           <button
             onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'upcoming' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'upcoming'
+                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
             <Calendar className="w-4 h-4" />
             <span className="hidden sm:inline">Upcoming Activities</span>
             <span className="sm:hidden">Upcoming</span>
-            {upcomingEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{upcomingEvents.length}</span>}
+            {upcomingEvents.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                {upcomingEvents.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'history' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'history'
+                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
             <History className="w-4 h-4" />
             <span className="hidden sm:inline">Activity History</span>
             <span className="sm:hidden">History</span>
-            {historyEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{historyEvents.length}</span>}
+            {historyEvents.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                {historyEvents.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -1490,21 +1602,40 @@ function CalendarActivities() {
                   <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No upcoming events</p>
                 </div>
-              ) : upcomingEvents.map(ev => (
-                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors group">
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+              ) : (
+                upcomingEvents.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors group"
+                  >
+                    <div
+                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
+                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
+                        {ev.location && ` · 📍 ${ev.location}`}
+                        {ev.event_type && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
+                            {ev.event_type}
+                          </span>
+                        )}
+                      </div>
+                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                     </div>
-                    {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
+                    <button
+                      onClick={() => deleteEvent(ev.id)}
+                      disabled={deletingId === ev.id}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <button onClick={() => deleteEvent(ev.id)} disabled={deletingId === ev.id} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           )}
           {activeTab === 'history' && (
@@ -1514,52 +1645,92 @@ function CalendarActivities() {
                   <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No past events</p>
                 </div>
-              ) : historyEvents.map(ev => (
-                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50">
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForCalendarEvent(ev) }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+              ) : (
+                historyEvents.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50"
+                  >
+                    <div
+                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50"
+                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
+                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
+                        {ev.location && ` · 📍 ${ev.location}`}
+                        {ev.event_type && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
+                            {ev.event_type}
+                          </span>
+                        )}
+                      </div>
+                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                     </div>
-                    {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
                   </div>
-                  <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Add Event Modal */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setShowModal(false)}
-          />
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add New Event</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
-            {formError && <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{formError}</div>}
+
+            {formError && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+                {formError}
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Title *</label>
-                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Faculty Meeting" />
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Alumni Homecoming Orientation"
+                />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
-                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
-              <div className="relative">
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  Target Department
-                </label>
 
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location</label>
+                <input
+                  type="text"
+                  value={form.location}
+                  onChange={(e) => setForm({ ...form, location: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. COED AVR / College Grounds"
+                />
+              </div>
+
+              <div className="relative">
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department</label>
                 <button
                   type="button"
                   onClick={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
@@ -1571,37 +1742,22 @@ function CalendarActivities() {
                       style={{
                         backgroundColor: getDepartmentColor(
                           form.target_department_id
-                            ? departments.find(d => d.id === form.target_department_id)?.name || ''
+                            ? departments.find((d) => d.id === form.target_department_id)?.name || ''
                             : 'All Departments'
-                        )
+                        ),
                       }}
                     />
                     <span className="truncate">
                       {form.target_department_id
-                        ? departments.find(d => d.id === form.target_department_id)?.name || 'All Departments'
-                        : 'All Departments'}
+                        ? departments.find((d) => d.id === form.target_department_id)?.name || 'All Departments'
+                        : 'All Departments (Visible to All)'}
                     </span>
                   </div>
-
-                  <svg
-                    className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${
-                      showDepartmentDropdown ? 'rotate-180' : ''
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
+                  <ChevronLeft className={`w-4 h-4 text-gray-500 transition-transform -rotate-90 ${showDepartmentDropdown ? 'rotate-90' : ''}`} />
                 </button>
 
                 {showDepartmentDropdown && (
-                  <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                  <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
                     <button
                       type="button"
                       onClick={() => {
@@ -1619,7 +1775,7 @@ function CalendarActivities() {
                       )}
                     </button>
 
-                    {departments.map(d => {
+                    {departments.map((d) => {
                       const isSelected = form.target_department_id === d.id;
                       return (
                         <button
@@ -1638,31 +1794,86 @@ function CalendarActivities() {
                             style={{ backgroundColor: getDepartmentColor(d.name) }}
                           />
                           <span className="truncate">{d.name}</span>
-                          {isSelected && (
-                            <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
-                          )}
+                          {isSelected && <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />}
                         </button>
                       );
                     })}
                   </div>
                 )}
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                  rows={3} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" placeholder="Optional..." />
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Optional details or agenda..."
+                />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Type</label>
-                <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value as any })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  {Object.keys(TYPE_TO_COLOR).map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                <select
+                  value={form.event_type}
+                  onChange={(e) => setForm({ ...form, event_type: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {STANDARD_EVENT_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
                 </select>
+
+                {form.event_type === 'other' && (
+                  <div className="mt-2.5 animate-in fade-in duration-200">
+                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">
+                      Specify Custom Event Type *
+                    </label>
+                    <input
+                      type="text"
+                      value={form.custom_event_type}
+                      onChange={(e) => setForm({ ...form, custom_event_type: e.target.value })}
+                      placeholder="e.g. Orientation, Seminar, Homecoming, Workshop"
+                      className="w-full px-3 py-2 border border-blue-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/20"
+                      autoFocus
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Audience *</label>
+                <select
+                  value={form.audience}
+                  onChange={(e) => setForm({ ...form, audience: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="all">Everyone (General College Community)</option>
+                  <option value="alumni">Alumni Only (Homecoming, Tracer, Career, Reunions)</option>
+                  <option value="students">Students Only (Academic, Enrollment, Exams)</option>
+                  <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Selecting "Alumni Only" guarantees only verified alumni see this activity on their calendar.
+                </p>
               </div>
             </div>
+
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleAddEvent} disabled={submitting} className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+              <button
+                onClick={() => setShowModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddEvent}
+                disabled={submitting}
+                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+              >
                 {submitting ? 'Saving...' : (<><Check className="w-4 h-4" /> Add Event</>)}
               </button>
             </div>
@@ -1672,7 +1883,6 @@ function CalendarActivities() {
     </div>
   );
 }
-
 // ─── Academic Records ─────────────────────────────────────────────────────────
 interface TargetRoleOption {
   id: string;
