@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Download, Search } from 'lucide-react';
+import { FileText, Download, Search, Eye } from 'lucide-react';
 
 interface AcademicDocument {
   id: string;
@@ -32,6 +32,7 @@ export function AcademicDocumentsViewer() {
   const [loadError, setLoadError] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const fetchDocuments = async () => {
@@ -60,7 +61,39 @@ export function AcademicDocumentsViewer() {
     }
   };
 
-  useEffect(() => { fetchDocuments(); /* eslint-disable-next-line */ }, [typeFilter]);
+  useEffect(() => {
+    fetchDocuments();
+    /* eslint-disable-next-line */
+  }, [typeFilter]);
+
+  const handlePreview = async (doc: AcademicDocument) => {
+    setPreviewingId(doc.id);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to open document preview.');
+        return;
+      }
+
+      const { url, file_type } = await res.json();
+
+      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch {
+      setLoadError('Could not reach the server to load preview.');
+    } finally {
+      setPreviewingId(null);
+    }
+  };
 
   const handleDownload = async (doc: AcademicDocument) => {
     setDownloadingId(doc.id);
@@ -74,14 +107,24 @@ export function AcademicDocumentsViewer() {
         setLoadError(err.error || 'Failed to generate download link.');
         return;
       }
-      const { url } = await res.json();
-      window.open(url, '_blank');
+      const { url, file_name } = await res.json();
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file_name || doc.title;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      setLoadError('Could not reach the server for download.');
     } finally {
       setDownloadingId(null);
     }
   };
 
-  const filtered = documents.filter(d =>
+  const filtered = documents.filter((d) =>
     d.title.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -98,23 +141,29 @@ export function AcademicDocumentsViewer() {
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search documents..."
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
         <select
           value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
+          onChange={(e) => setTypeFilter(e.target.value)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="all">All Categories</option>
-          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
         </select>
       </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
@@ -130,32 +179,61 @@ export function AcademicDocumentsViewer() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(doc => (
-              <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
-                    {doc.description && <div className="text-xs text-gray-500 truncate">{doc.description}</div>}
-                    <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
-                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">{DOC_TYPE_LABELS[doc.document_type]}</span>
-                      <span>{formatDate(doc.created_at)}</span>
-                      <span>· {formatFileSize(doc.file_size)}</span>
+            {filtered.map((doc) => {
+              const isPreviewing = previewingId === doc.id;
+              const isDownloading = downloadingId === doc.id;
+
+              return (
+                <div
+                  key={doc.id}
+                  className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3 hover:bg-gray-100/70 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">
+                        {doc.title}
+                      </div>
+                      {doc.description && (
+                        <div className="text-xs text-gray-500 truncate">{doc.description}</div>
+                      )}
+                      <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+                          {DOC_TYPE_LABELS[doc.document_type]}
+                        </span>
+                        <span>{formatDate(doc.created_at)}</span>
+                        <span>· {formatFileSize(doc.file_size)}</span>
+                      </div>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handlePreview(doc)}
+                      disabled={isPreviewing || isDownloading}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                      title="View file without downloading"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>{isPreviewing ? 'Opening…' : 'View'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      disabled={isPreviewing || isDownloading}
+                      className="flex items-center gap-1 p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
+                      title="Download"
+                    >
+                      {isDownloading ? (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => handleDownload(doc)}
-                  disabled={downloadingId === doc.id}
-                  className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40 flex-shrink-0"
-                  title="Download"
-                >
-                  {downloadingId === doc.id
-                    ? <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    : <Download className="w-5 h-5" />}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
