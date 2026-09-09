@@ -85,65 +85,70 @@ export function ContactPage({
     message: '',
   });
 
-  const handleSubmit = async (
-    e: React.FormEvent
-) => {
 
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    try {
+  if (sending) return;
 
-        setSending(true);
+  const name = formData.name.trim();
+  const email = formData.email.trim();
+  const subject = formData.subject.trim();
+  const message = formData.message.trim();
 
-        const { error } = await supabase
-            .from("contact_messages")
-            .insert({
+  if (!name || !email || !subject || !message) {
+    setModalTitle("Incomplete Form");
+    setModalMessage("Please complete all fields before submitting.");
+    setShowModal(true);
+    return;
+  }
 
-                full_name: formData.name,
-                email: formData.email,
-                subject: formData.subject,
-                message: formData.message
+  try {
+    setSending(true);
 
-            });
+    const { error } = await supabase
+      .from("contact_messages")
+      .insert({
+        full_name: name,
+        email: email,
+        subject: subject,
+        message: message,
+        status: "Pending",
+      });
 
-        if (error)
-            throw error;
-
-        setModalTitle("Message Sent");
-
-        setModalMessage(
-            "Thank you for contacting us. Your inquiry has been submitted successfully."
-        );
-
-        setShowModal(true);
-
-        setFormData({
-
-            name: "",
-            email: "",
-            subject: "",
-            message: ""
-
-        });
-
-    } catch (error: any) {
-
-        setModalTitle("Submission Failed");
-
-        setModalMessage(
-            error.message ||
-            "Unable to send your message."
-        );
-
-        setShowModal(true);
-
-    } finally {
-
-        setSending(false);
-
+    if (error) {
+      console.error("Error submitting contact message:", error);
+      throw error;
     }
 
+    setFormData({
+      name: "",
+      email: "",
+      subject: "",
+      message: "",
+    });
+
+    setModalTitle("Message Sent");
+    setModalMessage(
+      "Thank you for contacting us. Your message has been submitted successfully."
+    );
+    setShowModal(true);
+
+  } catch (error: any) {
+    console.error("Contact submission failed:", error);
+
+    setModalTitle("Submission Failed");
+    setModalMessage(
+      error?.message || "Unable to send your message. Please try again."
+    );
+    setShowModal(true);
+
+  } finally {
+    setSending(false);
+  }
 };
+
+
 useEffect(() => {
   if (!previewMode) {
     loadContactPage();

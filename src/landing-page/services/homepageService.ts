@@ -76,6 +76,46 @@ export async function uploadHomepageImage(
 
   return publicUrl;
 }
+export async function saveHomepageFeatures(features: any[]) {
+  try {
+    for (const feature of features) {
+      const { error } = await supabase
+        .from('homepage_features')
+        .update({
+          title: feature.title,
+          description: feature.description,
+          icon: feature.icon,
+        })
+        .eq('id', feature.id);
+
+      if (error) {
+        console.error(
+          'Error saving homepage feature:',
+          error
+        );
+
+        return {
+          success: false,
+          error,
+        };
+      }
+    }
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error(
+      'Unexpected error saving homepage features:',
+      error
+    );
+
+    return {
+      success: false,
+      error,
+    };
+  }
+}
 export async function saveHomepageStats(
   stats: any[]
 ) {

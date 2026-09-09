@@ -1,4 +1,22 @@
 import React from "react";
+import {
+  GraduationCap,
+  Building2,
+  Trophy,
+  UserRound,
+  BookOpen,
+  Library,
+  Users,
+  Lightbulb,
+  Star,
+  Target,
+  ScrollText,
+  Monitor,
+  Globe,
+  Heart,
+  Check,
+  type LucideIcon,
+} from "lucide-react";
 
 interface Props {
   features: any[];
@@ -9,68 +27,99 @@ interface Props {
 
 // =====================================================
 // ICON OPTIONS
-// The `value` is exactly what will be saved
-// to the `homepage_features.icon` column.
+// The `value` is what will be saved to the database.
+// The `icon` is the actual Lucide icon component.
 // =====================================================
 
-const ICON_OPTIONS = [
+const ICON_OPTIONS: {
+  name: string;
+  value: string;
+  icon: LucideIcon;
+}[] = [
   {
     name: "Teacher",
-    value: "👨‍🏫",
+    value: "UserRound",
+    icon: UserRound,
   },
   {
     name: "University",
-    value: "🏛️",
+    value: "Building2",
+    icon: Building2,
   },
   {
     name: "Achievement",
-    value: "🏆",
+    value: "Trophy",
+    icon: Trophy,
   },
   {
     name: "Student",
-    value: "🎓",
+    value: "GraduationCap",
+    icon: GraduationCap,
   },
   {
     name: "Book",
-    value: "📚",
+    value: "BookOpen",
+    icon: BookOpen,
   },
   {
     name: "Education",
-    value: "📖",
+    value: "Library",
+    icon: Library,
   },
   {
     name: "People",
-    value: "👥",
+    value: "Users",
+    icon: Users,
   },
   {
-    name: "Lightbulb",
-    value: "💡",
+    name: "Ideas",
+    value: "Lightbulb",
+    icon: Lightbulb,
   },
   {
     name: "Star",
-    value: "⭐",
+    value: "Star",
+    icon: Star,
   },
   {
     name: "Target",
-    value: "🎯",
+    value: "Target",
+    icon: Target,
   },
   {
     name: "Certificate",
-    value: "📜",
+    value: "ScrollText",
+    icon: ScrollText,
   },
   {
     name: "Computer",
-    value: "💻",
+    value: "Monitor",
+    icon: Monitor,
   },
   {
-    name: "Globe",
-    value: "🌎",
+    name: "Global",
+    value: "Globe",
+    icon: Globe,
   },
   {
-    name: "Heart",
-    value: "❤️",
+    name: "Community",
+    value: "Heart",
+    icon: Heart,
   },
 ];
+
+// =====================================================
+// HELPER
+// Finds the Lucide icon based on the saved database value.
+// =====================================================
+
+const getIconOption = (value: string) => {
+  return (
+    ICON_OPTIONS.find(
+      (option) => option.value === value
+    ) || ICON_OPTIONS[0]
+  );
+};
 
 // =====================================================
 // COMPONENT
@@ -127,7 +176,13 @@ export function FeaturesEditor({
       {features.map((feature, index) => {
 
         const currentIcon =
-          feature.icon || "📚";
+          feature.icon || "BookOpen";
+
+        const selectedIcon =
+          getIconOption(currentIcon);
+
+        const CurrentIcon =
+          selectedIcon.icon;
 
         return (
           <div
@@ -188,11 +243,17 @@ export function FeaturesEditor({
               Feature Icon
             </label>
 
+            {/* =========================================== */}
             {/* CURRENT ICON PREVIEW */}
+            {/* =========================================== */}
 
             <div className="flex items-center gap-3 mb-4 bg-white border border-gray-200 rounded-lg p-3">
-              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center text-2xl">
-                {currentIcon}
+
+              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
+                <CurrentIcon
+                  size={26}
+                  strokeWidth={2}
+                />
               </div>
 
               <div>
@@ -200,17 +261,23 @@ export function FeaturesEditor({
                   Selected Icon
                 </p>
 
-                <p className="text-lg font-semibold text-gray-800">
-                  {currentIcon}
+                <p className="text-sm font-semibold text-gray-800">
+                  {selectedIcon.name}
                 </p>
               </div>
+
             </div>
 
+            {/* =========================================== */}
             {/* ICON CHOICES */}
+            {/* =========================================== */}
 
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
 
               {ICON_OPTIONS.map((option) => {
+
+                const Icon =
+                  option.icon;
 
                 const isSelected =
                   currentIcon ===
@@ -236,7 +303,6 @@ export function FeaturesEditor({
                       flex
                       items-center
                       justify-center
-                      text-2xl
                       bg-white
                       transition-all
                       duration-200
@@ -249,15 +315,34 @@ export function FeaturesEditor({
                       }
                     `}
                   >
-                    {option.value}
+
+                    <Icon
+                      size={25}
+                      strokeWidth={
+                        isSelected
+                          ? 2.5
+                          : 2
+                      }
+                      className={
+                        isSelected
+                          ? "text-blue-600"
+                          : "text-gray-600"
+                      }
+                    />
 
                     {/* SELECTED CHECK */}
 
                     {isSelected && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow">
-                        ✓
+                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center shadow">
+
+                        <Check
+                          size={12}
+                          strokeWidth={3}
+                        />
+
                       </span>
                     )}
+
                   </button>
                 );
               })}
@@ -294,8 +379,13 @@ export function FeaturesEditor({
 
                 <div className="flex items-start gap-4">
 
-                  <div className="w-14 h-14 shrink-0 rounded-xl bg-blue-100 flex items-center justify-center text-3xl">
-                    {currentIcon}
+                  <div className="w-14 h-14 shrink-0 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700">
+
+                    <CurrentIcon
+                      size={30}
+                      strokeWidth={2}
+                    />
+
                   </div>
 
                   <div>
@@ -326,6 +416,14 @@ export function FeaturesEditor({
 
       {features.length === 0 && (
         <div className="text-center py-10 text-gray-500">
+
+          <div className="flex justify-center mb-3">
+            <Library
+              size={40}
+              className="text-gray-400"
+            />
+          </div>
+
           <p className="font-medium">
             No features available.
           </p>
@@ -333,6 +431,7 @@ export function FeaturesEditor({
           <p className="text-sm mt-1">
             Add a feature to see it here.
           </p>
+
         </div>
       )}
 
