@@ -190,7 +190,6 @@ const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
-  { icon: Users,           label: 'User Management',         id: 'users' },
   { icon: FileText,        label: 'Academic Records',        id: 'records' },
   { icon: GraduationCap,   label: 'Faculty & Staff',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
@@ -198,8 +197,9 @@ const deanMenuItems = [
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
   { icon: MessageCircle,   label: 'Inquiries',               id: 'inquiries' },
   { icon: Edit,            label: 'Landing Page Management', id: 'landing' },
-  { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
   { icon: BarChart3,       label: 'Quarterly Reports',       id: 'reports' },
+  { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
+  { icon: Users,           label: 'User Management',         id: 'users' },
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
 
@@ -5815,20 +5815,11 @@ const NOTIF_DEFAULTS = {
   systemNotifs: true,
 };
 
-interface Delegate {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-
 const SETTINGS_TABS = [
   { id: 'profile',       label: 'Profile Information', icon: User },
   { id: 'security',      label: 'Password & Security',  icon: KeyRound },
   { id: 'notifications', label: 'Notifications',        icon: Bell },
   { id: 'academic',      label: 'Academic Settings',     icon: GraduationCap },
-  { id: 'delegates',     label: 'Delegate Access',       icon: UserCheck },
-  { id: 'backup',        label: 'Backup & Maintenance',  icon: Settings },
   { id: 'account',       label: 'Account Actions',       icon: LogOut },
 ] as const;
 
@@ -5836,146 +5827,268 @@ type SettingsTabId = typeof SETTINGS_TABS[number]['id'];
 
 function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+    <div className="flex items-center justify-between py-3.5 border-b border-gray-100 last:border-0">
       <span className="text-sm text-gray-700">{label}</span>
       <button
         onClick={onChange}
-        className={`relative w-9 h-5 rounded-full transition-colors ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
       >
-        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${checked ? 'translate-x-4' : ''}`} />
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${checked ? 'translate-x-5' : ''}`} />
       </button>
     </div>
   );
 }
 
-function SystemSettings() {
+function SystemSettings({ onLogout }: { onLogout?: () => void }) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
 
-  const [programs, setPrograms] = useState<string[]>([...DEFAULT_PROGRAMS]);
-  const [newProgram, setNewProgram] = useState('');
-  const [editIdx, setEditIdx] = useState<number | null>(null);
-  const [editVal, setEditVal] = useState('');
+  // Profile
+  const [fullName, setFullName] = useState('Dr. Elizabeth Martinez');
+  const [email, setEmail] = useState('');
+  const [positionRole] = useState('College Dean');
+
+  // Security
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+
+  // Notifications
   const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
-
-  const [delegates, setDelegates] = useState<Delegate[]>([]);
-  const [delegateEmail, setDelegateEmail] = useState('');
-  const [delegateError, setDelegateError] = useState('');
-
-  const addProgram = () => {
-    const trimmed = newProgram.trim().toUpperCase();
-    if (!trimmed || programs.includes(trimmed)) return;
-    setPrograms(prev => [...prev, trimmed]);
-    setNewProgram('');
-  };
-
-  const deleteProgram = (idx: number) => setPrograms(prev => prev.filter((_, i) => i !== idx));
-
-  const startEdit = (idx: number) => { setEditIdx(idx); setEditVal(programs[idx]); };
-  const saveEdit = () => {
-    if (editIdx === null) return;
-    const trimmed = editVal.trim().toUpperCase();
-    if (!trimmed) return;
-    setPrograms(prev => prev.map((p, i) => (i === editIdx ? trimmed : p)));
-    setEditIdx(null);
-  };
-
   const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
     setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const addDelegate = () => {
-    const trimmed = delegateEmail.trim();
-    setDelegateError('');
-    if (!trimmed) { setDelegateError('Please enter an email address.'); return; }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmed)) { setDelegateError('Please enter a valid email address.'); return; }
-    if (delegates.some(d => d.email.toLowerCase() === trimmed.toLowerCase())) {
-      setDelegateError('This person is already a delegate.');
-      return;
+  // Academic settings
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [semester, setSemester] = useState('Second Semester');
+  const [collegeDept, setCollegeDept] = useState('College of Education');
+
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveChanges = async () => {
+    setSaving(true);
+    try {
+      // TODO: wire up to backend per tab (profile, security, notifications, academic)
+      await new Promise(res => setTimeout(res, 600));
+    } finally {
+      setSaving(false);
     }
-    setDelegates(prev => [...prev, { id: Date.now().toString(), name: trimmed.split('@')[0], email: trimmed, role: 'Delegate' }]);
-    setDelegateEmail('');
   };
 
-  const removeDelegate = (id: string) => setDelegates(prev => prev.filter(d => d.id !== id));
-
-  const activeLabel = SETTINGS_TABS.find(t => t.id === activeTab)?.label ?? '';
+  const handleCancel = () => {
+    // Reset to last-saved values if needed
+  };
 
   return (
     <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">System Settings</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Academic Year */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Academic Year Setup</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Current Academic Year</label>
-              <input type="text" defaultValue="2025-2026" className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
-              <select className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm sm:text-base">
-                <option>Second Semester</option>
-                <option>First Semester</option>
-                <option>Summer</option>
-              </select>
-            </div>
-            <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base">Update Settings</button>
-          </div>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <button
+            onClick={handleCancel}
+            className="px-4 sm:px-5 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving}
+            className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+       <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        {/* Sidebar tabs */}
+        <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
+          {SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Programs Management */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Programs Management</h2>
-          <div className="space-y-2 mb-4">
-            {programs.map((prog, idx) => (
-              <div key={prog} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
-                {editIdx === idx ? (
-                  <>
-                    <input value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                      className="flex-1 px-2 py-1 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditIdx(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-sm font-semibold text-gray-800">{prog}</span>
-                    <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => deleteProgram(idx)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </>
-                )}
+        {/* Content panel */}
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                  <input
+                    type="text"
+                    value={positionRole}
+                    disabled
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500"
+                  />
+                </div>
               </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input value={newProgram} onChange={e => setNewProgram(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addProgram()}
-              placeholder="New program (e.g. BSED-SCIENCE)"
-              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={addProgram} className="px-3 sm:px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-medium hover:bg-[#1E40AF] transition-colors flex items-center gap-1">
-              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Backup */}
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 md:col-span-2">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Backup & Maintenance</h2>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button className="flex-1 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
-              <Download className="w-5 h-5" /> Create Backup
-            </button>
-            <button className="flex-1 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
-              <Settings className="w-5 h-5" /> System Maintenance
-            </button>
-          </div>
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              Last backup: February 13, 2026 at 2:00 AM
             </div>
-          </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+
+              <div className="space-y-4 max-w-md mb-6">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+                  Change Password
+                </button>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <ToggleRow
+                  label="Two-Factor Authentication"
+                  checked={twoFactorEnabled}
+                  onChange={() => setTwoFactorEnabled(v => !v)}
+                />
+              </div>
+
+              <div className="border-t border-gray-100 pt-5 mt-1">
+                <button className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                  Log Out of All Devices
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+
+              <div>
+                <ToggleRow label="New Inquiries" checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} />
+                <ToggleRow label="Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
+                <ToggleRow label="New Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
+                <ToggleRow label="Faculty/Staff Updates" checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} />
+                <ToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'academic' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Academic Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure the current academic period.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <input
+                    type="text"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option>First Semester</option>
+                    <option>Second Semester</option>
+                    <option>Summer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">College/Department</label>
+                  <input
+                    type="text"
+                    value={collegeDept}
+                    onChange={(e) => setCollegeDept(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
+
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Log Out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
