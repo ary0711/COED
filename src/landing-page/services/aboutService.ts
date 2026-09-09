@@ -101,11 +101,63 @@ export async function saveFacultyMembers(
     )
   );
 
-  return await supabase
+  const {
+    data,
+    error,
+  } = await supabase
     .from('faculty_members')
-    .upsert(facultyMembers);
+    .upsert(
+      facultyMembers,
+      {
+        onConflict: 'id',
+      }
+    )
+    .select();
+
+  if (error) {
+    console.error(
+      'SAVE FACULTY ERROR:',
+      error
+    );
+
+    throw error;
+  }
+
+  return {
+    data,
+    error: null,
+  };
 }
 
+export async function deleteFacultyMember(
+  id: string
+) {
+  const { data, error } =
+    await supabase
+      .from('faculty_members')
+      .delete()
+      .eq('id', id)
+      .select();
+
+  if (error) {
+    console.error(
+      'DELETE FACULTY ERROR:',
+      error
+    );
+
+    throw error;
+  }
+
+  console.log(
+    'FACULTY DELETED:',
+    data
+  );
+
+  return {
+    data,
+    error: null,
+  };
+}
 export async function uploadAboutImage(
   file: File,
   folder: string = 'history'
@@ -144,25 +196,71 @@ export async function uploadFacultyImage(
   folder: string = 'faculty'
 ) {
   const extension =
-    file.name.split('.').pop();
+    file.name
+      .split('.')
+      .pop()
+      ?.toLowerCase() || 'jpg';
 
   const fileName =
-    `${folder}/${Date.now()}.${extension}`;
+    `${crypto.randomUUID()}.${extension}`;
 
-  const { error } =
-    await supabase.storage
-      .from('faculty_images')
-      .upload(fileName, file, {
-        upsert: true,
-      });
+  const filePath =
+    `${folder}/${fileName}`;
 
-  if (error) throw error;
+  console.log(
+    'Uploading image to:',
+    filePath
+  );
 
   const {
-    data: { publicUrl },
-  } = supabase.storage
+    data,
+    error,
+  } = await supabase.storage
     .from('faculty_images')
-    .getPublicUrl(fileName);
+    .upload(
+      filePath,
+      file,
+      {
+        cacheControl: '3600',
+        contentType: file.type,
+        upsert: false,
+      }
+    );
+
+  if (error) {
+    console.error(
+      'Storage upload error:',
+      error
+    );
+
+    throw error;
+  }
+
+  console.log(
+    'Storage upload successful:',
+    data
+  );
+
+  const {
+    data: publicUrlData,
+  } =
+    supabase.storage
+      .from('faculty_images')
+      .getPublicUrl(filePath);
+
+  const publicUrl =
+    publicUrlData?.publicUrl;
+
+  if (!publicUrl) {
+    throw new Error(
+      'Unable to generate public image URL.'
+    );
+  }
+
+  console.log(
+    'Generated public URL:',
+    publicUrl
+  );
 
   return publicUrl;
 }

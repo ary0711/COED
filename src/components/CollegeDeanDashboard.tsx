@@ -19,7 +19,7 @@ import AccreditationPageEditor from './pages/AccreditationPageEditor';
 import ContactPageEditor from './pages/ContactPageEditor';
 import FooterPageEditor from './pages/FooterPageEditor';
 import {
-  getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats
+  getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats,saveHomepageFeatures
 } from '../landing-page/services/homepageService';
 import {
   getAboutContent, getAboutStats, getCoreValues, getCoreValueCards, getFacultyMembers, saveAboutContent, saveAboutStats, saveCoreValues, saveCoreValueCards, saveFacultyMembers
@@ -5612,22 +5612,60 @@ function LandingPageManagement() {
   }
 
   async function saveHomePage() {
-    const { error: contentError } = await saveHomepageContent(homeContent);
-    if (contentError) {
-      setModalMessage(`Error: ${contentError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
-    const { error: statsError } = await saveHomepageStats(stats);
-    if (statsError) {
-      setModalMessage(`Error: ${statsError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
-    setModalMessage('Homepage updated successfully!');
+  // ==========================================
+  // SAVE HOMEPAGE CONTENT
+  // ==========================================
+
+  const { error: contentError } =
+    await saveHomepageContent(homeContent);
+
+  if (contentError) {
+    setModalMessage(
+      `Error: ${contentError.message}`
+    );
     setShowSuccessModal(true);
+    return;
   }
 
+  // ==========================================
+  // SAVE HOMEPAGE STATS
+  // ==========================================
+
+  const { error: statsError } =
+    await saveHomepageStats(stats);
+
+  if (statsError) {
+    setModalMessage(
+      `Error: ${statsError.message}`
+    );
+    setShowSuccessModal(true);
+    return;
+  }
+
+  // ==========================================
+  // SAVE HOMEPAGE FEATURES
+  // ==========================================
+
+  const { error: featuresError } =
+    await saveHomepageFeatures(features);
+
+  if (featuresError) {
+    setModalMessage(
+      `Error: ${featuresError.message}`
+    );
+    setShowSuccessModal(true);
+    return;
+  }
+
+  // ==========================================
+  // SUCCESS
+  // ==========================================
+
+  setModalMessage(
+    'Homepage updated successfully!'
+  );
+  setShowSuccessModal(true);
+}
   async function saveDepartmentsPage() {
     await saveColleges(colleges);
     await saveDepartmentContent(departmentContent);
