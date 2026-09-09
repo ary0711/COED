@@ -138,34 +138,36 @@ const CONTACT_API_TABLE = 'contact_messages';
 
 interface Inquiry {
   id: string;
-  student_id: string;
-  sender_id: string;
-  sender_name: string;
   sender_role: 'student' | 'alumni';
+  sender_name?: string | null;
+  sender_email?: string | null;
   subject: string;
-  category: string | null;
   message: string;
-  reply: string | null;
+  category?: string | null;
   status: 'pending' | 'answered';
+  reply?: string | null;
+  replied_at?: string | null;
   created_at: string;
-  replied_at: string | null;
-  profiles: {
-    full_name: string;
-    id_number: string;
+  is_read: boolean;
+
+  profiles?: {
+    full_name?: string | null;
+    id_number?: string | null;
   } | null;
 }
 
 interface ContactMessage {
-  id: string;
-  sender_name: string;
-  sender_email?: string;
-  subject: string;
-  category?: string | null;
-  message: string;
-  reply: string | null;
-  status: 'pending' | 'answered';
-  created_at: string;
-  replied_at: string | null;
+id: string | number;
+full_name: string;
+email: string | null;
+subject: string;
+message: string;
+category?: string | null;
+status: 'pending' | 'answered';
+reply?: string | null;
+replied_at?: string | null;
+created_at: string;
+is_read: boolean;
 }
 
 // ─── Role & Status Config ─────────────────────────────────────────────────────
@@ -3283,140 +3285,1008 @@ function AlumniTracer() {
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
 function InquiriesManagement() {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
-  const [alumniInquiries, setAlumniInquiries]   = useState<Inquiry[]>([]);
-  const [contactMessages, setContactMessages]   = useState<ContactMessage[]>([]);
-  const [loading, setLoading]                   = useState(true);
+  const [alumniInquiries, setAlumniInquiries] = useState<Inquiry[]>([]);
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [activeSection, setActiveSection] = useState<'student' | 'alumni' | 'contact'>('student');
+  const [activeSection, setActiveSection] =
+    useState<'student' | 'alumni' | 'contact'>('student');
 
-  const [studentFilter, setStudentFilter]       = useState<'all' | 'pending' | 'answered'>('all');
-  const [alumniFilter, setAlumniFilter]         = useState<'all' | 'pending' | 'answered'>('all');
-  const [contactFilter, setContactFilter]       = useState<'all' | 'pending' | 'answered'>('all');
+  const [studentFilter, setStudentFilter] =
+    useState<'all' | 'pending' | 'answered'>('all');
+
+  const [alumniFilter, setAlumniFilter] =
+    useState<'all' | 'pending' | 'answered'>('all');
+
+  const [contactFilter, setContactFilter] =
+    useState<'all' | 'pending' | 'answered'>('all');
+
   const [studentCategoryFilter, setStudentCategoryFilter] = useState('all');
-  const [alumniCategoryFilter, setAlumniCategoryFilter]   = useState('all');
+  const [alumniCategoryFilter, setAlumniCategoryFilter] = useState('all');
   const [contactCategoryFilter, setContactCategoryFilter] = useState('all');
 
   const [activeInquiry, setActiveInquiry] = useState<Inquiry | null>(null);
-  const [activeContact, setActiveContact] = useState<ContactMessage | null>(null);
-  const [replyText, setReplyText]         = useState('');
-  const [sending, setSending]             = useState(false);
+  const [activeContact, setActiveContact] =
+    useState<ContactMessage | null>(null);
+
+  const [replyText, setReplyText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | number | null>(null);
+
+  /*
+   * ============================================================
+   * CUSTOM MODALS
+   * ============================================================
+   */
+
+  const [messageModal, setMessageModal] = useState<{
+    open: boolean;
+    type: 'error' | 'success';
+    title: string;
+    message: string;
+  }>({
+    open: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const [deleteModal, setDeleteModal] = useState<{
+    open: boolean;
+    item: Inquiry | ContactMessage | null;
+    type: 'inquiry' | 'contact' | null;
+  }>({
+    open: false,
+    item: null,
+    type: null,
+  });
+
+  /*
+   * ============================================================
+   * NEW ITEMS MODAL
+   * ============================================================
+   */
+
+  const [newItemsModal, setNewItemsModal] = useState<{
+    open: boolean;
+    type: 'student' | 'alumni' | 'contact' | null;
+    items: (Inquiry | ContactMessage)[];
+  }>({
+    open: false,
+    type: null,
+    items: [],
+  });
+
+  /*
+   * ============================================================
+   * HELPER: SHOW MESSAGE MODAL
+   * ============================================================
+   */
+
+  const showMessage = (
+    type: 'error' | 'success',
+    title: string,
+    message: string
+  ) => {
+    setMessageModal({
+      open: true,
+      type,
+      title,
+      message,
+    });
+  };
+
+  const closeMessageModal = () => {
+    setMessageModal((prev) => ({
+      ...prev,
+      open: false,
+    }));
+  };
+
+  /*
+   * ============================================================
+   * FETCH DATA
+   * ============================================================
+   */
 
   const fetchInquiries = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .select('*, profiles(full_name, id_number)')
-      .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      setStudentInquiries(data.filter((i: Inquiry) => i.sender_role === 'student'));
-      setAlumniInquiries(data.filter((i: Inquiry) => i.sender_role === 'alumni'));
+    try {
+      const {
+        data: inquiryData,
+        error: inquiryError,
+      } = await supabase
+        .from('inquiries')
+        .select('*, profiles(full_name, id_number)')
+        .order('created_at', { ascending: false });
+
+      if (inquiryError) {
+        console.error('Error fetching inquiries:', inquiryError);
+
+        showMessage(
+          'error',
+          'Unable to Load Inquiries',
+          inquiryError.message
+        );
+      } else if (inquiryData) {
+        setStudentInquiries(
+          inquiryData.filter(
+            (i: Inquiry) => i.sender_role === 'student'
+          )
+        );
+
+        setAlumniInquiries(
+          inquiryData.filter(
+            (i: Inquiry) => i.sender_role === 'alumni'
+          )
+        );
+      }
+
+      const {
+        data: contactData,
+        error: contactError,
+      } = await supabase
+        .from(CONTACT_API_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (contactError) {
+        console.error(
+          'Error fetching contact messages:',
+          contactError
+        );
+
+        showMessage(
+          'error',
+          'Unable to Load Contact Messages',
+          contactError.message
+        );
+      } else if (contactData) {
+        setContactMessages(contactData);
+      }
+    } catch (error) {
+      console.error('Unexpected fetch error:', error);
+
+      showMessage(
+        'error',
+        'Something Went Wrong',
+        'An unexpected error occurred while loading inquiries.'
+      );
+    } finally {
+      setLoading(false);
     }
-
-    const { data: contactData, error: contactError } = await supabase
-      .from(CONTACT_API_TABLE)
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!contactError && contactData) {
-      setContactMessages(contactData);
-    }
-
-    setLoading(false);
   }, []);
 
-  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-
   useEffect(() => {
-    const channelName = `inquiries-channel-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => {
-        fetchInquiries();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: CONTACT_API_TABLE }, () => {
-        fetchInquiries();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    fetchInquiries();
   }, [fetchInquiries]);
 
-  const openInquiry = (inquiry: Inquiry) => {
-    setActiveInquiry(inquiry);
-    setActiveContact(null);
-    setReplyText(inquiry.reply ?? '');
-  };
-  const openContact = (contact: ContactMessage) => {
-    setActiveContact(contact);
+  /*
+   * ============================================================
+   * REALTIME
+   * ============================================================
+   */
+
+  useEffect(() => {
+    const channelName =
+      `inquiries-channel-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+    const channel = supabase
+      .channel(channelName)
+
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'inquiries',
+        },
+        () => {
+          fetchInquiries();
+        }
+      )
+
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: CONTACT_API_TABLE,
+        },
+        () => {
+          fetchInquiries();
+        }
+      )
+
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchInquiries]);
+
+  /*
+   * ============================================================
+   * OPEN DETAIL
+   * ============================================================
+   */
+
+  const openInquiry = async (inquiry: Inquiry) => {
+  // Open the detail modal immediately
+  setActiveInquiry({
+    ...inquiry,
+    is_read: true,
+  });
+
+  setActiveContact(null);
+  setReplyText(inquiry.reply ?? '');
+
+  // Mark as read
+  if (!inquiry.is_read) {
+    const { error } = await supabase
+      .from('inquiries')
+      .update({ is_read: true })
+      .eq('id', inquiry.id);
+
+    if (error) {
+      console.error('Error marking inquiry as read:', error);
+      return;
+    }
+
+    // Update local student list
+    setStudentInquiries((prev) =>
+      prev.map((item) =>
+        item.id === inquiry.id
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+
+    // Update local alumni list
+    setAlumniInquiries((prev) =>
+      prev.map((item) =>
+        item.id === inquiry.id
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+  }
+};
+
+const openContact = async (contact: ContactMessage) => {
+  // Open detail modal immediately
+  setActiveContact({
+    ...contact,
+    is_read: true,
+  });
+
+  setActiveInquiry(null);
+  setReplyText(contact.reply ?? '');
+
+  // Mark as read
+  if (!contact.is_read) {
+    const { error } = await supabase
+      .from(CONTACT_API_TABLE)
+      .update({ is_read: true })
+      .eq('id', contact.id);
+
+    if (error) {
+      console.error(
+        'Error marking contact message as read:',
+        error
+      );
+      return;
+    }
+
+    setContactMessages((prev) =>
+      prev.map((item) =>
+        item.id === contact.id
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+  }
+};
+
+  const closeDetailModal = () => {
     setActiveInquiry(null);
-    setReplyText(contact.reply ?? '');
+    setActiveContact(null);
+    setReplyText('');
   };
-  const closeModal = () => { setActiveInquiry(null); setActiveContact(null); setReplyText(''); };
 
-  const sendReply = async () => {
-    if (!replyText.trim()) return;
-    setSending(true);
-    try {
-      if (activeInquiry) {
-        const { error } = await supabase
-          .from('inquiries')
-          .update({
-            reply: replyText.trim(),
-            status: 'answered',
-            replied_at: new Date().toISOString(),
-          })
-          .eq('id', activeInquiry.id);
+  /*
+   * ============================================================
+   * MARK ITEM AS READ
+   * ============================================================
+   */
 
-        if (!error) {
-          await notifyRole(activeInquiry.sender_role, 'Your inquiry has been answered', replyText.trim());
-          closeModal();
-          fetchInquiries();
-        }
-      } else if (activeContact) {
-        const { error } = await supabase
-          .from(CONTACT_API_TABLE)
-          .update({
-            reply: replyText.trim(),
-            status: 'answered',
-            replied_at: new Date().toISOString(),
-          })
-          .eq('id', activeContact.id);
+  const markItemAsRead = async (
+    item: Inquiry | ContactMessage,
+    type: 'inquiry' | 'contact'
+  ) => {
+    if (item.is_read) return;
 
-        if (!error) {
-          closeModal();
-          fetchInquiries();
-        }
-      }
-    } finally {
-      setSending(false);
+    const table =
+      type === 'inquiry'
+        ? 'inquiries'
+        : CONTACT_API_TABLE;
+
+    const { error } = await supabase
+      .from(table)
+      .update({
+        is_read: true,
+      })
+      .eq('id', item.id);
+
+    if (error) {
+      console.error(
+        'Unable to mark item as read:',
+        error
+      );
+
+      return;
+    }
+
+    if (type === 'inquiry') {
+      setStudentInquiries((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, is_read: true }
+            : i
+        )
+      );
+
+      setAlumniInquiries((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, is_read: true }
+            : i
+        )
+      );
+    } else {
+      setContactMessages((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, is_read: true }
+            : i
+        )
+      );
     }
   };
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-    });
+  /*
+   * ============================================================
+   * OPEN NEW ITEMS MODAL
+   * ============================================================
+   */
 
-  const filterList = <T extends { status: string; category?: string | null }>(
+  const openNewItems = async (
+  type: 'student' | 'alumni' | 'contact'
+) => {
+  let items: (Inquiry | ContactMessage)[] = [];
+
+  // Get unread pending items
+  if (type === 'student') {
+    items = studentInquiries.filter(
+      (item) =>
+        item.status === 'pending' &&
+        item.is_read !== true
+    );
+  }
+
+  if (type === 'alumni') {
+    items = alumniInquiries.filter(
+      (item) =>
+        item.status === 'pending' &&
+        item.is_read !== true
+    );
+  }
+
+  if (type === 'contact') {
+    items = contactMessages.filter(
+      (item) =>
+        item.status === 'pending' &&
+        item.is_read !== true
+    );
+  }
+
+  // Open modal first
+  setNewItemsModal({
+    open: true,
+    type,
+    items,
+  });
+
+  // Nothing to mark as read
+  if (items.length === 0) {
+    return;
+  }
+
+  const table =
+    type === 'contact'
+      ? CONTACT_API_TABLE
+      : 'inquiries';
+
+  const ids = items.map((item) => item.id);
+
+  // Mark all displayed items as read
+  const { error } = await supabase
+    .from(table)
+    .update({
+      is_read: true,
+    })
+    .in('id', ids);
+
+  if (error) {
+    console.error(
+      'Unable to mark new items as read:',
+      error
+    );
+
+    showMessage(
+      'error',
+      'Unable to Mark as Read',
+      error.message
+    );
+
+    return;
+  }
+
+  // Update the local state immediately
+  if (type === 'student') {
+    setStudentInquiries((prev) =>
+      prev.map((item) =>
+        ids.includes(item.id)
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+  }
+
+  if (type === 'alumni') {
+    setAlumniInquiries((prev) =>
+      prev.map((item) =>
+        ids.includes(item.id)
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+  }
+
+  if (type === 'contact') {
+    setContactMessages((prev) =>
+      prev.map((item) =>
+        ids.includes(item.id)
+          ? { ...item, is_read: true }
+          : item
+      )
+    );
+  }
+};
+
+  const closeNewItemsModal = () => {
+    setNewItemsModal({
+      open: false,
+      type: null,
+      items: [],
+    });
+  };
+
+  /*
+   * ============================================================
+   * DELETE
+   * ============================================================
+   */
+
+  const requestDelete = (
+    item: Inquiry | ContactMessage,
+    type: 'inquiry' | 'contact'
+  ) => {
+    setDeleteModal({
+      open: true,
+      item,
+      type,
+    });
+  };
+
+  const cancelDelete = () => {
+    setDeleteModal({
+      open: false,
+      item: null,
+      type: null,
+    });
+  };
+
+  const confirmDelete = async () => {
+    const item = deleteModal.item;
+    const type = deleteModal.type;
+
+    if (!item || !type) return;
+
+    setDeletingId(item.id);
+
+    try {
+      const table =
+        type === 'inquiry'
+          ? 'inquiries'
+          : CONTACT_API_TABLE;
+
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', item.id);
+
+      if (error) {
+        console.error(
+          'Delete error:',
+          error
+        );
+
+        setDeletingId(null);
+
+        cancelDelete();
+
+        showMessage(
+          'error',
+          'Delete Failed',
+          error.message
+        );
+
+        return;
+      }
+
+      /*
+       * Remove locally.
+       */
+      if (type === 'inquiry') {
+        setStudentInquiries((prev) =>
+          prev.filter(
+            (i) => i.id !== item.id
+          )
+        );
+
+        setAlumniInquiries((prev) =>
+          prev.filter(
+            (i) => i.id !== item.id
+          )
+        );
+      } else {
+        setContactMessages((prev) =>
+          prev.filter(
+            (i) => i.id !== item.id
+          )
+        );
+      }
+
+      /*
+       * Remove from New Items modal too.
+       */
+      setNewItemsModal((prev) => ({
+        ...prev,
+        items: prev.items.filter(
+          (i) => i.id !== item.id
+        ),
+      }));
+
+      if (
+        activeInquiry?.id === item.id ||
+        activeContact?.id === item.id
+      ) {
+        closeDetailModal();
+      }
+
+      cancelDelete();
+
+      setDeletingId(null);
+
+      showMessage(
+        'success',
+        'Deleted Successfully',
+        'The inquiry or message has been permanently deleted.'
+      );
+
+      await fetchInquiries();
+    } catch (error) {
+      console.error(
+        'Unexpected delete error:',
+        error
+      );
+
+      setDeletingId(null);
+      cancelDelete();
+
+      showMessage(
+        'error',
+        'Delete Failed',
+        'An unexpected error occurred while deleting this item.'
+      );
+    }
+  };
+  /*
+   * ============================================================
+   * SEND REPLY
+   * ============================================================
+   */
+
+ const sendReply = async () => {
+  if (!replyText.trim()) {
+    showMessage(
+      'error',
+      'Reply Required',
+      'Please enter a reply before sending.'
+    );
+    return;
+  }
+
+  setSending(true);
+
+  try {
+    // =====================================================
+    // STUDENT / ALUMNI INQUIRY
+    // =====================================================
+    if (activeInquiry) {
+      const { error } = await supabase
+        .from('inquiries')
+        .update({
+          reply: replyText.trim(),
+          status: 'answered',
+          replied_at: new Date().toISOString(),
+          is_read: true,
+        })
+        .eq('id', activeInquiry.id);
+
+      if (error) {
+        console.error('Reply error:', error);
+
+        showMessage(
+          'error',
+          'Reply Failed',
+          error.message
+        );
+
+        return;
+      }
+
+      // Send notification
+      try {
+        await notifyRole(
+          activeInquiry.sender_role,
+          'Your inquiry has been answered',
+          replyText.trim()
+        );
+      } catch (notificationError) {
+        console.error(
+          'Notification error:',
+          notificationError
+        );
+      }
+
+      closeDetailModal();
+
+      await fetchInquiries();
+
+      showMessage(
+        'success',
+        'Reply Sent',
+        'Your reply has been successfully sent.'
+      );
+
+      return;
+    }
+
+    // =====================================================
+    // CONTACT MESSAGE
+    // =====================================================
+    if (activeContact) {
+
+      // -----------------------------------------------
+      // Check email
+      // -----------------------------------------------
+      if (!activeContact.email) {
+        showMessage(
+          'error',
+          'Email Not Available',
+          'This contact message does not have an email address.'
+        );
+
+        return;
+      }
+
+      const recipientEmail =
+        activeContact.email.trim();
+
+      const recipientName =
+        activeContact.full_name?.trim() ||
+        'Website Visitor';
+
+      const subject =
+        activeContact.subject?.trim() ||
+        'Reply from College of Education';
+
+      const message =
+        replyText.trim();
+
+      console.log(
+        'Sending contact reply to:',
+        recipientEmail
+      );
+
+      // -----------------------------------------------
+      // SEND EMAIL THROUGH BACKEND
+      // -----------------------------------------------
+      let emailResponse: Response;
+
+      try {
+        emailResponse = await fetch(
+          'http://localhost:5000/api/contact/reply',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recipientEmail,
+              recipientName,
+              subject,
+              message,
+            }),
+          }
+        );
+      } catch (fetchError) {
+        console.error(
+          'Backend connection error:',
+          fetchError
+        );
+
+        showMessage(
+          'error',
+          'Email Server Unavailable',
+          'The email server could not be reached. Please make sure your backend server is running on port 5000.'
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------
+      // READ BACKEND RESPONSE SAFELY
+      // -----------------------------------------------
+      const responseText =
+        await emailResponse.text();
+
+      let emailResult: any = {};
+
+      try {
+        emailResult = responseText
+          ? JSON.parse(responseText)
+          : {};
+      } catch {
+        console.error(
+          'Invalid backend response:',
+          responseText
+        );
+
+        showMessage(
+          'error',
+          'Email Server Error',
+          'The backend returned an invalid response. Please check your backend server.'
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------
+      // EMAIL FAILED
+      // -----------------------------------------------
+      if (
+        !emailResponse.ok ||
+        emailResult.success !== true
+      ) {
+        console.error(
+          'Email sending failed:',
+          emailResult
+        );
+
+        showMessage(
+          'error',
+          'Email Failed',
+          emailResult.message ||
+            `The reply could not be sent. Server status: ${emailResponse.status}`
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------
+      // SAVE REPLY TO SUPABASE
+      // -----------------------------------------------
+      const { error } = await supabase
+        .from(CONTACT_API_TABLE)
+        .update({
+          reply: message,
+          status: 'answered',
+          replied_at: new Date().toISOString(),
+          is_read: true,
+        })
+        .eq('id', activeContact.id);
+
+      if (error) {
+        console.error(
+          'Contact database update error:',
+          error
+        );
+
+        showMessage(
+          'error',
+          'Reply Saved Failed',
+          `The email was sent successfully to ${recipientEmail}, but the reply could not be saved in the system. ${error.message}`
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------
+      // CLOSE MODAL
+      // -----------------------------------------------
+      closeDetailModal();
+
+      // -----------------------------------------------
+      // REFRESH
+      // -----------------------------------------------
+      await fetchInquiries();
+
+      // -----------------------------------------------
+      // SUCCESS
+      // -----------------------------------------------
+      showMessage(
+        'success',
+        'Reply Sent Successfully',
+        `Your reply has been sent directly to ${recipientEmail}.`
+      );
+
+      return;
+    }
+
+  } catch (error: any) {
+    console.error(
+      'Unexpected reply error:',
+      error
+    );
+
+    showMessage(
+      'error',
+      'Something Went Wrong',
+      error?.message ||
+        'An unexpected error occurred while sending the reply.'
+    );
+
+  } finally {
+    setSending(false);
+  }
+};
+
+  /*
+   * ============================================================
+   * DATE
+   * ============================================================
+   */
+
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleString(
+      'en-PH',
+      {
+        timeZone: 'Asia/Manila',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }
+    );
+
+  /*
+   * ============================================================
+   * FILTER
+   * ============================================================
+   */
+
+  const filterList = <
+    T extends {
+      status: string;
+      category?: string | null;
+    }
+  >(
     list: T[],
     statusF: 'all' | 'pending' | 'answered',
-    categoryF: string,
+    categoryF: string
   ) => {
     let result = list;
-    if (statusF !== 'all') result = result.filter(i => i.status === statusF);
-    if (categoryF !== 'all') result = result.filter(i => (i.category ?? 'Other') === categoryF);
+
+    if (statusF !== 'all') {
+      result = result.filter(
+        (item) =>
+          item.status === statusF
+      );
+    }
+
+    if (categoryF !== 'all') {
+      result = result.filter(
+        (item) =>
+          (item.category ?? 'Other') ===
+          categoryF
+      );
+    }
+
     return result;
   };
 
-  const pendingStudentCount = studentInquiries.filter(i => i.status === 'pending').length;
-  const pendingAlumniCount  = alumniInquiries.filter(i => i.status === 'pending').length;
-  const pendingContactCount = contactMessages.filter(i => i.status === 'pending').length;
+  /*
+   * ============================================================
+   * NEW COUNTS
+   *
+   * IMPORTANT:
+   * New = pending + unread
+   * ============================================================
+   */
+
+  const pendingStudentCount =
+  studentInquiries.filter(
+    (i) =>
+      i.status === 'pending' &&
+      i.is_read !== true
+  ).length;
+
+const pendingAlumniCount =
+  alumniInquiries.filter(
+    (i) =>
+      i.status === 'pending' &&
+      i.is_read !== true
+  ).length;
+
+const pendingContactCount =
+  contactMessages.filter(
+    (i) =>
+      i.status === 'pending' &&
+      i.is_read !== true
+  ).length;
+
+  /*
+   * ============================================================
+   * SECTION TABS
+   * ============================================================
+   */
 
   const SECTION_TABS = [
-    { id: 'student' as const, label: 'Student Inquiries', pending: pendingStudentCount },
-    { id: 'alumni'  as const, label: 'Alumni Inquiries',  pending: pendingAlumniCount },
-    { id: 'contact' as const, label: 'Contact Messages',  pending: pendingContactCount },
+    {
+      id: 'student' as const,
+      label: 'Student Inquiries',
+      pending: pendingStudentCount,
+      onNew: () =>
+        openNewItems('student'),
+    },
+    {
+      id: 'alumni' as const,
+      label: 'Alumni Inquiries',
+      pending: pendingAlumniCount,
+      onNew: () =>
+        openNewItems('alumni'),
+    },
+    {
+      id: 'contact' as const,
+      label: 'Contact Messages',
+      pending: pendingContactCount,
+      onNew: () =>
+        openNewItems('contact'),
+    },
   ];
+
+  /*
+   * ============================================================
+   * COLUMN
+   * ============================================================
+   */
 
   const InquiryColumn = ({
     title,
@@ -3430,6 +4300,8 @@ function InquiriesManagement() {
     setCategoryFilter,
     categories,
     onOpen,
+    onNew,
+    type,
     emptyIcon: EmptyIcon,
   }: {
     title: string;
@@ -3437,263 +4309,1110 @@ function InquiriesManagement() {
     accentColor: string;
     accentBg: string;
     list: (Inquiry | ContactMessage)[];
-    statusFilter: 'all' | 'pending' | 'answered';
-    setStatusFilter: (f: 'all' | 'pending' | 'answered') => void;
+    statusFilter:
+      | 'all'
+      | 'pending'
+      | 'answered';
+    setStatusFilter: (
+      f:
+        | 'all'
+        | 'pending'
+        | 'answered'
+    ) => void;
     categoryFilter: string;
-    setCategoryFilter: (c: string) => void;
+    setCategoryFilter: (
+      c: string
+    ) => void;
     categories: string[];
     onOpen: (item: any) => void;
-    emptyIcon: React.ComponentType<{ className?: string }>;
+    onNew: () => void;
+    type: 'inquiry' | 'contact';
+    emptyIcon: React.ComponentType<{
+      className?: string;
+    }>;
   }) => {
-    const shown = filterList(list as any, statusFilter, categoryFilter);
+    const shown = filterList(
+      list as any,
+      statusFilter,
+      categoryFilter
+    );
+
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-        <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3" style={{ backgroundColor: accentBg }}>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
-            <h2 className="font-bold text-gray-900 text-sm sm:text-base">{title}</h2>
-            <span className="text-xs font-semibold text-gray-500 bg-white/70 px-2 py-0.5 rounded-full">{list.length}</span>
-          </div>
-          {pendingCount > 0 && (
-            <span className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full text-white flex-shrink-0" style={{ backgroundColor: accentColor }}>
-              <CircleDot className="w-3 h-3" /> {pendingCount} new
+
+        {/* HEADER */}
+        <div
+          className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3"
+          style={{
+            backgroundColor: accentBg,
+          }}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+
+            <span
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{
+                backgroundColor:
+                  accentColor,
+              }}
+            />
+
+            <h2 className="font-bold text-gray-900 text-sm sm:text-base truncate">
+              {title}
+            </h2>
+
+            <span className="text-xs font-semibold text-gray-500 bg-white/70 px-2 py-0.5 rounded-full">
+              {list.length}
             </span>
+          </div>
+
+          {/* NEW BUTTON */}
+          {pendingCount > 0 && (
+            <button
+              onClick={onNew}
+              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full text-white flex-shrink-0 hover:opacity-90 active:scale-95 transition-all"
+              style={{
+                backgroundColor:
+                  accentColor,
+              }}
+            >
+              <CircleDot className="w-3 h-3" />
+              {pendingCount} new
+            </button>
           )}
         </div>
 
+        {/* FILTER */}
         <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-50 space-y-2">
+
           <div className="flex gap-1">
-            {(['all', 'pending', 'answered'] as const).map(f => (
+
+            {(
+              [
+                'all',
+                'pending',
+                'answered',
+              ] as const
+            ).map((f) => (
               <button
                 key={f}
-                onClick={() => setStatusFilter(f)}
+                onClick={() =>
+                  setStatusFilter(f)
+                }
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                  statusFilter === f ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
+                  statusFilter === f
+                    ? 'text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
                 }`}
-                style={statusFilter === f ? { backgroundColor: accentColor } : undefined}
+                style={
+                  statusFilter === f
+                    ? {
+                        backgroundColor:
+                          accentColor,
+                      }
+                    : undefined
+                }
               >
                 {f}
               </button>
             ))}
           </div>
+
           <select
             value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
+            onChange={(e) =>
+              setCategoryFilter(
+                e.target.value
+              )
+            }
             className="w-full sm:w-64 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
           >
-            <option value="all">All Categories</option>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            <option value="all">
+              All Categories
+            </option>
+
+            {categories.map((c) => (
+              <option
+                key={c}
+                value={c}
+              >
+                {c}
+              </option>
+            ))}
           </select>
         </div>
 
+        {/* LIST */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
+
           {loading ? (
-            <div className="col-span-full flex flex-col items-center justify-center h-full text-gray-400 py-10">
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+
               <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin mb-2" />
-              <p className="text-xs">Loading...</p>
+
+              <p className="text-xs">
+                Loading...
+              </p>
             </div>
           ) : shown.length === 0 ? (
-            <div className="col-span-full flex flex-col items-center justify-center h-full text-gray-300 py-10">
+            <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10">
+
               <EmptyIcon className="w-10 h-10 mb-2 opacity-40" />
-              <p className="text-sm text-gray-400">No matching items</p>
+
+              <p className="text-sm text-gray-400">
+                {statusFilter ===
+                'pending'
+                  ? 'No pending items'
+                  : 'No matching items'}
+              </p>
             </div>
           ) : (
-            shown.map((item: any) => (
-              <button
-                key={item.id}
-                onClick={() => onOpen(item)}
-                className="w-full text-left p-3 sm:p-3.5 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors group"
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="font-semibold text-gray-900 text-sm truncate">
-                    {item.profiles?.full_name ?? item.sender_name}
-                  </span>
-                  {item.status === 'pending' ? (
-                    <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
-                  ) : (
-                    <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
-                  )}
+            shown.map((item: any) => {
+              const isDeleting =
+                deletingId ===
+                item.id;
+
+              return (
+                <div
+                  key={item.id}
+                  className={`relative w-full p-3 sm:p-3.5 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors ${
+                    isDeleting
+                      ? 'opacity-50'
+                      : ''
+                  }`}
+                >
+
+                  {/* CONTENT */}
+                  <button
+                    onClick={() =>
+                      onOpen(item)
+                    }
+                    disabled={
+                      isDeleting
+                    }
+                    className="w-full text-left pr-10"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+
+                      <span className="font-semibold text-gray-900 text-sm truncate">
+  {item.profiles?.full_name ??
+    item.full_name ??
+    item.sender_name ??
+    'Unknown User'}
+</span>
+
+                      {item.status ===
+                      'pending' ? (
+                        <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          Pending
+                        </span>
+                      ) : (
+                        <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          Answered
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-0.5">
+
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                        {item.category ||
+                          'Other'}
+                      </span>
+
+                      {item.profiles
+                        ?.id_number && (
+                        <span className="text-[10px] font-mono text-gray-400">
+                          {
+                            item
+                              .profiles
+                              .id_number
+                          }
+                        </span>
+                      )}
+
+                      {(item.email || item.sender_email) && (
+  <span className="text-[10px] font-mono text-gray-400 truncate">
+    {item.email || item.sender_email}
+  </span>
+)}
+                    </div>
+
+                    <p className="text-xs font-medium text-gray-700 truncate mb-0.5">
+                      {item.subject}
+                    </p>
+
+                    <p className="text-xs text-gray-400 truncate">
+                      {item.message}
+                    </p>
+
+                    <p className="text-[10px] text-gray-300 mt-1.5">
+                      {formatDate(
+                        item.created_at
+                      )}
+                    </p>
+                  </button>
+
+                  {/* DELETE */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+
+                      requestDelete(
+                        item,
+                        type
+                      );
+                    }}
+                    disabled={
+                      isDeleting
+                    }
+                    title="Delete"
+                    className="absolute right-3 top-3 p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    {isDeleting ? (
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                    {item.category || 'Other'}
-                  </span>
-                  {item.profiles?.id_number && (
-                    <span className="text-[10px] font-mono text-gray-400">{item.profiles.id_number}</span>
-                  )}
-                  {item.sender_email && (
-                    <span className="text-[10px] font-mono text-gray-400 truncate">{item.sender_email}</span>
-                  )}
-                </div>
-                <p className="text-xs font-medium text-gray-700 truncate mb-0.5">{item.subject}</p>
-                <p className="text-xs text-gray-400 truncate">{item.message}</p>
-                <p className="text-[10px] text-gray-300 mt-1.5">{formatDate(item.created_at)}</p>
-              </button>
-            ))
+              );
+            })
           )}
         </div>
       </div>
     );
   };
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
+const getSectionTheme = (
+  type: 'student' | 'alumni' | 'contact' | null
+) => {
+  switch (type) {
+    case 'student':
+      return {
+        header: '#1D4ED8',
+        light: '#DBEAFE',
+        text: '#1D4ED8',
+        hover: '#1E40AF',
+      };
 
-  const activeItem = activeInquiry ?? activeContact;
-  const activeIsContact = !!activeContact;
+    case 'alumni':
+      return {
+        header: '#BE185D',
+        light: '#FCE7F3',
+        text: '#BE185D',
+        hover: '#9D174D',
+      };
 
+    case 'contact':
+      return {
+        header: '#059669',
+        light: '#D1FAE5',
+        text: '#059669',
+        hover: '#047857',
+      };
+
+    default:
+      return {
+        header: '#1E3A8A',
+        light: '#DBEAFE',
+        text: '#1E3A8A',
+        hover: '#1E40AF',
+      };
+  }
+};
+/* 
+ * ============================================================
+ * ACTIVE DETAIL MODAL THEME
+ * ============================================================
+ */
+
+const activeItem =
+  activeInquiry ?? activeContact;
+
+const activeIsContact =
+  !!activeContact;
+
+const activeModalType: 'student' | 'alumni' | 'contact' =
+  activeIsContact
+    ? 'contact'
+    : activeInquiry?.sender_role === 'alumni'
+    ? 'alumni'
+    : 'student';
+
+const activeTheme =
+  getSectionTheme(activeModalType);
+
+/* 
+ * ============================================================
+ * NEW ITEMS MODAL THEME
+ * ============================================================
+ */
+
+const newItemsTheme =
+  getSectionTheme(newItemsModal.type);
   return (
     <div className="flex flex-col h-full">
+
+      {/* HEADER */}
       <div className="mb-4 pb-4 border-b border-gray-200">
+
         <div className="flex items-center justify-between gap-3 mb-4">
+
           <div>
-            <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Inquiries</h1>
-            <p className="text-gray-500 text-sm mt-1">Answer questions from students, alumni, and website visitors</p>
+            <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
+              Inquiries
+            </h1>
+
+            <p className="text-gray-500 text-sm mt-1">
+              Answer questions from students,
+              alumni, and website visitors
+            </p>
           </div>
-          <button onClick={fetchInquiries} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
+
+          <button
+            onClick={fetchInquiries}
+            disabled={loading}
+            className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${
+                loading
+                  ? 'animate-spin'
+                  : ''
+              }`}
+            />
           </button>
         </div>
 
-        <div className="flex gap-2">
-          {SECTION_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveSection(tab.id)}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2 ${
-                activeSection === tab.id
-                  ? 'bg-[#1E3A8A] text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              <span>{tab.label}</span>
-              {tab.pending > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                  activeSection === tab.id ? 'bg-red-500 text-white' : 'bg-red-100 text-red-600'
-                }`}>
-                  {tab.pending}
+        {/* TABS */}
+        <div className="flex gap-2 flex-wrap">
+
+          {SECTION_TABS.map(
+            (tab) => (
+              <button
+                key={tab.id}
+                onClick={() =>
+                  setActiveSection(
+                    tab.id
+                  )
+                }
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2 ${
+  activeSection === tab.id
+    ? 'text-white'
+    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+}`}
+style={
+  activeSection === tab.id
+    ? {
+        backgroundColor:
+          getSectionTheme(tab.id).header,
+      }
+    : undefined
+}
+              >
+                <span>
+                  {tab.label}
                 </span>
-              )}
-            </button>
-          ))}
+
+                {tab.pending >
+                  0 && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      tab.onNew();
+                    }}
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer ${
+                      activeSection ===
+                      tab.id
+                        ? 'bg-red-500 text-white'
+                        : 'bg-red-100 text-red-600'
+                    }`}
+                  >
+                    {tab.pending}
+                  </span>
+                )}
+              </button>
+            )
+          )}
         </div>
       </div>
 
+      {/* CONTENT */}
       <div className="flex-1 min-h-0 lg:max-h-[calc(100vh-220px)]">
-        {activeSection === 'student' && (
+
+        {activeSection ===
+          'student' && (
           <InquiryColumn
             title="Student Inquiries"
-            pendingCount={pendingStudentCount}
+            pendingCount={
+              pendingStudentCount
+            }
             accentColor="#1D4ED8"
             accentBg="#DBEAFE"
-            list={studentInquiries}
-            statusFilter={studentFilter}
-            setStatusFilter={setStudentFilter}
-            categoryFilter={studentCategoryFilter}
-            setCategoryFilter={setStudentCategoryFilter}
-            categories={STUDENT_INQUIRY_CATEGORIES}
-            onOpen={openInquiry}
+            list={
+              studentInquiries
+            }
+            statusFilter={
+              studentFilter
+            }
+            setStatusFilter={
+              setStudentFilter
+            }
+            categoryFilter={
+              studentCategoryFilter
+            }
+            setCategoryFilter={
+              setStudentCategoryFilter
+            }
+            categories={
+              STUDENT_INQUIRY_CATEGORIES
+            }
+            onOpen={
+              openInquiry
+            }
+            onNew={() =>
+              openNewItems(
+                'student'
+              )
+            }
+            type="inquiry"
             emptyIcon={Inbox}
           />
         )}
-        {activeSection === 'alumni' && (
+
+        {activeSection ===
+          'alumni' && (
           <InquiryColumn
             title="Alumni Inquiries"
-            pendingCount={pendingAlumniCount}
+            pendingCount={
+              pendingAlumniCount
+            }
             accentColor="#BE185D"
             accentBg="#FCE7F3"
-            list={alumniInquiries}
-            statusFilter={alumniFilter}
-            setStatusFilter={setAlumniFilter}
-            categoryFilter={alumniCategoryFilter}
-            setCategoryFilter={setAlumniCategoryFilter}
-            categories={ALUMNI_INQUIRY_CATEGORIES}
-            onOpen={openInquiry}
+            list={
+              alumniInquiries
+            }
+            statusFilter={
+              alumniFilter
+            }
+            setStatusFilter={
+              setAlumniFilter
+            }
+            categoryFilter={
+              alumniCategoryFilter
+            }
+            setCategoryFilter={
+              setAlumniCategoryFilter
+            }
+            categories={
+              ALUMNI_INQUIRY_CATEGORIES
+            }
+            onOpen={
+              openInquiry
+            }
+            onNew={() =>
+              openNewItems(
+                'alumni'
+              )
+            }
+            type="inquiry"
             emptyIcon={Inbox}
           />
         )}
-        {activeSection === 'contact' && (
+
+        {activeSection ===
+          'contact' && (
           <InquiryColumn
             title="Contact Messages"
-            pendingCount={pendingContactCount}
+            pendingCount={
+              pendingContactCount
+            }
             accentColor="#059669"
             accentBg="#D1FAE5"
-            list={contactMessages}
-            statusFilter={contactFilter}
-            setStatusFilter={setContactFilter}
-            categoryFilter={contactCategoryFilter}
-            setCategoryFilter={setContactCategoryFilter}
-            categories={CONTACT_INQUIRY_CATEGORIES}
-            onOpen={openContact}
-            emptyIcon={MessageCircle}
+            list={
+              contactMessages
+            }
+            statusFilter={
+              contactFilter
+            }
+            setStatusFilter={
+              setContactFilter
+            }
+            categoryFilter={
+              contactCategoryFilter
+            }
+            setCategoryFilter={
+              setContactCategoryFilter
+            }
+            categories={
+              CONTACT_INQUIRY_CATEGORIES
+            }
+            onOpen={
+              openContact
+            }
+            onNew={() =>
+              openNewItems(
+                'contact'
+              )
+            }
+            type="contact"
+            emptyIcon={
+              MessageCircle
+            }
           />
         )}
       </div>
 
+      {/* ======================================================
+          DETAIL MODAL
+      ====================================================== */}
+
       {activeItem && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between mb-4 gap-3">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={
+              closeDetailModal
+            }
+          />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-10 max-h-[90vh] overflow-y-auto">
+
+            <div className="flex items-start justify-between mb-4">
+
               <div className="min-w-0">
+
                 <div className="flex items-center gap-2 mb-2">
+
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
                     style={
                       activeIsContact
-                        ? { backgroundColor: '#D1FAE5', color: '#059669' }
-                        : (activeInquiry as Inquiry).sender_role === 'alumni'
-                          ? { backgroundColor: '#FCE7F3', color: '#BE185D' }
-                          : { backgroundColor: '#DBEAFE', color: '#1D4ED8' }
+                        ? {
+                            backgroundColor:
+                              '#D1FAE5',
+                            color:
+                              '#059669',
+                          }
+                        : activeInquiry!
+                            .sender_role ===
+                          'alumni'
+                        ? {
+                            backgroundColor:
+                              '#FCE7F3',
+                            color:
+                              '#BE185D',
+                          }
+                        : {
+                            backgroundColor:
+                              '#DBEAFE',
+                            color:
+                              '#1D4ED8',
+                          }
                     }
                   >
-                    {activeIsContact ? 'Contact Form' : (activeInquiry as Inquiry).sender_role === 'alumni' ? 'Alumni' : 'Student'}
+                    {activeIsContact
+                      ? 'Contact Form'
+                      : activeInquiry!
+                          .sender_role ===
+                        'alumni'
+                      ? 'Alumni'
+                      : 'Student'}
                   </span>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
-                    {activeItem.category || 'Other'}
+
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600">
+                    {activeItem.category ||
+                      'Other'}
                   </span>
                 </div>
-                <h2 className="text-lg font-bold text-gray-900 truncate">{activeItem.subject}</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  From {activeIsContact ? activeContact!.sender_name : (activeInquiry!.profiles?.full_name ?? activeInquiry!.sender_name)}
-                  {activeIsContact && activeContact!.sender_email && <> · {activeContact!.sender_email}</>}
-                  {!activeIsContact && activeInquiry!.profiles?.id_number && <> · {activeInquiry!.profiles.id_number}</>}
-                  {' '}· {formatDate(activeItem.created_at)}
-                </p>
+
+                <h2 className="text-lg font-bold text-gray-900">
+                  {activeItem.subject}
+                </h2>
+
+                <p className="text-xs text-gray-400 mt-1">
+  From{' '}
+  {activeIsContact
+    ? activeContact!.full_name
+    : activeInquiry!.profiles?.full_name ??
+      activeInquiry!.sender_name}
+  {' '}·{' '}
+  {formatDate(activeItem.created_at)}
+</p>
               </div>
-              <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"><X className="w-5 h-5 text-gray-500" /></button>
+
+              <button
+                onClick={
+                  closeDetailModal
+                }
+                className="p-2 hover:bg-gray-100 rounded-xl"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{activeItem.message}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                {activeItem.message}
+              </p>
             </div>
 
             {activeItem.reply && (
-              <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100">
-                <p className="text-xs font-semibold text-blue-700 mb-1">Previous reply</p>
-                <p className="text-sm text-blue-900 whitespace-pre-wrap">{activeItem.reply}</p>
+              <div
+  className="rounded-xl p-4 mb-4"
+  style={{
+    backgroundColor: activeTheme.light,
+    border: `1px solid ${activeTheme.light}`,
+  }}
+>
+                <p
+  className="text-xs font-semibold mb-1"
+  style={{
+    color: activeTheme.text,
+  }}
+>
+                  Previous Reply
+                </p>
+
+                <p
+  className="text-sm whitespace-pre-wrap"
+  style={{
+    color: activeTheme.text,
+  }}
+>
+                  {activeItem.reply}
+                </p>
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Your Reply</label>
-              <textarea
-                value={replyText}
-                onChange={e => setReplyText(e.target.value)}
-                rows={5}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                placeholder="Type your response here..."
-              />
-            </div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Your Reply
+            </label>
+
+            <textarea
+              value={replyText}
+              onChange={(e) =>
+                setReplyText(
+                  e.target.value
+                )
+              }
+              rows={5}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="Type your response here..."
+            />
 
             <div className="flex gap-3 mt-5">
-              <button onClick={closeModal} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">Cancel</button>
+
               <button
-                onClick={sendReply}
-                disabled={sending || !replyText.trim()}
-                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                onClick={
+                  closeDetailModal
+                }
+                disabled={sending}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50"
               >
-                {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
-                {sending ? 'Sending...' : 'Send Reply'}
+                Cancel
+              </button>
+
+              <button
+                onClick={
+                  sendReply
+                }
+                disabled={
+                  sending ||
+                  !replyText.trim()
+                }
+                className="flex-1 py-2.5 text-white rounded-xl font-medium text-sm disabled:opacity-60 flex items-center justify-center gap-2"
+style={{
+  backgroundColor: activeTheme.header,
+}}
+              >
+                {sending ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+
+                {sending
+                  ? 'Sending...'
+                  : 'Send Reply'}
               </button>
             </div>
+
+            <button
+  onClick={() =>
+    requestDelete(
+      activeItem,
+      activeIsContact
+        ? 'contact'
+        : 'inquiry'
+    )
+  }
+  className="w-full mt-3 py-2.5 text-red-600 hover:bg-red-50 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+>
+  <Trash2 className="w-4 h-4" />
+  Delete
+</button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================
+          NEW ITEMS MODAL
+      ====================================================== */}
+
+      {newItemsModal.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={
+              closeNewItemsModal
+            }
+          />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden">
+
+            {/* HEADER */}
+            <div
+  className="px-5 py-4 flex items-center justify-between"
+  style={{
+    backgroundColor: newItemsTheme.header,
+  }}
+>
+
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  {newItemsModal.type ===
+                    'student' &&
+                    'New Student Inquiries'}
+
+                  {newItemsModal.type ===
+                    'alumni' &&
+                    'New Alumni Inquiries'}
+
+                  {newItemsModal.type ===
+                    'contact' &&
+                    'New Contact Messages'}
+                </h2>
+
+             <p className="text-white/80 text-xs mt-1">
+                  {newItemsModal.items.length}{' '}
+                  new item
+                  {newItemsModal.items
+                    .length !== 1
+                    ? 's'
+                    : ''}{' '}
+                  received
+                </p>
+              </div>
+
+              <button
+                onClick={
+                  closeNewItemsModal
+                }
+                className="p-2 rounded-xl hover:bg-white/10"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+
+            {/* ITEMS */}
+            <div className="p-4 sm:p-5 overflow-y-auto max-h-[65vh]">
+
+              {newItemsModal.items
+                .length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+
+                  <Inbox className="w-12 h-12 text-gray-300 mb-3" />
+
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    No New Items
+                  </h3>
+
+                  <p className="text-xs text-gray-400 mt-1">
+                    All new messages have
+                    already been viewed.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+
+                  {newItemsModal.items.map(
+                    (item: any) => (
+                      <div
+                        key={item.id}
+                        className="border border-gray-200 rounded-xl p-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+                      >
+
+                        <div className="flex items-start justify-between gap-3">
+
+                          <div className="min-w-0 flex-1">
+
+                            <div className="flex items-center gap-2 mb-2">
+
+                              <span
+  className="text-[10px] font-semibold px-2 py-1 rounded-full"
+  style={{
+    backgroundColor: newItemsTheme.light,
+    color: newItemsTheme.text,
+  }}
+>
+  {item.category || 'Other'}
+</span>
+
+                              <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                                 Pending
+                              </span>
+                            </div>
+
+                            <h3 className="font-semibold text-gray-900 text-sm">
+                              {item.subject}
+                            </h3>
+
+                            <p className="text-xs text-gray-500 mt-1">
+  From{' '}
+  {item.profiles?.full_name ??
+    item.full_name ??
+    item.sender_name ??
+    'Unknown User'}
+</p>
+
+                            {(item.email || item.sender_email) && (
+  <p className="text-xs text-gray-400 mt-0.5">
+    {item.email || item.sender_email}
+  </p>
+)}
+
+                            <p className="text-xs text-gray-600 mt-3 whitespace-pre-wrap">
+                              {item.message}
+                            </p>
+
+                            <p className="text-[10px] text-gray-400 mt-3">
+                              {formatDate(
+                                item.created_at
+                              )}
+                            </p>
+                          </div>
+
+                          {/* DELETE */}
+                          <button
+                            onClick={() =>
+                              requestDelete(
+                                item,
+                                newItemsModal.type ===
+                                  'contact'
+                                  ? 'contact'
+                                  : 'inquiry'
+                              )
+                            }
+                            className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* VIEW / REPLY */}
+                        <button
+                          onClick={() => {
+                            closeNewItemsModal();
+
+                            if (
+                              newItemsModal.type ===
+                              'contact'
+                            ) {
+                              openContact(
+                                item
+                              );
+                            } else {
+                              openInquiry(
+                                item
+                              );
+                            }
+                          }}
+                          className="mt-3 w-full py-2 rounded-lg text-white text-xs font-semibold transition-colors"
+style={{
+  backgroundColor: newItemsTheme.header,
+}}
+                        >
+                          View and Reply
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* FOOTER */}
+            <div className="px-5 py-4 border-t border-gray-100 flex justify-end">
+
+              <button
+                onClick={
+                  closeNewItemsModal
+                }
+                className="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================
+          DELETE CONFIRMATION MODAL
+      ====================================================== */}
+
+      {deleteModal.open &&
+        deleteModal.item && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={
+                cancelDelete
+              }
+            />
+
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-50 mx-auto mb-4">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+
+              <h2 className="text-lg font-bold text-gray-900 text-center">
+                Delete Item?
+              </h2>
+
+              <p className="text-sm text-gray-500 text-center mt-2">
+                Are you sure you want to permanently
+                delete this{' '}
+                {deleteModal.type ===
+                'contact'
+                  ? 'contact message'
+                  : 'inquiry'}
+                ?
+              </p>
+
+              <div className="bg-gray-50 rounded-xl p-3 mt-4">
+
+                <p className="text-xs font-semibold text-gray-800 truncate">
+                  {deleteModal.item.subject}
+                </p>
+
+                <p className="text-xs text-gray-400 mt-1">
+  {'full_name' in deleteModal.item
+    ? deleteModal.item.full_name
+    : deleteModal.item.sender_name}
+</p>
+              </div>
+
+              <p className="text-[11px] text-red-500 text-center mt-3">
+                This action cannot be undone.
+              </p>
+
+              <div className="flex gap-3 mt-5">
+
+                <button
+                  onClick={
+                    cancelDelete
+                  }
+                  disabled={
+                    deletingId !==
+                    null
+                  }
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={
+                    confirmDelete
+                  }
+                  disabled={
+                    deletingId !==
+                    null
+                  }
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {deletingId !==
+                  null ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* ======================================================
+          SUCCESS / ERROR MODAL
+      ====================================================== */}
+
+      {messageModal.open && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={
+              closeMessageModal
+            }
+          />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                messageModal.type ===
+                'success'
+                  ? 'bg-blue-50'
+                  : 'bg-red-50'
+              }`}
+            >
+              {messageModal.type === 'success' ? (
+  <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+    ✓
+  </div>
+) : (
+                <X className="w-6 h-6 text-red-600" />
+              )}
+            </div>
+
+            <h2 className="text-lg font-bold text-gray-900 text-center">
+              {messageModal.title}
+            </h2>
+
+            <p className="text-sm text-gray-500 text-center mt-2 leading-relaxed">
+              {messageModal.message}
+            </p>
+
+            <button
+              onClick={closeMessageModal}
+  className={`w-full mt-5 py-2.5 text-white rounded-xl text-sm font-semibold transition-colors ${
+    messageModal.type === 'success'
+      ? 'bg-emerald-600 hover:bg-emerald-700'
+      : 'bg-red-600 hover:bg-red-700'
+  }`}
+            >
+              OK
+            </button>
           </div>
         </div>
       )}
@@ -5650,12 +7369,16 @@ function LandingPageManagement() {
     await saveHomepageFeatures(features);
 
   if (featuresError) {
-    setModalMessage(
-      `Error: ${featuresError.message}`
-    );
-    setShowSuccessModal(true);
-    return;
-  }
+  setModalMessage(
+    `Error: ${
+      featuresError instanceof Error
+        ? featuresError.message
+        : String(featuresError)
+    }`
+  );
+  setShowSuccessModal(true);
+  return;
+}
 
   // ==========================================
   // SUCCESS
