@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Send, Printer, X } from 'lucide-react';
+import { Plus, Trash2, Save, Send, Printer, X, FolderPlus } from 'lucide-react';
 
 interface ReportRow {
   extension_project: string;
@@ -16,6 +16,13 @@ interface ExtensionReportProps {
   readOnly?: boolean;
 }
 
+interface ExtensionOption {
+  id: string;
+  title: string;
+  type: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
 const EMPTY_ROW: ReportRow = {
   extension_project: '',
   highlights: '',
@@ -25,9 +32,8 @@ const EMPTY_ROW: ReportRow = {
   inclusive_date: '',
 };
 
-// All reads/writes go through the Express API (JWT-authenticated),
-// not straight to Supabase — mirrors the calendar_events/announcements setup.
 const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
+const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
 
 function getToken() {
   return localStorage.getItem('token');
@@ -46,6 +52,18 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const [draftStatus, setDraftStatus] = useState<'loading' | 'loaded' | 'none' | 'error'>('loading');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
+  // ── Signatory States (Editable) ──
+  const [preparedByName, setPreparedByName] = useState(userName);
+  const [preparedByTitle, setPreparedByTitle] = useState('Extension Chairperson');
+  const [notedByName1, setNotedByName1] = useState('TERESITA CLEOPOLDA B. SARILE');
+  const [notedByTitle1, setNotedByTitle1] = useState('Chair, Extension Services');
+  const [notedByName2, setNotedByName2] = useState('EINGILBERT C. BENOLIRAO');
+  const [notedByTitle2, setNotedByTitle2] = useState('Campus Director');
+
+  // ── Extension Import State ──
+  const [availableExtensions, setAvailableExtensions] = useState<ExtensionOption[]>([]);
+  const [showImportModal, setShowImportModal] = useState(false);
+
   const computeProgress = () => {
     const total = rows.length * 6;
     const filled = rows.reduce((acc, row) => acc + Object.values(row).filter(v => v.trim() !== '').length, 0);
@@ -55,7 +73,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const progress = computeProgress();
 
   useEffect(() => {
-    const load = async () => {
+    const loadDraft = async () => {
       try {
         const res = await fetch(`${EXTENSION_API_URL}/my-draft`, {
           headers: { Authorization: `Bearer ${getToken()}` },
@@ -68,6 +86,12 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
           setYear(data.year);
           setRows(data.rows?.length > 0 ? data.rows : [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
           setStatus(data.status);
+          setPreparedByName(data.prepared_by_name ?? userName);
+          setPreparedByTitle(data.prepared_by_title ?? 'Extension Chairperson');
+          setNotedByName1(data.noted_by_name_1 ?? 'TERESITA CLEOPOLDA B. SARILE');
+          setNotedByTitle1(data.noted_by_title_1 ?? 'Chair, Extension Services');
+          setNotedByName2(data.noted_by_name_2 ?? 'EINGILBERT C. BENOLIRAO');
+          setNotedByTitle2(data.noted_by_title_2 ?? 'Campus Director');
           setLastSavedAt(data.updated_at ?? data.created_at ?? null);
           setDraftStatus('loaded');
         } else {
@@ -77,8 +101,27 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
         setDraftStatus('error');
       }
     };
-    load();
-  }, [userId]);
+
+    const loadExtensions = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = (data ?? []).filter((s: any) =>
+            s.type === 'extension' && (s.status === 'approved' || s.status === 'pending')
+          );
+          setAvailableExtensions(filtered);
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    loadDraft();
+    loadExtensions();
+  }, [userId, userName]);
 
   const addRow = () => setRows(prev => [...prev, { ...EMPTY_ROW }]);
   const deleteRow = (idx: number) => { if (rows.length <= 1) return; setRows(prev => prev.filter((_, i) => i !== idx)); };
@@ -88,6 +131,39 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
 
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
   const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
+
+  const handleSelectExtension = (projectTitle: string) => {
+    setRows(prev => {
+      const firstEmptyIndex = prev.findIndex(row =>
+        Object.values(row).every(val => !val || val.trim() === '')
+      );
+
+      if (firstEmptyIndex !== -1) {
+        return prev.map((row, idx) =>
+          idx === firstEmptyIndex ? { ...row, extension_project: projectTitle } : row
+        );
+      }
+
+      return [...prev, { ...EMPTY_ROW, extension_project: projectTitle }];
+    });
+
+    showSuccess('Extension project imported!');
+    setShowImportModal(false);
+  };
+
+  const getPayload = (submitStatus: string) => ({
+    quarter,
+    year,
+    rows,
+    prepared_by_name: preparedByName,
+    prepared_by_title: preparedByTitle,
+    noted_by_name_1: notedByName1,
+    noted_by_title_1: notedByTitle1,
+    noted_by_name_2: notedByName2,
+    noted_by_title_2: notedByTitle2,
+    status: submitStatus,
+    progress: computeProgress(),
+  });
 
   const persist = async (payload: Record<string, unknown>) => {
     const headers = {
@@ -115,8 +191,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const saveDraft = async () => {
     setSaving(true);
     try {
-      const payload = { quarter, year, rows, status: 'draft', progress: computeProgress() };
-      const data = await persist(payload);
+      const data = await persist(getPayload('draft'));
       if (!reportId && data?.id) setReportId(data.id);
       setLastSavedAt(data?.updated_at ?? new Date().toISOString());
       setDraftStatus('loaded');
@@ -131,8 +206,7 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
   const submitReport = async () => {
     setSaving(true);
     try {
-      const payload = { quarter, year, rows, status: 'submitted', progress: computeProgress() };
-      const data = await persist(payload);
+      const data = await persist(getPayload('submitted'));
       if (!reportId && data?.id) setReportId(data.id);
       setLastSavedAt(data?.updated_at ?? new Date().toISOString());
       setDraftStatus('loaded');
@@ -252,36 +326,150 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
           </table>
         </div>
         {!readOnly && status !== 'submitted' && (
-          <div className="p-3 border-t border-gray-100">
+          <div className="p-3 border-t border-gray-100 flex items-center gap-3 flex-wrap">
             <button onClick={addRow} className="flex items-center gap-1.5 text-sm text-[#1E3A8A] hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors font-medium">
               <Plus className="w-4 h-4" /> Add Row
+            </button>
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-2 rounded-xl transition-colors font-semibold">
+              <FolderPlus className="w-3.5 h-3.5" /> Import from My Extension
             </button>
           </div>
         )}
       </div>
 
-      {/* Signature */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <p className="text-sm font-semibold text-gray-700 mb-4">Prepared by:</p>
-        <div className="border-b border-gray-400 w-48 mb-1" />
-        <p className="text-xs text-gray-500">{userName}</p>
-        <p className="text-xs text-gray-500">Extension Chairperson</p>
-      </div>
-
-      {/* Noted By */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <p className="text-sm font-semibold text-gray-700 mb-4">Noted:</p>
-        <div className="flex flex-wrap gap-10">
-          <div>
-            <p className="text-xs font-bold text-gray-800 underline">TERESITA CLEOPOLDA B. SARILE</p>
-            <p className="text-xs text-gray-500">Chair, Extension Services</p>
+      {/* Editable Signature & Noted By */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-6">
+        <div>
+          <p className="text-sm font-semibold text-gray-700 mb-2">Prepared by:</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Name</label>
+              <input
+                type="text"
+                value={preparedByName}
+                onChange={e => setPreparedByName(e.target.value)}
+                disabled={readOnly || status === 'submitted'}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium disabled:bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Designation / Title</label>
+              <input
+                type="text"
+                value={preparedByTitle}
+                onChange={e => setPreparedByTitle(e.target.value)}
+                disabled={readOnly || status === 'submitted'}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-bold text-gray-800 underline">EINGILBERT C. BENOLIRAO</p>
-            <p className="text-xs text-gray-500">Campus Director</p>
+        </div>
+
+        <div className="pt-4 border-t border-gray-100">
+          <p className="text-sm font-semibold text-gray-700 mb-3">Noted by:</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Signatory 1 Name</label>
+                <input
+                  type="text"
+                  value={notedByName1}
+                  onChange={e => setNotedByName1(e.target.value)}
+                  disabled={readOnly || status === 'submitted'}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium disabled:bg-gray-50"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Signatory 1 Position</label>
+                <input
+                  type="text"
+                  value={notedByTitle1}
+                  onChange={e => setNotedByTitle1(e.target.value)}
+                  disabled={readOnly || status === 'submitted'}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Signatory 2 Name</label>
+                <input
+                  type="text"
+                  value={notedByName2}
+                  onChange={e => setNotedByName2(e.target.value)}
+                  disabled={readOnly || status === 'submitted'}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium disabled:bg-gray-50"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Signatory 2 Position</label>
+                <input
+                  type="text"
+                  value={notedByTitle2}
+                  onChange={e => setNotedByTitle2(e.target.value)}
+                  disabled={readOnly || status === 'submitted'}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Select Extension Activity</h3>
+                <p className="text-xs text-gray-500">Pick an existing record to import its title.</p>
+              </div>
+              <button onClick={() => setShowImportModal(false)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {availableExtensions.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">
+                No extension records found under your account.
+              </div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 pr-1">
+                {availableExtensions.map(item => (
+                  <div key={item.id} className="py-3 px-2 flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{item.title}</p>
+                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase mt-1 ${
+                        item.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectExtension(item.title)}
+                      className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors"
+                    >
+                      Use
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-medium hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print Modal */}
       {showPrint && (
@@ -299,21 +487,16 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
               </div>
             </div>
 
-            {/* Print content */}
             <div className="p-8 print:p-4" id="print-area">
-
-              {/* ── CTU Header Image ── */}
               <div className="mb-4">
                 <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain" />
               </div>
 
-              {/* ── Report Title ── */}
               <div className="text-center mb-6">
                 <p className="font-bold text-base uppercase">Community Extension Services Accomplishment Report</p>
                 <p className="font-semibold mt-1">_{quarter}_ Quarter of 20{year.slice(-2)}_</p>
               </div>
 
-              {/* ── Table ── */}
               <table className="w-full border-collapse border border-black text-xs">
                 <thead>
                   <tr className="bg-gray-100">
@@ -339,15 +522,14 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
                 </tbody>
               </table>
 
-              {/* ── Signature ── */}
+              {/* Print Signatures */}
               <div className="mt-8">
                 <p className="text-sm font-bold">Prepared by:</p>
                 <div className="border-b border-black w-48 mt-6 mb-1" />
-                <p className="text-xs">{userName}</p>
-                <p className="text-xs">Extension Chairperson</p>
+                <p className="text-xs font-semibold">{preparedByName}</p>
+                <p className="text-xs">{preparedByTitle}</p>
               </div>
 
-              {/* ── Noted By ── */}
               <div className="mt-8 flex justify-between flex-wrap gap-6">
                 <div>
                   <p className="text-sm font-bold mb-1">Noted:</p>
@@ -355,20 +537,18 @@ export function ExtensionReport({ userId, userName, readOnly = false }: Extensio
               </div>
               <div className="mt-2 flex justify-start gap-16 flex-wrap">
                 <div>
-                  <p className="text-xs font-bold underline">TERESITA CLEOPOLDA B. SARILE</p>
-                  <p className="text-xs">Chair, Extension Services</p>
+                  <p className="text-xs font-bold underline">{notedByName1}</p>
+                  <p className="text-xs">{notedByTitle1}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-bold underline">EINGILBERT C. BENOLIRAO</p>
-                  <p className="text-xs">Campus Director</p>
+                  <p className="text-xs font-bold underline">{notedByName2}</p>
+                  <p className="text-xs">{notedByTitle2}</p>
                 </div>
               </div>
 
-              {/* ── CTU Footer Image ── */}
               <div className="mt-8">
                 <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain" />
               </div>
-
             </div>
           </div>
         </div>

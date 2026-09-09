@@ -6,6 +6,7 @@ import {
   Calendar,
   ArrowLeft,
   Users,
+  ExternalLink,
   Download,
   Upload,
   Clock,
@@ -779,19 +780,30 @@ function TeachingLoad() {
 }
 
 // ====================== 5.2 RESEARCH & EXTENSION ======================
+
 const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
 
 function getResearchToken() {
   return localStorage.getItem('token');
 }
 
+interface FileAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 interface ResearchSubmission {
   id: string;
   title: string;
   type: 'research' | 'extension';
+  publication_link?: string | null;
   file_name: string | null;
   file_url: string | null;
+  files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
+  dean_remarks?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -803,11 +815,12 @@ interface ModalState {
   message: string;
 }
 
-function ResearchExtension({ userId }: { userId: string }) {
+export function ResearchExtension({ userId }: { userId: string }) {
   const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
   const [researchTitle, setResearchTitle] = useState('');
   const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [publicationLink, setPublicationLink] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -821,6 +834,51 @@ function ResearchExtension({ userId }: { userId: string }) {
 
   const closeModal = () => {
     setModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const newFiles = Array.from(e.target.files);
+    const oversized = newFiles.filter(f => f.size > 15 * 1024 * 1024);
+    if (oversized.length > 0) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'File Too Large',
+        message: `Some files exceed 15MB: ${oversized.map(f => f.name).join(', ')}`,
+      });
+      return;
+    }
+
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    e.target.value = '';
+  };
+
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getSubmissionFiles = (s: ResearchSubmission): FileAttachment[] => {
+    if (Array.isArray(s.files) && s.files.length > 0) {
+      return s.files;
+    }
+    if (s.file_url) {
+      return [{ name: s.file_name || 'Attached Document', url: s.file_url }];
+    }
+    return [];
+  };
+
+  const openFileViewer = (url: string, name: string) => {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
+
+    if (isImageOrPdf) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+      window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   useEffect(() => {
@@ -846,9 +904,10 @@ function ResearchExtension({ userId }: { userId: string }) {
   const pendingCount = submissions.filter(s => s.status === 'pending').length;
   const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
 
-  const displayType = (type: string) => type === 'research' ? 'Research' : 'Extension';
+  const displayType = (type: string) => (type === 'research' ? 'Research' : 'Extension');
   const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
-  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
@@ -856,7 +915,11 @@ function ResearchExtension({ userId }: { userId: string }) {
       approved: 'bg-green-100 text-green-700',
       rejected: 'bg-red-100 text-red-700',
     };
-    return <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status]}`}>{displayStatus(status)}</span>;
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status] || map.pending}`}>
+        {displayStatus(status)}
+      </span>
+    );
   };
 
   const statusIcon = (status: string) => {
@@ -881,7 +944,13 @@ function ResearchExtension({ userId }: { userId: string }) {
       const formData = new FormData();
       formData.append('title', researchTitle.trim());
       formData.append('type', researchType);
-      if (selectedFile) formData.append('file', selectedFile);
+      if (researchType === 'research' && publicationLink.trim()) {
+        formData.append('publication_link', publicationLink.trim());
+      }
+
+      selectedFiles.forEach(file => {
+        formData.append('files', file);
+      });
 
       const res = await fetch(RESEARCH_API_URL, {
         method: 'POST',
@@ -903,12 +972,13 @@ function ResearchExtension({ userId }: { userId: string }) {
       const data: ResearchSubmission = await res.json();
       setSubmissions(prev => [data, ...prev]);
       setResearchTitle('');
-      setSelectedFile(null);
+      setPublicationLink('');
+      setSelectedFiles([]);
       setModal({
         isOpen: true,
         type: 'success',
         title: 'Output Submitted',
-        message: 'Your submission has been sent for approval!',
+        message: 'Your submission and attachments have been sent for approval!',
       });
     } catch {
       setModal({
@@ -922,26 +992,22 @@ function ResearchExtension({ userId }: { userId: string }) {
     }
   };
 
-  const handleDownload = (s: ResearchSubmission) => {
-    if (s.file_url) {
-      window.open(s.file_url, '_blank');
-    } else {
-      setModal({
-        isOpen: true,
-        type: 'validation',
-        title: 'No File Found',
-        message: 'No file was attached to this submission.',
-      });
-    }
-  };
-
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
-        {[{ id: 'submit', label: 'Submit' }, { id: 'track', label: 'Track Status' }, { id: 'approved', label: 'Approved' }].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)}
-            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+        {[
+          { id: 'submit', label: 'Submit' },
+          { id: 'track', label: 'Track Status' },
+          { id: 'approved', label: 'Approved' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+              tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
             {t.label}
           </button>
         ))}
@@ -956,25 +1022,109 @@ function ResearchExtension({ userId }: { userId: string }) {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
                   <div className="flex gap-3 sm:gap-4">
-                    <button type="button" onClick={() => setResearchType('research')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Research</button>
-                    <button type="button" onClick={() => setResearchType('extension')} className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>Extension Activity</button>
+                    <button
+                      type="button"
+                      onClick={() => setResearchType('research')}
+                      className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${
+                        researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                    >
+                      Research
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setResearchType('extension')}
+                      className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${
+                        researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                    >
+                      Extension Activity
+                    </button>
                   </div>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                  <input type="text" value={researchTitle} onChange={e => setResearchTitle(e.target.value)} placeholder="Enter title" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                  <input
+                    type="text"
+                    value={researchTitle}
+                    onChange={e => setResearchTitle(e.target.value)}
+                    placeholder="Enter output title"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
                 </div>
+
+                {/* Publication Link (Shown for Research) */}
+                {researchType === 'research' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Publication Link <span className="text-xs text-gray-400 font-normal">(Optional — DOI or Journal URL)</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={publicationLink}
+                      onChange={e => setPublicationLink(e.target.value)}
+                      placeholder="https://doi.org/... or https://journal.org/article"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                )}
+
+                {/* Multi-file Upload */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Document</label>
-                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX up to 10MB</p>
-                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Documents & Evidences (Multiple files allowed)
                   </label>
-                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block bg-gray-50/50">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 font-medium">Click to select files or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX, JPG, PNG up to 15MB each</p>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                  </label>
+
+                  {/* Selected files preview list */}
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-500">
+                        {selectedFiles.length} file(s) selected:
+                      </p>
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                        {selectedFiles.map((file, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-xs"
+                          >
+                            <span className="truncate max-w-[280px] font-medium text-blue-900">
+                              {file.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
+                              <button
+                                type="button"
+                                onClick={() => removeSelectedFile(idx)}
+                                className="text-red-500 hover:text-red-700 p-0.5 rounded transition-colors"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60"
+                >
                   {submitting ? 'Submitting...' : 'Submit for Approval'}
                 </button>
               </div>
@@ -992,18 +1142,63 @@ function ResearchExtension({ userId }: { userId: string }) {
                 <div className="p-12 text-center text-gray-400">No submissions yet.</div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {submissions.map((s) => (
-                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                        {statusIcon(s.status)}
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Submitted {formatDate(s.created_at)}</div>
+                  {submissions.map(s => {
+                    const files = getSubmissionFiles(s);
+                    return (
+                      <div key={s.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start sm:items-center justify-between gap-3 mb-2">
+                          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                            {statusIcon(s.status)}
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                              <div className="text-xs sm:text-sm text-gray-500">
+                                {displayType(s.type)} · Submitted {formatDate(s.created_at)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0">{statusBadge(s.status)}</div>
                         </div>
+
+                        {/* Publication link if provided */}
+                        {s.publication_link && (
+                          <div className="pl-8 sm:pl-9 mb-2">
+                            <a
+                              href={s.publication_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <ExternalLink size={12} />
+                              <span className="truncate max-w-[320px]">{s.publication_link}</span>
+                            </a>
+                          </div>
+                        )}
+
+                        {/* Inline Attachment Viewers */}
+                        {files.length > 0 && (
+                          <div className="pl-8 sm:pl-9 flex flex-wrap gap-1.5 mt-1">
+                            {files.map((file, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => openFileViewer(file.url, file.name)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                              >
+                                <Eye size={12} />
+                                <span className="max-w-[160px] truncate">{file.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {s.dean_remarks && (
+                          <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg ml-8 sm:ml-9">
+                            Remarks: {s.dean_remarks}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex-shrink-0">{statusBadge(s.status)}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1011,8 +1206,11 @@ function ResearchExtension({ userId }: { userId: string }) {
 
           {tab === 'approved' && (
             <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-              <div className="p-4 sm:p-6 border-b border-gray-100">
+              <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
+                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">
+                  {approved.length} Total
+                </span>
               </div>
               {loading ? (
                 <div className="p-12 text-center text-gray-400">Loading…</div>
@@ -1020,20 +1218,56 @@ function ResearchExtension({ userId }: { userId: string }) {
                 <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {approved.map((s) => (
-                    <div key={s.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{displayType(s.type)} · Approved on {formatDate(s.updated_at)}</div>
+                  {approved.map(s => {
+                    const files = getSubmissionFiles(s);
+                    return (
+                      <div key={s.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start sm:items-center justify-between gap-3 mb-2">
+                          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                            <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
+                              <div className="text-xs sm:text-sm text-gray-500">
+                                {displayType(s.type)} · Approved on {formatDate(s.updated_at)}
+                              </div>
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Publication link if provided */}
+                        {s.publication_link && (
+                          <div className="pl-8 sm:pl-9 mb-2">
+                            <a
+                              href={s.publication_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <ExternalLink size={12} />
+                              <span className="truncate max-w-[320px]">{s.publication_link}</span>
+                            </a>
+                          </div>
+                        )}
+
+                        {/* Inline Attachment Viewers */}
+                        {files.length > 0 && (
+                          <div className="pl-8 sm:pl-9 flex flex-wrap gap-1.5 mt-1">
+                            {files.map((file, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => openFileViewer(file.url, file.name)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+                              >
+                                <Eye size={13} />
+                                <span className="max-w-[160px] truncate">{file.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button onClick={() => handleDownload(s)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                        <Download size={14} /> Download
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1051,15 +1285,21 @@ function ResearchExtension({ userId }: { userId: string }) {
                 <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-green-500" /> Approved
+                </span>
                 <span className="text-lg font-bold text-green-700">{approved.length}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-yellow-500" /> Pending
+                </span>
                 <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 text-red-500" /> Rejected
+                </span>
                 <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
               </div>
             </div>
@@ -1070,10 +1310,22 @@ function ResearchExtension({ userId }: { userId: string }) {
               <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
             </h3>
             <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, DOCX (up to 10MB)</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 5–7 business days</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Titles must match your official proposal</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>You can upload multiple documents, images, and proposals at once.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Accepted formats: PDF, DOCX, JPG, PNG (up to 15MB each).</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Include direct DOI or URL links for completed publications.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Review usually takes 5–7 business days.</span>
+              </li>
             </ul>
           </div>
         </div>
@@ -1090,22 +1342,22 @@ function ResearchExtension({ userId }: { userId: string }) {
             </button>
 
             <div className="flex flex-col items-center text-center">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
-                modal.type === 'success' ? 'bg-green-100 text-green-600' :
-                modal.type === 'error' ? 'bg-red-100 text-red-600' :
-                'bg-yellow-100 text-yellow-600'
-              }`}>
+              <div
+                className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                  modal.type === 'success'
+                    ? 'bg-green-100 text-green-600'
+                    : modal.type === 'error'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-yellow-100 text-yellow-600'
+                }`}
+              >
                 {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
                 {modal.type === 'error' && <XCircle className="w-6 h-6" />}
                 {modal.type === 'validation' && <Info className="w-6 h-6" />}
               </div>
 
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {modal.title}
-              </h3>
-              <p className="text-sm text-gray-600 mb-6">
-                {modal.message}
-              </p>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{modal.title}</h3>
+              <p className="text-sm text-gray-600 mb-6">{modal.message}</p>
 
               <button
                 type="button"

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Save, Send, Printer, X, ChevronDown, ChevronUp, Upload, ImageIcon, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Save, Send, Printer, X, ChevronDown, ChevronUp, Upload, ImageIcon, Loader2, FolderPlus } from 'lucide-react';
 
 interface AccomplishmentReportProps {
   userId: string;
@@ -25,13 +25,17 @@ interface DocEntry {
   photos: PhotoItem[];
 }
 
-const MAX_PHOTOS_PER_ENTRY = 8;
+interface SubmissionOption {
+  id: string;
+  title: string;
+  type: 'research' | 'extension' | 'achievement';
+  date_received?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+}
 
-// All reads/writes go through the Express API (JWT-authenticated),
-// not straight to Supabase — mirrors the calendar_events/announcements
-// setup. Photo uploads/deletes are also routed through here now instead
-// of hitting Supabase Storage directly from the browser.
+const MAX_PHOTOS_PER_ENTRY = 8;
 const REPORTS_API_URL = 'http://localhost:5000/api/accomplishment-reports';
+const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
 
 function getToken() {
   return localStorage.getItem('token');
@@ -60,7 +64,21 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
   );
 }
 
-function EditableTable({ columns, rows, onChange, readOnly }: { columns: { key: string; label: string; width?: string }[]; rows: GenericRow[]; onChange: (rows: GenericRow[]) => void; readOnly?: boolean; }) {
+function EditableTable({ 
+  columns, 
+  rows, 
+  onChange, 
+  readOnly,
+  onImportClick,
+  importButtonLabel
+}: { 
+  columns: { key: string; label: string; width?: string }[]; 
+  rows: GenericRow[]; 
+  onChange: (rows: GenericRow[]) => void; 
+  readOnly?: boolean;
+  onImportClick?: () => void;
+  importButtonLabel?: string;
+}) {
   const emptyRow = () => columns.reduce((acc, col) => ({ ...acc, [col.key]: '' }), {});
   const updateCell = (rowIdx: number, key: string, value: string) => onChange(rows.map((r, i) => i === rowIdx ? { ...r, [key]: value } : r));
   const addRow = () => onChange([...rows, emptyRow()]);
@@ -90,7 +108,18 @@ function EditableTable({ columns, rows, onChange, readOnly }: { columns: { key: 
           ))}
         </tbody>
       </table>
-      {!readOnly && <button onClick={addRow} className="mt-2 flex items-center gap-1 text-xs text-[#1E3A8A] hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors font-medium"><Plus className="w-3.5 h-3.5" /> Add Row</button>}
+      {!readOnly && (
+        <div className="mt-2 flex items-center gap-3 flex-wrap">
+          <button onClick={addRow} className="flex items-center gap-1 text-xs text-[#1E3A8A] hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors font-medium">
+            <Plus className="w-3.5 h-3.5" /> Add Row
+          </button>
+          {onImportClick && (
+            <button onClick={onImportClick} className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors font-semibold">
+              <FolderPlus className="w-3.5 h-3.5" /> {importButtonLabel || 'Import Record'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -111,7 +140,11 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   const [draftStatus, setDraftStatus] = useState<'loading' | 'loaded' | 'none' | 'error'>('loading');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  // ── Documentation (categorized activity entries with photos) ──
+  // ── Existing Submissions from Backend ──
+  const [allSubmissions, setAllSubmissions] = useState<SubmissionOption[]>([]);
+  const [activeImportTarget, setActiveImportTarget] = useState<'mfo3pi1' | 'mfo3pi2' | 'mfo3pi3' | 'mfo3pi4' | 'mfo4pi1' | 'awards' | null>(null);
+
+  // ── Documentation ──
   const [docEntries, setDocEntries] = useState<DocEntry[]>([]);
   const [uploadingEntryId, setUploadingEntryId] = useState<string | null>(null);
   const fileInputRefs = useRef<{ [id: string]: HTMLInputElement | null }>({});
@@ -149,7 +182,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
 
   useEffect(() => {
-    const load = async () => {
+    const loadDraft = async () => {
       try {
         const res = await fetch(`${REPORTS_API_URL}/my-draft`, {
           headers: { Authorization: `Bearer ${getToken()}` },
@@ -187,10 +220,142 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         setDraftStatus('error');
       }
     };
-    load();
-  }, [userId]);
 
-  // ── Documentation entry handlers ──
+    const loadSubmissions = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = (data ?? []).filter((s: any) => s.status === 'approved' || s.status === 'pending');
+          setAllSubmissions(filtered);
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    loadDraft();
+    loadSubmissions();
+  }, [userId, userName]);
+
+  const getModalFilteredOptions = (): { title: string; subtitle: string; options: SubmissionOption[] } => {
+    if (!activeImportTarget) return { title: '', subtitle: '', options: [] };
+
+    if (activeImportTarget.startsWith('mfo3')) {
+      return {
+        title: 'Select Research Output',
+        subtitle: 'Pick a research output to import its title.',
+        options: allSubmissions.filter(s => s.type === 'research'),
+      };
+    }
+
+    if (activeImportTarget === 'mfo4pi1') {
+      return {
+        title: 'Select Extension Project',
+        subtitle: 'Pick an extension activity to import its title.',
+        options: allSubmissions.filter(s => s.type === 'extension'),
+      };
+    }
+
+    if (activeImportTarget === 'awards') {
+      return {
+        title: 'Select Award / Achievement',
+        subtitle: 'Pick an achievement to import its title and date.',
+        options: allSubmissions.filter(s => s.type === 'achievement'),
+      };
+    }
+
+    return { title: '', subtitle: '', options: [] };
+  };
+
+  const populateOrAppend = (
+    rows: GenericRow[],
+    fieldsToSet: Record<string, string>,
+    defaultRow: GenericRow
+  ): GenericRow[] => {
+    const firstEmptyIndex = rows.findIndex((row) =>
+      Object.values(row).every((val) => !val || val.trim() === '')
+    );
+
+    if (firstEmptyIndex !== -1) {
+      return rows.map((row, idx) =>
+        idx === firstEmptyIndex ? { ...row, ...fieldsToSet } : row
+      );
+    }
+
+    return [...rows, { ...defaultRow, ...fieldsToSet }];
+  };
+
+  const handleSelectRecord = (item: SubmissionOption) => {
+    if (!activeImportTarget) return;
+
+    if (activeImportTarget === 'mfo3pi1') {
+      setMfo3pi1((prev) =>
+        populateOrAppend(
+          prev,
+          { title_research: item.title },
+          { title_research: '', proponents: '', nature_utilization: '', partner_community: '', address: '' }
+        )
+      );
+    } else if (activeImportTarget === 'mfo3pi2') {
+      setMfo3pi2((prev) =>
+        populateOrAppend(
+          prev,
+          { title_research: item.title },
+          { title_research: '', proponents: '', date_completed: '', funding_source: '' }
+        )
+      );
+    } else if (activeImportTarget === 'mfo3pi3') {
+      setMfo3pi3((prev) =>
+        populateOrAppend(
+          prev,
+          { title_research: item.title },
+          { title_research: '', proponents: '', name_publication: '', date_published: '', funding_source: '' }
+        )
+      );
+    } else if (activeImportTarget === 'mfo3pi4') {
+      setMfo3pi4((prev) =>
+        populateOrAppend(
+          prev,
+          { title_research: item.title },
+          { title_research: '', proponents: '', date: '', sponsoring_agency: '', venue: '' }
+        )
+      );
+    } else if (activeImportTarget === 'mfo4pi1') {
+      setMfo4pi1((prev) =>
+        populateOrAppend(
+          prev,
+          { title_project: item.title },
+          { title_project: '', proponents: '', partner: '', project_locale: '' }
+        )
+      );
+    } else if (activeImportTarget === 'awards') {
+      const formattedDate = item.date_received
+        ? new Date(item.date_received).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : '';
+
+      setAwards((prev) =>
+        populateOrAppend(
+          prev,
+          {
+            title_award: item.title,
+            date_awarding: formattedDate,
+          },
+          { title_award: '', nature_award: '', granting_agency: '', date_awarding: '' }
+        )
+      );
+    }
+
+    showSuccess('Record imported successfully!');
+    setActiveImportTarget(null);
+  };
+
   const addDocEntry = (category: string) => {
     setDocEntries(prev => [...prev, { id: makeId(), category, title: '', venue: '', date: '', description: '', photos: [] }]);
   };
@@ -207,7 +372,7 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         body: JSON.stringify({ paths }),
       });
     } catch {
-      // best-effort cleanup — same as the previous fire-and-forget behavior
+      // best-effort cleanup
     }
   };
 
@@ -280,13 +445,17 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
   };
 
   const removeEntryPhoto = async (entryId: string, photoIdx: number) => {
-    const entry = docEntries.find(e => e.id === entryId);
+    const entry = docEntries.find(e => e.id === id(entryId));
     const photo = entry?.photos[photoIdx];
     setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: en.photos.filter((_, i) => i !== photoIdx) } : en));
     if (photo?.path) {
       await deletePhotosOnServer([photo.path]);
     }
   };
+
+  function id(entryId: string): string {
+    return entryId;
+  }
 
   const updateEntryPhotoCaption = (entryId: string, photoIdx: number, caption: string) => {
     setDocEntries(prev => prev.map(en => en.id === entryId ? { ...en, photos: en.photos.map((p, i) => i === photoIdx ? { ...p, caption } : p) } : en));
@@ -362,7 +531,6 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
     return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
-  // ── Reusable print table ──
   const PrintTable = ({ label, rows, cols, headers }: { label: string; rows: GenericRow[]; cols: string[]; headers: string[] }) => (
     <div className="mb-4">
       <p className="font-semibold mb-1">{label}</p>
@@ -372,6 +540,8 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
       </table>
     </div>
   );
+
+  const modalConfig = getModalFilteredOptions();
 
   return (
     <div className="space-y-4">
@@ -464,25 +634,60 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         <EditableTable columns={[{key:'name_faculty',label:'Name of Faculty (Authors)'},{key:'title_im',label:'Title of IM'},{key:'type_im',label:'Type of IM'},{key:'courses_utilizing',label:'Courses Utilizing the IMs'},{key:'ip_protection',label:'Nature of IP Protection'}]} rows={pi8} onChange={setPi8} readOnly={readOnly || status === 'submitted'} />
       </Section>
 
-      {/* MFO 3 */}
+      {/* MFO 3: RESEARCH (WITH IMPORT CAPABILITY) */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 3: Research</div>
       <Section title="PI 1: Research output utilized by industry/community/beneficiaries">
-        <EditableTable columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'nature_utilization',label:'Nature of Utilization'},{key:'partner_community',label:'Name of Partner Community/Industry'},{key:'address',label:'Address of Partner'}]} rows={mfo3pi1} onChange={setMfo3pi1} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'nature_utilization',label:'Nature of Utilization'},{key:'partner_community',label:'Name of Partner Community/Industry'},{key:'address',label:'Address of Partner'}]} 
+          rows={mfo3pi1} 
+          onChange={setMfo3pi1} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('mfo3pi1')}
+          importButtonLabel="Import from My Research"
+        />
       </Section>
       <Section title="PI 2: Research output completed within the quarter">
-        <EditableTable columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'date_completed',label:'Date Completed'},{key:'funding_source',label:'Funding Source'}]} rows={mfo3pi2} onChange={setMfo3pi2} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'date_completed',label:'Date Completed'},{key:'funding_source',label:'Funding Source'}]} 
+          rows={mfo3pi2} 
+          onChange={setMfo3pi2} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('mfo3pi2')}
+          importButtonLabel="Import from My Research"
+        />
       </Section>
       <Section title="PI 3: Research output published in internationally refereed or CHED accredited journals">
-        <EditableTable columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'name_publication',label:'Name of Publication'},{key:'date_published',label:'Date Published'},{key:'funding_source',label:'Funding Source'}]} rows={mfo3pi3} onChange={setMfo3pi3} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponent/s'},{key:'name_publication',label:'Name of Publication'},{key:'date_published',label:'Date Published'},{key:'funding_source',label:'Funding Source'}]} 
+          rows={mfo3pi3} 
+          onChange={setMfo3pi3} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('mfo3pi3')}
+          importButtonLabel="Import from My Research"
+        />
       </Section>
       <Section title="PI 4: Research Output Presented in Research Conferences">
-        <EditableTable columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponents'},{key:'date',label:'Date'},{key:'sponsoring_agency',label:'Sponsoring Agency'},{key:'venue',label:'Venue'}]} rows={mfo3pi4} onChange={setMfo3pi4} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_research',label:'Title of Research'},{key:'proponents',label:'Proponents'},{key:'date',label:'Date'},{key:'sponsoring_agency',label:'Sponsoring Agency'},{key:'venue',label:'Venue'}]} 
+          rows={mfo3pi4} 
+          onChange={setMfo3pi4} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('mfo3pi4')}
+          importButtonLabel="Import from My Research"
+        />
       </Section>
 
-      {/* MFO 4 */}
+      {/* MFO 4: TECHNICAL ADVISORY EXTENSION PROGRAM */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 4: Technical Advisory Extension Program</div>
       <Section title="PI 1: Number of active partnerships with LGUs, industries, NGOs, NGAs, SMEs, and other stakeholders">
-        <EditableTable columns={[{key:'title_project',label:'Title of Community Extension Project'},{key:'proponents',label:'Proponents'},{key:'partner',label:'Partner Industry/Community'},{key:'project_locale',label:'Project Locale'}]} rows={mfo4pi1} onChange={setMfo4pi1} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_project',label:'Title of Community Extension Project'},{key:'proponents',label:'Proponents'},{key:'partner',label:'Partner Industry/Community'},{key:'project_locale',label:'Project Locale'}]} 
+          rows={mfo4pi1} 
+          onChange={setMfo4pi1} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('mfo4pi1')}
+          importButtonLabel="Import from My Extension"
+        />
       </Section>
       <Section title="PI 2: Number of trainees weighted by the length of training (manhours)">
         <EditableTable columns={[{key:'title_training',label:'Title of Training'},{key:'no_beneficiaries',label:'No. Community Beneficiaries'},{key:'length_training',label:'Length of Training'},{key:'total_manhours',label:'Total Manhours'},{key:'partner_agency',label:'Partner Agency'}]} rows={mfo4pi2} onChange={setMfo4pi2} readOnly={readOnly || status === 'submitted'} />
@@ -491,7 +696,14 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         <EditableTable columns={[{key:'title_activity',label:'Title of Activity'},{key:'date_conducted',label:'Date Conducted'},{key:'venue',label:'Venue'},{key:'sponsoring_agency',label:'Sponsoring Agency'},{key:'students_involved',label:'Students Involved'},{key:'role_students',label:'Role (Students)'},{key:'faculty_involved',label:'Faculty Involved'},{key:'role_faculty',label:'Role (Faculty)'}]} rows={otherInitiatives} onChange={setOtherInitiatives} readOnly={readOnly || status === 'submitted'} />
       </Section>
       <Section title="Awards received for excellence in instruction, research, community extension work">
-        <EditableTable columns={[{key:'title_award',label:'Title of Award'},{key:'nature_award',label:'Nature of Award'},{key:'granting_agency',label:'Granting Agency'},{key:'date_awarding',label:'Date of Awarding Ceremony'}]} rows={awards} onChange={setAwards} readOnly={readOnly || status === 'submitted'} />
+        <EditableTable 
+          columns={[{key:'title_award',label:'Title of Award'},{key:'nature_award',label:'Nature of Award'},{key:'granting_agency',label:'Granting Agency'},{key:'date_awarding',label:'Date of Awarding Ceremony'}]} 
+          rows={awards} 
+          onChange={setAwards} 
+          readOnly={readOnly || status === 'submitted'} 
+          onImportClick={() => setActiveImportTarget('awards')}
+          importButtonLabel="Import from My Achievements"
+        />
       </Section>
 
       {/* Other Accomplishments */}
@@ -587,6 +799,67 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
         </div>
       </div>
 
+      {/* ── Dynamic Import Modal (Research, Extension, or Achievements) ── */}
+      {activeImportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{modalConfig.title}</h3>
+                <p className="text-xs text-gray-500">{modalConfig.subtitle}</p>
+              </div>
+              <button onClick={() => setActiveImportTarget(null)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {modalConfig.options.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">
+                No matching records found under your account.
+              </div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 pr-1">
+                {modalConfig.options.map(item => (
+                  <div key={item.id} className="py-3 px-2 flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{item.title}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          item.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {item.status}
+                        </span>
+                        {item.date_received && (
+                          <span className="text-[11px] text-gray-400">
+                            {new Date(item.date_received).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectRecord(item)}
+                      className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors"
+                    >
+                      Use
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+              <button 
+                onClick={() => setActiveImportTarget(null)} 
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-medium hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Print Modal */}
       {showPrint && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4 print-modal-overlay">
@@ -635,13 +908,10 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
             </div>
 
             <div className="p-8 text-xs" id="print-area">
-
-              {/* ── CTU Header Image ── */}
               <div className="mb-4">
                 <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain" />
               </div>
 
-              {/* ── Report Title ── */}
               <div className="text-center mb-4">
                 <p className="font-bold text-base uppercase">Accomplishment Report – SY {year}</p>
                 <p className="font-semibold">{quarter} Quarter, Months of {quarter === '1st' ? 'January to March' : quarter === '2nd' ? 'April to June' : quarter === '3rd' ? 'July to September' : 'October to December'}</p>
@@ -679,7 +949,6 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
               <PrintTable label="Other initiatives/activities undertaken" rows={otherInitiatives} cols={['title_activity','date_conducted','venue','sponsoring_agency','students_involved','role_students','faculty_involved','role_faculty']} headers={['Title of Activity','Date Conducted','Venue','Sponsoring Agency','Students Involved','Role','Faculty Involved','Role']} />
               <PrintTable label="Awards received for excellence" rows={awards} cols={['title_award','nature_award','granting_agency','date_awarding']} headers={['Title of Award','Nature of Award','Granting Agency','Date of Awarding Ceremony']} />
 
-              {/* Other Accomplishments */}
               {otherAccomplishments && (
                 <div className="mb-4">
                   <p className="font-semibold mb-1">Other accomplishments of the program:</p>
@@ -733,11 +1002,9 @@ export function AccomplishmentReport({ userId, userName, readOnly = false }: Acc
                 </div>
               </div>
 
-              {/* ── CTU Footer Image (repeats on every printed page) ── */}
               <div className="mt-8 print-footer-fixed">
                 <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain" />
               </div>
-
             </div>
           </div>
         </div>
