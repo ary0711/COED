@@ -192,16 +192,15 @@ router.get('/:id', authenticate, async (req, res) => {
 
   return res.json(data);
 });
-
-// ── GET /api/academic-records/documents/:id/download — signed URL ──
-router.get('/:id/download', authenticate, async (req, res) => {
+// ── GET /api/academic-records/documents/:id/preview — signed URL for inline viewing ──
+router.get('/:id/preview', authenticate, async (req, res) => {
   const { id } = req.params;
   const userRole = req.user.role;
   const isPrivileged = userRole === 'dean' || userRole === 'admin';
 
   const { data: doc, error: fetchError } = await supabase
     .from('academic_documents')
-    .select('file_path, status, file_name, target_roles')
+    .select('file_path, status, file_name, file_type, target_roles')
     .eq('id', id)
     .maybeSingle();
 
@@ -212,22 +211,21 @@ router.get('/:id/download', authenticate, async (req, res) => {
     return res.status(404).json({ error: 'Document not found.' });
   }
 
-  // Download check: Ensure the user's role is authorized
   if (!isPrivileged) {
     if (doc.status === 'archived' || !doc.target_roles.includes(userRole)) {
-      return res.status(403).json({ error: 'You do not have permission to download this document.' });
+      return res.status(403).json({ error: 'You do not have permission to preview this document.' });
     }
   }
 
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(doc.file_path, 60); // 60-second valid link
+    .createSignedUrl(doc.file_path, 300); // 5-minute validity, enough time to load in viewer
 
   if (signError) {
-    return res.status(500).json({ error: 'Failed to generate download link: ' + signError.message });
+    return res.status(500).json({ error: 'Failed to generate preview link: ' + signError.message });
   }
 
-  return res.json({ url: signed.signedUrl, file_name: doc.file_name });
+  return res.json({ url: signed.signedUrl, file_type: doc.file_type, file_name: doc.file_name });
 });
 
 // ── PUT /api/academic-records/documents/:id — update metadata and/or replace file (Dean/Admin only) ──

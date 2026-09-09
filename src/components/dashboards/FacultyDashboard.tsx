@@ -1123,6 +1123,12 @@ function ResearchExtension({ userId }: { userId: string }) {
 }
 
 // ====================== 5.3 ACHIEVEMENTS ======================
+interface FileAttachment {
+  name: string;
+  url: string;
+  size?: number;
+}
+
 interface AchievementSubmission {
   id: string;
   title: string;
@@ -1131,6 +1137,7 @@ interface AchievementSubmission {
   date_received: string | null;
   file_name: string | null;
   file_url: string | null;
+  files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
   dean_remarks: string | null;
   created_at: string;
@@ -1142,7 +1149,7 @@ export default function FacultyAchievements() {
   const [awardTitle, setAwardTitle] = useState('');
   const [awardCategory, setAwardCategory] = useState('Research');
   const [awardDate, setAwardDate] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [submissions, setSubmissions] = useState<AchievementSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -1155,7 +1162,35 @@ export default function FacultyAchievements() {
   });
 
   const closeModal = () => {
-    setModal(prev => ({ ...prev, isOpen: false }));
+    setModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // ── File Selection Handler ──────────────────────────────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const newFiles = Array.from(e.target.files);
+
+    const oversized = newFiles.filter((f) => f.size > 15 * 1024 * 1024);
+    if (oversized.length > 0) {
+      setModal({
+        isOpen: true,
+        type: 'validation',
+        title: 'File Too Large',
+        message: `Some files exceed 15MB: ${oversized.map((f) => f.name).join(', ')}`,
+      });
+      return;
+    }
+
+    // Appends newly selected files to existing list
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+
+    // Resets input value so user can pick the same file or select files repeatedly
+    e.target.value = '';
+  };
+
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   useEffect(() => {
@@ -1177,12 +1212,13 @@ export default function FacultyAchievements() {
     load();
   }, []);
 
-  const approved = submissions.filter(a => a.status === 'approved');
-  const pendingCount = submissions.filter(a => a.status === 'pending').length;
-  const rejectedCount = submissions.filter(a => a.status === 'rejected').length;
+  const approved = submissions.filter((a) => a.status === 'approved');
+  const pendingCount = submissions.filter((a) => a.status === 'pending').length;
+  const rejectedCount = submissions.filter((a) => a.status === 'rejected').length;
 
   const displayStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  const formatDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
   const handleSubmit = async () => {
     if (!awardTitle.trim()) {
@@ -1194,6 +1230,7 @@ export default function FacultyAchievements() {
       });
       return;
     }
+
     setSubmitting(true);
     try {
       const formData = new FormData();
@@ -1201,7 +1238,11 @@ export default function FacultyAchievements() {
       formData.append('type', 'achievement');
       formData.append('category', awardCategory);
       if (awardDate) formData.append('date_received', awardDate);
-      if (selectedFile) formData.append('file', selectedFile);
+
+      // Append all selected files under the field name 'files'
+      selectedFiles.forEach((file) => {
+        formData.append('files', file);
+      });
 
       const res = await fetch(RESEARCH_API_URL, {
         method: 'POST',
@@ -1221,17 +1262,17 @@ export default function FacultyAchievements() {
       }
 
       const data: AchievementSubmission = await res.json();
-      setSubmissions(prev => [data, ...prev]);
+      setSubmissions((prev) => [data, ...prev]);
       setAwardTitle('');
       setAwardCategory('Research');
       setAwardDate('');
-      setSelectedFile(null);
+      setSelectedFiles([]);
 
       setModal({
         isOpen: true,
         type: 'success',
         title: 'Achievement Submitted',
-        message: 'Your achievement has been successfully submitted for review!',
+        message: 'Your achievement and attachments have been successfully submitted for review!',
       });
     } catch {
       setModal({
@@ -1245,26 +1286,36 @@ export default function FacultyAchievements() {
     }
   };
 
-  const handleDownload = (a: AchievementSubmission) => {
-    if (a.file_url) {
-      window.open(a.file_url, '_blank');
-    } else {
-      setModal({
-        isOpen: true,
-        type: 'validation',
-        title: 'No File Found',
-        message: 'No file was attached to this submission.',
-      });
+  const getSubmissionFiles = (a: AchievementSubmission): FileAttachment[] => {
+    if (Array.isArray(a.files) && a.files.length > 0) {
+      return a.files;
     }
+    if (a.file_url) {
+      return [{ name: a.file_name || 'Attached Document', url: a.file_url }];
+    }
+    return [];
+  };
+
+  const openFile = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        {[{ id: 'submit', label: 'Submit' }, { id: 'approved', label: 'Approved' }, { id: 'history', label: 'History' }].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)}
-            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+        {[
+          { id: 'submit', label: 'Submit' },
+          { id: 'approved', label: 'Approved' },
+          { id: 'history', label: 'History' },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as any)}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+              tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
             {t.label}
           </button>
         ))}
@@ -1277,12 +1328,24 @@ export default function FacultyAchievements() {
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
               <div className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Award / Achievement Title *</label>
-                  <input type="text" value={awardTitle} onChange={e => setAwardTitle(e.target.value)} placeholder="e.g., Best Paper Award" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Award / Achievement Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={awardTitle}
+                    onChange={(e) => setAwardTitle(e.target.value)}
+                    placeholder="e.g., Best Paper Award"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                  <select value={awardCategory} onChange={e => setAwardCategory(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                  <select
+                    value={awardCategory}
+                    onChange={(e) => setAwardCategory(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                  >
                     <option>Research</option>
                     <option>Teaching</option>
                     <option>Extension</option>
@@ -1290,19 +1353,69 @@ export default function FacultyAchievements() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
-                  <input type="date" value={awardDate} onChange={e => setAwardDate(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm" />
+                  <input
+                    type="date"
+                    value={awardDate}
+                    onChange={(e) => setAwardDate(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
                 </div>
+
+                {/* Multiple Files Upload */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Certificate / Document</label>
-                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                    <input type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] ?? null)} />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Certificates & Evidences (Multiple files allowed)
                   </label>
-                  {selectedFile && <p className="text-sm text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={14} /> {selectedFile.name}</p>}
+                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block bg-gray-50/50">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 font-medium">Click to select files or drag and drop</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG, DOCX up to 15MB each</p>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.jpg,.jpeg,.png,.docx,.doc"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                  </label>
+
+                  {/* Selected files preview list with remove buttons */}
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-500">
+                        {selectedFiles.length} file(s) selected:
+                      </p>
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                        {selectedFiles.map((file, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-xs"
+                          >
+                            <span className="truncate max-w-[280px] font-medium text-blue-900">
+                              {file.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
+                              <button
+                                type="button"
+                                onClick={() => removeSelectedFile(idx)}
+                                className="text-red-500 hover:text-red-700 p-0.5 rounded transition-colors"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button onClick={handleSubmit} disabled={submitting} className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60">
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60"
+                >
                   {submitting ? 'Submitting...' : 'Submit for Review'}
                 </button>
               </div>
@@ -1313,7 +1426,9 @@ export default function FacultyAchievements() {
             <div className="bg-white rounded-2xl shadow-md overflow-hidden">
               <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
-                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">{approved.length} Total</span>
+                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">
+                  {approved.length} Total
+                </span>
               </div>
               {loading ? (
                 <div className="p-12 text-center text-gray-400">Loading…</div>
@@ -1321,22 +1436,45 @@ export default function FacultyAchievements() {
                 <div className="p-12 text-center text-gray-400">No approved achievements yet.</div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {approved.map((a) => (
-                    <div key={a.id} className="flex items-start sm:items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                        <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
-                          <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                  {approved.map((a) => {
+                    const files = getSubmissionFiles(a);
+                    return (
+                      <div
+                        key={a.id}
+                        className="p-4 sm:p-5 hover:bg-gray-50 transition-colors flex flex-col gap-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
+                              <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
+                              <div className="text-xs sm:text-sm text-gray-500">
+                                {a.category ?? '—'} · Approved on {formatDate(a.updated_at)}
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                          <div className="text-xs sm:text-sm text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
-                        </div>
+
+                        {files.length > 0 && (
+                          <div className="pl-12 flex flex-wrap gap-2 pt-1">
+                            {files.map((f, i) => (
+                              <button
+                                key={i}
+                                onClick={() => openFile(f.url)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-100 hover:bg-blue-50 hover:text-blue-700 text-gray-700 transition-colors border border-gray-200"
+                                title="Open attachment"
+                              >
+                                <Eye size={13} />
+                                <span className="max-w-[150px] truncate">{f.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button onClick={() => handleDownload(a)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium flex-shrink-0">
-                        <Download size={14} /> Download
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1352,46 +1490,55 @@ export default function FacultyAchievements() {
               ) : submissions.length === 0 ? (
                 <div className="p-12 text-center text-gray-400">No submissions yet.</div>
               ) : (
-                <>
-                  <div className="divide-y divide-gray-100 sm:hidden">
-                    {submissions.map((a) => (
-                      <div key={a.id} className="p-4 space-y-1">
-                        <div className="font-medium text-gray-900 text-sm">{a.title}</div>
-                        <div className="text-xs text-gray-500">{a.category ?? '—'} · {formatDate(a.date_received)}</div>
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase mt-1 ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {displayStatus(a.status)}
-                        </span>
-                        {a.dean_remarks && <p className="text-xs text-red-600 mt-1">Remarks: {a.dean_remarks}</p>}
+                <div className="divide-y divide-gray-100">
+                  {submissions.map((a) => {
+                    const files = getSubmissionFiles(a);
+                    return (
+                      <div key={a.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
+                            <div className="text-xs text-gray-500">
+                              {a.category ?? '—'} · {formatDate(a.date_received)}
+                            </div>
+                          </div>
+                          <span
+                            className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                              a.status === 'approved'
+                                ? 'bg-green-100 text-green-700'
+                                : a.status === 'rejected'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                            }`}
+                          >
+                            {displayStatus(a.status)}
+                          </span>
+                        </div>
+
+                        {a.dean_remarks && (
+                          <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg mb-2">
+                            Remarks: {a.dean_remarks}
+                          </p>
+                        )}
+
+                        {files.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {files.map((f, i) => (
+                              <button
+                                key={i}
+                                onClick={() => openFile(f.url)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-gray-100 hover:bg-blue-50 text-blue-700 border border-gray-200"
+                              >
+                                <Eye size={12} />
+                                <span className="max-w-[140px] truncate">{f.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                  <div className="hidden sm:block overflow-x-auto">
-                    <table className="w-full text-left min-w-[480px]">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Achievement</th>
-                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Category</th>
-                          <th className="py-4 px-6 text-sm font-semibold text-gray-700">Date</th>
-                          <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {submissions.map((a) => (
-                          <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                            <td className="py-4 px-6 font-medium text-gray-900">{a.title}</td>
-                            <td className="py-4 px-6 text-gray-600">{a.category ?? '—'}</td>
-                            <td className="py-4 px-6 text-gray-600">{formatDate(a.date_received)}</td>
-                            <td className="py-4 px-6 text-center">
-                              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${a.status === 'approved' ? 'bg-green-100 text-green-700' : a.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                {displayStatus(a.status)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
@@ -1408,15 +1555,21 @@ export default function FacultyAchievements() {
                 <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-green-500" /> Approved</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-green-500" /> Approved
+                </span>
                 <span className="text-lg font-bold text-green-700">{approved.length}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><Clock className="w-4 h-4 text-yellow-500" /> Pending</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-yellow-500" /> Pending
+                </span>
                 <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5"><XCircle className="w-4 h-4 text-red-500" /> Rejected</span>
+                <span className="text-sm text-gray-700 flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 text-red-500" /> Rejected
+                </span>
                 <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
               </div>
             </div>
@@ -1427,10 +1580,22 @@ export default function FacultyAchievements() {
               <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
             </h3>
             <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: PDF, JPG, PNG (up to 10MB)</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Review usually takes 3–5 business days</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Attach the official certificate or citation</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>You'll be notified by email once reviewed</span></li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>You can upload multiple certificates or citations at once.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Accepted formats: PDF, JPG, PNG, DOCX (up to 15MB each).</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Review usually takes 3–5 business days.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-blue-600 font-bold">•</span>
+                <span>Dean remarks will appear in the History tab if revisions are needed.</span>
+              </li>
             </ul>
           </div>
         </div>
@@ -1447,22 +1612,22 @@ export default function FacultyAchievements() {
             </button>
 
             <div className="flex flex-col items-center text-center">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
-                modal.type === 'success' ? 'bg-green-100 text-green-600' :
-                modal.type === 'error' ? 'bg-red-100 text-red-600' :
-                'bg-yellow-100 text-yellow-600'
-              }`}>
+              <div
+                className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                  modal.type === 'success'
+                    ? 'bg-green-100 text-green-600'
+                    : modal.type === 'error'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-yellow-100 text-yellow-600'
+                }`}
+              >
                 {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
                 {modal.type === 'error' && <XCircle className="w-6 h-6" />}
                 {modal.type === 'validation' && <Info className="w-6 h-6" />}
               </div>
 
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {modal.title}
-              </h3>
-              <p className="text-sm text-gray-600 mb-6">
-                {modal.message}
-              </p>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{modal.title}</h3>
+              <p className="text-sm text-gray-600 mb-6">{modal.message}</p>
 
               <button
                 type="button"

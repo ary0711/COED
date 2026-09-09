@@ -1,20 +1,29 @@
-// All reads/writes for research_submissions go through here,
-// authenticated via JWT, using the service-role Supabase client.
+// routes/researchSubmissions.js
 
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const authenticate = require('../middleware/authenticate');
-
-// Default export, matching your existing supabaseClient.js.
 const supabase = require('../supabaseClient');
 
 function requireDean(req, res, next) {
-  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+  const role = (req.user.role || '').toLowerCase();
+  if (role !== 'dean' && role !== 'admin' && role !== 'college_dean') {
     return res.status(403).json({ error: 'Only the Dean can access this resource.' });
   }
   next();
 }
+
+const BUCKET = 'research-submissions';
+
+// Accept files up to 15MB each
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
+
+const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
+
 // GET /api/research-submissions/mine
 router.get('/mine', authenticate, async (req, res) => {
   const { data, error } = await supabase
@@ -29,21 +38,7 @@ router.get('/mine', authenticate, async (req, res) => {
   return res.json(data ?? []);
 });
 
-const BUCKET = 'research-submissions';
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB, matches the UI's stated limit
-});
-
-const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
-
-// GET /api/research-submissions?status=pending
-// Dean-only. Lists submissions college-wide, with submitter names and
-// real department names attached. Department is resolved via
-// faculty_profiles.department_id -> departments.name for faculty
-// submitters, and student_profiles.department_id for students — never
-// from profiles.department, which is free text and often left blank
-// (faculty/student department is always the FK-backed source of truth).
+// GET /api/research-submissions?status=pending (Dean-only)
 router.get('/', authenticate, requireDean, async (req, res) => {
   const { status } = req.query;
 
@@ -60,7 +55,7 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   if (!submissions || submissions.length === 0) return res.json([]);
 
-  const submitterIds = [...new Set(submissions.map(s => s.submitted_by).filter(Boolean))];
+  const submitterIds = [...new Set(submissions.map((s) => s.submitted_by).filter(Boolean))];
 
   const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
@@ -68,21 +63,18 @@ router.get('/', authenticate, requireDean, async (req, res) => {
     .in('id', submitterIds);
 
   if (profilesError) {
-    return res.json(submissions.map(s => ({ ...s, submitter: null })));
+    return res.json(submissions.map((s) => ({ ...s, submitter: null })));
   }
 
-  const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
-  // Resolve real department names via faculty_profiles/student_profiles,
-  // since research submissions currently only come from faculty (and
-  // possibly chairs later), but this covers both cleanly.
   const { data: facultyRows } = await supabase
     .from('faculty_profiles')
     .select('user_id, department_id')
     .in('user_id', submitterIds);
 
   const departmentIdByUser = new Map(
-    (facultyRows ?? []).map(f => [f.user_id, f.department_id])
+    (facultyRows ?? []).map((f) => [f.user_id, f.department_id])
   );
 
   const departmentIds = [...new Set([...departmentIdByUser.values()].filter(Boolean))];
@@ -92,10 +84,10 @@ router.get('/', authenticate, requireDean, async (req, res) => {
       .from('departments')
       .select('id, name')
       .in('id', departmentIds);
-    departmentNameById = new Map((depts ?? []).map(d => [d.id, d.name]));
+    departmentNameById = new Map((depts ?? []).map((d) => [d.id, d.name]));
   }
 
-  const merged = submissions.map(s => {
+  const merged = submissions.map((s) => {
     const profile = profileMap.get(s.submitted_by);
     const deptId = departmentIdByUser.get(s.submitted_by);
     const departmentName = deptId ? departmentNameById.get(deptId) ?? null : null;
@@ -111,8 +103,7 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   return res.json(merged);
 });
 
-// PATCH /api/research-submissions/:id/status
-// Dean-only. body: { status: 'approved' | 'rejected', dean_remarks?: string }
+// PATCH /api/research-submissions/:id/status (Dean-only)
 router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
   const { id } = req.params;
   const { status, dean_remarks } = req.body;
@@ -152,8 +143,8 @@ router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
 });
 
 // POST /api/research-submissions
-// multipart/form-data: fields "title", "type", optional file field "file"
-router.post('/', authenticate, upload.single('file'), async (req, res) => {
+// Changed from upload.single('file') to upload.any() to handle multiple files
+router.post('/', authenticate, upload.any(), async (req, res) => {
   const { title, type, category, date_received } = req.body;
 
   if (!title || !String(title).trim()) {
@@ -163,40 +154,52 @@ router.post('/', authenticate, upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: 'Invalid type.' });
   }
 
-  let file_path = null;
-  let file_url = null;
-  let file_name = null;
+  const filesArray = [];
+  const uploadedFiles = req.files ?? [];
 
-  if (req.file) {
-    const ext = req.file.originalname.split('.').pop();
-    file_path = `${req.user.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  // Loop over every uploaded file and push to Supabase storage
+  for (const file of uploadedFiles) {
+    const ext = file.originalname.split('.').pop();
+    const filePath = `${req.user.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(file_path, req.file.buffer, { contentType: req.file.mimetype });
+      .upload(filePath, file.buffer, { contentType: file.mimetype });
 
     if (uploadError) {
-      return res.status(500).json({ error: uploadError.message });
+      return res.status(500).json({ error: `Failed to upload ${file.originalname}: ${uploadError.message}` });
     }
 
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(file_path);
-    file_url = urlData.publicUrl;
-    file_name = req.file.originalname;
+    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+
+    filesArray.push({
+      name: file.originalname,
+      url: urlData.publicUrl,
+      path: filePath,
+      size: file.size,
+      type: file.mimetype,
+    });
   }
+
+  // Fallback to preserve legacy single-file fields
+  const firstFile = filesArray[0] || null;
+
+  const insertPayload = {
+    submitted_by: req.user.userId,
+    title: String(title).trim(),
+    type,
+    category: category || null,
+    date_received: date_received || null,
+    file_path: firstFile ? firstFile.path : null,
+    file_url: firstFile ? firstFile.url : null,
+    file_name: firstFile ? firstFile.name : null,
+    files: filesArray, // Array of all uploaded files stored as JSONB
+    status: 'pending',
+  };
 
   const { data, error } = await supabase
     .from('research_submissions')
-    .insert({
-      submitted_by: req.user.userId,
-      title: String(title).trim(),
-      type,
-      category: category || null,
-      date_received: date_received || null,
-      file_path,
-      file_url,
-      file_name,
-      status: 'pending',
-    })
+    .insert(insertPayload)
     .select()
     .single();
 

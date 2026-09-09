@@ -2606,7 +2606,15 @@ function FacultyStaffManagement() {
   );
 }
 
-// ─── Research & Achievements ──────────────────────────────────────────────────
+// ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
+
+interface FileAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 interface ResearchSubmissionRow {
   id: string;
   title: string;
@@ -2614,6 +2622,7 @@ interface ResearchSubmissionRow {
   category: string | null;
   file_name: string | null;
   file_url: string | null;
+  files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
   dean_remarks: string | null;
   created_at: string;
@@ -2632,7 +2641,7 @@ function getResearchTokenDean() {
   return localStorage.getItem('token');
 }
 
-function ResearchAchievements() {
+export function ResearchAchievements() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'research' | 'extension' | 'achievement'>('all');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
@@ -2689,6 +2698,31 @@ function ResearchAchievements() {
     }
   };
 
+  // Helper to normalize multi-file and single-file formats
+  const getAllAttachments = (item: ResearchSubmissionRow): FileAttachment[] => {
+    if (Array.isArray(item.files) && item.files.length > 0) {
+      return item.files;
+    }
+    if (item.file_url) {
+      return [{ name: item.file_name || 'Attached Document', url: item.file_url }];
+    }
+    return [];
+  };
+
+  // Inline view handler without forced browser download
+  const handleViewFile = (file: FileAttachment) => {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
+
+    if (isImageOrPdf) {
+      window.open(file.url, '_blank', 'noopener,noreferrer');
+    } else {
+      // Office docs (.docx, .doc, .xlsx) require a web viewer for inline browser viewing
+      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file.url)}`;
+      window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -2742,45 +2776,65 @@ function ResearchAchievements() {
         ) : (
           <div className="space-y-3">
             {filtered.map((item) => {
-              const cfg = RESEARCH_STATUS_LABEL[item.status];
+              const cfg = RESEARCH_STATUS_LABEL[item.status] || RESEARCH_STATUS_LABEL.pending;
+              const attachments = getAllAttachments(item);
+
               return (
-                <div key={item.id} className="p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base">{item.title}</div>
-                      <div className="text-sm text-gray-600">
-                        {item.submitter?.full_name ?? 'Unknown'}
+                <div key={item.id} className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-gray-300 transition-colors">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-gray-900 text-sm sm:text-base">{item.title}</div>
+                      <div className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                        <span className="font-medium text-gray-800">{item.submitter?.full_name ?? 'Unknown Faculty'}</span>
                         {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
-                        {' · '}{typeLabel(item.type)}
+                        {' · '}<span className="capitalize">{typeLabel(item.type)}</span>
                         {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
                       </div>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
+
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
                           {cfg.label}
                         </span>
-                        {item.file_url && (
-                          <a href={item.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
-                            View File{item.file_name ? ` (${item.file_name})` : ''}
-                          </a>
+
+                        {/* Evidences & Documents inline view triggers */}
+                        {attachments.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap ml-1">
+                            {attachments.map((file, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleViewFile(file)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                                title={`View ${file.name} inline`}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span className="max-w-[160px] truncate">{file.name}</span>
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
+
                       {item.dean_remarks && (
-                        <p className="text-xs text-red-600 mt-1.5">Remarks: {item.dean_remarks}</p>
+                        <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg border border-red-100">
+                          <strong>Remarks:</strong> {item.dean_remarks}
+                        </p>
                       )}
                     </div>
+
                     {item.status === 'pending' && (
-                      <div className="flex gap-2 flex-shrink-0">
+                      <div className="flex gap-2 flex-shrink-0 pt-1 sm:pt-0">
                         <button
                           onClick={() => decide(item, 'approved')}
                           disabled={actionId === item.id}
-                          className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-60"
+                          className="px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
                         >
                           {actionId === item.id ? 'Working...' : 'Approve'}
                         </button>
                         <button
                           onClick={() => { setRejectFor(item); setRemarksInput(''); }}
                           disabled={actionId === item.id}
-                          className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-60"
+                          className="px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
                         >
                           Reject
                         </button>
