@@ -27,6 +27,9 @@ import {
   Bell,
   Loader2,
   AlertCircle,
+  Settings,
+  KeyRound,
+  User,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -36,15 +39,9 @@ import { NotificationsPanel } from './NotificationsPanel';
 import { FacultyMonitoringTable } from './FacultyMonitoringTable';
 import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 
-// NOTE: These two components already exist in your Faculty dashboard folder.
-// Update the import path below if your project structure places them elsewhere
-// (e.g. '../faculty/AccomplishmentReport').
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
 
-// NOTE: adjust this path to match where supabaseClient.ts actually lives
-// relative to this file (per your project it's a named export `supabase`
-// from src/supabaseClient.ts).
 import { supabase } from '../supabaseClient';
 
 
@@ -57,6 +54,7 @@ const chairMenuItems = [
   { icon: ClipboardList,   label: 'Academic Records',    id: 'records' },
   { icon: Megaphone,       label: 'Announcements',       id: 'announcements' },
   { icon: UserCheck,       label: 'Account Approvals',   id: 'approvals' },
+  { icon: Settings,        label: 'System Settings',     id: 'settings' },
 ];
 
 interface DepartmentChairDashboardProps {
@@ -66,9 +64,6 @@ interface DepartmentChairDashboardProps {
   onLogout?: () => void;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-// Mirrors public.calendar_events exactly.
 export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
 export type CalendarAudience = 'all' | 'students' | 'faculty' | 'alumni';
 
@@ -76,33 +71,29 @@ export interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
-  event_date: string; // ISO timestamptz string (e.g., "YYYY-MM-DDTHH:mm:ss.sssZ")
+  event_date: string;
   end_date: string | null;
   location: string | null;
-  event_type: StandardEventType | string | null; // Allows standard or custom types
-  audience: CalendarAudience | string | null;   // Audience scoping flag
-  department_ids: string[] | null;              // uuid[] matching departments(id)
-  organizer_id: string | null;                  // references profiles(id)
-  department?: string | null;                   // Legacy string field (optional)
-  status: string | null;                        // e.g., 'upcoming' | 'completed'
-  posted_by_role: string | null;                // e.g., 'dean' | 'department_chair'
+  event_type: StandardEventType | string | null;
+  audience: CalendarAudience | string | null;
+  department_ids: string[] | null;
+  organizer_id: string | null;
+  department?: string | null;
+  status: string | null;
+  posted_by_role: string | null;
   created_at: string;
   updated_at: string;
 }
-// Mirrors public.profiles (role='student'|'faculty'|'alumni') joined with
-// that role's own profile table (student_profiles / faculty_profiles /
-// alumni_profiles). NOTE: profiles.status uses 'pending' / 'active' /
-// 'rejected' in the DB. The UI labels 'active' as "Approved" for
-// readability, but the value we read/write is always 'active'.
+
 type AccountRole = 'student' | 'faculty' | 'alumni';
 
 interface AccountApplicant {
-  id: string;              // profiles.id (uuid)
+  id: string;
   name: string;
   email: string;
-  idNumber: string;        // student_no / EMP-xxx / ALU-xxx depending on role — display only
+  idNumber: string;
   program: string;
-  detail: string;          // role-specific secondary line: year level (student), position (faculty), grad year (alumni)
+  detail: string;
   registeredAt: string;
   status: 'pending' | 'active' | 'rejected';
 }
@@ -122,10 +113,6 @@ export function DepartmentChairDashboard({
     }
   };
 
-  // Kuhaon ang userId, fullName, ug program gikan sa JWT token, susama sa
-  // Faculty Dashboard, para magamit sa Chair's own Reports (Accomplishment /
-  // Extension) tab, isip organizer_id sa calendar_events, ug para i-scope
-  // ang Student Approvals sa iyang kaugalingong program.
   const token = localStorage.getItem('token');
   const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
   const userId = decoded?.userId ?? '';
@@ -176,6 +163,7 @@ export function DepartmentChairDashboard({
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
           {activeMenuItem === 'approvals'   && <AccountApprovalsView departmentNames={departmentNames} />}
+          {activeMenuItem === 'settings'    && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
         </main>
       </div>
     </div>
@@ -241,6 +229,13 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
               <div className="font-medium text-gray-900">Add Department Event</div>
               <div className="text-sm text-gray-600">Schedule activities</div>
             </button>
+            <button
+              onClick={() => setActiveMenuItem('settings')}
+              className="w-full p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+            >
+              <div className="font-medium text-gray-900">System Settings</div>
+              <div className="text-sm text-gray-600">Manage account and preferences</div>
+            </button>
           </div>
         </div>
       </div>
@@ -251,8 +246,7 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
 }
 
 /* ─────────────────────────────────────────────
-   Department Calendar (full interactive, backed by
-   public.calendar_events via Supabase)
+   Department Calendar
 ───────────────────────────────────────────── */
 
 const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd-Math', 'BSEd-English'];
@@ -456,7 +450,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
@@ -479,9 +472,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       )}
 
-      {/* Calendar Grid */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Month nav */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
           <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
             <ChevronLeft className="w-5 h-5 text-gray-600" />
@@ -492,7 +483,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
           </button>
         </div>
 
-        {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-gray-100">
           {DAYS.map((d, i) => (
             <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -502,7 +492,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
           ))}
         </div>
 
-        {/* Day cells */}
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -536,7 +525,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                         {ev.title}
                       </div>
                     ))}
-                    {/* Mobile: colored dots */}
                     {dayEvents.length > 0 && (
                       <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
                         {dayEvents.slice(0, 3).map(ev => (
@@ -555,7 +543,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         )}
       </div>
 
-      {/* Upcoming / History Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex border-b border-gray-100">
           {(['upcoming', 'history'] as const).map(tab => (
@@ -611,7 +598,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       </div>
 
-      {/* Add Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
@@ -726,11 +712,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
   );
 }
 /* ─────────────────────────────────────────────
-   Account Approvals (Student / Faculty / Alumni)
-   — Real data: fetched from GET /api/accounts/:role
-   — Approve/Reject write via PATCH /api/accounts/:role/:id/status
-   — Batch approve via file is still UI-only (marked below), and only
-     applies to the currently selected role tab.
+   Account Approvals
 ───────────────────────────────────────────── */
 
 const ACCOUNTS_API_URL = 'http://localhost:5000/api/accounts';
@@ -753,7 +735,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
   const [confirmModal, setConfirmModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // ── Batch upload state ──
   const [showUploadModal, setShowUploadModal]   = useState(false);
   const [uploadedFile, setUploadedFile]         = useState<File | null>(null);
   const [uploadDragOver, setUploadDragOver]     = useState(false);
@@ -768,7 +749,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
   ];
   const ACCEPTED_EXT = ['.pdf', '.xls', '.xlsx'];
 
-  // ── Fetch real accounts from the backend, scoped to the active role tab ──
   const fetchAccounts = async () => {
     setLoading(true);
     setLoadError('');
@@ -813,7 +793,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
             status: p.status,
           };
         }
-        // alumni
         const rp = p.alumni_profiles;
         return {
           id: p.id,
@@ -865,10 +844,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
     if (file) validateFile(file);
   };
 
-  // NOTE: still UI-only. Wiring this to real matching means parsing the
-  // uploaded PDF/Excel on the backend, matching rows against `profiles`
-  // (filtered to the active role), and looping matched ids through the
-  // same PATCH /api/accounts/:role/:id/status route used below.
   const handleBatchApprove = () => {
     setBatchConfirmOpen(false);
     setUploadedFile(null);
@@ -877,7 +852,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
     setTimeout(() => setUploadSuccess(false), 4000);
   };
 
-  // ── Real approve/reject, backed by the PATCH endpoint ──
   const updateStatus = async (id: string, status: 'active' | 'rejected') => {
     setUpdatingId(id);
     const token = localStorage.getItem('token');
@@ -946,7 +920,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
 
   return (
     <div>
-      {/* Page Header */}
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Account Approvals</h1>
@@ -966,7 +939,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         </button>
       </div>
 
-      {/* Role Tabs */}
       <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit mb-6">
         {ROLE_TABS.map(t => (
           <button
@@ -995,7 +967,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* Summary Strip */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-6">
         {[
           { label: 'Pending',  value: counts.pending,  color: 'bg-amber-50 border-amber-200 text-amber-700' },
@@ -1009,7 +980,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         ))}
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1036,7 +1006,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
@@ -1118,7 +1087,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         )}
       </div>
 
-      {/* ── Batch Upload Modal ── */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
@@ -1132,7 +1100,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
               Upload a list of IDs or names. Accounts on the list that are currently pending will be approved all at once. Accepted formats: <span className="font-medium text-gray-700">PDF, Excel (.xls, .xlsx)</span>.
             </p>
 
-            {/* Drop Zone */}
             <div
               onDragOver={e => { e.preventDefault(); setUploadDragOver(true); }}
               onDragLeave={() => setUploadDragOver(false)}
@@ -1182,7 +1149,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
               </p>
             )}
 
-            {/* Info note */}
             <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
               <span className="font-semibold">Note:</span> The file should contain a column with IDs or full names matching registered {roleTab}. Unmatched entries will be skipped.
             </div>
@@ -1206,7 +1172,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* ── Batch Confirm Modal ── */}
       {batchConfirmOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -1237,7 +1202,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* ── Individual Confirm Modal ── */}
       {confirmModal && (() => {
         const account = accounts.find(a => a.id === confirmModal.id)!;
         const isApprove = confirmModal.action === 'approve';
@@ -1286,7 +1250,7 @@ function FacultyMonitoring() {
   );
 }
 
-// ─── My Drafts (shared: works for both Chair and Faculty) ────────────────────
+// ─── My Drafts ────────────────────────────────────────────
 interface DraftSummary {
   id: string;
   quarter: string;
@@ -1382,9 +1346,7 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
   );
 }
 
-/* Chair's own Reports (Accomplishment / Extension)
-   — separate from "Reports Monitoring" below, which
-   is for reviewing faculty submissions.*/
+/* Chair's own Reports */
 function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
   const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension'>('drafts');
 
@@ -1558,10 +1520,6 @@ function AcademicRecordsView() {
 /* ─────────────────────────────────────────────
    Announcements
 ───────────────────────────────────────────── */
-// Mirrors public.announcements. "Scheduled Date" in the UI maps to
-// expires_at — the schema has no separate "date this announcement is
-// about" column, so expires_at (closest available fit) drives the
-// Upcoming/Past badge instead.
 interface Announcement {
   id: string;
   title: string;
@@ -1590,27 +1548,27 @@ function AnnouncementsView() {
   const [formError, setFormError] = useState('');
 
   const fetchAnnouncements = async () => {
-  setLoading(true);
-  setLoadError('');
-  try {
-    const token = localStorage.getItem('token');
-    const res = await fetch(ANNOUNCEMENTS_API_URL, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(ANNOUNCEMENTS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
+        setAnnouncements([]);
+        return;
+      }
+      const data = await res.json();
+      setAnnouncements((data ?? []) as Announcement[]);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
       setAnnouncements([]);
-      return;
     }
-    const data = await res.json();
-    setAnnouncements((data ?? []) as Announcement[]);
-  } catch {
-    setLoadError('Could not reach the server. Please try again.');
-    setAnnouncements([]);
-  }
-  setLoading(false);
-};
+    setLoading(false);
+  };
   useEffect(() => {
     fetchAnnouncements();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1701,7 +1659,6 @@ function AnnouncementsView() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Announcements</h1>
@@ -1723,7 +1680,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* List */}
       {loading ? (
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" />
@@ -1741,9 +1697,7 @@ function AnnouncementsView() {
               key={ann.id}
               className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
             >
-              {/* Card top row */}
               <div className="flex items-start gap-4 p-4 sm:p-5">
-                {/* Blue accent bar */}
                 <div className="w-1 self-stretch rounded-full bg-[#1E3A8A] flex-shrink-0" />
 
                 <div className="flex-1 min-w-0">
@@ -1766,7 +1720,6 @@ function AnnouncementsView() {
                   )}
                 </div>
 
-                {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)}
@@ -1786,7 +1739,6 @@ function AnnouncementsView() {
                 </div>
               </div>
 
-              {/* Expandable description */}
               {expandedId === ann.id && (
                 <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50">
                   <p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p>
@@ -1797,7 +1749,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* ── Create Announcement Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
@@ -1818,7 +1769,6 @@ function AnnouncementsView() {
                 </div>
               )}
 
-              {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Title <span className="text-red-500">*</span>
@@ -1832,7 +1782,6 @@ function AnnouncementsView() {
                 />
               </div>
 
-              {/* Scheduled Date */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Scheduled Date <span className="text-red-500">*</span>
@@ -1846,7 +1795,6 @@ function AnnouncementsView() {
                 <p className="text-xs text-gray-400 mt-1">This is the date the announcement is about, or the event date.</p>
               </div>
 
-              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description <span className="text-red-500">*</span>
@@ -1882,7 +1830,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* ── Delete Confirm Modal ── */}
       {deleteConfirm !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -1910,6 +1857,321 @@ function AnnouncementsView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   System Settings (Department Chair)
+───────────────────────────────────────────── */
+const CHAIR_NOTIF_DEFAULTS = {
+  facultyReports: true,
+  pendingReports: true,
+  studentApprovals: true,
+  departmentActivities: true,
+  announcements: true,
+  systemNotifs: true,
+};
+
+const CHAIR_SETTINGS_TABS = [
+  { id: 'profile',       label: 'Profile Information', icon: User },
+  { id: 'security',      label: 'Password & Security',  icon: KeyRound },
+  { id: 'notifications', label: 'Notifications',        icon: Bell },
+  { id: 'department',    label: 'Department Settings',  icon: Users },
+  { id: 'account',       label: 'Account Actions',       icon: ArrowLeft },
+] as const;
+
+type ChairSettingsTabId = typeof CHAIR_SETTINGS_TABS[number]['id'];
+
+function ChairToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between py-3.5 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <button
+        onClick={onChange}
+        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${checked ? 'translate-x-5' : ''}`} />
+      </button>
+    </div>
+  );
+}
+
+function ChairSystemSettings({
+  userName,
+  departmentNames,
+  onLogout,
+}: {
+  userName: string;
+  departmentNames: string[];
+  onLogout?: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<ChairSettingsTabId>('profile');
+
+  const [fullName, setFullName] = useState(userName);
+  const [email, setEmail] = useState('');
+  const [positionRole] = useState('Department Chair');
+  const [department, setDepartment] = useState(departmentNames.join(', '));
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+
+  const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
+  const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
+    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const [departmentName, setDepartmentName] = useState(departmentNames[0] ?? '');
+  const [program, setProgram] = useState('');
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [semester, setSemester] = useState('Second Semester');
+
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveChanges = async () => {
+    setSaving(true);
+    try {
+      await new Promise(res => setTimeout(res, 600));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {};
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <button
+            onClick={handleCancel}
+            className="px-4 sm:px-5 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving}
+            className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
+          {CHAIR_SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0 md:h-[560px] overflow-y-auto">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                  <input
+                    type="text"
+                    value={positionRole}
+                    disabled
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+                  Edit Profile
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+
+              <div className="space-y-4 max-w-md mb-6">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+                  Change Password
+                </button>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <ChairToggleRow
+                  label="Two-Factor Authentication"
+                  checked={twoFactorEnabled}
+                  onChange={() => setTwoFactorEnabled(v => !v)}
+                />
+              </div>
+
+              <div className="border-t border-gray-100 pt-5 mt-1">
+                <button className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                  Log Out of All Devices
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+
+              <div>
+                <ChairToggleRow label="Faculty Report Submissions" checked={notifs.facultyReports} onChange={() => toggleNotif('facultyReports')} />
+                <ChairToggleRow label="Pending Reports" checked={notifs.pendingReports} onChange={() => toggleNotif('pendingReports')} />
+                <ChairToggleRow label="Student Registration/Approval" checked={notifs.studentApprovals} onChange={() => toggleNotif('studentApprovals')} />
+                <ChairToggleRow label="Department Activities" checked={notifs.departmentActivities} onChange={() => toggleNotif('departmentActivities')} />
+                <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
+                <ChairToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'department' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Department Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure your department's current details.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department Name</label>
+                  <input
+                    type="text"
+                    value={departmentName}
+                    onChange={(e) => setDepartmentName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
+                  <input
+                    type="text"
+                    value={program}
+                    onChange={(e) => setProgram(e.target.value)}
+                    placeholder="e.g. BEEd, BSEd-Math"
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <input
+                    type="text"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option>First Semester</option>
+                    <option>Second Semester</option>
+                    <option>Summer</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
+
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Log Out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
