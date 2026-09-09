@@ -146,14 +146,30 @@ export function AlumniDashboard({
     }
   };
 
-  const fetchProfile = async () => {
+      const fetchProfile = async () => {
     setProfileLoading(true);
     try {
-      const { data } = await supabase
+      const userId = localStorage.getItem('userId');
+      console.log('userId from localStorage:', userId);
+
+      if (!userId) {
+        console.error('No userId found in localStorage.');
+        return;
+      }
+
+      const { data, error } = await supabase
         .from('profiles')
         .select('full_name, email')
-        .eq('id_number', idNumber)
+        .eq('id', userId)
         .maybeSingle();
+
+      console.log('Profile fetch result:', { data, error });
+
+      if (error) {
+        console.error('Failed to load profile:', error);
+        return;
+      }
+
       if (data) {
         setProfile(data);
         setUserEmail(data.email ?? '');
@@ -166,8 +182,8 @@ export function AlumniDashboard({
   };
 
   useEffect(() => {
-    if (idNumber) fetchProfile();
-  }, [idNumber]);
+    fetchProfile();
+  }, []);
   
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
@@ -2088,18 +2104,24 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
 
   const [fullNameInput, setFullNameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
+  const [idNumberInput, setIdNumberInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
+  
+     useEffect(() => {
     if (profile?.full_name) {
       setFullNameInput(profile.full_name);
     }
   }, [profile?.full_name]);
 
-  useEffect(() => {
+   useEffect(() => {
     setEmailInput(userEmail);
   }, [userEmail]);
+
+  useEffect(() => {
+    setIdNumberInput(idNumber);
+  }, [idNumber]);
 
   const handleSaveChanges = async () => {
     const trimmedName = fullNameInput.trim();
@@ -2117,11 +2139,14 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
     setSaving(true);
     setSaveMessage(null);
 
-    try {
-      const { error } = await supabase
+       try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) throw new Error('No userId found.');
+
+           const { error } = await supabase
         .from('profiles')
-        .update({ full_name: trimmedName, email: trimmedEmail })
-        .eq('id_number', idNumber);
+        .update({ full_name: trimmedName, email: trimmedEmail, id_number: idNumberInput.trim() })
+        .eq('id', userId);
 
       if (error) throw error;
       setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
@@ -2134,9 +2159,10 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
     }
   };
 
-  const handleCancel = () => {
+   const handleCancel = () => {
     setFullNameInput(profile?.full_name ?? '');
     setEmailInput(userEmail);
+    setIdNumberInput(idNumber);
     setSaveMessage(null);
   };
 
@@ -2153,21 +2179,32 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
         <div className="mb-8">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
 
-          {loading ? (
+                    {loading ? (
             <div className="animate-pulse space-y-4">
               <div className="h-10 bg-gray-100 rounded-lg" />
               <div className="h-10 bg-gray-100 rounded-lg" />
             </div>
           ) : (
             <>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <input
-                  type="text"
-                  value={fullNameInput}
-                  onChange={(e) => setFullNameInput(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    value={fullNameInput}
+                    onChange={(e) => setFullNameInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Alumni ID</label>
+                  <input
+                    type="text"
+                    value={idNumberInput}
+                    onChange={(e) => setIdNumberInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
