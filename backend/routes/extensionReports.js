@@ -36,6 +36,28 @@ router.get('/my-draft', authenticate, async (req, res) => {
   return res.json(data ?? null);
 });
 
+// GET /api/extension-reports/mine
+// Fixed: queries submitted_by to match the schema
+router.get('/mine', authenticate, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('extension_reports')
+      .select('*')
+      .eq('submitted_by', req.user.userId)
+      .neq('status', 'draft')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('extensionReports /mine error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    return res.json(data || []);
+  } catch (err) {
+    console.error('extensionReports /mine catch:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/extension-reports?status=submitted
 // Dean-only. Lists reports college-wide, optionally filtered by status.
 router.get('/', authenticate, requireDean, async (req, res) => {

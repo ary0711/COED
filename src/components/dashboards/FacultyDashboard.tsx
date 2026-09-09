@@ -38,6 +38,8 @@ import { useState, useEffect } from 'react';
 import { AccomplishmentReport } from './AccomplishmentReport';
 import { ExtensionReport } from './ExtensionReport';
 import { DeansListGenerator } from './DeansListGenerator';
+import { WfhReport } from '../WfhReport'; 
+import { ReportTrackerPanel } from '../ReportTrackerPanel';
 
 const facultyMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',          id: 'dashboard' },
@@ -1899,8 +1901,9 @@ export default function FacultyAchievements() {
 // ─── My Drafts ───
 interface DraftSummary {
   id: string;
-  quarter: string;
-  year: string;
+  quarter?: string;
+  year?: string;
+  reporting_period?: string;
   progress: number;
   updated_at: string;
   created_at: string;
@@ -1908,14 +1911,16 @@ interface DraftSummary {
 
 const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
 const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
+const WFH_DRAFTS_URL = 'http://localhost:5000/api/wfh-reports';
 
 function getDraftsToken() {
   return localStorage.getItem('token');
 }
 
-function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
+function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension' | 'wfh') => void }) {
   const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
   const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
+  const [wfhDraft, setWfhDraft] = useState<DraftSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -1924,15 +1929,22 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
     setLoadError('');
     try {
       const token = getDraftsToken();
-      const [accRes, extRes] = await Promise.all([
+      const [accRes, extRes, wfhRes] = await Promise.all([
         fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${WFH_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
+
       let hadError = false;
       if (accRes.ok) setAccDraft(await accRes.json());
       else hadError = true;
+
       if (extRes.ok) setExtDraft(await extRes.json());
       else hadError = true;
+
+      if (wfhRes.ok) setWfhDraft(await wfhRes.json());
+      else hadError = true;
+
       if (hadError) setLoadError('Failed to load one or more drafts.');
     } catch {
       setLoadError('Could not reach the server. Please try again.');
@@ -1941,15 +1953,24 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
     }
   };
 
-  useEffect(() => { fetchDrafts(); }, []);
+  useEffect(() => {
+    fetchDrafts();
+  }, []);
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    new Date(iso).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 
   const cards = [
-    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
-    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
-  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
+    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft, subtitle: `${accDraft.quarter || ''} Quarter, ${accDraft.year || ''}` } : null,
+    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft, subtitle: `${extDraft.quarter || ''} Quarter, ${extDraft.year || ''}` } : null,
+    wfhDraft ? { type: 'wfh' as const, label: 'WFH Accomplishment Report', draft: wfhDraft, subtitle: wfhDraft.reporting_period || 'Work-From-Home' } : null,
+  ].filter(Boolean) as { type: 'accomplishment' | 'extension' | 'wfh'; label: string; draft: DraftSummary; subtitle: string }[];
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
@@ -1957,7 +1978,9 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
       <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
       )}
 
       {loading ? (
@@ -1971,11 +1994,16 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
         </div>
       ) : (
         <div className="space-y-3">
-          {cards.map(({ type, label, draft }) => (
-            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+          {cards.map(({ type, label, draft, subtitle }) => (
+            <div
+              key={type}
+              className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors"
+            >
               <div className="min-w-0">
                 <div className="font-semibold text-gray-900 text-sm">{label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {subtitle} · {draft.progress ?? 0}% complete
+                </div>
                 <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
               </div>
               <button
@@ -1994,37 +2022,71 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
 
 // ====================== 5.4 REPORTS ======================
 function ReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension' | 'monitoring'>('drafts');
+  const [tab, setTab] = useState<'drafts' | 'track' | 'accomplishment' | 'extension' | 'wfh'>('drafts');
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
-      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        <button onClick={() => setTab('drafts')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setTab('drafts')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+            tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
           My Drafts
         </button>
-        <button onClick={() => setTab('accomplishment')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+
+        <button
+          type="button"
+          onClick={() => setTab('track')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+            tab === 'track' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Track Status
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab('accomplishment')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+            tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
           Accomplishment Report
         </button>
-        <button onClick={() => setTab('extension')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}>
+
+        <button
+          type="button"
+          onClick={() => setTab('extension')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+            tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
           Extension Report
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab('wfh')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+            tab === 'wfh' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          WFH Report
         </button>
       </div>
 
-      {tab === 'drafts' && (
-        <MyDraftsPanel onEdit={(type) => setTab(type)} />
-      )}
-
-      {tab === 'accomplishment' && (
-        <AccomplishmentReport userId={userId} userName={userName} />
-      )}
-
-      {tab === 'extension' && (
-        <ExtensionReport userId={userId} userName={userName} />
-      )}
+      {/* Strict Tab Views */}
+      {tab === 'drafts' && <MyDraftsPanel onEdit={(type) => setTab(type as any)} />}
+      {tab === 'track' && <ReportTrackerPanel />}
+      {tab === 'accomplishment' && <AccomplishmentReport userId={userId} userName={userName} />}
+      {tab === 'extension' && <ExtensionReport userId={userId} userName={userName} />}
+      {tab === 'wfh' && <WfhReport userId={userId} userName={userName} />}
     </div>
   );
 }
