@@ -10,17 +10,27 @@ const authenticate = (req, res, next) => {
 
   const token = authHeader.split(' ')[1];
 
-  try {
-    // Debug: check if the secret is actually loaded from .env
-    if (!process.env.JWT_SECRET) {
-      console.error('CRITICAL: process.env.JWT_SECRET is undefined or missing in .env!');
-    }
+  if (!token || token === 'null' || token === 'undefined') {
+    return res.status(401).json({ error: 'Invalid or missing token' });
+  }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('CRITICAL: process.env.JWT_SECRET is undefined in .env!');
+    return res.status(500).json({ error: 'Authentication secret not configured.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret);
     req.user = decoded;
     next();
   } catch (err) {
-    console.error('JWT Verification Failed:', err.name, '-', err.message);
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Session expired. Please log in again.', code: 'TOKEN_EXPIRED' });
+    }
+    if (err.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Invalid token. Please log in again.', code: 'TOKEN_INVALID' });
+    }
     return res.status(401).json({ 
       error: 'Invalid or expired token',
       details: err.message 

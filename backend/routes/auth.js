@@ -48,11 +48,7 @@ router.post('/register', async (req, res) => {
       graduation_year,
     } = req.body;
 
-    // =====================================================
-    // PHASE 1: COMPREHENSIVE PRE-VALIDATION (ZERO DB WRITES)
-    // =====================================================
-
-    // 1. Required field verification
+    // Phase 1: Pre-validation
     if (!username || !password || !role || !full_name || !id_number || !email) {
       return res.status(400).json({
         success: false,
@@ -67,7 +63,6 @@ router.post('/register', async (req, res) => {
     const programCode = department?.trim() || null;
     const accountStatus = status || 'pending';
 
-    // 2. Role validation
     const allowedRoles = ['student', 'faculty', 'staff', 'alumni', 'dean', 'admin'];
     if (!allowedRoles.includes(role.toLowerCase())) {
       return res.status(400).json({
@@ -76,7 +71,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 3. ID number format & length validation
     if (!/^\d+$/.test(trimmedIdNumber)) {
       return res.status(400).json({
         success: false,
@@ -103,7 +97,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 4. Alumni graduation year validation
     let parsedGraduationYear = null;
     if (role === 'alumni') {
       if (!graduation_year) {
@@ -122,7 +115,6 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // 5. Password complexity validation
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
     if (!passwordRegex.test(password)) {
       return res.status(400).json({
@@ -131,7 +123,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 6. Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
@@ -140,14 +131,12 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 7. Resolve department_id using direct mapping & database fallback
     let resolvedDepartmentId = null;
     if (programCode) {
       const mapped = PROGRAM_TO_DEPARTMENT[programCode];
       if (mapped) {
         resolvedDepartmentId = mapped.id;
       } else {
-        // Fallback query if code is direct UUID or full name
         const { data: deptRow } = await supabase
           .from('departments')
           .select('id')
@@ -174,7 +163,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 8. Pre-flight check for duplicates
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
@@ -205,11 +193,7 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ success: false, error: 'This ID number is already registered.' });
     }
 
-    // =====================================================
-    // PHASE 2: ATOMIC WRITES (WITH COMPENSATING ROLLBACK)
-    // =====================================================
-
-    // Step A: Create Auth User
+    // Phase 2: Atomic writes
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: normalizedEmail,
       password: password,
@@ -224,7 +208,6 @@ router.post('/register', async (req, res) => {
     }
     createdAuthUserId = authData.user.id;
 
-    // Step B: Insert into public.users
     const password_hash = await bcrypt.hash(password, 10);
     const { data: createdUser, error: userError } = await supabase
       .from('users')
@@ -245,7 +228,6 @@ router.post('/register', async (req, res) => {
     }
     createdPublicUserId = createdUser.id;
 
-    // Step C: Insert into public.profiles
     const { data: createdProfile, error: profileError } = await supabase
       .from('profiles')
       .insert([
@@ -268,7 +250,6 @@ router.post('/register', async (req, res) => {
     }
     createdProfileId = createdProfile.id;
 
-    // Step D: Insert into Role-Specific Sub-Profile
     if (role === 'student') {
       createdRoleProfileTable = 'student_profiles';
       const { error: studentErr } = await supabase
@@ -320,7 +301,6 @@ router.post('/register', async (req, res) => {
       if (alumniErr) throw new Error(`Failed to create alumni profile: ${alumniErr.message}`);
     }
 
-    // Success response
     return res.status(201).json({
       success: true,
       message: 'Account created successfully! Please wait for department approval.',
@@ -432,6 +412,7 @@ router.post('/login', async (req, res) => {
       departmentNames = (depRows ?? []).map((d) => d.name);
     }
 
+    // Extended expiration to 7 days to prevent session expiration issues during development
     const token = jwt.sign(
       {
         userId: user.id,
@@ -446,7 +427,7 @@ router.post('/login', async (req, res) => {
         departmentNames,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: '7d' }
     );
 
     return res.json({
@@ -466,6 +447,30 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// =========================================================
+// GET CURRENT AUTHENTICATED USER / PROFILE
+// =========================================================
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', req.user.userId)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.json({
+      user: req.user,
+      profile: profile || null,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

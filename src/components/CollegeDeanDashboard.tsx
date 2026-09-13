@@ -5423,6 +5423,7 @@ style={{
 // ─── Consolidated Reports & Analytics ─────────────────────────────────────────
 const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
 const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
+const WFH_API_URL = 'http://localhost:5000/api/wfh-reports';
 const USERS_API_URL = 'http://localhost:5000/api/auth/users';
 
 interface AccomplishmentReportRow {
@@ -5459,11 +5460,35 @@ interface ExtensionReportRow {
   rows?: any[];
 }
 
+interface WfhReportRow {
+  id: string;
+  user_id: string;
+  name?: string;
+  reporting_period?: string;
+  position_rank?: string;
+  college_office?: string;
+  program_unit?: string;
+  admin_designation?: string;
+  working_hours?: string;
+  daily_accomplishments?: { date: string; activities: string; output: string }[];
+  supporting_docs?: Record<string, boolean>;
+  other_docs_specify?: string;
+  photos?: { url: string; caption?: string }[];
+  prepared_by_name?: string;
+  verified_by_name?: string;
+  noted_by_name?: string;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  dean_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ConsolidatedReportRow {
   profile: Profile & { program?: string | null };
   departmentName: string;
   accomplishmentReport: AccomplishmentReportRow | null;
   extensionReport: ExtensionReportRow | null;
+  wfhReport: WfhReportRow | null;
   effectiveStatus: 'not_started' | 'submitted' | 'approved' | 'rejected';
   effectiveProgress: number;
   lastUpdated: string | null;
@@ -5527,14 +5552,14 @@ function ReportsAnalytics() {
   const [remindingId, setRemindingId] = useState<string | null>(null);
 
   const [selectedReport, setSelectedReport] = useState<{
-    type: 'accomplishment' | 'extension';
-    report: AccomplishmentReportRow | ExtensionReportRow;
+    type: 'accomplishment' | 'extension' | 'wfh';
+    report: AccomplishmentReportRow | ExtensionReportRow | WfhReportRow;
     profile: Profile;
   } | null>(null);
 
   const [rejectFor, setRejectFor] = useState<{
-    type: 'accomplishment' | 'extension';
-    report: AccomplishmentReportRow | ExtensionReportRow;
+    type: 'accomplishment' | 'extension' | 'wfh';
+    report: AccomplishmentReportRow | ExtensionReportRow | WfhReportRow;
   } | null>(null);
   const [remarksInput, setRemarksInput] = useState('');
   const [actionId, setActionId] = useState<string | null>(null);
@@ -5593,13 +5618,16 @@ function ReportsAnalytics() {
         personnelList = profiles || [];
       }
 
-      const [accRes, extRes] = await Promise.all([
+      // Fetch Accomplishment, Extension, and WFH in parallel
+      const [accRes, extRes, wfhRes] = await Promise.all([
         fetch(ACCOMPLISHMENT_API_URL, { headers }).catch(() => null),
         fetch(EXTENSION_API_URL, { headers }).catch(() => null),
+        fetch(WFH_API_URL, { headers }).catch(() => null),
       ]);
 
       let accomplishmentList: AccomplishmentReportRow[] = [];
       let extensionList: ExtensionReportRow[] = [];
+      let wfhList: WfhReportRow[] = [];
 
       if (accRes && accRes.ok) {
         const data = await accRes.json();
@@ -5625,6 +5653,17 @@ function ReportsAnalytics() {
         extensionList = (dbExt as any) ?? [];
       }
 
+      if (wfhRes && wfhRes.ok) {
+        const data = await wfhRes.json();
+        wfhList = Array.isArray(data) ? data : [];
+      } else {
+        const { data: dbWfh } = await supabase
+          .from('wfh_reports')
+          .select('*')
+          .neq('status', 'draft');
+        wfhList = (dbWfh as any) ?? [];
+      }
+
       const accMap = new Map(
         accomplishmentList
           .filter((r) => r.quarter === quarter && String(r.year) === String(year) && r.status !== 'draft')
@@ -5637,21 +5676,33 @@ function ReportsAnalytics() {
           .map((r) => [r.submitted_by, r])
       );
 
+      // WFH mapped by user_id
+      const wfhMap = new Map(
+        wfhList
+          .filter((r) => r.status !== 'draft')
+          .map((r) => [r.user_id, r])
+      );
+
       const consolidated: ConsolidatedReportRow[] = personnelList.map((p) => {
         const departmentName = p.department || p.program || 'General';
         const acc = accMap.get(p.id) ?? null;
         const ext = extMap.get(p.id) ?? null;
+        const wfh = wfhMap.get(p.id) ?? null;
 
         let effectiveStatus: ConsolidatedReportRow['effectiveStatus'] = 'not_started';
         let progress = 0;
 
-        if (acc || ext) {
-          const statuses = [acc?.status, ext?.status].filter(Boolean);
+        if (acc || ext || wfh) {
+          const statuses = [acc?.status, ext?.status, wfh?.status].filter(Boolean);
           if (statuses.includes('submitted')) effectiveStatus = 'submitted';
           else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
           else if (statuses.includes('approved')) effectiveStatus = 'approved';
 
-          const validProgress = [acc?.progress, ext?.progress].filter((v) => typeof v === 'number') as number[];
+          const validProgress: number[] = [];
+          if (typeof acc?.progress === 'number') validProgress.push(acc.progress);
+          if (typeof ext?.progress === 'number') validProgress.push(ext.progress);
+          if (wfh) validProgress.push(wfh.status === 'approved' ? 100 : 75);
+
           progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
         }
 
@@ -5660,9 +5711,10 @@ function ReportsAnalytics() {
           departmentName,
           accomplishmentReport: acc,
           extensionReport: ext,
+          wfhReport: wfh,
           effectiveStatus,
           effectiveProgress: progress,
-          lastUpdated: acc?.updated_at || ext?.updated_at || null,
+          lastUpdated: acc?.updated_at || ext?.updated_at || wfh?.updated_at || null,
         };
       });
 
@@ -5686,6 +5738,7 @@ function ReportsAnalytics() {
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accomplishment_reports' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'extension_reports' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wfh_reports' }, () => fetchData())
       .subscribe();
 
     return () => {
@@ -5694,13 +5747,19 @@ function ReportsAnalytics() {
   }, [fetchData]);
 
   const decideReport = async (
-    type: 'accomplishment' | 'extension',
+    type: 'accomplishment' | 'extension' | 'wfh',
     id: string,
     status: 'approved' | 'rejected',
     remarks?: string
   ) => {
     setActionId(id);
-    const targetUrl = type === 'accomplishment' ? ACCOMPLISHMENT_API_URL : EXTENSION_API_URL;
+    const targetUrl =
+      type === 'accomplishment'
+        ? ACCOMPLISHMENT_API_URL
+        : type === 'extension'
+        ? EXTENSION_API_URL
+        : WFH_API_URL;
+
     try {
       const res = await fetch(`${targetUrl}/${id}/status`, {
         method: 'PATCH',
@@ -5746,16 +5805,8 @@ function ReportsAnalytics() {
       if (error) throw error;
 
       await Promise.all([
-        notifyRole(
-          'faculty',
-          title,
-          `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
-        ),
-        notifyRole(
-          'department_chair',
-          title,
-          `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
-        ),
+        notifyRole('faculty', title, `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`),
+        notifyRole('department_chair', title, `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`),
       ]);
 
       await fetchDeadline();
@@ -5780,16 +5831,8 @@ function ReportsAnalytics() {
         : '';
 
       await Promise.all([
-        notifyRole(
-          'faculty',
-          `Reminder: ${quarterSelect} Quarterly Report`,
-          `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`
-        ),
-        notifyRole(
-          'department_chair',
-          `Reminder: ${quarterSelect} Quarterly Report`,
-          `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`
-        ),
+        notifyRole('faculty', `Reminder: ${quarterSelect} Quarterly Report`, `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`),
+        notifyRole('department_chair', `Reminder: ${quarterSelect} Quarterly Report`, `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`),
       ]);
       showInfo('Reminder Sent', `Sent a reminder to ${pending.length} pending academic personnel.`);
     } catch (err: any) {
@@ -5846,9 +5889,6 @@ function ReportsAnalytics() {
   const overallProgress = rows.length
     ? Math.round(rows.reduce((sum, r) => sum + r.effectiveProgress, 0) / rows.length)
     : 0;
-
-  const formatDateTime = (dateStr: string) =>
-    new Date(dateStr).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
   return (
     <div>
@@ -5926,12 +5966,6 @@ function ReportsAnalytics() {
             {sendingBulk ? 'Sending...' : 'Send Bulk Reminder'}
           </button>
         </div>
-
-        {deadline && (
-          <p className="text-xs text-gray-500 mt-2.5">
-            Current deadline: <span className="font-semibold text-gray-700">{formatDateTime(deadline.due_date)}</span>
-          </p>
-        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
@@ -5985,10 +6019,7 @@ function ReportsAnalytics() {
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="flex flex-col items-center gap-3">
-              <div
-                className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin"
-                style={{ borderWidth: 3, borderStyle: 'solid' }}
-              />
+              <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
               <p className="text-sm text-gray-500">Loading quarterly reports...</p>
             </div>
           </div>
@@ -5996,19 +6027,18 @@ function ReportsAnalytics() {
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
             <p className="font-medium">No reports or personnel found</p>
-            <p className="text-sm mt-1">Try adjusting your filters</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px]">
+            <table className="w-full min-w-[850px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Personnel</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submissions</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Personnel</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Submissions</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Progress</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -6020,52 +6050,50 @@ function ReportsAnalytics() {
                     <tr key={row.profile.id} className="hover:bg-blue-50/30 transition-colors">
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <div
-                            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
-                            style={{ background: '#D1FAE5', color: '#065F46' }}
-                          >
+                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: '#D1FAE5', color: '#065F46' }}>
                             {(row.profile.full_name || 'U').charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-semibold text-gray-900 text-sm truncate max-w-[140px] sm:max-w-none">
-                              {row.profile.full_name}
-                            </div>
-                            <div className="text-xs text-gray-400 truncate max-w-[140px] sm:max-w-none">
-                              {row.departmentName}
-                            </div>
+                            <div className="font-semibold text-gray-900 text-sm truncate">{row.profile.full_name}</div>
+                            <div className="text-xs text-gray-400 truncate">{row.departmentName}</div>
                           </div>
                         </div>
                       </td>
 
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                            isChair ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${isChair ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'}`}>
                           {isChair ? 'Department Chair' : 'Faculty'}
                         </span>
                       </td>
 
+                      {/* Submissions Column with Accomplishment, Extension, and WFH Badges */}
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {row.accomplishmentReport ? (
+                          {row.accomplishmentReport && (
                             <button
                               onClick={() => setSelectedReport({ type: 'accomplishment', report: row.accomplishmentReport!, profile: row.profile })}
                               className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1"
                             >
                               <FileText className="w-3 h-3" /> Accomplishment
                             </button>
-                          ) : null}
-                          {row.extensionReport ? (
+                          )}
+                          {row.extensionReport && (
                             <button
                               onClick={() => setSelectedReport({ type: 'extension', report: row.extensionReport!, profile: row.profile })}
                               className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1"
                             >
                               <FileText className="w-3 h-3" /> Extension
                             </button>
-                          ) : null}
-                          {!row.accomplishmentReport && !row.extensionReport && (
+                          )}
+                          {row.wfhReport && (
+                            <button
+                              onClick={() => setSelectedReport({ type: 'wfh', report: row.wfhReport!, profile: row.profile })}
+                              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 flex items-center gap-1"
+                            >
+                              <FileText className="w-3 h-3" /> WFH
+                            </button>
+                          )}
+                          {!row.accomplishmentReport && !row.extensionReport && !row.wfhReport && (
                             <span className="text-xs text-gray-400">—</span>
                           )}
                         </div>
@@ -6078,59 +6106,44 @@ function ReportsAnalytics() {
                               className="h-full rounded-full transition-all"
                               style={{
                                 width: `${row.effectiveProgress}%`,
-                                backgroundColor:
-                                  row.effectiveStatus === 'approved'
-                                    ? '#10B981'
-                                    : row.effectiveProgress > 0
-                                    ? '#F59E0B'
-                                    : '#D1D5DB',
+                                backgroundColor: row.effectiveStatus === 'approved' ? '#10B981' : row.effectiveProgress > 0 ? '#F59E0B' : '#D1D5DB',
                               }}
                             />
                           </div>
-                          <span className="text-xs font-semibold text-gray-600 w-8 text-right">
-                            {row.effectiveProgress}%
-                          </span>
+                          <span className="text-xs font-semibold text-gray-600 w-8 text-right">{row.effectiveProgress}%</span>
                         </div>
                       </td>
 
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
-                        <span
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
-                          style={{ background: cfg.bg, color: cfg.color }}
-                        >
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>
                           {cfg.label}
                         </span>
                       </td>
 
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center justify-center gap-1">
-                          {row.accomplishmentReport || row.extensionReport ? (
+                          {row.accomplishmentReport || row.extensionReport || row.wfhReport ? (
                             <button
-                              onClick={() =>
-                                setSelectedReport(
-                                  row.accomplishmentReport
-                                    ? { type: 'accomplishment', report: row.accomplishmentReport, profile: row.profile }
-                                    : { type: 'extension', report: row.extensionReport!, profile: row.profile }
-                                )
-                              }
+                              onClick={() => {
+                                if (row.accomplishmentReport) {
+                                  setSelectedReport({ type: 'accomplishment', report: row.accomplishmentReport, profile: row.profile });
+                                } else if (row.extensionReport) {
+                                  setSelectedReport({ type: 'extension', report: row.extensionReport, profile: row.profile });
+                                } else if (row.wfhReport) {
+                                  setSelectedReport({ type: 'wfh', report: row.wfhReport, profile: row.profile });
+                                }
+                              }}
                               className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                              title="Review submission details"
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>View</span>
+                              <Eye className="w-3.5 h-3.5" /> View
                             </button>
                           ) : (
                             <button
                               onClick={() => sendIndividualReminder(row)}
                               disabled={remindingId === row.profile.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-60"
-                              title="Send reminder notice"
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
                             >
-                              {remindingId === row.profile.id ? (
-                                <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <Megaphone className="w-3.5 h-3.5" />
-                              )}
+                              {remindingId === row.profile.id ? <div className="w-3 h-3 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />}
                               <span>{remindingId === row.profile.id ? 'Sending…' : 'Remind'}</span>
                             </button>
                           )}
@@ -6145,17 +6158,20 @@ function ReportsAnalytics() {
         )}
       </div>
 
+      {/* Detail Review Modal (Accomplishment / Extension / WFH) */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
               <div>
                 <h3 className="font-bold text-gray-900 capitalize">
-                  {selectedReport.type} Report — {selectedReport.profile.full_name}
+                  {selectedReport.type === 'wfh' ? 'Work-From-Home (WFH)' : selectedReport.type} Report — {selectedReport.profile.full_name}
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedReport.report.quarter} Quarter, {selectedReport.report.year} · Status:{' '}
-                  <span className="font-semibold uppercase">{selectedReport.report.status}</span>
+                  {selectedReport.type === 'wfh'
+                    ? (selectedReport.report as WfhReportRow).reporting_period || 'Reporting Period'
+                    : `${(selectedReport.report as any).quarter} Quarter, ${(selectedReport.report as any).year}`}{' '}
+                  · Status: <span className="font-semibold uppercase">{selectedReport.report.status}</span>
                 </p>
               </div>
               <button onClick={() => setSelectedReport(null)} className="p-2 hover:bg-gray-100 rounded-xl">
@@ -6170,9 +6186,71 @@ function ReportsAnalytics() {
                 </div>
               )}
 
-              {selectedReport.type === 'extension' ? (
+              {/* View 1: WFH Report */}
+              {selectedReport.type === 'wfh' ? (
+                <div className="space-y-4">
+                  {(() => {
+                    const wfh = selectedReport.report as WfhReportRow;
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200 text-xs">
+                          <p><strong>Faculty:</strong> {wfh.name || selectedReport.profile.full_name}</p>
+                          <p><strong>Rank:</strong> {wfh.position_rank || 'N/A'}</p>
+                          <p><strong>Program / Unit:</strong> {wfh.program_unit || selectedReport.profile.department || 'N/A'}</p>
+                          <p><strong>College / Office:</strong> {wfh.college_office || 'N/A'}</p>
+                          <p className="col-span-2"><strong>Working Hours:</strong> {wfh.working_hours || 'N/A'}</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-sm text-gray-800 mb-2">I. Daily Accomplishments</p>
+                          <GenericJsonTable
+                            rows={wfh.daily_accomplishments ?? []}
+                            columns={[
+                              { key: 'date', label: 'Date' },
+                              { key: 'activities', label: 'Activities Accomplished' },
+                              { key: 'output', label: 'Output / Deliverable' },
+                            ]}
+                          />
+                        </div>
+
+                        {wfh.supporting_docs && (
+                          <div>
+                            <p className="font-semibold text-sm text-gray-800 mb-2">II. Supporting Documents Attached</p>
+                            <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50 p-3 rounded-xl border border-gray-200">
+                              {Object.entries(wfh.supporting_docs).map(([key, val]) => (
+                                <div key={key} className="flex items-center gap-1.5">
+                                  <span>{val ? '☑' : '☐'}</span>
+                                  <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+                                </div>
+                              ))}
+                              {wfh.other_docs_specify && (
+                                <p className="col-span-2 mt-1"><strong>Other:</strong> {wfh.other_docs_specify}</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {wfh.photos && wfh.photos.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-sm text-gray-800 mb-2">Evidence Screenshots & Photos</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {wfh.photos.map((p, i) => (
+                                <div key={i} className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 p-2">
+                                  <img src={p.url} alt="Evidence" className="w-full h-36 object-contain bg-white rounded-lg" />
+                                  {p.caption && <p className="text-[11px] text-gray-500 mt-1 text-center">{p.caption}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : selectedReport.type === 'extension' ? (
+                /* View 2: Extension Report */
                 <GenericJsonTable
-                  rows={selectedReport.report.rows ?? []}
+                  rows={(selectedReport.report as ExtensionReportRow).rows ?? []}
                   columns={[
                     { key: 'extension_project', label: 'Project/Activity' },
                     { key: 'highlights', label: 'Highlights' },
@@ -6183,6 +6261,7 @@ function ReportsAnalytics() {
                   ]}
                 />
               ) : (
+                /* View 3: Accomplishment Report */
                 <div className="space-y-4">
                   {[
                     { title: 'PI 1: Licensure Exam Passers', rows: (selectedReport.report as AccomplishmentReportRow).pi1_data, cols: [['date_exam','Date'],['no_first_time','First-time Takers'],['no_passers','Passers'],['passing_pct_first','Passing %']] },
@@ -6206,6 +6285,7 @@ function ReportsAnalytics() {
                 </div>
               )}
 
+              {/* Review Buttons (Approve / Reject) */}
               {selectedReport.report.status === 'submitted' && (
                 <div className="flex gap-3 pt-4 border-t border-gray-100">
                   <button
@@ -6232,6 +6312,7 @@ function ReportsAnalytics() {
         </div>
       )}
 
+      {/* Reject Modal */}
       {rejectFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
@@ -6258,6 +6339,7 @@ function ReportsAnalytics() {
         </div>
       )}
 
+      {/* Info Modal */}
       {showInfoModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
