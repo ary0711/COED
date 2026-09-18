@@ -25,10 +25,8 @@ import {
 const PREVIEW_ROW_LIMIT = 8;
 
 interface DeansListStudent {
-  studentId: string;
   name: string;
   course: string;
-  yearLevel: string;
   gwa: number;
   units: number;
 }
@@ -303,7 +301,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     if (query.trim()) {
       const q = query.toLowerCase();
       rows = rows.filter(
-        s => s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.course.toLowerCase().includes(q)
+        s => s.name.toLowerCase().includes(q) || s.course.toLowerCase().includes(q)
       );
     }
     return [...rows].sort((a, b) => (sortAsc ? a.gwa - b.gwa : b.gwa - a.gwa));
@@ -559,7 +557,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                       </p>
                     )}
                     <p className="text-[11px] text-blue-700">
-                      Check that your columns line up (Student ID, Name, Course, Year Level, Grades/GWA) before generating.
+                      Check that your columns line up (Name, Course, Grades/GWA) before generating.
                     </p>
                   </div>
                 )}
@@ -691,7 +689,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search name, ID, or course..."
+                    placeholder="Search name or course..."
                     className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                   />
                 </div>
@@ -725,25 +723,21 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left min-w-[560px]">
+                  <table className="w-full text-left min-w-[420px]">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 w-12">#</th>
-                        <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
                         <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
                         <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Course</th>
-                        <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year</th>
                         <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">GWA</th>
                       </tr>
                     </thead>
                     <tbody>
                       {visibleRows.map((s, i) => (
-                        <tr key={s.studentId + i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <tr key={s.name + i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-3 px-4 sm:py-4 sm:px-6 text-xs text-gray-400">{i + 1}</td>
-                          <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{s.studentId}</td>
                           <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{s.name}</td>
                           <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{s.course}</td>
-                          <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{s.yearLevel}</td>
                           <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
                             <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold ${
                               s.gwa <= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
@@ -790,7 +784,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
               <Info className="w-5 h-5 text-blue-600" /> File Requirements
             </h3>
             <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Columns: Student ID, Name, Course, Year Level, Grades/GWA</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Columns: Name, Course, Grades/GWA</span></li>
               <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>First row must be the header row</span></li>
               <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: .xlsx, .xls, .csv</span></li>
               <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>The downloaded file already includes the CTU logo and letterhead</span></li>
