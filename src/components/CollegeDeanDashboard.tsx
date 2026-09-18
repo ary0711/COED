@@ -85,11 +85,12 @@ import {
   KeyRound,
 } from 'lucide-react';
 
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
 import { supabase } from '../supabaseClient';
 import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
-import { ChartsSection } from './ChartsSection';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Profile {
@@ -275,24 +276,175 @@ export function CollegeDeanDashboard({
   );
 }
 
+// ─── Alumni Employment Summary Card (Dashboard) ───────────────────────────────
+function AlumniEmploymentCard() {
+  const [totalAlumniCount, setTotalAlumniCount] = useState<number>(0);
+  const [responsesCount, setResponsesCount] = useState<number>(0);
+  const [statusCounts, setStatusCounts] = useState<{ employed: number; selfEmployed: number; unemployed: number }>({
+    employed: 0,
+    selfEmployed: 0,
+    unemployed: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { count: alumniTotal } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'alumni');
+      setTotalAlumniCount(alumniTotal ?? 0);
+
+      const { data: records } = await supabase
+        .from('graduate_tracer_survey')
+        .select('employment_status');
+
+      const list = records ?? [];
+      setResponsesCount(list.length);
+      setStatusCounts({
+        employed: list.filter((r: any) => r.employment_status === 'employed').length,
+        selfEmployed: list.filter((r: any) => r.employment_status === 'self-employed').length,
+        unemployed: list.filter((r: any) => r.employment_status === 'unemployed').length,
+      });
+    } catch (err) {
+      console.error('Failed to load alumni employment stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+
+  useEffect(() => {
+    const channelName = `dashboard-alumni-employment-${Math.random().toString(36).slice(2)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'graduate_tracer_survey' }, () => loadStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadStats())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadStats]);
+
+  const responseRate = totalAlumniCount > 0 ? Math.round((responsesCount / totalAlumniCount) * 100) : 0;
+
+  // Fallback to demo data if 0 responses exist so you can preview the design layout
+  const isDemo = responsesCount === 0;
+  const displayCounts = isDemo
+    ? { employed: 5, selfEmployed: 2, unemployed: 1 }
+    : statusCounts;
+
+  const pieData = [
+    { name: 'Employed', value: displayCounts.employed, color: '#10B981' },
+    { name: 'Self-Employed', value: displayCounts.selfEmployed, color: '#3B82F6' },
+    { name: 'Not Employed', value: displayCounts.unemployed, color: '#EF4444' },
+  ].filter((d) => d.value > 0);
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-[#1E3A8A]" />
+          <span className="text-sm font-semibold text-gray-800">Alumni Employment Status</span>
+        </div>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+          {loading ? '—' : `${responseRate}% response`}
+        </span>
+      </div>
+
+      <div className="flex-1 p-4 flex flex-col min-h-0">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center text-gray-400 text-xs">Loading...</div>
+        ) : (
+          <>
+            {isDemo && (
+              <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-md text-center mb-2 font-medium">
+                Preview Mode: Showing sample data because 0 survey responses exist.
+              </p>
+            )}
+
+            {/* Quick Stats Summary Cards */}
+            <div className="grid grid-cols-3 gap-2 mb-2 flex-shrink-0">
+              <div className="bg-emerald-50 rounded-xl p-2 text-center border border-emerald-100">
+                <p className="text-[10px] font-medium text-emerald-800">Employed</p>
+                <p className="text-base font-bold text-emerald-700">{displayCounts.employed}</p>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-2 text-center border border-blue-100">
+                <p className="text-[10px] font-medium text-blue-800">Self-Employed</p>
+                <p className="text-base font-bold text-blue-700">{displayCounts.selfEmployed}</p>
+              </div>
+              <div className="bg-rose-50 rounded-xl p-2 text-center border border-rose-100">
+                <p className="text-[10px] font-medium text-rose-800">Not Employed</p>
+                <p className="text-base font-bold text-rose-700">{displayCounts.unemployed}</p>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-[170px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="45%"
+                    outerRadius="75%"
+                    paddingAngle={2}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number, name: string) => [`${value} alumni`, name]} />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={30}
+                    iconType="circle"
+                    formatter={(value: string) => <span style={{ fontSize: 11, color: '#374151' }}>{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        )}
+
+        <p className="text-[11px] text-gray-400 text-center mt-1 flex-shrink-0">
+          {responsesCount} of {totalAlumniCount} total alumni surveyed
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
 function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
   const [studentPending, setStudentPending] = useState(0);
   const [alumniPending, setAlumniPending]   = useState(0);
+  const [contactPending, setContactPending] = useState(0);
   const [recent, setRecent]                 = useState<Inquiry[]>([]);
   const [loading, setLoading]               = useState(true);
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .select('*, profiles(full_name, id_number)')
-      .order('created_at', { ascending: false });
+    const [{ data, error }, { data: contactData, error: contactError }] = await Promise.all([
+      supabase
+        .from('inquiries')
+        .select('*, profiles(full_name, id_number)')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from(CONTACT_API_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false }),
+    ]);
 
     if (!error && data) {
       setStudentPending(data.filter((i: Inquiry) => i.sender_role === 'student' && i.status === 'pending').length);
       setAlumniPending(data.filter((i: Inquiry) => i.sender_role === 'alumni' && i.status === 'pending').length);
-      setRecent(data.filter((i: Inquiry) => i.status === 'pending').slice(0, 4));
+      setRecent(data.filter((i: Inquiry) => i.status === 'pending').slice(0, 3));
+    }
+    if (!contactError && contactData) {
+      setContactPending(contactData.filter((c: ContactMessage) => c.status === 'pending').length);
     }
     setLoading(false);
   }, []);
@@ -304,11 +456,12 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inquiries' }, () => fetchSummary())
+      .on('postgres_changes', { event: '*', schema: 'public', table: CONTACT_API_TABLE }, () => fetchSummary())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchSummary]);
 
-  const totalPending = studentPending + alumniPending;
+  const totalPending = studentPending + alumniPending + contactPending;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
@@ -325,7 +478,7 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="rounded-xl p-3" style={{ backgroundColor: '#DBEAFE' }}>
             <p className="text-xs font-medium mb-1" style={{ color: '#1D4ED8', opacity: 0.8 }}>Student</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#1D4ED8' }}>{loading ? '—' : studentPending}</p>
@@ -335,6 +488,11 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
             <p className="text-xs font-medium mb-1" style={{ color: '#BE185D', opacity: 0.8 }}>Alumni</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#BE185D' }}>{loading ? '—' : alumniPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#BE185D', opacity: 0.65 }}>unreplied</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ backgroundColor: '#D1FAE5' }}>
+            <p className="text-xs font-medium mb-1" style={{ color: '#059669', opacity: 0.8 }}>Contact</p>
+            <p className="text-2xl font-bold leading-none" style={{ color: '#059669' }}>{loading ? '—' : contactPending}</p>
+            <p className="text-[11px] mt-1" style={{ color: '#059669', opacity: 0.65 }}>unreplied</p>
           </div>
         </div>
 
@@ -612,20 +770,23 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         </div>
       </div>
 
-      <div className="hidden lg:grid lg:grid-cols-3 gap-4 flex-1 min-h-0">
-        <div className="lg:col-span-2 min-h-0 overflow-auto">
-          <ChartsSection />
+      <div className="hidden lg:grid lg:grid-cols-2 gap-4 flex-1 min-h-0">
+          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
+            <AlumniEmploymentCard />
+          </div>
+          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
+            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+          </div>
         </div>
-        <div className="flex flex-col min-h-0 lg:max-h-[calc(100vh-280px)]">
-          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
-        </div>
-      </div>
 
-      <div className="lg:hidden flex flex-col gap-4">
-        <div className="h-80">
-          <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+        <div className="lg:hidden flex flex-col gap-4">
+          <div className="h-80">
+            <AlumniEmploymentCard />
+          </div>
+          <div className="h-80">
+            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+          </div>
         </div>
-      </div>
     </div>
   );
 }

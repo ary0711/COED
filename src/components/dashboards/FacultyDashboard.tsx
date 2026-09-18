@@ -31,6 +31,7 @@ import {
   Loader2,
   Eye,
   FolderOpen,
+  User,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -2415,7 +2416,11 @@ function FacultyCalendar() {
 }
 
 // ====================== 5.6 SETTINGS ======================
+type TabKey = 'profile' | 'security' | 'notifications' | 'account';
+
 function FacultySettings() {
+  const [activeTab, setActiveTab] = useState<TabKey>('profile');
+
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
   const [departmentNotices, setDepartmentNotices] = useState(true);
 
@@ -2462,7 +2467,9 @@ function FacultySettings() {
         facultyId: data.facultyId ?? '—',
         position: data.position ?? '—',
         departmentName: data.departmentNames?.[0] ?? '—',
-        dateHired: data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—',
+        dateHired: data.dateHired
+          ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+          : '—',
         status: data.status ?? '—',
       });
     } catch {
@@ -2472,7 +2479,9 @@ function FacultySettings() {
     }
   };
 
-  useEffect(() => { fetchMe(); }, []);
+  useEffect(() => {
+    fetchMe();
+  }, []);
 
   const handleSaveChanges = async () => {
     const trimmedName = fullNameInput.trim();
@@ -2520,192 +2529,261 @@ function FacultySettings() {
     setSaveMessage(null);
   };
 
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
+    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
+    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving || loading}
+            className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
+      )}
+      {saveMessage && (
+        <div
+          className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
+            saveMessage.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {saveMessage.text}
+        </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Settings className="w-5 h-5" /> Basic Settings
-        </h2>
+      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
+      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+        {/* Sidebar tab list */}
+        <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
+                activeTab === tab.key
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-        <div className="mb-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
+        {/* Panel */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
 
-          {loading ? (
-            <div className="animate-pulse space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="h-10 bg-gray-100 rounded-lg" />
-                <div className="h-10 bg-gray-100 rounded-lg" />
-              </div>
-              <div className="h-10 bg-gray-100 rounded-lg" />
+              {loading ? (
+                <div className="animate-pulse space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                  </div>
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <input
+                        type="text"
+                        value={fullNameInput}
+                        onChange={(e) => setFullNameInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                      <input
+                        type="text"
+                        value={readOnly.facultyId}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
+                      <input
+                        type="email"
+                        value={emailInput}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
+                      <input
+                        type="email"
+                        value={contactEmailInput}
+                        onChange={(e) => setContactEmailInput(e.target.value)}
+                        placeholder="Optional"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                      <input
+                        type="text"
+                        value={contactNoInput}
+                        onChange={(e) => setContactNoInput(e.target.value)}
+                        placeholder="Optional"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
+                      <input
+                        type="text"
+                        value={specializationInput}
+                        onChange={(e) => setSpecializationInput(e.target.value)}
+                        placeholder="Optional"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                      <input
+                        type="text"
+                        value={readOnly.position}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                      <input
+                        type="text"
+                        value={readOnly.departmentName}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
+                      <input
+                        type="text"
+                        value={readOnly.dateHired}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <input
-                    type="text"
-                    value={fullNameInput}
-                    onChange={(e) => setFullNameInput(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
-                  <input type="text" value={readOnly.facultyId} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
-                  <input type="email" value={emailInput} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
-                  <input
-                    type="email"
-                    value={contactEmailInput}
-                    onChange={(e) => setContactEmailInput(e.target.value)}
-                    placeholder="Optional"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
-                  <input
-                    type="text"
-                    value={contactNoInput}
-                    onChange={(e) => setContactNoInput(e.target.value)}
-                    placeholder="Optional"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
-                  <input
-                    type="text"
-                    value={specializationInput}
-                    onChange={(e) => setSpecializationInput(e.target.value)}
-                    placeholder="Optional"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
-                  <input type="text" value={readOnly.position} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-                  <input type="text" value={readOnly.departmentName} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
-                  <input type="text" value={readOnly.dateHired} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed" />
-                </div>
-              </div>
-            </>
           )}
 
-          {saveMessage && (
-            <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {saveMessage.text}
-            </p>
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
+              <div className="space-y-3 max-w-md">
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Change Password
+                </button>
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Enable Two-Factor Authentication
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Announcements</p>
+                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={announcementAlerts}
+                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Department Notices</p>
+                    <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={departmentNotices}
+                      onChange={(e) => setDepartmentNotices(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mb-6">Manage your active sessions.</p>
+              <div className="space-y-3 max-w-md">
+                <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+                  Log Out from All Devices
+                </button>
+                <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+              </div>
+            </div>
           )}
         </div>
-
-        <div className="border-t border-gray-200 pt-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Lock className="w-5 h-5" /> Password & Security
-          </h3>
-          <div className="space-y-3">
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Change Password
-            </button>
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Enable Two-Factor Authentication
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Bell className="w-5 h-5" /> Notifications
-        </h2>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Announcements</p>
-              <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={announcementAlerts}
-                onChange={(e) => setAnnouncementAlerts(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Department Notices</p>
-              <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={departmentNotices}
-                onChange={(e) => setDepartmentNotices(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <LogOut className="w-5 h-5" /> Account Actions
-        </h2>
-
-        <div className="space-y-3">
-          <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
-            Log Out from All Devices
-          </button>
-          <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
-        </div>
-      </div>
-
-      <div className="mt-8 flex gap-3">
-        <button
-          onClick={handleSaveChanges}
-          disabled={saving || loading}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-        <button
-          onClick={handleCancel}
-          disabled={saving}
-          className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );

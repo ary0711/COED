@@ -2098,7 +2098,11 @@ interface AlumniSettingsProps {
   onLogout?: () => void;
 }
 
+type AlumniSettingsTab = 'profile' | 'security' | 'notifications' | 'account';
+
 function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumber, onLogout }: AlumniSettingsProps) {
+  const [activeTab, setActiveTab] = useState<AlumniSettingsTab>('profile');
+
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
@@ -2108,14 +2112,13 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  
-     useEffect(() => {
+  useEffect(() => {
     if (profile?.full_name) {
       setFullNameInput(profile.full_name);
     }
   }, [profile?.full_name]);
 
-   useEffect(() => {
+  useEffect(() => {
     setEmailInput(userEmail);
   }, [userEmail]);
 
@@ -2139,11 +2142,11 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
     setSaving(true);
     setSaveMessage(null);
 
-       try {
+    try {
       const userId = localStorage.getItem('userId');
       if (!userId) throw new Error('No userId found.');
 
-           const { error } = await supabase
+      const { error } = await supabase
         .from('profiles')
         .update({ full_name: trimmedName, email: trimmedEmail, id_number: idNumberInput.trim() })
         .eq('id', userId);
@@ -2159,161 +2162,200 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
     }
   };
 
-   const handleCancel = () => {
+  const handleCancel = () => {
     setFullNameInput(profile?.full_name ?? '');
     setEmailInput(userEmail);
     setIdNumberInput(idNumber);
     setSaveMessage(null);
   };
 
+  const tabs: { key: AlumniSettingsTab; label: string; icon: React.ReactNode }[] = [
+    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
+    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
+    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
-
-      {/* Basic Settings */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Settings className="w-5 h-5" /> Basic Settings
-        </h2>
-
-        <div className="mb-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
-
-                    {loading ? (
-            <div className="animate-pulse space-y-4">
-              <div className="h-10 bg-gray-100 rounded-lg" />
-              <div className="h-10 bg-gray-100 rounded-lg" />
-            </div>
-          ) : (
-            <>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <input
-                    type="text"
-                    value={fullNameInput}
-                    onChange={(e) => setFullNameInput(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Alumni ID</label>
-                  <input
-                    type="text"
-                    value={idNumberInput}
-                    onChange={(e) => setIdNumberInput(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-            </>
-          )}
-
-          {saveMessage && (
-            <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {saveMessage.text}
-            </p>
-          )}
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
         </div>
-
-        <div className="border-t border-gray-200 pt-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Lock className="w-5 h-5" /> Password & Security
-          </h3>
-          <div className="space-y-3">
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Change Password
-            </button>
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Enable Two-Factor Authentication
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Notifications */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Bell className="w-5 h-5" /> Notifications
-        </h2>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Email Notifications</p>
-              <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={emailNotifications}
-                onChange={(e) => setEmailNotifications(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
-              <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={announcementAlerts}
-                onChange={(e) => setAnnouncementAlerts(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Account Actions */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <LogOut className="w-5 h-5" /> Account Actions
-        </h2>
-
-        <div className="space-y-3">
-          <button 
-            onClick={onLogout}
-            className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
+        <div className="flex gap-3">
+          <button
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
           >
-            Log Out from Account
+            Cancel
           </button>
-          <p className="text-xs text-gray-500 text-center">This will sign you out from your session and return to the home page</p>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving || loading}
+            className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="mt-8 flex gap-3">
-        <button
-          onClick={handleSaveChanges}
-          disabled={saving || loading}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+      {saveMessage && (
+        <div
+          className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
+            saveMessage.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
         >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-        <button
-          onClick={handleCancel}
-          disabled={saving}
-          className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          Cancel
-        </button>
+          {saveMessage.text}
+        </div>
+      )}
+
+      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
+      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+        {/* Sidebar tab list */}
+        <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
+                activeTab === tab.key
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Panel — fixed min-height so switching tabs doesn't resize the card */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+
+              {loading ? (
+                <div className="animate-pulse space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                  </div>
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <input
+                        type="text"
+                        value={fullNameInput}
+                        onChange={(e) => setFullNameInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Alumni ID</label>
+                      <input
+                        type="text"
+                        value={idNumberInput}
+                        onChange={(e) => setIdNumberInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
+              <div className="space-y-3 max-w-md">
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Change Password
+                </button>
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Enable Two-Factor Authentication
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Email Notifications</p>
+                    <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={emailNotifications}
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
+                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={announcementAlerts}
+                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mb-6">Manage your active session.</p>
+              <div className="space-y-3 max-w-md">
+                <button
+                  onClick={onLogout}
+                  className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
+                >
+                  Log Out from Account
+                </button>
+                <p className="text-xs text-gray-500 text-center">This will sign you out from your session and return to the home page</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
