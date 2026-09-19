@@ -3043,20 +3043,22 @@ export function ResearchAchievements() {
   );
 }
 
-// ─── Alumni Tracer (COLLEGE DEAN DASHBOARD) ───────────────────────────────────
+// ─── Alumni Tracer (COLLEGE DEAN DASHBOARD — QPRO PRIVACY-COMPLIANT) ─────────
 
 const TRACER_API_BASE = 'http://localhost:5000/api/tracer-survey';
 
-interface TracerRecord {
+interface GraduateRecord {
   id: string;
   alumni_id: string;
+  program?: string | null;
+  last_name: string;
+  first_name: string;
   employment_status: string;
   job_title: string | null;
   employer: string | null;
-  years_employed: number | null;
-  monthly_salary: string | null;
   relevance: string | null;
-  is_completed?: boolean;
+  supporting_docs?: string | null;
+  post_graduate_degree?: string | null;
   updated_at: string;
 }
 
@@ -3068,12 +3070,13 @@ interface DeanTracerStats {
 }
 
 function AlumniTracer() {
-  const [records, setRecords] = useState<TracerRecord[]>([]);
+  const [records, setRecords] = useState<GraduateRecord[]>([]);
   const [backendStats, setBackendStats] = useState<DeanTracerStats | null>(null);
   const [totalAlumniCount, setTotalAlumniCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [programFilter, setProgramFilter] = useState('all');
 
   const loadData = async () => {
     setLoading(true);
@@ -3084,21 +3087,55 @@ function AlumniTracer() {
         Authorization: `Bearer ${token}`,
       };
 
-      // 1. Fetch aggregate stats from backend: GET /api/tracer-survey/dashboard-stats
+      // 1. Fetch aggregate stats from backend
       const statsRes = await fetch(`${TRACER_API_BASE}/dashboard-stats`, { headers: authHeaders });
       if (statsRes.ok) {
         const statsData: DeanTracerStats = await statsRes.json();
         setBackendStats(statsData);
       }
 
-      // 2. Fetch full records array from backend: GET /api/tracer-survey/all
+      // 2. Fetch full records array from backend
       const recordsRes = await fetch(`${TRACER_API_BASE}/all`, { headers: authHeaders });
       if (recordsRes.ok) {
-        const recordsData: TracerRecord[] = await recordsRes.json();
-        setRecords(recordsData ?? []);
+        const recordsData: any[] = await recordsRes.json();
+
+        // Normalize raw entries into QPRO format with clean name split
+        const normalized: GraduateRecord[] = (recordsData ?? []).map((r, idx) => {
+          let lName = r.last_name;
+          let fName = r.first_name;
+
+          if (!lName || !fName) {
+            const rawName = (r.full_name || r.alumni_id || `Graduate ${idx + 1}`).trim();
+            const parts = rawName.split(' ');
+            if (parts.length > 1) {
+              lName = parts.pop()!;
+              fName = parts.join(' ');
+            } else {
+              lName = rawName;
+              fName = '—';
+            }
+          }
+
+          return {
+            id: r.id || String(idx + 1),
+            alumni_id: r.alumni_id || r.id_number || '—',
+            last_name: lName.toUpperCase(),
+            first_name: fName.toUpperCase(),
+            program: r.program || 'BACHELOR OF ELEMENTARY EDUCATION',
+            employment_status: r.employment_status || 'not-tracked',
+            employer: r.employer || null,
+            job_title: r.job_title || null,
+            relevance: r.relevance || null,
+            supporting_docs: r.supporting_docs || `${r.program || 'COED'} Batch 2024`,
+            post_graduate_degree: r.post_graduate_degree || (r.employment_status === 'further-study' ? 'Post-Graduate Studies' : '—'),
+            updated_at: r.updated_at,
+          };
+        });
+
+        setRecords(normalized);
       }
 
-      // 3. Fetch registered alumni denominator for global response rate
+      // 3. Fetch registered alumni denominator
       const { count: alumniTotal } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
@@ -3114,7 +3151,6 @@ function AlumniTracer() {
   useEffect(() => {
     loadData();
 
-    // Supabase Realtime channel only triggers a backend refetch on changes
     const channel = supabase
       .channel('dean-tracer-survey-realtime')
       .on(
@@ -3131,25 +3167,45 @@ function AlumniTracer() {
     };
   }, []);
 
-  // Filtered entries for search & status select
+  const availablePrograms = Array.from(
+    new Set(records.map((r) => r.program).filter(Boolean))
+  ).sort() as string[];
+
+  const formatQproStatus = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s === 'employed' || s === 'self-employed') return 'Employed';
+    if (s === 'unemployed') return 'Unemployed';
+    return 'Not Tracked';
+  };
+
   const filtered = records.filter((r) => {
     const query = search.toLowerCase();
+    const qStatus = formatQproStatus(r.employment_status).toLowerCase();
     const matchesSearch =
+      (r.last_name || '').toLowerCase().includes(query) ||
+      (r.first_name || '').toLowerCase().includes(query) ||
       (r.job_title || '').toLowerCase().includes(query) ||
       (r.employer || '').toLowerCase().includes(query) ||
       (r.alumni_id || '').toLowerCase().includes(query);
 
-    const matchesFilter = statusFilter === 'all' ? true : r.employment_status === statusFilter;
-    return matchesSearch && matchesFilter;
+    const matchesStatus =
+      statusFilter === 'all'
+        ? true
+        : statusFilter.toLowerCase() === qStatus || statusFilter === r.employment_status;
+
+    const matchesProgram =
+      programFilter === 'all' ? true : r.program === programFilter;
+
+    return matchesSearch && matchesStatus && matchesProgram;
   });
 
-  // Display metrics (prefers backend calculations, falls back to records length)
+  // Metrics
   const responsesCount = backendStats?.totalResponses ?? records.length;
   const employedCount =
     backendStats?.employedCount ??
-    records.filter((r) => r.employment_status === 'employed' || r.employment_status === 'self-employed').length;
-  const unemployedCount = records.filter((r) => r.employment_status === 'unemployed').length;
-  const furtherStudyCount = records.filter((r) => r.employment_status === 'further-study').length;
+    records.filter((r) => formatQproStatus(r.employment_status) === 'Employed').length;
+  const unemployedCount = records.filter((r) => formatQproStatus(r.employment_status) === 'Unemployed').length;
+  const notTrackedCount = records.filter((r) => formatQproStatus(r.employment_status) === 'Not Tracked').length;
 
   const employmentRate =
     backendStats?.employmentRate ??
@@ -3165,7 +3221,7 @@ function AlumniTracer() {
       : 0);
   const responseRate = totalAlumniCount > 0 ? Math.round((responsesCount / totalAlumniCount) * 100) : 0;
 
-  // Export CSV Report for Accreditation / CHED
+  // Export Privacy-Safe CSV (Excludes Individual Salaries)
   const exportToCSV = () => {
     if (records.length === 0) {
       alert('No survey records available to export.');
@@ -3173,34 +3229,35 @@ function AlumniTracer() {
     }
 
     const headers = [
-      'Alumni ID',
-      'Employment Status',
-      'Job Title',
-      'Employer / Institution',
-      'Years Employed',
-      'Monthly Compensation Bracket',
-      'Curriculum Relevance',
-      'Last Updated',
+      'PROGRAM NAME',
+      'Item No.',
+      'LAST NAME',
+      'FIRST NAME',
+      'STATUS (Employed, Unemployed, Not tracked)',
+      'NAME OF COMPANY / TYPE OF BUSINESS',
+      'SUPPORTING DOCUMENTS',
+      'POST GRADUATE DEGREE',
     ];
 
-    const rows = records.map((r) => [
-      `"${r.alumni_id}"`,
-      `"${r.employment_status}"`,
-      `"${r.job_title || 'N/A'}"`,
-      `"${r.employer || 'N/A'}"`,
-      `"${r.years_employed ?? 0}"`,
-      `"${r.monthly_salary || 'N/A'}"`,
-      `"${r.relevance || 'N/A'}"`,
-      `"${r.updated_at ? new Date(r.updated_at).toLocaleDateString('en-US') : 'N/A'}"`,
+    const rows = filtered.map((r, i) => [
+      `"${r.program || 'COED'}"`,
+      i + 1,
+      `"${r.last_name || '—'}"`,
+      `"${r.first_name || '—'}"`,
+      `"${formatQproStatus(r.employment_status)}"`,
+      `"${r.employer || r.job_title || '—'}"`,
+      `"${r.supporting_docs || 'Batch 2024'}"`,
+      `"${r.post_graduate_degree || '—'}"`,
     ]);
 
     const csvContent =
       'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+      ['HIGHER EDUCATION PROGRAM (Outcome Indicator 2 - AY 2024)', headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Graduate_Tracer_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `COED_QPRO_Tracer_Batch_2024_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -3234,7 +3291,7 @@ function AlumniTracer() {
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm"
           >
             <Download className="w-4 h-4" />
-            Export Report
+            Export QPRO Report
           </button>
         </div>
       </div>
@@ -3295,9 +3352,9 @@ function AlumniTracer() {
                 title={`Employed: ${employedCount}`}
               />
               <div
-                style={{ width: `${(furtherStudyCount / responsesCount) * 100}%` }}
-                className="bg-blue-500 transition-all duration-500"
-                title={`Further Study: ${furtherStudyCount}`}
+                style={{ width: `${(notTrackedCount / responsesCount) * 100}%` }}
+                className="bg-amber-500 transition-all duration-500"
+                title={`Not Tracked: ${notTrackedCount}`}
               />
               <div
                 style={{ width: `${(unemployedCount / responsesCount) * 100}%` }}
@@ -3314,9 +3371,9 @@ function AlumniTracer() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="w-3 h-3 rounded-full bg-amber-500" />
                 <span className="font-medium text-gray-700">
-                  Further Studies: {furtherStudyCount} ({Math.round((furtherStudyCount / responsesCount) * 100)}%)
+                  Not Tracked: {notTrackedCount} ({Math.round((notTrackedCount / responsesCount) * 100)}%)
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -3334,38 +3391,52 @@ function AlumniTracer() {
         )}
       </div>
 
-      {/* ── Table Toolbar & Records ── */}
+      {/* ── Table Toolbar & QPRO Masterlist (Higher Education Oc2 Without Salary) ── */}
       <div className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-sm space-y-4 p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-gray-900">Alumni Response Log</h3>
+            <h3 className="text-sm font-bold text-gray-900">
+              Outcome Indicator 2: Graduate Employment Masterlist
+            </h3>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
               {filtered.length} entries
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-2.5">
-            <div className="relative w-full sm:w-64">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <div className="relative w-full sm:w-60">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search alumni ID, job, or employer..."
+                placeholder="Search graduate name, company..."
                 className="w-full pl-9 pr-3.5 py-1.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white"
               />
             </div>
+
+            <select
+              value={programFilter}
+              onChange={(e) => setProgramFilter(e.target.value)}
+              className="w-full sm:w-auto px-3 py-1.5 text-xs rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20"
+            >
+              <option value="all">All Programs</option>
+              {availablePrograms.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full sm:w-auto px-3 py-1.5 text-xs rounded-xl border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20"
             >
-              <option value="all">All Employment Statuses</option>
-              <option value="employed">Employed</option>
-              <option value="self-employed">Self-Employed</option>
-              <option value="unemployed">Unemployed</option>
-              <option value="further-study">Further Study</option>
+              <option value="all">All Statuses</option>
+              <option value="Employed">Employed</option>
+              <option value="Unemployed">Unemployed</option>
+              <option value="Not Tracked">Not Tracked</option>
             </select>
           </div>
         </div>
@@ -3383,57 +3454,78 @@ function AlumniTracer() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse border border-gray-200 text-xs">
               <thead>
-                <tr className="bg-gray-50 border-y border-gray-200 text-[11px] font-bold uppercase tracking-wider text-gray-500">
-                  <th className="py-3 px-4">Alumni Reference</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Designation & Institution</th>
-                  <th className="py-3 px-4">Monthly Compensation</th>
-                  <th className="py-3 px-4">Field Relevance</th>
-                  <th className="py-3 px-4 text-right">Recorded Date</th>
+                {/* Excel Section Numbering Row */}
+                <tr className="bg-gray-100/90 text-gray-500 font-bold border-b border-gray-200 text-[10px] text-center">
+                  <th className="p-2 border border-gray-200 w-10">#</th>
+                  <th className="p-2 border border-gray-200">1</th>
+                  <th colSpan={2} className="p-2 border border-gray-200">2</th>
+                  <th className="p-2 border border-gray-200">3</th>
+                  <th className="p-2 border border-gray-200">4</th>
+                  <th className="p-2 border border-gray-200">—</th>
+                  <th className="p-2 border border-gray-200">5</th>
+                </tr>
+
+                {/* Primary Excel Headers */}
+                <tr className="bg-gray-50 text-gray-800 font-bold border-b border-gray-300 text-[11px] uppercase">
+                  <th className="p-2.5 border border-gray-300 text-center">Item</th>
+                  <th className="p-2.5 border border-gray-300">Program Name</th>
+                  <th className="p-2.5 border border-gray-300">Last Name</th>
+                  <th className="p-2.5 border border-gray-300">First Name</th>
+                  <th className="p-2.5 border border-gray-300 text-center">
+                    Status <br />
+                    <span className="text-[9px] font-normal text-gray-500 lowercase">(employed, unemployed, not tracked)</span>
+                  </th>
+                  <th className="p-2.5 border border-gray-300">
+                    Name of Company / <br />Type of Business
+                  </th>
+                  <th className="p-2.5 border border-gray-300">Supporting Documents</th>
+                  <th className="p-2.5 border border-gray-300">Post Graduate Degree</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
-                {filtered.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-gray-900">{item.alumni_id}</td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          item.employment_status === 'employed' || item.employment_status === 'self-employed'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : item.employment_status === 'unemployed'
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        {item.employment_status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-gray-900">{item.job_title || 'N/A'}</div>
-                      <div className="text-[11px] text-gray-500">{item.employer || '—'}</div>
-                    </td>
-                    <td className="py-3.5 px-4 font-medium text-gray-600">
-                      {item.monthly_salary ? `₱${item.monthly_salary}` : 'Unspecified'}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold ${
-                          item.relevance === 'very-relevant' || item.relevance === 'relevant'
-                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                            : 'bg-gray-100 text-gray-600 border border-gray-200'
-                        }`}
-                      >
-                        {item.relevance || 'Not Specified'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right text-[11px] text-gray-400">
-                      {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : '—'}
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-gray-200 text-gray-700">
+                {filtered.map((item, idx) => {
+                  const qStatus = formatQproStatus(item.employment_status);
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="p-2.5 border border-gray-200 text-center font-mono text-gray-400">
+                        {idx + 1}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 font-medium text-gray-800">
+                        {item.program || 'BACHELOR OF ELEMENTARY EDUCATION'}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 font-bold text-gray-900">
+                        {item.last_name || '—'}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 text-gray-800">
+                        {item.first_name || '—'}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 text-center">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            qStatus === 'Employed'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : qStatus === 'Unemployed'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {qStatus}
+                        </span>
+                      </td>
+                      <td className="p-2.5 border border-gray-200 text-gray-700">
+                        {item.employer || item.job_title || '—'}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 text-[11px] text-gray-500">
+                        {item.supporting_docs || `${item.program || 'COED'} Batch 2024`}
+                      </td>
+                      <td className="p-2.5 border border-gray-200 text-[11px] text-gray-600">
+                        {item.post_graduate_degree || '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
