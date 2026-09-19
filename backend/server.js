@@ -5,16 +5,27 @@ const helmet = require('helmet');
 
 dotenv.config();
 
-const router = express.Router();
-
-require('./cron');
-
 const app = express();
 
-app.use(cors());
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 app.use(helmet());
 
+// ============================================================
+// CRON
+// ============================================================
+
+require('./cron');
 
 // ============================================================
 // ROUTES
@@ -25,31 +36,51 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
 app.use('/api/announcements', require('./routes/announcements'));
-app.use('/api/students', require('./routes/student')); // matches your existing file: routes/student.js
-app.use('/api/accomplishment-reports', require('./routes/accomplishmentReports'));
-app.use('/api/extension-reports', require('./routes/extensionReports'));
-app.use('/api/research-submissions', require('./routes/researchSubmissions'));
-app.use('/api/tracer-survey', require('./routes/tracerSurvey'));
+app.use('/api/students', require('./routes/student'));
+
+app.use(
+  '/api/accomplishment-reports',
+  require('./routes/accomplishmentReports')
+);
+
+app.use(
+  '/api/extension-reports',
+  require('./routes/extensionReports')
+);
+
+app.use(
+  '/api/research-submissions',
+  require('./routes/researchSubmissions')
+);
+
+app.use(
+  '/api/tracer-survey',
+  require('./routes/tracerSurvey')
+);
+
 app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/me', require('./routes/me'));
 app.use('/api/departments', require('./routes/departments'));
-app.use('/api/academic-records/documents', require('./routes/academicDocuments'));
+
+app.use(
+  '/api/academic-records/documents',
+  require('./routes/academicDocuments')
+);
+
 app.use('/api/deans-list', require('./routes/deansList'));
 app.use('/api/faculty', require('./routes/facultyDirectory'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/wfh-reports', require('./routes/wfhReports'));
 
-
 // ============================================================
 // CONTACT EMAIL REPLY
 // ============================================================
 //
-// This allows the Dean/Admin dashboard to send a reply
-// directly to the email address submitted through the
-// public Contact Page.
-//
 // Frontend:
 // POST http://localhost:5000/api/contact/reply
+//
+// Route:
+// backend/routes/contact.js
 //
 // ============================================================
 
@@ -57,7 +88,6 @@ app.use(
   '/api/contact',
   require('./routes/contact')
 );
-
 
 // ============================================================
 // PROTECTED ROUTE TEST
@@ -76,120 +106,67 @@ app.get(
   }
 );
 
-
 // ============================================================
-// STUDENT COUNT
-// ============================================================
-//
-// NOTE:
-// This is your existing student-count route.
-// It is kept here as requested.
-//
+// HEALTH CHECK
 // ============================================================
 
-router.get(
-  '/student-count',
-  async (req, res) => {
-    try {
-      console.log(
-        '===================================='
-      );
-
-      console.log(
-        'STUDENT COUNT API CALLED'
-      );
-
-      const {
-        data,
-        count,
-        error,
-      } = await supabase
-        .from('profiles')
-        .select(
-          'id, full_name, role, status',
-          {
-            count: 'exact',
-          }
-        )
-        .eq(
-          'role',
-          'student'
-        )
-        .eq(
-          'status',
-          'active'
-        );
-
-      console.log(
-        'STUDENT DATA:',
-        data
-      );
-
-      console.log(
-        'STUDENT COUNT:',
-        count
-      );
-
-      console.log(
-        'STUDENT ERROR:',
-        error
-      );
-
-      console.log(
-        '===================================='
-      );
-
-      if (error) {
-        return res.status(500).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      return res.json({
-        success: true,
-        count:
-          count ??
-          data?.length ??
-          0,
-      });
-
-    } catch (error) {
-
-      console.error(
-        'Unexpected student count error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Failed to load student count',
-      });
-    }
+app.get(
+  '/',
+  (req, res) => {
+    res.json({
+      success: true,
+      message: 'COED Backend API is running.',
+    });
   }
 );
 
+// ============================================================
+// 404 HANDLER
+// ============================================================
+
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      success: false,
+      message: `Route not found: ${req.method} ${req.originalUrl}`,
+    });
+  }
+);
+
+// ============================================================
+// ERROR HANDLER
+// ============================================================
+
+app.use(
+  (err, req, res, next) => {
+    console.error('SERVER ERROR:', err);
+
+    res.status(500).json({
+      success: false,
+      message:
+        err.message ||
+        'Internal server error',
+    });
+  }
+);
 
 // ============================================================
 // SERVER
 // ============================================================
 
-const PORT =
-  process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
 app.listen(
   PORT,
   () => {
+    console.log('====================================');
+    console.log(`COED Backend running on port ${PORT}`);
+    console.log(`http://localhost:${PORT}`);
+    console.log('');
+    console.log('Contact Reply API:');
     console.log(
-      `Server running on port ${PORT}`
+      `POST http://localhost:${PORT}/api/contact/reply`
     );
+    console.log('====================================');
   }
 );
-
-
-// ============================================================
-// EXPORT ROUTER
-// ============================================================
-
-module.exports = router;

@@ -51,6 +51,7 @@ export async function saveHomepageContent(homeContent: any) {
       onConflict: 'section_name',
     });
 }
+
 export async function uploadHomepageImage(
   file: File,
   folder: string = 'stats'
@@ -76,6 +77,7 @@ export async function uploadHomepageImage(
 
   return publicUrl;
 }
+
 export async function saveHomepageFeatures(features: any[]) {
   try {
     for (const feature of features) {
@@ -116,10 +118,97 @@ export async function saveHomepageFeatures(features: any[]) {
     };
   }
 }
+
 export async function saveHomepageStats(
   stats: any[]
 ) {
   return await supabase
     .from('homepage_stats')
     .upsert(stats);
+}
+
+// ============================================================
+// PROFILE STATISTICS
+// Gets the current number of active students and faculty
+// from the profiles table.
+// ============================================================
+
+export async function getProfileStatistics() {
+  const [studentResult, facultyResult] =
+    await Promise.all([
+      supabase
+        .from('profiles')
+        .select('*', {
+          count: 'exact',
+          head: true,
+        })
+        .eq('role', 'student')
+        .eq('status', 'active'),
+
+      supabase
+        .from('profiles')
+        .select('*', {
+          count: 'exact',
+          head: true,
+        })
+        .eq('role', 'faculty')
+        .eq('status', 'active'),
+    ]);
+
+  if (studentResult.error) {
+    console.error(
+      'Error counting students:',
+      studentResult.error
+    );
+
+    return {
+      students: 0,
+      faculty: 0,
+      error: studentResult.error,
+    };
+  }
+
+  if (facultyResult.error) {
+    console.error(
+      'Error counting faculty:',
+      facultyResult.error
+    );
+
+    return {
+      students: 0,
+      faculty: 0,
+      error: facultyResult.error,
+    };
+  }
+
+  return {
+    students: studentResult.count ?? 0,
+    faculty: facultyResult.count ?? 0,
+    error: null,
+  };
+}
+export async function getProgramStatistics() {
+  const { count, error } = await supabase
+    .from('programs')
+    .select('*', {
+      count: 'exact',
+      head: true,
+    });
+
+  if (error) {
+    console.error(
+      'Error counting programs:',
+      error
+    );
+
+    return {
+      programs: 0,
+      error,
+    };
+  }
+
+  return {
+    programs: count ?? 0,
+    error: null,
+  };
 }

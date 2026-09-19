@@ -20,7 +20,10 @@ import {
 } from 'lucide-react';
 
 import { useState, useEffect } from 'react';
-
+import {
+  getProfileStatistics,
+  getProgramStatistics,
+} from '../../landing-page/services/homepageService';
 import { supabase } from '../../supabaseClient';
 
 // =====================================================
@@ -174,7 +177,11 @@ export function HomePage({
 
   const [loading, setLoading] =
     useState(true);
-
+  const [profileStats, setProfileStats] = useState({
+  students: 0,
+  faculty: 0,
+  programs: 0,
+});
   // ===================================================
   // LOAD HOME PAGE
   // ===================================================
@@ -200,6 +207,8 @@ export function HomePage({
       loadStats(),
       loadAnnouncements(),
       loadHomepageContent(),
+      loadProfileStatistics(),
+      loadProgramStatistics(),
     ]);
 
     setLoading(false);
@@ -219,10 +228,41 @@ export function HomePage({
   // ===================================================
 
   const displayStats =
-    previewMode && previewStats
-      ? previewStats
-      : stats;
+  previewMode && previewStats
+    ? previewStats
+    : stats.map((stat) => {
+        const label = stat.label
+          ?.trim()
+          .toLowerCase();
 
+        // Active Students → profiles table
+        if (label === 'active students') {
+          return {
+            ...stat,
+            value: profileStats.students.toLocaleString(),
+          };
+        }
+
+        // Programs Offered → programs table
+        if (label === 'programs offered') {
+          return {
+            ...stat,
+            value: profileStats.programs.toLocaleString(),
+          };
+        }
+
+        // Expert Faculty → profiles table
+        if (label === 'expert faculty') {
+          return {
+            ...stat,
+            value: profileStats.faculty.toLocaleString(),
+          };
+        }
+
+        // Other statistics remain connected
+        // to homepage_stats
+        return stat;
+      });
   // ===================================================
   // DISPLAY ANNOUNCEMENTS
   // ===================================================
@@ -271,7 +311,58 @@ export function HomePage({
   // ===================================================
   // LOAD STATS
   // ===================================================
+  // ===================================================
+// LOAD PROFILE STATISTICS
+// ===================================================
 
+async function loadProfileStatistics() {
+  try {
+    const result = await getProfileStatistics();
+
+    if (result.error) {
+      console.error(
+        'Error loading profile statistics:',
+        result.error
+      );
+      return;
+    }
+
+    setProfileStats((current) => ({
+      ...current,
+      students: result.students,
+      faculty: result.faculty,
+    }));
+  } catch (error) {
+    console.error(
+      'Unexpected error loading profile statistics:',
+      error
+    );
+  }
+}
+
+  async function loadProgramStatistics() {
+  try {
+    const result = await getProgramStatistics();
+
+    if (result.error) {
+      console.error(
+        'Error loading program statistics:',
+        result.error
+      );
+      return;
+    }
+
+    setProfileStats((current) => ({
+      ...current,
+      programs: result.programs,
+    }));
+  } catch (error) {
+    console.error(
+      'Unexpected error loading program statistics:',
+      error
+    );
+  }
+}
   async function loadStats() {
 
     const {
