@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User, PlayCircle, Sparkles } from 'lucide-react';
+import { Eye, Target, Award, Users, ChevronLeft, ChevronRight, User, PlayCircle, Sparkles, X } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 // --- TypeScript Interfaces ---
@@ -91,13 +91,10 @@ const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
 </div>
 
     {/* Floating White Label */}
-    <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 flex justify-between items-center shadow-md transform transition-transform group-hover:-translate-y-1">
+    <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 shadow-md transform transition-transform group-hover:-translate-y-1">
       <div className="overflow-hidden">
         <div className="font-bold text-gray-900 text-sm truncate">{person.name}</div>
         <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold mt-0.5 truncate">{person.role}</div>
-      </div>
-      <div className="w-8 h-8 shrink-0 rounded-full border border-gray-200 flex items-center justify-center bg-gray-50 group-hover:bg-blue-50 transition-colors ml-2">
-        <User className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
       </div>
     </div>
   </div>
@@ -222,30 +219,33 @@ async function loadAboutPage() {
 }
   
   const [currentPage, setCurrentPage] = useState<number>(0);
-  // Type explicitly provided so TypeScript knows this holds either a Person object or null
-  const department =
-    departmentsToDisplay[Math.floor((currentPage - 1) / 2)] || null;
-
-const chairman = facultyToDisplay.find(
-  member =>
-    member.department_id === department?.id &&
-    member.member_type === 'chairman'
-);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  
-  const totalPages =
-  1 + departmentsToDisplay.length * 2; // 1 for Dean + 4 departments = 5 pages
-  const teacherDepartment =
-   departmentsToDisplay[
-    Math.floor((currentPage - 2) / 2)
-  ];
 
-const teachers =
-  facultyToDisplay.filter(
+  // Page 0 = Dean. Pages 1..N = one page per department (chairman + teachers together).
+  const totalPages = 1 + departmentsToDisplay.length;
+
+  const activeDepartment =
+    currentPage > 0
+      ? departmentsToDisplay[currentPage - 1]
+      : null;
+
+  const activeChairman = facultyToDisplay.find(
     member =>
-      member.department_id === teacherDepartment?.id &&
+      member.department_id === activeDepartment?.id &&
+      member.member_type === 'chairman'
+  );
+
+  const activeTeachers = facultyToDisplay.filter(
+    member =>
+      member.department_id === activeDepartment?.id &&
       member.member_type === 'teacher'
   );
+
+  // Chairman shown first, followed by the department's teachers
+  const departmentMembers = activeChairman
+    ? [activeChairman, ...activeTeachers]
+    : activeTeachers;
+
   if (!previewMode && loading) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white">
@@ -264,37 +264,29 @@ const teachers =
   );
 }
   return (
-    <div className="min-h-screen bg-white py-12 relative">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
-        
+    <div className="min-h-screen bg-white py-16 relative">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+
         {/* Page Header */}
-        <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-md border border-blue-100 text-blue-600 font-semibold text-sm mb-4">
+        <div className="mb-20 text-center max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white shadow-sm border border-blue-100 text-blue-600 font-semibold text-sm mb-5">
             About Us
           </div>
-          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4">  {content['header']?.title}</h1>
-          <p className="text-xl text-gray-900">  {content['header']?.description}</p>
+          <h1 className="text-4xl lg:text-5xl font-bold text-[#1E3A8A] mb-4 leading-tight">
+            {content['header']?.title}
+          </h1>
+          <p className="text-lg text-gray-600 leading-relaxed">
+            {content['header']?.description}
+          </p>
         </div>
 
-        {/* College History — text left, image right w/ floating badge (Xennada-style) */}
-        <div className="mb-8">
-          <div className="grid md:grid-cols-2 gap-10 items-center">
-            {/* Text side */}
-            <div>
-              <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A8A] mb-4 leading-tight">
-                Our History
-              </h2>
-              <div
-                className="prose max-w-none text-gray-900 leading-relaxed text-[17px] [&>p]:mb-5"
-                dangerouslySetInnerHTML={{
-                  __html: content['history']?.content || ''
-                }}
-              />
-            </div>
+        {/* College History — image left (larger), text right */}
+        <div className="mb-16">
+          <div className="grid md:grid-cols-5 gap-14 items-stretch">
 
             {/* Image side with floating badge */}
-            <div className="relative">
-              <div className="rounded-2xl overflow-hidden shadow-lg aspect-[4/3]">
+            <div className="relative order-1 md:col-span-3">
+              <div className="rounded-2xl overflow-hidden shadow-lg h-full aspect-[4/3] md:aspect-auto">
                 <img
   src={
     content['history']?.image ||
@@ -315,17 +307,54 @@ const teachers =
                 </div>
               </div>
             </div>
+
+            {/* Text side */}
+            <div className="order-2 md:col-span-2 flex flex-col justify-center">
+              <h2 className="text-3xl md:text-4xl font-bold text-[#1E3A8A] mb-5 leading-tight">
+                Our History
+              </h2>
+              <div
+                className="prose max-w-none text-gray-600 leading-relaxed text-[16px] [&>p]:mb-5"
+                dangerouslySetInnerHTML={{
+                  __html: content['history']?.content || ''
+                }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Vision, Mission, Goals — livened up cards */}
-        <div className="grid md:grid-cols-3 gap-9 mb-24 mt-14">
+        {/* Stats — directly under the About/History section */}
+        <div className="mb-24">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+            {statsToDisplay.map((stat) => (
+              <div
+                key={stat.id}
+                className="text-center"
+              >
+                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
+                  <Users className="w-7 h-7 text-[#2563EB] mx-auto mb-3" />
+
+                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
+                    {stat.count}
+                  </div>
+
+                  <div className="text-sm text-gray-600">
+                    {stat.label}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Vision, Mission, Goals */}
+        <div className="grid md:grid-cols-3 gap-8 mb-24">
           <div className="group bg-white rounded-2xl p-7 border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-300">
             <div className="w-11 h-11 bg-blue-50 rounded-lg flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
               <Eye className="w-5 h-5 text-[#2563EB]" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Vision</h3>
-            <div className="text-medium text-gray-900 leading-relaxed">
+            <div className="text-sm text-gray-600 leading-relaxed">
               {content['vision']?.description}
             </div>
           </div>
@@ -335,7 +364,7 @@ const teachers =
               <Target className="w-5 h-5 text-[#2563EB]" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Mission</h3>
-            <div className="text-medium text-gray-900 leading-relaxed">
+            <div className="text-sm text-gray-600 leading-relaxed">
               {content['mission']?.description}
             </div>
           </div>
@@ -345,16 +374,16 @@ const teachers =
               <Award className="w-5 h-5 text-[#2563EB]" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Goals</h3>
-            <div className="text-medium text-gray-900 leading-relaxed">
+            <div className="text-sm text-gray-600 leading-relaxed">
               {content['goals']?.description}
             </div>
           </div>
         </div>
 
         {/* Core Values Acronym - PREMIER */}
-        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-8 mb-16">
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 text-center">University Core Values</h2>
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-4 text-center">
+        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-10 mb-20">
+          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-8 text-center">University Core Values</h2>
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-6 text-center">
             {valuesToDisplay.map((value) => (
   <div
     key={value.id}
@@ -376,7 +405,7 @@ const teachers =
     </div>
     </div>
 
-        {/* Organizational Structure Section */}
+        {/* Organizational Structure Section — one page per department, chairman first */}
         <div className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-200 pb-6">
             <div className="max-w-2xl">
@@ -432,51 +461,26 @@ const teachers =
   />
 )}
   </div>
-) : currentPage % 2 === 1 ? (
-  /* Odd pages: Chairman only */
-  <div className="flex flex-col items-center animate-fade-in py-10">
-    <div className="mb-6 text-center">
-      <h3 className="text-2xl font-bold text-gray-800">
-        { departmentsToDisplay[
- Math.floor((currentPage - 1) / 2)
-].name}
-      </h3>
-       </div>
-    {chairman && (
-  <ProfileCard
-    person={{
-      id: chairman.id,
-      name: chairman.name,
-      role: chairman.role,
-      education: chairman.education,
-      experience: chairman.experience,
-      subject: chairman.academic_rank,
-      image: chairman.image
-    }}
-    onClick={setSelectedPerson}
-  />
-)}
-  </div>
 ) : (
-  /* Even pages: Teachers grid */
+  /* Department page: chairman first, then teachers, same grid */
   <div className="animate-fade-in pb-8">
     <div className="text-center mb-10">
       <h3 className="text-2xl font-bold text-gray-800">
-        {teacherDepartment?.name}
+        {activeDepartment?.name}
       </h3>
-       </div>
+    </div>
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-      {teachers.map((teacher) => (
+      {departmentMembers.map((member) => (
   <ProfileCard
-    key={teacher.id}
+    key={member.id}
     person={{
-      id: teacher.id,
-      name: teacher.name,
-      role: teacher.role,
-      education: teacher.education,
-      experience: teacher.experience,
-      subject: teacher.academic_rank,
-      image: teacher.image
+      id: member.id,
+      name: member.name,
+      role: member.role,
+      education: member.education,
+      experience: member.experience,
+      subject: member.academic_rank,
+      image: member.image
     }}
     onClick={setSelectedPerson}
   />
@@ -487,30 +491,6 @@ const teachers =
           </div>
         </div>
 
-
-        {/* Stats */}
-        <div className="mt-12 pt-8 border-t border-gray-200 mb-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {statsToDisplay.map((stat) => (
-  <div
-    key={stat.id}
-    className="text-center"
-  >
-    <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-      <Users className="w-8 h-8 text-[#2563EB] mx-auto mb-3" />
-
-      <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
-        {stat.count}
-      </div>
-
-      <div className="text-sm text-gray-600">
-        {stat.label}
-      </div>
-    </div>
-  </div>
-))}
-          </div>
-</div>
         {/* Core Values */}
        <div className="bg-[#1E3A8A] rounded-2xl shadow-lg p-10 text-white">
           <h2 className="text-2xl font-semibold mb-8 text-center">Our Core Values</h2>
@@ -527,18 +507,18 @@ const teachers =
         </div>
       </div>
 
-      {/* Profile Detail Modal */}
+      {/* Profile Detail Modal — X button top-left, no bottom close bar */}
       {selectedPerson && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-black/60 backdrop-blur-sm transition-opacity"
           onClick={() => setSelectedPerson(null)}
         >
           <div 
-            className="w-full max-w-5xl bg-[#f5f5f5] rounded-lg overflow-hidden flex flex-col shadow-2xl animate-fade-in"
+            className="relative w-full max-w-5xl bg-[#f5f5f5] rounded-lg overflow-hidden flex flex-col shadow-2xl animate-fade-in"
             onClick={e => e.stopPropagation()} 
           >
             <div className="flex flex-col md:flex-row">
-              {/* Left Side: Blank Square-ish Image Placeholder */}
+              {/* Left Side: Image */}
             <div className="relative w-full md:w-[45%] bg-[#e5e7eb] min-h-[350px] md:min-h-[500px]">
   <img 
     src={selectedPerson.image} 
@@ -550,6 +530,15 @@ const teachers =
       <User className="w-20 h-20 text-gray-400" />
     </div>
   )}
+
+  {/* Close button — top-left */}
+  <button
+    onClick={() => setSelectedPerson(null)}
+    aria-label="Close"
+    className="absolute top-4 left-4 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-gray-700 flex items-center justify-center shadow-md transition-colors"
+  >
+    <X className="w-4 h-4" />
+  </button>
 </div>
               {/* Right Side: Data */}
               <div className="w-full md:w-[55%] p-8 md:p-14 flex flex-col justify-center bg-[#f5f5f5]">
@@ -585,16 +574,6 @@ const teachers =
                   </p>
                 </div>
               </div>
-            </div>
-            
-            {/* Bottom Dark Bar with Close Button */}
-            <div className="bg-[#2d2d2d] w-full p-5 flex justify-end">
-              <button 
-                onClick={() => setSelectedPerson(null)}
-                className="text-white text-sm font-bold tracking-[0.25em] hover:text-gray-300 transition-colors uppercase"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>

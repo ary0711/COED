@@ -357,11 +357,7 @@ function AlumniEmploymentCard() {
           <div className="flex-1 flex items-center justify-center text-gray-400 text-xs">Loading...</div>
         ) : (
           <>
-            {isDemo && (
-              <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-md text-center mb-2 font-medium">
-                Preview Mode: Showing sample data because 0 survey responses exist.
-              </p>
-            )}
+            
 
             {/* Quick Stats Summary Cards */}
             <div className="grid grid-cols-3 gap-2 mb-2 flex-shrink-0">
@@ -714,9 +710,7 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="mb-4 pb-4 border-b border-gray-200">
-        <p className="text-gray-500 text-sm">Welcome back! Here's your college overview</p>
-      </div>
+    
 
       <div className="mb-4">
         {/* MOBILE */}
@@ -7666,64 +7660,33 @@ function LandingPageManagement() {
   }
 
   async function saveHomePage() {
-  // ==========================================
-  // SAVE HOMEPAGE CONTENT
-  // ==========================================
+    const { error: contentError } = await saveHomepageContent(homeContent);
+    if (contentError) {
+      setModalMessage(`Error: ${contentError.message}`);
+      setShowSuccessModal(true);
+      return;
+    }
 
-  const { error: contentError } =
-    await saveHomepageContent(homeContent);
+    const { error: statsError } = await saveHomepageStats(stats);
+    if (statsError) {
+      setModalMessage(`Error: ${statsError.message}`);
+      setShowSuccessModal(true);
+      return;
+    }
 
-  if (contentError) {
-    setModalMessage(
-      `Error: ${contentError.message}`
-    );
+    const { error: featuresError } = await saveHomepageFeatures(features);
+    if (featuresError) {
+      setModalMessage(
+        `Error: ${featuresError instanceof Error ? featuresError.message : String(featuresError)}`
+      );
+      setShowSuccessModal(true);
+      return;
+    }
+
+    setModalMessage('Homepage updated successfully!');
     setShowSuccessModal(true);
-    return;
   }
 
-  // ==========================================
-  // SAVE HOMEPAGE STATS
-  // ==========================================
-
-  const { error: statsError } =
-    await saveHomepageStats(stats);
-
-  if (statsError) {
-    setModalMessage(
-      `Error: ${statsError.message}`
-    );
-    setShowSuccessModal(true);
-    return;
-  }
-
-  // ==========================================
-  // SAVE HOMEPAGE FEATURES
-  // ==========================================
-
-  const { error: featuresError } =
-    await saveHomepageFeatures(features);
-
-  if (featuresError) {
-  setModalMessage(
-    `Error: ${
-      featuresError instanceof Error
-        ? featuresError.message
-        : String(featuresError)
-    }`
-  );
-  setShowSuccessModal(true);
-  return;
-}
-
-  // ==========================================
-  // SUCCESS
-  // ==========================================
-
-  setModalMessage(
-    'Homepage updated successfully!'
-  );
-  setShowSuccessModal(true);
-}
   async function saveDepartmentsPage() {
     await saveColleges(colleges);
     await saveDepartmentContent(departmentContent);
@@ -7769,20 +7732,25 @@ function LandingPageManagement() {
   return (
     <div>
       <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Landing Page Management</h1>
+
+      {/* Page nav — solid COED blue, no gradients */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mb-8">
-        {pages.map((page) => (
-          <button
-            key={page.key}
-            onClick={() => setActivePage(page.key as any)}
-            className={`h-14 w-full rounded-2xl flex items-center justify-center font-semibold text-sm transition-all duration-300 border shadow-sm ${
-              activePage === page.key
-                ? 'bg-[#27469C] text-white border-[#27469C] shadow-lg scale-[1.02]'
-                : 'bg-[#F8FBFF] text-[#2563EB] border-[#D6E4FF] hover:bg-[#EEF5FF] hover:border-[#7BA8FF] hover:shadow-md'
-            }`}
-          >
-            {page.label}
-          </button>
-        ))}
+        {pages.map((page) => {
+          const isActive = activePage === page.key;
+          return (
+            <button
+              key={page.key}
+              onClick={() => setActivePage(page.key as any)}
+              className={`h-14 w-full rounded-2xl flex items-center justify-center font-semibold text-sm transition-colors border ${
+                isActive
+                  ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-sm'
+                  : 'bg-white text-[#1E3A8A] border-gray-200 hover:bg-blue-50 hover:border-blue-200'
+              }`}
+            >
+              {page.label}
+            </button>
+          );
+        })}
       </div>
 
       {activePage === "homepage" && (
@@ -7895,36 +7863,53 @@ function LandingPageManagement() {
         />
       )}
 
+      {/* Action bar — solid COED blue on Save, neutral on Preview */}
       <div className="flex gap-4 mt-6">
-        <button onClick={() => setShowPreview(true)} className="px-6 py-3 bg-gray-700 text-white rounded-lg">
+        <button
+          onClick={() => setShowPreview(true)}
+          className="px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors"
+        >
           Preview {pageTitles[activePage]}
         </button>
-        <button onClick={() => saveHandlers[activePage]()} className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+        <button
+          onClick={() => saveHandlers[activePage]()}
+          className="px-6 py-3 bg-[#1E3A8A] text-white rounded-lg hover:bg-[#1E40AF] transition-colors"
+        >
           Save {pageTitles[activePage]}
         </button>
       </div>
 
+      {/* Success/Error modal — Fixed viewport coverage and solid blue */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Success</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Success</h2>
             <p className="text-gray-600 mb-6">{modalMessage}</p>
             <div className="flex justify-end">
-              <button onClick={() => setShowSuccessModal(false)} className="px-5 py-2 bg-blue-600 text-white rounded-lg">OK</button>
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="px-5 py-2 bg-[#1E3A8A] text-white rounded-lg hover:bg-[#1E40AF] transition-colors"
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Preview modal — Fixed viewport coverage */}
       {showPreview && (
-        <div className="fixed inset-0 z-50 bg-black/50">
-          <div className="bg-white h-screen flex flex-col">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50">
+          <div className="bg-white h-full flex flex-col">
             <div className="sticky top-0 z-50 flex items-center justify-between bg-white border-b border-gray-200 px-6 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-[#1E3A8A]">Website Preview</h2>
                 <p className="text-xs text-gray-500">Previewing: <span className="capitalize">{activePage}</span></p>
               </div>
-              <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-[#1E3A8A] text-white text-sm font-medium rounded-lg hover:bg-[#172554] transition">
+              <button
+                onClick={() => setShowPreview(false)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white text-sm font-medium rounded-lg hover:bg-[#172554] transition-colors"
+              >
                 Close Preview
               </button>
             </div>

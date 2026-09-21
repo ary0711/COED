@@ -174,10 +174,28 @@ export function DepartmentChairDashboard({
    Dashboard Overview
 ───────────────────────────────────────────── */
 function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
-  return (
-    <div>
+  // Demo data for Faculty Monitoring Preview
+  const recentFaculty = [
+    { id: 1, name: 'Dr. Maria Santos', email: 'maria.santos@university.edu', status: 'Submitted', date: 'Feb 10, 2026' },
+    { id: 2, name: 'Prof. John Rodriguez', email: 'john.rodriguez@university.edu', status: 'Submitted', date: 'Feb 11, 2026' },
+    { id: 3, name: 'Dr. Lisa Chen', email: 'lisa.chen@university.edu', status: 'Pending', date: 'Jan 15, 2026' },
+    { id: 4, name: 'Prof. David Martinez', email: 'david.martinez@university.edu', status: 'Overdue', date: 'Dec 28, 2025' },
+    { id: 5, name: 'Dr. Emily Wilson', email: 'emily.wilson@university.edu', status: 'Submitted', date: 'Feb 12, 2026' },
+  ];
 
-      <div className="mb-6">
+  // Demo data for Account Approvals Preview
+  const recentApprovals = [
+    { id: 1, name: 'Jenisel Carinoza', type: 'Student', detail: '0008' },
+    { id: 2, name: 'Erlin Pugoy', type: 'Alumni', detail: '3241512' },
+    { id: 3, name: 'Mark Bautista', type: 'Faculty', detail: 'EMP-018' },
+    { id: 4, name: 'Sarah Alcantara', type: 'Student', detail: '0012' },
+  ];
+
+  return (
+    <div className="flex flex-col h-full lg:h-[calc(100vh-140px)]">
+      
+      {/* SUMMARY CARDS ROW */}
+      <div className="mb-6 flex-shrink-0">
         <div
           className="flex gap-3 overflow-x-auto pb-2 sm:hidden"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
@@ -202,45 +220,96 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
-        <NotificationsPanel userType="chair" />
+      {/* 2-COLUMN GRID FOR LISTS - Takes up remaining height */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0 pb-4">
+        
+        {/* FACULTY MONITORING CARD */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              <h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2>
+            </div>
+            <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+              {recentFaculty.length} updates
+            </span>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {recentFaculty.map((faculty) => (
+              <div key={faculty.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
+                <div className="min-w-0 flex-1 pr-4">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{faculty.name}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{faculty.email}</p>
+                </div>
+                <div className="flex flex-col items-end flex-shrink-0">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 ${
+                    faculty.status === 'Submitted' ? 'bg-emerald-100 text-emerald-700' :
+                    faculty.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {faculty.status}
+                  </span>
+                  <span className="text-[10px] text-gray-400">{faculty.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
 
-        <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
+          <div className="p-4 border-t border-gray-100 bg-white">
             <button
-              onClick={() => setActiveMenuItem('reports')}
-              className="w-full p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-left"
+              onClick={() => setActiveMenuItem('faculty')}
+              className="w-full py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
             >
-              <div className="font-medium text-gray-900">View Faculty Reports</div>
-              <div className="text-sm text-gray-600">Check submission status</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('approvals')}
-              className="w-full p-4 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">Review Student Registrations</div>
-              <div className="text-sm text-gray-600">3 pending approvals</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('calendar')}
-              className="w-full p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">Add Department Event</div>
-              <div className="text-sm text-gray-600">Schedule activities</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('settings')}
-              className="w-full p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900">System Settings</div>
-              <div className="text-sm text-gray-600">Manage account and preferences</div>
+              Manage All Faculty <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
-      </div>
 
-      <FacultyMonitoringTable />
+        {/* ACCOUNT APPROVALS CARD */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-amber-600" />
+              <h2 className="text-sm font-bold text-gray-900">Account Approvals</h2>
+            </div>
+            <span className="flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              {recentApprovals.length} pending
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {recentApprovals.map((account) => (
+              <div key={account.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
+                <div className="min-w-0 flex-1 pr-4">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{account.name}</p>
+                  <p className="text-[11px] font-mono text-gray-400 mt-0.5">ID: {account.detail}</p>
+                </div>
+                <div className="flex-shrink-0">
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md ${
+                    account.type === 'Student' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                    account.type === 'Alumni' ? 'bg-pink-50 text-pink-700 border border-pink-100' :
+                    'bg-green-50 text-green-700 border border-green-100'
+                  }`}>
+                    {account.type}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-4 border-t border-gray-100 bg-white">
+            <button
+              onClick={() => setActiveMenuItem('approvals')}
+              className="w-full py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+            >
+              Review Pending Accounts <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
