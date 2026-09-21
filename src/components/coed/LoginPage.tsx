@@ -53,9 +53,9 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
   const [checkingUsername, setCheckingUsername] = useState(false);
 
   const userTypes = [
-    { id: 'student', label: 'Student', icon: '🎓' },
-    { id: 'faculty', label: 'Faculty/Employee', icon: '👨‍🏫' },
-    { id: 'alumni', label: 'Alumni', icon: '🎖️' },
+    { id: 'student', label: 'Student' },
+    { id: 'faculty', label: 'Faculty/Staff' },
+    { id: 'alumni', label: 'Alumni' },
   ];
 
   const programs = [
@@ -349,7 +349,7 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
   return (
     <div className="fixed inset-0 flex overflow-hidden">
-      <div className="hidden lg:flex w-5/12 bg-[#0f2a5e] flex-col relative overflow-hidden">
+       <div className="hidden lg:flex w-1/2 bg-[#0f2a5e] flex-col relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full border-[60px] border-white/5" />
           <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full border-[60px] border-white/5" />
@@ -534,11 +534,12 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
                   <div className="grid grid-cols-3 gap-2">
                     {userTypes.map((type) => (
                       <button key={type.id} type="button" onClick={() => setRegUserType(type.id)}
-                        className={`py-2.5 rounded-xl border-2 transition-all text-center ${
+                        className={`py-3 px-2 rounded-xl border-2 transition-all text-center flex items-center justify-center ${
                           regUserType === type.id ? 'border-[#1d4ed8] bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
                         }`}>
-                        <div className="text-xl mb-0.5">{type.icon}</div>
-                        <div className="text-xs font-semibold text-gray-700">{type.label}</div>
+                        <div className={`text-sm font-semibold ${regUserType === type.id ? 'text-[#1d4ed8]' : 'text-gray-700'}`}>
+                          {type.label}
+                        </div>
                       </button>
                     ))}
                   </div>

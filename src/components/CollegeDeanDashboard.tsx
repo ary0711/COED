@@ -58,6 +58,7 @@ import {
   Trash2,
   Download,
   Upload,
+  UploadCloud, // Gi-add ni para sa drag and drop icon
   CheckCircle,
   Search,
   RefreshCw,
@@ -710,8 +711,6 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
   return (
     <div className="flex flex-col h-full">
-    
-
       <div className="mb-4">
         {/* MOBILE */}
         <div className="flex gap-3 overflow-x-auto pb-4 sm:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
@@ -2110,6 +2109,7 @@ function AcademicRecords() {
     target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -2197,6 +2197,39 @@ function AcademicRecords() {
       setForm((prev) => ({ ...prev, target_roles: DOC_AUDIENCE_ROLES.map((r) => r.id) }));
     }
   };
+
+  // --- Drag and Drop File Handlers ---
+  const handleFileSelect = (selectedFile: File | undefined | null) => {
+    if (!selectedFile) return;
+    
+    const validExtensions = ['.pdf', '.doc', '.docx'];
+    const fileName = selectedFile.name.toLowerCase();
+    const isValid = validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (isValid) {
+      setFile(selectedFile);
+      setFormError('');
+    } else {
+      setFormError('Sorry, only PDF and Word documents (.doc, .docx) are allowed.');
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => setIsDragging(false);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+  // -----------------------------------
 
   const handleSave = async () => {
     setFormError('');
@@ -2474,7 +2507,7 @@ function AcademicRecords() {
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-gray-600">Target Audience *</label>
+                  <label className="block text-xs font-semibold text-gray-600">Authorized Viewers *</label>
                   <button
                     type="button"
                     onClick={handleSelectAllRoles}
@@ -2484,25 +2517,24 @@ function AcademicRecords() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex flex-wrap gap-2.5 mt-2">
                   {DOC_AUDIENCE_ROLES.map((role) => {
                     const isChecked = form.target_roles.includes(role.id);
                     return (
                       <label
                         key={role.id}
-                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-all text-xs font-medium ${
-                          isChecked
-                            ? 'bg-blue-50 border-blue-300 text-blue-800'
-                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
-                        }`}
+                        className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-full cursor-pointer border border-gray-200 hover:border-gray-300 shadow-sm transition-all"
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleRole(role.id)}
-                          className="w-3.5 h-3.5 rounded accent-blue-600 text-blue-600 cursor-pointer"
+                          className="w-4 h-4 accent-blue-600 cursor-pointer"
+                          style={{ borderRadius: '50%' }}
                         />
-                        <span>{role.label}</span>
+                        <span className={`text-xs font-medium ${isChecked ? 'text-gray-900' : 'text-gray-600'}`}>
+                          {role.label}
+                        </span>
                       </label>
                     );
                   })}
@@ -2523,13 +2555,67 @@ function AcademicRecords() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                   {editingDoc ? 'Replace File (optional)' : 'File *'}
                 </label>
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-sm"
-                />
-                {editingDoc && <p className="text-xs text-gray-400 mt-1">Current file: {editingDoc.file_name}</p>}
+                
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => document.getElementById('hidden-file-input')?.click()}
+                  className={`w-full py-4 px-3 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
+                    isDragging 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                  }`}
+                >
+                  <input
+                    id="hidden-file-input"
+                    type="file"
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={(e) => handleFileSelect(e.target.files?.[0])}
+                  />
+                  
+                  {file ? (
+                    <div className="flex items-center justify-between w-full max-w-[260px] bg-white border border-gray-200 px-3 py-2 rounded-lg shadow-sm">
+                      <div className="flex items-center gap-2 text-[#1E3A8A] overflow-hidden">
+                        <FileText className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-xs font-medium truncate">
+                          {file.name}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation(); 
+                          setFile(null);
+                          const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
+                          if (fileInput) fileInput.value = '';
+                        }}
+                        className="p-1 ml-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+                        title="Remove file"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-6 h-6 text-blue-500 mb-1.5" />
+                      <p className="text-xs font-medium text-gray-700">
+                        Drag & Drop or <span className="text-blue-600">Browse</span>
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        .PDF, .DOC, .DOCX only
+                      </p>
+                    </>
+                  )}
+                </div>
+                
+                {editingDoc && !file && (
+                  <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5" /> 
+                    Current file: <span className="font-medium text-gray-600 truncate">{editingDoc.file_name}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -2583,7 +2669,6 @@ function AcademicRecords() {
     </div>
   );
 }
-
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
   const [facultyList, setFacultyList] = useState<Profile[]>([]);
