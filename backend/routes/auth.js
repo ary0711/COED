@@ -2,80 +2,39 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../supabaseClient');
-
+const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
-/*
-=========================================================
-REGISTER
-=========================================================
+// Exact mapping from frontend program codes to database UUIDs & names
+const PROGRAM_TO_DEPARTMENT = {
+  'BEEd': {
+    id: '41fffef4-b5fc-4bdf-8a30-1a53097113c7',
+    name: 'Bachelor of Elementary Education Program',
+  },
+  'BTLEd': {
+    id: '428c2fc6-cca9-49ae-88c7-1c74232d2e30',
+    name: 'Bachelor of Technology and Livelihood Education Program',
+  },
+  'BSEd-Math': {
+    id: '46bb2177-22f3-43d1-9e01-de0964d539b3',
+    name: 'Bachelor of Secondary Education Major in Mathematics & English Program',
+  },
+  'BSEd-English': {
+    id: '46bb2177-22f3-43d1-9e01-de0964d539b3',
+    name: 'Bachelor of Secondary Education Major in Mathematics & English Program',
+  },
+};
 
-FULL REGISTRATION
------------------
-
-Used by Dean/User Management (no `userId` in the body — this
-route creates a brand-new Supabase Auth user from scratch).
-
-Creates:
-
-1. auth user (via supabase.auth.admin.createUser)
-2. users
-3. profiles
-
-The same UUID is used for users.id and profiles.id.
-
-Required:
-
-username
-password
-role
-email
-full_name
-id_number
-
-Optional:
-
-department
-status
-
-
-SELF-SERVICE REGISTRATION (student/faculty/alumni via LoginPage)
-------------------------------------------------------------------
-
-The frontend's own signup form already calls
-supabase.auth.signUp() AND inserts the profiles /
-student_profiles / faculty_profiles / alumni_profiles rows
-directly via the Supabase client BEFORE hitting this route.
-That means by the time this endpoint runs, the auth user and
-the profiles row already exist.
-
-When the frontend includes `userId` in the request body, this
-route reuses that existing auth user instead of trying to
-create a second one for the same email (which always fails,
-since the email is already registered) and skips re-inserting
-`profiles` (already inserted by the frontend). It only needs
-to create the `users` table row here, since that table stores
-the bcrypt password hash used by the legacy username/password
-login flow and the frontend has no direct insert access to it.
-
-
-LEGACY REGISTRATION
--------------------
-
-Your existing activatePending() function sends only:
-
-username
-password
-role
-
-That is still supported below so existing
-student/faculty/alumni activation does not
-immediately break.
-=========================================================
-*/
-
+// =========================================================
+// ATOMIC REGISTRATION ROUTE
+// =========================================================
 router.post('/register', async (req, res) => {
+  let createdAuthUserId = null;
+  let createdPublicUserId = null;
+  let createdProfileId = null;
+  let createdRoleProfileTable = null;
+
   try {
     const {
       username,
@@ -86,764 +45,360 @@ router.post('/register', async (req, res) => {
       id_number,
       department,
       status,
-      userId // present only when the frontend already ran supabase.auth.signUp()
+      graduation_year,
     } = req.body;
 
-    /*
-    =====================================================
-    BASIC VALIDATION
-    =====================================================
-    */
-
-    if (!username || !password || !role) {
+    // Phase 1: Pre-validation
+    if (!username || !password || !role || !full_name || !id_number || !email) {
       return res.status(400).json({
-        error: 'Username, password, and role are required.'
+        success: false,
+        error: 'All required fields (Username, Password, Role, Full Name, ID Number, Email) must be filled.',
       });
     }
 
-    if (password.length < 6) {
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedFullName = full_name.trim();
+    const trimmedIdNumber = id_number.trim();
+    const programCode = department?.trim() || null;
+    const accountStatus = status || 'pending';
+
+    const allowedRoles = ['student', 'faculty', 'staff', 'alumni', 'dean', 'admin'];
+    if (!allowedRoles.includes(role.toLowerCase())) {
       return res.status(400).json({
-        error: 'Password must be at least 6 characters.'
+        success: false,
+        error: `Invalid role selected. Allowed roles: ${allowedRoles.join(', ')}.`,
       });
     }
 
-    if (!full_name || !id_number || !email) {
+    if (!/^\d+$/.test(trimmedIdNumber)) {
       return res.status(400).json({
-        error:
-          'Full name, ID number, and email are required.'
+        success: false,
+        error: 'ID number must contain digits only.',
       });
     }
 
-    const normalizedUsername =
-      username.trim().toLowerCase();
+    if (role === 'student' && trimmedIdNumber.length !== 7) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID number must contain exactly 7 digits.',
+      });
+    }
+    if (role === 'alumni' && trimmedIdNumber.length !== 8) {
+      return res.status(400).json({
+        success: false,
+        error: 'Alumni ID number must contain exactly 8 digits.',
+      });
+    }
+    if (role === 'faculty' && trimmedIdNumber.length !== 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Faculty ID number must contain exactly 6 digits.',
+      });
+    }
 
-    const normalizedEmail =
-      email.trim().toLowerCase();
+    let parsedGraduationYear = null;
+    if (role === 'alumni') {
+      if (!graduation_year) {
+        return res.status(400).json({
+          success: false,
+          error: 'Graduation year is required for alumni registration.',
+        });
+      }
+      parsedGraduationYear = parseInt(graduation_year, 10);
+      const currentYear = new Date().getFullYear();
+      if (isNaN(parsedGraduationYear) || parsedGraduationYear < 1900 || parsedGraduationYear > currentYear + 1) {
+        return res.status(400).json({
+          success: false,
+          error: `Please enter a valid graduation year (1900–${currentYear + 1}).`,
+        });
+      }
+    }
 
-    /*
-    =====================================================
-    CHECK EXISTING USER IN public.users
-    =====================================================
-    */
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
+      });
+    }
 
-    const {
-      data: existingUser,
-      error: existingUserError
-    } = await supabase
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a valid email address.',
+      });
+    }
+
+    let resolvedDepartmentId = null;
+    if (programCode) {
+      const mapped = PROGRAM_TO_DEPARTMENT[programCode];
+      if (mapped) {
+        resolvedDepartmentId = mapped.id;
+      } else {
+        const { data: deptRow } = await supabase
+          .from('departments')
+          .select('id')
+          .or(`id.eq.${programCode},name.ilike.%${programCode}%`)
+          .maybeSingle();
+
+        if (deptRow) {
+          resolvedDepartmentId = deptRow.id;
+        }
+      }
+
+      if (!resolvedDepartmentId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Could not match your selected program to a valid department in the system.',
+        });
+      }
+    }
+
+    if (role === 'student' && !resolvedDepartmentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'A valid department is required to create a student profile.',
+      });
+    }
+
+    const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('username', normalizedUsername)
       .maybeSingle();
 
-    if (existingUserError) {
-      console.error(
-        'Existing user check error:',
-        existingUserError
-      );
-
-      return res.status(500).json({
-        error: existingUserError.message
-      });
-    }
-
     if (existingUser) {
-      return res.status(409).json({
-        error:
-          'An account with this username already exists.'
-      });
+      return res.status(409).json({ success: false, error: 'This username is already taken. Please choose another.' });
     }
 
-    /*
-    =====================================================
-    CHECK EXISTING EMAIL IN public.users
-    =====================================================
-
-    Skipped when `userId` is provided: in the self-service
-    flow the auth user for this email was JUST created by
-    the frontend's own signUp() call a moment ago, so a
-    "does this email already exist" check here would always
-    (correctly, but unhelpfully) say yes and block every
-    legitimate registration.
-    */
-
-    if (!userId) {
-      const {
-        data: existingEmail,
-        error: existingEmailError
-      } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', normalizedEmail)
-        .maybeSingle();
-
-      if (existingEmailError) {
-        console.error(
-          'Existing email check error:',
-          existingEmailError
-        );
-
-        return res.status(500).json({
-          error: existingEmailError.message
-        });
-      }
-
-      if (existingEmail) {
-        return res.status(409).json({
-          error:
-            'An account with this email already exists.'
-        });
-      }
-    }
-
-    /*
-    =====================================================
-    CHECK EXISTING ID NUMBER
-    =====================================================
-    */
-
-    const {
-      data: existingProfile,
-      error: existingProfileError
-    } = await supabase
-      .from('profiles')
+    const { data: existingEmailUser } = await supabase
+      .from('users')
       .select('id')
-      .eq('id_number', id_number.trim())
+      .eq('email', normalizedEmail)
       .maybeSingle();
 
-    if (existingProfileError) {
-      console.error(
-        'Existing ID number check error:',
-        existingProfileError
-      );
-
-      return res.status(500).json({
-        error: existingProfileError.message
-      });
+    if (existingEmailUser) {
+      return res.status(409).json({ success: false, error: 'An account with this email address already exists.' });
     }
 
-    // When userId is provided, the frontend's own registration flow already
-    // inserted this exact profiles row (same id_number) moments ago, so
-    // finding it here is expected, not a conflict — only block on a
-    // duplicate ID number that belongs to a DIFFERENT account.
-    if (existingProfile && existingProfile.id !== userId) {
-      return res.status(409).json({
-        error:
-          'This ID number is already registered.'
-      });
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id_number', trimmedIdNumber)
+      .maybeSingle();
+
+    if (existingProfile) {
+      return res.status(409).json({ success: false, error: 'This ID number is already registered.' });
     }
 
-    /*
-    =====================================================
-    STEP 1
-    GET OR CREATE THE SUPABASE AUTH USER
-    =====================================================
-    */
-
-    let authUser;
-
-    if (userId) {
-      // Self-service flow: the frontend already created this auth user via
-      // supabase.auth.signUp(). Verify it exists and reuse it instead of
-      // creating a duplicate (which would fail with an "email already
-      // registered" error every time).
-      const {
-        data: verifyAuthUser,
-        error: verifyAuthError
-      } = await supabase.auth.admin.getUserById(userId);
-
-      if (verifyAuthError || !verifyAuthUser?.user) {
-        console.error(
-          'Could not verify pre-created auth user:',
-          verifyAuthError
-        );
-
-        return res.status(400).json({
-          error:
-            'Could not verify the account created during signup. Please try registering again.'
-        });
-      }
-
-      authUser = verifyAuthUser.user;
-
-      console.log(
-        'Reusing existing Supabase Auth user:',
-        authUser.id
-      );
-    } else {
-  // =========================================
-  // ADMIN / DEAN REGISTRATION
-  // =========================================
-
-  console.log(
-    'Creating new Supabase Auth user:',
-    normalizedEmail
-  );
-
-  const {
-    data: authData,
-    error: authError
-  } = await supabase.auth.admin.createUser({
-    email: normalizedEmail,
-    password: password,
-    email_confirm: true
-  });
-
-  // =========================================
-  // HANDLE SUPABASE AUTH ERROR
-  // =========================================
-
-  if (authError) {
-    console.error(
-      'Supabase Auth user creation error:',
-      authError
-    );
-
-    const authMessage =
-      authError.message?.toLowerCase() || '';
-
-    // -----------------------------------------
-    // EMAIL ALREADY EXISTS IN SUPABASE AUTH
-    // -----------------------------------------
-
-    if (
-      authMessage.includes('already registered') ||
-      authMessage.includes('already exists') ||
-      authMessage.includes('user already')
-    ) {
-      return res.status(409).json({
-        error:
-          'This email address is already registered in Supabase Authentication. If this account was previously deleted from User Management, remove the old authentication account before registering this email again.'
-      });
-    }
-
-    // -----------------------------------------
-    // INVALID EMAIL
-    // -----------------------------------------
-
-    if (
-      authMessage.includes('invalid email')
-    ) {
-      return res.status(400).json({
-        error:
-          'The email address provided is invalid. Please enter a valid email address.'
-      });
-    }
-
-    // -----------------------------------------
-    // WEAK PASSWORD
-    // -----------------------------------------
-
-    if (
-      authMessage.includes('password') &&
-      (
-        authMessage.includes('weak') ||
-        authMessage.includes('short') ||
-        authMessage.includes('characters')
-      )
-    ) {
-      return res.status(400).json({
-        error:
-          'The password does not meet the required security requirements.'
-      });
-    }
-
-    // -----------------------------------------
-    // OTHER AUTH ERROR
-    // -----------------------------------------
-
-    return res.status(400).json({
-      error:
-        authError.message ||
-        'Unable to create the authentication account.'
+    // Phase 2: Atomic writes
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: normalizedEmail,
+      password: password,
+      email_confirm: true,
     });
-  }
 
-  // =========================================
-  // VERIFY AUTH USER WAS CREATED
-  // =========================================
+    if (authError || !authData?.user) {
+      return res.status(400).json({
+        success: false,
+        error: authError?.message || 'Unable to create the authentication account.',
+      });
+    }
+    createdAuthUserId = authData.user.id;
 
-  if (!authData?.user) {
-    console.error(
-      'Supabase Auth returned no user after creation.'
-    );
-
-    return res.status(500).json({
-      error:
-        'The authentication account could not be created. Please try again.'
-    });
-  }
-
-  authUser = authData.user;
-
-  console.log(
-    'Supabase Auth user created:',
-    authUser.id
-  );
-}
-
-    /*
-    =====================================================
-    STEP 2
-    HASH PASSWORD FOR public.users
-    =====================================================
-    */
-
-    const password_hash =
-      await bcrypt.hash(password, 10);
-
-    /*
-    =====================================================
-    STEP 3
-    CREATE public.users
-    =====================================================
-
-    IMPORTANT:
-
-    We explicitly use authUser.id.
-
-    This means:
-
-      auth.users.id
-            =
-      public.users.id
-    */
-
-    const {
-      data: user,
-      error: userError
-    } = await supabase
+    const password_hash = await bcrypt.hash(password, 10);
+    const { data: createdUser, error: userError } = await supabase
       .from('users')
       .insert([
         {
-          id: authUser.id,
+          id: createdAuthUserId,
           username: normalizedUsername,
           password_hash,
           role,
-          email: normalizedEmail
-        }
+          email: normalizedEmail,
+        },
       ])
       .select()
       .single();
 
-    if (userError) {
-      console.error(
-        'public.users insert error:',
-        userError
-      );
-
-      /*
-      Roll back Auth account — but only if we created it ourselves in
-      this request. If `userId` was passed in, that auth account (and
-      its profiles row) belong to the frontend's own signUp() flow, and
-      that flow already has its own rollback path — deleting it here
-      too would be redundant and could race with it.
-      */
-      if (!userId) {
-        await supabase.auth.admin.deleteUser(
-          authUser.id
-        );
-      }
-
-      return res.status(400).json({
-        error: userError.message
-      });
+    if (userError || !createdUser) {
+      throw new Error(`Failed to create application user record: ${userError?.message}`);
     }
+    createdPublicUserId = createdUser.id;
 
-    console.log(
-      'public.users record created:',
-      user.id
-    );
+    const { data: createdProfile, error: profileError } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: createdAuthUserId,
+          full_name: trimmedFullName,
+          email: normalizedEmail,
+          role: role === 'faculty' ? 'faculty' : role,
+          program: programCode,
+          id_number: trimmedIdNumber,
+          department: programCode,
+          status: accountStatus,
+        },
+      ])
+      .select()
+      .single();
 
-    /*
-    =====================================================
-    STEP 4
-    GET OR CREATE PROFILE
-    =====================================================
+    if (profileError || !createdProfile) {
+      throw new Error(`Failed to create base profile record: ${profileError?.message}`);
+    }
+    createdProfileId = createdProfile.id;
 
-    profiles.id must match auth.users.id.
-
-    When `userId` was provided, the frontend already inserted this
-    profiles row directly via the Supabase client — inserting it again
-    here would just fail on the primary key. Fetch it instead so the
-    response payload still includes it. Otherwise (admin/legacy flow),
-    create it as before.
-    */
-
-    let profile = null;
-
-    if (userId) {
-      const {
-        data: existingProfileRow,
-        error: fetchProfileError
-      } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
-
-      if (fetchProfileError) {
-        console.error(
-          'Fetching existing profile error:',
-          fetchProfileError
-        );
-      }
-
-      profile = existingProfileRow || null;
-    } else {
-      const {
-        data: newProfile,
-        error: profileError
-      } = await supabase
-        .from('profiles')
+    if (role === 'student') {
+      createdRoleProfileTable = 'student_profiles';
+      const { error: studentErr } = await supabase
+        .from('student_profiles')
         .insert([
           {
-            id: authUser.id,
-            full_name: full_name.trim(),
-            email: normalizedEmail,
-            role,
-            id_number: id_number.trim(),
-            department:
-              department?.trim() || null,
-            status:
-              status || 'active'
-          }
-        ])
-        .select()
-        .single();
-
-      if (profileError) {
-        console.error(
-          'Profile insert error:',
-          profileError
-        );
-
-        console.error(
-          'AUTH USER ID:',
-          authUser.id
-        );
-
-        console.error(
-          'AUTH USER EMAIL:',
-          authUser.email
-        );
-
-        const {
-          data: verifyAuthUser,
-          error: verifyAuthError
-        } = await supabase.auth.admin.getUserById(
-          authUser.id
-        );
-
-        console.log(
-          'VERIFY AUTH USER:',
-          verifyAuthUser?.user
-        );
-
-        console.log(
-          'VERIFY AUTH ERROR:',
-          verifyAuthError
-        );
-
-        return res.status(400).json({
-          error: profileError.message,
-
-          debug: {
-            authUserId: authUser.id,
-            authUserExists: !!verifyAuthUser?.user,
-            authError: verifyAuthError?.message || null
-          }
-        });
-      }
-
-      profile = newProfile;
+            user_id: createdAuthUserId,
+            department_id: resolvedDepartmentId,
+            full_name: trimmedFullName,
+            student_no: trimmedIdNumber,
+            year_level: 1,
+            program: programCode,
+            gpa: 0.00,
+            academic_standing: 'Good Standing',
+            enrollment_status: 'Active',
+          },
+        ]);
+      if (studentErr) throw new Error(`Failed to create student profile: ${studentErr.message}`);
+    } else if (role === 'faculty') {
+      createdRoleProfileTable = 'faculty_profiles';
+      const { error: facultyErr } = await supabase
+        .from('faculty_profiles')
+        .insert([
+          {
+            user_id: createdAuthUserId,
+            department_id: resolvedDepartmentId,
+            full_name: trimmedFullName,
+            contact_email: normalizedEmail,
+            status: 'Active',
+          },
+        ]);
+      if (facultyErr) throw new Error(`Failed to create faculty profile: ${facultyErr.message}`);
+    } else if (role === 'alumni') {
+      createdRoleProfileTable = 'alumni_profiles';
+      const { error: alumniErr } = await supabase
+        .from('alumni_profiles')
+        .insert([
+          {
+            user_id: createdAuthUserId,
+            department_id: resolvedDepartmentId,
+            full_name: trimmedFullName,
+            graduation_year: parsedGraduationYear,
+            program: programCode,
+            contact_email: normalizedEmail,
+            employment_status: 'Unemployed',
+            tracer_completed: false,
+          },
+        ]);
+      if (alumniErr) throw new Error(`Failed to create alumni profile: ${alumniErr.message}`);
     }
 
-    /*
-    =====================================================
-    SUCCESS
-    =====================================================
-    */
-
-    console.log(
-      'Registration complete for profile:',
-      profile?.id
-    );
-
     return res.status(201).json({
-      message:
-        'User and profile created successfully!',
-
+      success: true,
+      message: 'Account created successfully! Please wait for department approval.',
       user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role
+        id: createdUser.id,
+        username: createdUser.username,
+        email: createdUser.email,
+        role: createdUser.role,
       },
-
-      profile
+      profile: createdProfile,
     });
-
   } catch (error) {
+    console.error('Registration failed. Executing atomic rollback...', error.message);
 
-    console.error(
-      'Registration error:',
-      error
-    );
+    try {
+      if (createdRoleProfileTable && createdAuthUserId) {
+        await supabase.from(createdRoleProfileTable).delete().eq('user_id', createdAuthUserId);
+      }
+      if (createdProfileId) {
+        await supabase.from('profiles').delete().eq('id', createdProfileId);
+      }
+      if (createdPublicUserId) {
+        await supabase.from('users').delete().eq('id', createdPublicUserId);
+      }
+      if (createdAuthUserId) {
+        await supabase.auth.admin.deleteUser(createdAuthUserId);
+      }
+      console.log('Rollback completed. No orphaned records remain.');
+    } catch (cleanupErr) {
+      console.error('Rollback cleanup error:', cleanupErr);
+    }
 
     return res.status(500).json({
-      error:
-        error?.message ||
-        'Internal server error.'
+      success: false,
+      error: error.message || 'Registration failed and changes were rolled back. Please try again.',
     });
   }
 });
 
-/*
-=========================================================
-CLEANUP FAILED REGISTRATION
-=========================================================
-*/
-
-router.post(
-  '/cleanup-failed-registration',
-  async (req, res) => {
-
-    try {
-
-      const { userId } = req.body;
-
-      if (!userId) {
-        return res.status(400).json({
-          error: 'Missing userId'
-        });
-      }
-
-      const {
-        error
-      } = await supabase.auth.admin.deleteUser(
-        userId
-      );
-
-      if (error) {
-
-        console.error(
-          'Cleanup failed:',
-          error.message
-        );
-
-        return res.status(400).json({
-          error: error.message
-        });
-      }
-
-      return res.json({
-        message: 'Cleaned up'
-      });
-
-    } catch (error) {
-
-      console.error(
-        'Cleanup error:',
-        error
-      );
-
-      return res.status(500).json({
-        error: 'Internal server error.'
-      });
-    }
-  }
-);
-
-
-/*
-=========================================================
-LOGIN
-=========================================================
-*/
-
+// =========================================================
+// LOGIN
+// =========================================================
 router.post('/login', async (req, res) => {
-
   try {
-
-    const {
-      username,
-      password
-    } = req.body;
+    const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({
-        error:
-          'Username and password are required.'
-      });
+      return res.status(400).json({ error: 'Username and password are required.' });
     }
 
-    const normalizedUsername =
-      username.trim().toLowerCase();
+    const normalizedUsername = username.trim().toLowerCase();
 
-    /*
-    =====================================================
-    FIND USER
-    =====================================================
-    */
-
-    const {
-      data: user,
-      error
-    } = await supabase
+    const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq(
-        'username',
-        normalizedUsername
-      )
+      .eq('username', normalizedUsername)
       .maybeSingle();
 
     if (error || !user) {
-
-      return res.status(401).json({
-        error:
-          'Invalid username or password'
-      });
+      return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    /*
-    =====================================================
-    CHECK PASSWORD
-    =====================================================
-    */
-
-    const isMatch =
-      await bcrypt.compare(
-        password,
-        user.password_hash
-      );
-
+    const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-
-      return res.status(401).json({
-        error:
-          'Invalid username or password'
-      });
+      return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    /*
-    =====================================================
-    GET PROFILE
-    =====================================================
-    */
-
-    let fullName =
-      normalizedUsername;
-
+    let fullName = normalizedUsername;
     let idNumber = '';
-
     let profileId = null;
-
     let profileStatus = null;
-
     let department = null;
 
     if (user.email) {
-
-      const {
-        data: profile
-      } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
-        .select(
-          'id, full_name, id_number, status, department, role'
-        )
-        .eq(
-          'email',
-          user.email
-        )
+        .select('id, full_name, id_number, status, department, role')
+        .eq('email', user.email)
         .maybeSingle();
 
       if (profile) {
-
-        profileId =
-          profile.id;
-
-        fullName =
-          profile.full_name ||
-          normalizedUsername;
-
-        idNumber =
-          profile.id_number ||
-          '';
-
-        profileStatus =
-          profile.status;
-
-        department =
-          profile.department ||
-          null;
+        profileId = profile.id;
+        fullName = profile.full_name || normalizedUsername;
+        idNumber = profile.id_number || '';
+        profileStatus = profile.status;
+        department = profile.department || null;
       }
     }
 
-    /*
-    =====================================================
-    BLOCK PENDING
-    =====================================================
-    */
-
-    if (
-      profileStatus ===
-      'pending'
-    ) {
-
-      return res.status(403).json({
-        error:
-          'Your account is pending approval from your department chair.'
-      });
+    if (profileStatus === 'pending') {
+      return res.status(403).json({ error: 'Your account is pending approval from your department chair.' });
     }
-
-    /*
-    =====================================================
-    BLOCK REJECTED
-    =====================================================
-    */
-
-    if (
-      profileStatus ===
-      'rejected'
-    ) {
-
-      return res.status(403).json({
-        error:
-          'Your registration was not approved. Please contact your department chair.'
-      });
+    if (profileStatus === 'rejected') {
+      return res.status(403).json({ error: 'Your registration was not approved. Please contact your department chair.' });
     }
-
-    /*
-    =====================================================
-    BLOCK INACTIVE
-    =====================================================
-    */
-
-    if (
-      profileStatus ===
-      'inactive'
-    ) {
-
-      return res.status(403).json({
-        error:
-          'Your account is currently inactive.'
-      });
+    if (profileStatus === 'inactive') {
+      return res.status(403).json({ error: 'Your account is currently inactive.' });
     }
-
-    /*
-    =====================================================
-    RESOLVE THIS CHAIR'S ASSIGNED DEPARTMENT(S)
-    =====================================================
-
-    Scoping is by department_id (a real foreign key on
-    student_profiles), not the free-text `program` column —
-    that field has no validation and drifts out of sync
-    (e.g. "BEEd" vs "BEED"). department_id is always reliable.
-
-    Also resolves the department NAMEs so the frontend can
-    display "Managing: X, Y" without hardcoding any IDs.
-    */
 
     const departmentIds = user.department_ids ?? [];
     let departmentNames = [];
@@ -854,435 +409,335 @@ router.post('/login', async (req, res) => {
         .select('id, name')
         .in('id', departmentIds);
 
-      departmentNames = (depRows ?? []).map(d => d.name);
+      departmentNames = (depRows ?? []).map((d) => d.name);
     }
 
-    /*
-    =====================================================
-    GENERATE JWT
-    =====================================================
-    */
-
+    // Extended expiration to 7 days to prevent session expiration issues during development
     const token = jwt.sign(
       {
         userId: user.id,
-
         profileId,
-
-        username:
-          user.username,
-
-        role:
-          user.role,
-
+        username: user.username,
+        role: user.role,
         fullName,
-
         idNumber,
-
         department,
-
-        alumniId:
-          user.alumni_id ??
-          null,
-
+        alumniId: user.alumni_id ?? null,
         departmentIds,
         departmentNames,
       },
-
       process.env.JWT_SECRET,
-
-      {
-        expiresIn: '8h'
-      }
+      { expiresIn: '7d' }
     );
-
-    /*
-    =====================================================
-    RESPONSE
-    =====================================================
-    */
 
     return res.json({
-
-      message:
-        'Login successful!',
-
+      message: 'Login successful!',
       token,
-
       user: {
-
-        id:
-          user.id,
-
+        id: user.id,
         profileId,
-
-        username:
-          user.username,
-
-        role:
-          user.role,
-
+        username: user.username,
+        role: user.role,
         fullName,
-
         idNumber,
-
-        email:
-          user.email,
-
-        department
-      }
+        email: user.email,
+        department,
+      },
     });
-
   } catch (error) {
-
-    console.error(
-      'Login error:',
-      error
-    );
-
-    return res.status(500).json({
-      error:
-        'Internal server error.'
-    });
+    console.error('Login error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
-
-/*
-=========================================================
-DELETE USER
-=========================================================
-
-Deletes both:
-
-users
-profiles
-=========================================================
-*/
-
-router.put('/users/:id', async (req, res) => {
+// =========================================================
+// GET CURRENT AUTHENTICATED USER / PROFILE
+// =========================================================
+router.get('/me', authenticate, async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const {
-      role,
-      password
-    } = req.body;
-
-    const updateData = {};
-
-    // Update role
-    if (role) {
-      updateData.role = role;
-    }
-
-    // Update password only if provided
-    if (password && password.trim() !== '') {
-
-      if (password.length < 6) {
-        return res.status(400).json({
-          error: 'Password must be at least 6 characters.'
-        });
-      }
-
-      updateData.password_hash =
-        await bcrypt.hash(password, 10);
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        error: 'No changes were provided.'
-      });
-    }
-
-    const {
-      data,
-      error
-    } = await supabase
-      .from('users')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', req.user.userId)
+      .maybeSingle();
 
     if (error) {
-      return res.status(400).json({
-        error: error.message
-      });
-    }
-
-    // Keep profiles synchronized
-    if (role) {
-      await supabase
-        .from('profiles')
-        .update({
-          role: role
-        })
-        .eq('id', id);
+      return res.status(500).json({ error: error.message });
     }
 
     return res.json({
-      message: 'User updated successfully.',
-      user: data
+      user: req.user,
+      profile: profile || null,
     });
-
-  } catch (error) {
-
-    console.error(
-      'Update user error:',
-      error
-    );
-
-    return res.status(500).json({
-      error: 'Internal server error.'
-    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
-/*
-=====================================================
-DELETE USER
-=====================================================
 
-Deletes:
-
-1. profiles record
-2. users record
-
-The same UUID is used for both tables.
-*/
-
-/*
-=====================================================
-DELETE USER
-=====================================================
-
-The frontend sends the PROFILE ID.
-
-We first find the profile, then find the
-corresponding login account in users using
-the email/username.
-
-This works even if profiles.id and users.id
-are different UUIDs.
-*/
-
-router.delete('/users/:id', async (req, res) => {
+// =========================================================
+// FORGOT PASSWORD
+// =========================================================
+router.post('/forgot-password', async (req, res) => {
   try {
-    const { id } = req.params;
+    const { username, email } = req.body;
+    const trimmedUsername = username?.trim().toLowerCase();
+    const trimmedEmail = email?.trim().toLowerCase();
 
-    console.log('====================================');
-    console.log('DELETE USER REQUEST');
-    console.log('Profile ID:', id);
-    console.log('====================================');
-
-    if (!id) {
+    if (!trimmedUsername || !trimmedEmail) {
       return res.status(400).json({
-        error: 'User ID is required.'
+        success: false,
+        error: 'Please enter both your username and email address.',
       });
     }
 
-    /*
-    =====================================================
-    STEP 1: FIND PROFILE
-    =====================================================
-    */
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .eq('username', trimmedUsername)
+      .eq('email', trimmedEmail)
+      .maybeSingle();
 
-    const {
-      data: profile,
-      error: profileFindError
-    } = await supabase
+    if (userError) {
+      console.error('Account lookup error:', userError);
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to process request. Please try again later.',
+      });
+    }
+
+    if (user) {
+      const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`;
+      await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo: resetUrl });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account matches those details, a password reset link has been sent.',
+    });
+  } catch (error) {
+    console.error('FORGOT PASSWORD ERROR:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'An unexpected error occurred. Please try again later.',
+    });
+  }
+});
+
+// =========================================================
+// SYNC PASSWORD AFTER RECOVERY
+// =========================================================
+router.post('/sync-reset-password', async (req, res) => {
+  try {
+    const { accessToken, password } = req.body;
+
+    if (!accessToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Password reset session is missing or expired.',
+      });
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+    if (!password || !passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Your password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
+      });
+    }
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
+    if (userError || !user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your password reset link is invalid or has expired.',
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash: passwordHash })
+      .or(`id.eq.${user.id},email.eq.${user.email}`);
+
+    if (updateError) {
+      console.error('Password sync error:', updateError);
+      return res.status(500).json({
+        success: false,
+        error: 'Could not synchronize password with your account.',
+      });
+    }
+
+    return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (error) {
+    console.error('SYNC RESET PASSWORD ERROR:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'An unexpected error occurred while updating your password.',
+    });
+  }
+});
+
+// =========================================================
+// DIRECTORY & COUNTS
+// =========================================================
+router.get('/faculty', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'faculty')
+      .eq('status', 'active')
+      .order('full_name', { ascending: true });
+
+    if (error) throw error;
+    return res.json({ success: true, data: data ?? [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load faculty', error: error.message });
+  }
+});
+
+router.get('/faculty-count', async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'faculty')
+      .eq('status', 'active');
+
+    if (error) throw error;
+    return res.json({ success: true, count: count ?? 0 });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to get faculty count', error: error.message });
+  }
+});
+
+router.get('/staff-count', async (req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'staff')
+      .eq('status', 'active');
+
+    if (error) throw error;
+    return res.json({ success: true, count: count ?? 0 });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to get staff count', error: error.message });
+  }
+});
+
+router.get('/student-count', async (req, res) => {
+  try {
+    const { data, count, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, status', { count: 'exact' })
+      .eq('role', 'student')
+      .eq('status', 'active');
+
+    if (error) throw error;
+    return res.json({
+      success: true,
+      count: count ?? data?.length ?? 0,
+      students: data,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load student count', error: error.message });
+  }
+});
+
+// =========================================================
+// USER UPDATE (Admin/Dean only)
+// =========================================================
+router.put('/users/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators can modify users.' });
+    }
+
+    const { id } = req.params;
+    const { full_name, role, id_number, department, status, password } = req.body;
+
+    const profileUpdate = {};
+    if (full_name !== undefined) profileUpdate.full_name = full_name.trim();
+    if (role !== undefined) profileUpdate.role = role;
+    if (id_number !== undefined) profileUpdate.id_number = id_number.trim();
+    if (department !== undefined) profileUpdate.department = department?.trim() || null;
+    if (status !== undefined) profileUpdate.status = status;
+
+    if (Object.keys(profileUpdate).length > 0) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(profileUpdate)
+        .eq('id', id);
+
+      if (profileError) return res.status(400).json({ error: profileError.message });
+    }
+
+    const userUpdate = {};
+    if (role !== undefined) userUpdate.role = role;
+
+    if (password && password.trim() !== '') {
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      }
+      userUpdate.password_hash = await bcrypt.hash(password, 10);
+
+      const { error: authError } = await supabase.auth.admin.updateUserById(id, { password });
+      if (authError) {
+        console.warn('Could not sync password to Supabase Auth:', authError.message);
+      }
+    }
+
+    let updatedUser = null;
+    if (Object.keys(userUpdate).length > 0) {
+      const { data, error: userError } = await supabase
+        .from('users')
+        .update(userUpdate)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (userError) return res.status(400).json({ error: userError.message });
+      updatedUser = data;
+    }
+
+    return res.json({ message: 'User updated successfully.', user: updatedUser });
+  } catch (error) {
+    console.error('Update user error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// =========================================================
+// USER DELETION (Admin/Dean only)
+// =========================================================
+router.delete('/users/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators can delete users.' });
+    }
+
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'User ID is required.' });
+
+    const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', id)
       .maybeSingle();
 
-    if (profileFindError) {
-      console.error(
-        'Find profile error:',
-        profileFindError
-      );
-
-      return res.status(500).json({
-        error: profileFindError.message
-      });
-    }
-
     if (!profile) {
-      return res.status(404).json({
-        error: 'Profile not found.'
-      });
+      return res.status(404).json({ error: 'Profile not found.' });
     }
 
-    console.log('Profile found:', profile);
+    await supabase.from('student_profiles').delete().eq('user_id', id);
+    await supabase.from('faculty_profiles').delete().eq('user_id', id);
+    await supabase.from('alumni_profiles').delete().eq('user_id', id);
 
-    /*
-    =====================================================
-    STEP 2: FIND LOGIN ACCOUNT
-    =====================================================
+    await supabase.auth.admin.deleteUser(id);
+    await supabase.from('users').delete().eq('id', id);
 
-    First try matching users.id with profile.id.
-
-    If that does not exist, try matching by email.
-    */
-
-    let loginUser = null;
-
-    /*
-    -----------------------------------------------------
-    TRY 1: SAME UUID
-    -----------------------------------------------------
-    */
-
-    const {
-      data: userById,
-      error: userByIdError
-    } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (userByIdError) {
-      console.error(
-        'Find user by ID error:',
-        userByIdError
-      );
-    }
-
-    if (userById) {
-      loginUser = userById;
-    }
-
-    /*
-    -----------------------------------------------------
-    TRY 2: MATCH BY EMAIL
-    -----------------------------------------------------
-    */
-
-    if (!loginUser && profile.email) {
-
-      const {
-        data: userByEmail,
-        error: userByEmailError
-      } = await supabase
-        .from('users')
-        .select('*')
-        .eq(
-          'email',
-          profile.email.trim().toLowerCase()
-        )
-        .maybeSingle();
-
-      if (userByEmailError) {
-        console.error(
-          'Find user by email error:',
-          userByEmailError
-        );
-      }
-
-      if (userByEmail) {
-        loginUser = userByEmail;
-      }
-    }
-
-    /*
-    =====================================================
-    STEP 3: IF LOGIN ACCOUNT WAS FOUND
-    =====================================================
-    */
-
-    if (loginUser) {
-
-  console.log(
-    'Login account found:',
-    loginUser.id
-  );
-
-  // =========================================
-  // STEP 3A: DELETE SUPABASE AUTH USER
-  // =========================================
-
-  const {
-    error: deleteAuthError
-  } = await supabase.auth.admin.deleteUser(
-    loginUser.id
-  );
-
-  if (deleteAuthError) {
-
-    console.error(
-      'Delete Supabase Auth user error:',
-      deleteAuthError
-    );
-
-    return res.status(500).json({
-      error:
-        deleteAuthError.message ||
-        'Failed to delete the authentication account. The user was not deleted from the system.'
-    });
-  }
-
-  console.log(
-    'Supabase Auth user deleted:',
-    loginUser.id
-  );
-
-  // =========================================
-  // STEP 3B: DELETE public.users
-  // =========================================
-
-  const {
-    error: deleteUserError
-  } = await supabase
-    .from('users')
-    .delete()
-    .eq('id', loginUser.id);
-
-  if (deleteUserError) {
-
-    console.error(
-      'Delete users table error:',
-      deleteUserError
-    );
-
-    return res.status(500).json({
-      error:
-        deleteUserError.message ||
-        'Authentication account was deleted, but the login record could not be removed.'
-    });
-  }
-
-  console.log(
-    'public.users record deleted:',
-    loginUser.id
-  );
-
-} else {
-
-      console.warn(
-        'No login account found for profile:',
-        id
-      );
-
-      /*
-      We DO NOT stop here.
-
-      The profile can still be deleted.
-      This is useful for pending/old accounts that
-      may not have a users record.
-      */
-    }
-
-    /*
-    =====================================================
-    STEP 4: DELETE PROFILE
-    =====================================================
-    */
-
-    const {
-      data: deletedProfile,
-      error: deleteProfileError
-    } = await supabase
+    const { data: deletedProfile, error: deleteProfileError } = await supabase
       .from('profiles')
       .delete()
       .eq('id', id)
@@ -1290,82 +745,37 @@ router.delete('/users/:id', async (req, res) => {
       .maybeSingle();
 
     if (deleteProfileError) {
-
-      console.error(
-        'Delete profile error:',
-        deleteProfileError
-      );
-
-      return res.status(500).json({
-        error:
-          deleteProfileError.message ||
-          'Failed to delete profile.'
-      });
+      return res.status(500).json({ error: deleteProfileError.message || 'Failed to delete profile.' });
     }
-
-    /*
-    =====================================================
-    STEP 5: VERIFY PROFILE WAS DELETED
-    =====================================================
-    */
-
-    if (!deletedProfile) {
-
-      return res.status(404).json({
-        error:
-          'Profile could not be deleted.'
-      });
-    }
-
-    /*
-    =====================================================
-    SUCCESS
-    =====================================================
-    */
-
-    console.log(
-      'Profile deleted:',
-      deletedProfile.id
-    );
-
-    console.log(
-      'User deletion completed successfully.'
-    );
 
     return res.status(200).json({
       success: true,
-
-      message:
-        'User and profile deleted successfully.',
-
-      deletedUser: loginUser
-        ? {
-            id: loginUser.id,
-            email: loginUser.email,
-            username: loginUser.username
-          }
-        : null,
-
-      deletedProfile: {
-        id: deletedProfile.id,
-        email: deletedProfile.email,
-        full_name: deletedProfile.full_name
-      }
+      message: 'User and associated profiles deleted successfully.',
+      deletedProfile,
     });
-
   } catch (error) {
-
-    console.error(
-      'DELETE USER ERROR:',
-      error
-    );
-
-    return res.status(500).json({
-      error:
-        error.message ||
-        'Failed to delete user.'
-    });
+    console.error('DELETE USER ERROR:', error);
+    return res.status(500).json({ error: error.message || 'Failed to delete user.' });
   }
+});
+
+// =========================================================
+// GET ALL USERS (Admin/Dean only)
+// =========================================================
+router.get('/users', authenticate, async (req, res) => {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only administrators can access this resource.' });
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  return res.json(data ?? []);
 });
 
 module.exports = router;

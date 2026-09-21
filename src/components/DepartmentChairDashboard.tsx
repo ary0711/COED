@@ -27,6 +27,9 @@ import {
   Bell,
   Loader2,
   AlertCircle,
+  Settings,
+  KeyRound,
+  User,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -34,16 +37,11 @@ import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { NotificationsPanel } from './NotificationsPanel';
 import { FacultyMonitoringTable } from './FacultyMonitoringTable';
+import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 
-// NOTE: These two components already exist in your Faculty dashboard folder.
-// Update the import path below if your project structure places them elsewhere
-// (e.g. '../faculty/AccomplishmentReport').
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
 
-// NOTE: adjust this path to match where supabaseClient.ts actually lives
-// relative to this file (per your project it's a named export `supabase`
-// from src/supabaseClient.ts).
 import { supabase } from '../supabaseClient';
 
 
@@ -55,7 +53,8 @@ const chairMenuItems = [
   { icon: FileText,        label: 'Reports Monitoring',  id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',    id: 'records' },
   { icon: Megaphone,       label: 'Announcements',       id: 'announcements' },
-  { icon: UserCheck,       label: 'Student Approvals',   id: 'approvals' },
+  { icon: UserCheck,       label: 'Account Approvals',   id: 'approvals' },
+  { icon: Settings,        label: 'System Settings',     id: 'settings' },
 ];
 
 interface DepartmentChairDashboardProps {
@@ -65,47 +64,55 @@ interface DepartmentChairDashboardProps {
   onLogout?: () => void;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
+export type CalendarAudience = 'all' | 'students' | 'faculty' | 'alumni';
 
-// Mirrors public.calendar_events exactly.
-interface CalendarEvent {
+export interface CalendarEvent {
   id: string;
   title: string;
   description: string | null;
-  event_date: string;   // timestamptz, stored/read as "YYYY-MM-DDTHH:mm:ss"
+  event_date: string;
   end_date: string | null;
   location: string | null;
-  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
+  event_type: StandardEventType | string | null;
+  audience: CalendarAudience | string | null;
+  department_ids: string[] | null;
   organizer_id: string | null;
-  department: string | null;
+  department?: string | null;
   status: string | null;
+  posted_by_role: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// Mirrors public.profiles (role='student') joined with public.student_profiles.
-// NOTE: profiles.status uses 'pending' / 'active' / 'rejected' in the DB.
-// The UI labels 'active' as "Approved" for readability, but the value we
-// read/write is always 'active', never 'approved'.
-interface StudentApplicant {
-  id: string;              // profiles.id (uuid)
+type AccountRole = 'student' | 'faculty' | 'alumni';
+
+interface AccountApplicant {
+  id: string;
   name: string;
   email: string;
-  studentId: string;
+  idNumber: string;
   program: string;
-  yearLevel: string;
+  detail: string;
   registeredAt: string;
   status: 'pending' | 'active' | 'rejected';
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: DepartmentChairDashboardProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Kuhaon ang userId, fullName, ug program gikan sa JWT token, susama sa
-  // Faculty Dashboard, para magamit sa Chair's own Reports (Accomplishment /
-  // Extension) tab, isip organizer_id sa calendar_events, ug para i-scope
-  // ang Student Approvals sa iyang kaugalingong program.
+export function DepartmentChairDashboard({ 
+  activeMenuItem, 
+  setActiveMenuItem, 
+  onLogout 
+}: DepartmentChairDashboardProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
+
   const token = localStorage.getItem('token');
   const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
   const userId = decoded?.userId ?? '';
@@ -121,6 +128,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
         userRole="Department Chair"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       <div className="hidden lg:block w-64 shrink-0" />
@@ -136,20 +144,26 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader userRole="Department Chair" userName={userName} departmentNames={departmentNames} />
+              <DashboardHeader 
+                userRole="Department Chair" 
+                userName={userName} 
+                departmentNames={departmentNames} 
+                onLogout={handleInternalLogout}
+              />
             </div>
           </div>
         </div>
 
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
-          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
-          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} />}
+          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
+          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
           {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
-          {activeMenuItem === 'approvals'   && <StudentApprovalsView departmentNames={departmentNames} />}
+          {activeMenuItem === 'approvals'   && <AccountApprovalsView departmentNames={departmentNames} />}
+          {activeMenuItem === 'settings'    && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
         </main>
       </div>
     </div>
@@ -158,24 +172,29 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem }: 
 
 /* ─────────────────────────────────────────────
    Dashboard Overview
-   — Header, Notifications, and Quick Actions removed.
-   — Left card: compact Student Approvals (list + Accept/Reject only,
-     no batch upload, no search/filter chrome). Right card: Faculty
-     Monitoring. Both are styled like the "Inquiries" card — a white
-     rounded panel with a header row and its OWN internal scroll area,
-     sized equally (half/half) so the outer dashboard never scrolls.
 ───────────────────────────────────────────── */
-function ChairDashboardView({
-  setActiveMenuItem,
-  departmentNames,
-}: {
-  setActiveMenuItem: (id: string) => void;
-  departmentNames: string[];
-}) {
+function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
+  // Demo data for Faculty Monitoring Preview
+  const recentFaculty = [
+    { id: 1, name: 'Dr. Maria Santos', email: 'maria.santos@university.edu', status: 'Submitted', date: 'Feb 10, 2026' },
+    { id: 2, name: 'Prof. John Rodriguez', email: 'john.rodriguez@university.edu', status: 'Submitted', date: 'Feb 11, 2026' },
+    { id: 3, name: 'Dr. Lisa Chen', email: 'lisa.chen@university.edu', status: 'Pending', date: 'Jan 15, 2026' },
+    { id: 4, name: 'Prof. David Martinez', email: 'david.martinez@university.edu', status: 'Overdue', date: 'Dec 28, 2025' },
+    { id: 5, name: 'Dr. Emily Wilson', email: 'emily.wilson@university.edu', status: 'Submitted', date: 'Feb 12, 2026' },
+  ];
+
+  // Demo data for Account Approvals Preview
+  const recentApprovals = [
+    { id: 1, name: 'Jenisel Carinoza', type: 'Student', detail: '0008' },
+    { id: 2, name: 'Erlin Pugoy', type: 'Alumni', detail: '3241512' },
+    { id: 3, name: 'Mark Bautista', type: 'Faculty', detail: 'EMP-018' },
+    { id: 4, name: 'Sarah Alcantara', type: 'Student', detail: '0012' },
+  ];
+
   return (
-    // Capped to the viewport (minus the sticky top bar + page padding) so this
-    // view itself NEVER scrolls — only the two cards' inner lists do.
-    <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 160px)' }}>
+    <div className="flex flex-col h-full lg:h-[calc(100vh-140px)]">
+      
+      {/* SUMMARY CARDS ROW */}
       <div className="mb-6 flex-shrink-0">
         <div
           className="flex gap-3 overflow-x-auto pb-2 sm:hidden"
@@ -201,283 +220,102 @@ function ChairDashboardView({
         </div>
       </div>
 
-      {/* flex-1 + min-h-0 makes this row fill whatever height is left under
-         the summary cards; grid items in the same row stretch to match each
-         other automatically, so both cards are always the same height. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0">
-        <DashboardStudentApprovalsCard
-          departmentNames={departmentNames}
-          onViewAll={() => setActiveMenuItem('approvals')}
-        />
-        <DashboardFacultyMonitoringCard
-          onViewAll={() => setActiveMenuItem('faculty')}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   Dashboard card: compact Student Approvals
-   — Just the pending list + Accept/Reject buttons.
-   — No batch-file upload, no search bar, no status filter chips.
-   — Card itself is fixed to the grid cell's height; only the inner
-     list scrolls (matches the "Inquiries" card behavior).
-───────────────────────────────────────────── */
-function DashboardStudentApprovalsCard({
-  departmentNames,
-  onViewAll,
-}: {
-  departmentNames: string[];
-  onViewAll: () => void;
-}) {
-  const [students, setStudents] = useState<StudentApplicant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
-
-  const fetchStudents = async () => {
-    setLoading(true);
-    setLoadError('');
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(STUDENTS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError('Failed to load: ' + (err.error || res.statusText));
-        setStudents([]);
-        return;
-      }
-      const data = await res.json();
-      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
-        const yl = p.student_profiles?.year_level ?? 1;
-        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-        return {
-          id: p.id,
-          name: p.full_name ?? '—',
-          email: p.email ?? '—',
-          studentId: p.student_profiles?.student_no ?? '—',
-          program: p.student_profiles?.program ?? '—',
-          yearLevel: `${yl}${suffix} Year`,
-          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
-            month: 'long', day: 'numeric', year: 'numeric',
-          }),
-          status: p.status,
-        };
-      });
-      setStudents(mapped);
-    } catch (err) {
-      setLoadError('Could not reach the server.');
-      setStudents([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStudents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const updateStatus = async (id: string, status: 'active' | 'rejected') => {
-    setUpdatingId(id);
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`${STUDENTS_API_URL}/${id}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError('Failed to update: ' + (err.error || res.statusText));
-        return;
-      }
-      // Remove from the pending list once actioned.
-      setStudents(prev => prev.filter(s => s.id !== id));
-    } catch (err) {
-      setLoadError('Could not reach the server.');
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const handleConfirm = () => {
-    if (!confirmModal) return;
-    updateStatus(confirmModal.id, confirmModal.action === 'approve' ? 'active' : 'rejected');
-    setConfirmModal(null);
-  };
-
-  const pending = students.filter(s => s.status === 'pending');
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <UserCheck className="w-4 h-4 text-[#1E3A8A]" />
-          <h2 className="font-semibold text-gray-900 text-base">Student Approvals</h2>
-        </div>
-        {pending.length > 0 && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
-            <Clock className="w-3 h-3" /> {pending.length} pending
-          </span>
-        )}
-      </div>
-
-      {loadError && (
-        <div className="mx-5 mt-3 flex items-center gap-2 p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-600 text-xs flex-shrink-0">
-          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-          {loadError}
-        </div>
-      )}
-
-      {/* Scrollable list */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">Loading…</span>
+      {/* 2-COLUMN GRID FOR LISTS - Takes up remaining height */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0 pb-4">
+        
+        {/* FACULTY MONITORING CARD */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              <h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2>
+            </div>
+            <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+              {recentFaculty.length} updates
+            </span>
           </div>
-        ) : pending.length === 0 ? (
-          <div className="py-10 text-center text-gray-400">
-            <UserCheck className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">No pending student approvals.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {pending.map(student => (
-              <div
-                key={student.id}
-                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-gray-50/70 hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-[#1E3A8A]/10 text-[#1E3A8A] flex items-center justify-center font-bold text-xs flex-shrink-0">
-                    {student.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm truncate">{student.name}</div>
-                    <div className="text-xs text-gray-400 truncate">{student.email}</div>
-                    <div className="text-xs text-gray-400 truncate">{student.studentId} · {student.program}</div>
-                  </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {recentFaculty.map((faculty) => (
+              <div key={faculty.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
+                <div className="min-w-0 flex-1 pr-4">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{faculty.name}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{faculty.email}</p>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => setConfirmModal({ id: student.id, action: 'approve' })}
-                    disabled={updatingId === student.id}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-semibold disabled:opacity-50"
-                    title="Accept"
-                  >
-                    {updatingId === student.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
-                    onClick={() => setConfirmModal({ id: student.id, action: 'reject' })}
-                    disabled={updatingId === student.id}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-xs font-semibold disabled:opacity-50"
-                    title="Reject"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                <div className="flex flex-col items-end flex-shrink-0">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 ${
+                    faculty.status === 'Submitted' ? 'bg-emerald-100 text-emerald-700' :
+                    faculty.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {faculty.status}
+                  </span>
+                  <span className="text-[10px] text-gray-400">{faculty.date}</span>
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </div>
 
-      {/* Footer */}
-      <div className="px-5 py-3 border-t border-gray-50 flex-shrink-0">
-        <button
-          onClick={onViewAll}
-          className="text-sm font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
-        >
-          View all approvals <ChevronRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Confirm modal */}
-      {confirmModal && (() => {
-        const student = students.find(s => s.id === confirmModal.id);
-        if (!student) return null;
-        const isApprove = confirmModal.action === 'approve';
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${isApprove ? 'bg-green-100' : 'bg-red-100'}`}>
-                {isApprove ? <Check className="w-7 h-7 text-green-600" /> : <X className="w-7 h-7 text-red-600" />}
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-1">
-                {isApprove ? 'Approve Student?' : 'Reject Student?'}
-              </h3>
-              <p className="text-sm text-gray-500 mb-6">
-                {isApprove
-                  ? <>You are about to grant <span className="font-semibold text-gray-800">{student.name}</span> access to the student portal.</>
-                  : <>You are about to deny <span className="font-semibold text-gray-800">{student.name}</span>'s registration request.</>
-                }
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setConfirmModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors ${isApprove ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
-                >
-                  {isApprove ? 'Yes, Approve' : 'Yes, Reject'}
-                </button>
-              </div>
-            </div>
+          <div className="p-4 border-t border-gray-100 bg-white">
+            <button
+              onClick={() => setActiveMenuItem('faculty')}
+              className="w-full py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+            >
+              Manage All Faculty <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-        );
-      })()}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   Dashboard card: Faculty Monitoring
-   — Same card shell/sizing as the Student Approvals card above so the
-     two sit half/half. The existing FacultyMonitoringTable is reused
-     as-is inside the scrollable body.
-───────────────────────────────────────────── */
-function DashboardFacultyMonitoringCard({ onViewAll }: { onViewAll: () => void }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-[#1E3A8A]" />
-          <h2 className="font-semibold text-gray-900 text-base">Faculty Monitoring</h2>
         </div>
-      </div>
 
-      {/* Scrollable body */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <FacultyMonitoringTable />
-      </div>
+        {/* ACCOUNT APPROVALS CARD */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-amber-600" />
+              <h2 className="text-sm font-bold text-gray-900">Account Approvals</h2>
+            </div>
+            <span className="flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              {recentApprovals.length} pending
+            </span>
+          </div>
 
-      {/* Footer */}
-      <div className="px-5 py-3 border-t border-gray-50 flex-shrink-0">
-        <button
-          onClick={onViewAll}
-          className="text-sm font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
-        >
-          View all faculty <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {recentApprovals.map((account) => (
+              <div key={account.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
+                <div className="min-w-0 flex-1 pr-4">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{account.name}</p>
+                  <p className="text-[11px] font-mono text-gray-400 mt-0.5">ID: {account.detail}</p>
+                </div>
+                <div className="flex-shrink-0">
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md ${
+                    account.type === 'Student' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                    account.type === 'Alumni' ? 'bg-pink-50 text-pink-700 border border-pink-100' :
+                    'bg-green-50 text-green-700 border border-green-100'
+                  }`}>
+                    {account.type}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-4 border-t border-gray-100 bg-white">
+            <button
+              onClick={() => setActiveMenuItem('approvals')}
+              className="w-full py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+            >
+              Review Pending Accounts <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
-   Department Calendar (full interactive, backed by
-   public.calendar_events via Supabase)
+   Department Calendar
 ───────────────────────────────────────────── */
 
 const PROGRAMS = ['BEEd', 'BTLEd', 'BSEd-Math', 'BSEd-English'];
@@ -485,11 +323,6 @@ const PROGRAM_OPTIONS = ['All Programs', ...PROGRAMS];
 
 const COLOR_OPTIONS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#1E3A8A'];
 
-// calendar_events.event_type is constrained to meeting/activity/deadline/holiday/exam
-// (nullable). The modal's color swatches are kept exactly as-is, so each color is
-// mapped to the closest matching type for storage; the one swatch with no natural
-// match (#1E3A8A) is simply stored with a null event_type and falls back to that
-// same color on redraw, so nothing is visually lost.
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
   activity: '#10B981',
@@ -498,6 +331,11 @@ const TYPE_TO_COLOR: Record<string, string> = {
   exam: '#EF4444',
 };
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
+const ROLE_DISPLAY_LABEL: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
 
 function eventTypeForColor(color: string): CalendarEvent['event_type'] | null {
   const entry = Object.entries(TYPE_TO_COLOR).find(([, c]) => c === color);
@@ -508,18 +346,8 @@ function colorForEvent(ev: CalendarEvent): string {
   return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
 }
 
-// Writes (insert/delete) go through the Express backend so the request is
-// authenticated with the chair's JWT and the insert runs with the service
-// role, bypassing RLS. Reads still go straight through Supabase since the
-// calendar is open for anyone to view.
-// Adjust this if your Express server runs on a different host/port.
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
 
-// event_date / end_date are stored as "YYYY-MM-DDTHH:mm:ss" (no timezone
-// suffix), so Postgres interprets them using the column/session timezone
-// instead of shifting the calendar date around the browser's local offset.
-// We always pull the date portion back out the same way, via string slicing,
-// so the day a user picks is always the day it lands on and shows up on.
 function dateOnly(isoLike: string): string {
   return isoLike.split('T')[0];
 }
@@ -530,9 +358,10 @@ function toTimestamp(dateStr: string): string {
 
 interface DepartmentCalendarProps {
   organizerId: string;
+  departmentNames: string[];
 }
 
-function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
+function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendarProps) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
@@ -546,33 +375,45 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const emptyForm = { title: '', date: '', program: 'All Programs', description: '', color: '#3B82F6' };
+  const emptyForm = {
+    title: '',
+    date: '',
+    description: '',
+    color: '#3B82F6',
+    audience: 'all',
+  };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
-  const monthName    = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
-  const daysInMonth  = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-  const firstDay     = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
-  // ── Fetch events from Supabase ──
   const fetchEvents = async () => {
     setLoading(true);
     setLoadError('');
-    const { data, error } = await supabase
-      .from('calendar_events')
-      .select('*')
-      .order('event_date', { ascending: true });
-
-    if (error) {
-      setLoadError('Failed to load events: ' + error.message);
-      setEvents([]);
-    } else {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(CALENDAR_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load events: ' + (err.error || res.statusText));
+        setEvents([]);
+        return;
+      }
+      const data = await res.json();
       setEvents((data ?? []) as CalendarEvent[]);
+    } catch (err) {
+      setLoadError('Could not reach the server. Please try again.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -608,8 +449,8 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: toTimestamp(form.date),
-      department: form.program,
       event_type: eventTypeForColor(form.color),
+      audience: form.audience,
       status: 'upcoming',
     };
 
@@ -678,7 +519,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
@@ -701,9 +541,7 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
         </div>
       )}
 
-      {/* Calendar Grid */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Month nav */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
           <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
             <ChevronLeft className="w-5 h-5 text-gray-600" />
@@ -714,7 +552,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
           </button>
         </div>
 
-        {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-gray-100">
           {DAYS.map((d, i) => (
             <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -724,7 +561,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
           ))}
         </div>
 
-        {/* Day cells */}
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -758,7 +594,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
                         {ev.title}
                       </div>
                     ))}
-                    {/* Mobile: colored dots */}
                     {dayEvents.length > 0 && (
                       <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
                         {dayEvents.slice(0, 3).map(ev => (
@@ -777,7 +612,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
         )}
       </div>
 
-      {/* Upcoming / History Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex border-b border-gray-100">
           {(['upcoming', 'history'] as const).map(tab => (
@@ -809,7 +643,14 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 text-sm truncate">{ev.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{formatDate(dateOnly(ev.event_date))} · {ev.department}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {formatDate(dateOnly(ev.event_date))} · {departmentNames.join(', ') || 'Your department'} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                    {ev.audience && (
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
+                        Audience: {ev.audience}
+                      </span>
+                    )}
+                  </div>
                   {ev.description && <div className="text-xs text-gray-400 mt-1 line-clamp-2">{ev.description}</div>}
                 </div>
                 <button
@@ -826,7 +667,6 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
         </div>
       </div>
 
-      {/* Add Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
@@ -864,14 +704,30 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Posting to</label>
+                <div className="w-full px-3 py-2 border border-gray-100 bg-gray-50 rounded-lg text-sm text-gray-600">
+                  {departmentNames.length > 0 ? departmentNames.join(', ') : 'No department assigned'}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Events are automatically scoped to your department on the server.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience *</label>
                 <select
-                  value={form.program}
-                  onChange={e => setForm({ ...form, program: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A]"
+                  value={form.audience}
+                  onChange={e => setForm({ ...form, audience: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
                 >
-                  {PROGRAM_OPTIONS.map(p => <option key={p}>{p}</option>)}
+                  <option value="all">Everyone in Department (General)</option>
+                  <option value="students">Students Only (Exams, Deadlines, Class Activities)</option>
+                  <option value="faculty">Faculty & Staff Only (Department Meetings)</option>
+                  <option value="alumni">Alumni Only (Department Homecoming/Reunions)</option>
                 </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Choosing "Students Only" or "Faculty Only" prevents this event from showing on the Alumni calendar.
+                </p>
               </div>
 
               <div>
@@ -924,18 +780,22 @@ function DepartmentCalendar({ organizerId }: DepartmentCalendarProps) {
     </div>
   );
 }
-
 /* ─────────────────────────────────────────────
-   Student Approvals
-   — Real data: fetched from GET /api/students (profiles + student_profiles)
-   — Approve/Reject write via PATCH /api/students/:id/status
-   — Batch approve via file is still UI-only (marked below)
+   Account Approvals
 ───────────────────────────────────────────── */
 
-const STUDENTS_API_URL = 'http://localhost:5000/api/students';
+const ACCOUNTS_API_URL = 'http://localhost:5000/api/accounts';
 
-function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }) {
-  const [students, setStudents] = useState<StudentApplicant[]>([]);
+const ROLE_TABS: { id: AccountRole; label: string }[] = [
+  { id: 'student', label: 'Students' },
+  { id: 'faculty', label: 'Faculty' },
+  { id: 'alumni',  label: 'Alumni' },
+];
+
+function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }) {
+  const [roleTab, setRoleTab] = useState<AccountRole>('student');
+
+  const [accounts, setAccounts] = useState<AccountApplicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -944,7 +804,6 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
   const [confirmModal, setConfirmModal] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // ── Batch upload state ──
   const [showUploadModal, setShowUploadModal]   = useState(false);
   const [uploadedFile, setUploadedFile]         = useState<File | null>(null);
   const [uploadDragOver, setUploadDragOver]     = useState(false);
@@ -959,51 +818,77 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
   ];
   const ACCEPTED_EXT = ['.pdf', '.xls', '.xlsx'];
 
-  // ── Fetch real students from the backend ──
-  const fetchStudents = async () => {
+  const fetchAccounts = async () => {
     setLoading(true);
     setLoadError('');
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch(STUDENTS_API_URL, {
+      const res = await fetch(`${ACCOUNTS_API_URL}/${roleTab}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setLoadError('Failed to load students: ' + (err.error || res.statusText));
-        setStudents([]);
+        setLoadError(`Failed to load ${roleTab}: ` + (err.error || res.statusText));
+        setAccounts([]);
         return;
       }
       const data = await res.json();
-      const mapped: StudentApplicant[] = (data ?? []).map((p: any) => {
-        const yl = p.student_profiles?.year_level ?? 1;
-        const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+      const mapped: AccountApplicant[] = (data ?? []).map((p: any) => {
+        if (roleTab === 'student') {
+          const rp = p.student_profiles;
+          const yl = rp?.year_level ?? 1;
+          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: rp?.student_no ?? '—',
+            program: rp?.program ?? '—',
+            detail: `${yl}${suffix} Year`,
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        if (roleTab === 'faculty') {
+          const rp = p.faculty_profiles;
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: rp?.faculty_id ? String(rp.faculty_id).slice(0, 8) : '—',
+            program: '—',
+            detail: rp?.position ?? 'Faculty',
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        const rp = p.alumni_profiles;
         return {
           id: p.id,
           name: p.full_name ?? '—',
           email: p.email ?? '—',
-          studentId: p.student_profiles?.student_no ?? '—',
-          program: p.student_profiles?.program ?? '—',
-          yearLevel: `${yl}${suffix} Year`,
-          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', {
-            month: 'long', day: 'numeric', year: 'numeric',
-          }),
+          idNumber: rp?.alumni_id ? String(rp.alumni_id).slice(0, 8) : '—',
+          program: rp?.program ?? '—',
+          detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
           status: p.status,
         };
       });
-      setStudents(mapped);
+      setAccounts(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
-      setStudents([]);
+      setAccounts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchAccounts();
+    setFilterStatus('pending');
+    setSearch('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roleTab]);
 
   const validateFile = (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type) && !ACCEPTED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
@@ -1028,10 +913,6 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
     if (file) validateFile(file);
   };
 
-  // NOTE: still UI-only. Wiring this to real matching means parsing the
-  // uploaded PDF/Excel on the backend, matching rows against `profiles`,
-  // and looping matched ids through the same PATCH /api/students/:id/status
-  // route used below. Left as a separate follow-up task.
   const handleBatchApprove = () => {
     setBatchConfirmOpen(false);
     setUploadedFile(null);
@@ -1040,12 +921,11 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
     setTimeout(() => setUploadSuccess(false), 4000);
   };
 
-  // ── Real approve/reject, backed by the PATCH endpoint ──
   const updateStatus = async (id: string, status: 'active' | 'rejected') => {
     setUpdatingId(id);
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`${STUDENTS_API_URL}/${id}/status`, {
+      const res = await fetch(`${ACCOUNTS_API_URL}/${roleTab}/${id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1058,7 +938,7 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         setLoadError('Failed to update status: ' + (err.error || res.statusText));
         return;
       }
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -1075,27 +955,27 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
     setConfirmModal(null);
   };
 
-  const filtered = students.filter(s => {
-    const matchStatus = filterStatus === 'all' || s.status === filterStatus;
-    const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) ||
-                        s.studentId.toLowerCase().includes(search.toLowerCase()) ||
-                        s.program.toLowerCase().includes(search.toLowerCase());
+  const filtered = accounts.filter(a => {
+    const matchStatus = filterStatus === 'all' || a.status === filterStatus;
+    const matchSearch = a.name.toLowerCase().includes(search.toLowerCase()) ||
+                        a.idNumber.toLowerCase().includes(search.toLowerCase()) ||
+                        a.program.toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
   });
 
   const counts = {
-    pending:  students.filter(s => s.status === 'pending').length,
-    approved: students.filter(s => s.status === 'active').length,
-    rejected: students.filter(s => s.status === 'rejected').length,
+    pending:  accounts.filter(a => a.status === 'pending').length,
+    approved: accounts.filter(a => a.status === 'active').length,
+    rejected: accounts.filter(a => a.status === 'rejected').length,
   };
 
-  const statusBadge = (status: StudentApplicant['status']) => ({
+  const statusBadge = (status: AccountApplicant['status']) => ({
     pending:  'bg-amber-100 text-amber-700',
     active:   'bg-green-100 text-green-700',
     rejected: 'bg-red-100 text-red-700',
   }[status]);
 
-  const statusLabel = (status: StudentApplicant['status']) =>
+  const statusLabel = (status: AccountApplicant['status']) =>
     status === 'active' ? 'approved' : status;
 
   const fileIcon = (file: File) =>
@@ -1103,13 +983,16 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
       ? <FileText className="w-8 h-8 text-red-500" />
       : <FileSpreadsheet className="w-8 h-8 text-green-600" />;
 
+  const idColumnLabel = roleTab === 'student' ? 'Student ID' : roleTab === 'faculty' ? 'Faculty ID' : 'Alumni ID';
+  const roleSingular = roleTab === 'student' ? 'student' : roleTab === 'faculty' ? 'faculty member' : 'alumnus/alumna';
+  const roleNounCap = roleTab === 'student' ? 'Student' : roleTab === 'faculty' ? 'Faculty' : 'Alumni';
+
   return (
     <div>
-      {/* Page Header */}
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Student Account Approvals</h1>
-          <p className="text-gray-500 text-sm">Review and manage student registration requests before they can access the portal.</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Account Approvals</h1>
+          <p className="text-gray-500 text-sm">Review and manage registration requests before accounts can access the portal.</p>
           {departmentNames.length > 0 && (
             <p className="text-xs text-gray-400 mt-1">
               Managing: {departmentNames.join(', ')}
@@ -1125,10 +1008,24 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         </button>
       </div>
 
+      <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 w-fit mb-6">
+        {ROLE_TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setRoleTab(t.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              roleTab === t.id ? 'bg-white text-[#1E3A8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {uploadSuccess && (
         <div className="mb-4 flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium">
           <CheckCircle className="w-5 h-5 flex-shrink-0" />
-          Batch approval processed successfully. All matched pending students have been approved.
+          Batch approval processed successfully. All matched pending {roleTab} have been approved.
         </div>
       )}
 
@@ -1139,7 +1036,6 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* Summary Strip */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-6">
         {[
           { label: 'Pending',  value: counts.pending,  color: 'bg-amber-50 border-amber-200 text-amber-700' },
@@ -1153,7 +1049,6 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         ))}
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1161,7 +1056,7 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, ID, or program…"
+            placeholder={`Search by name, ID, or program…`}
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]"
           />
         </div>
@@ -1180,69 +1075,68 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading students…</span>
+            <span className="text-sm">Loading {roleTab}…</span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-gray-400">
             <UserCheck className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No students match your filter.</p>
+            <p className="text-sm">No {roleTab} match your filter.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px]">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Student</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Student ID</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Program</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">{roleNounCap}</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">{idColumnLabel}</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">{roleTab === 'faculty' ? 'Position' : 'Program'}</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Registered</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase tracking-wide">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((student, idx) => (
-                  <tr key={student.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                {filtered.map((account, idx) => (
+                  <tr key={account.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
                     <td className="py-4 px-4 sm:px-6">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-[#1E3A8A]/10 text-[#1E3A8A] flex items-center justify-center font-bold text-xs flex-shrink-0">
-                          {student.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {account.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900 text-sm whitespace-nowrap">{student.name}</div>
-                          <div className="text-xs text-gray-400">{student.email}</div>
+                          <div className="font-medium text-gray-900 text-sm whitespace-nowrap">{account.name}</div>
+                          <div className="text-xs text-gray-400">{account.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 px-4 sm:px-6 text-sm text-gray-600 font-mono whitespace-nowrap">{student.studentId}</td>
+                    <td className="py-4 px-4 sm:px-6 text-sm text-gray-600 font-mono whitespace-nowrap">{account.idNumber}</td>
                     <td className="py-4 px-4 sm:px-6">
-                      <div className="text-sm text-gray-700 whitespace-nowrap">{student.program}</div>
-                      <div className="text-xs text-gray-400">{student.yearLevel}</div>
+                      <div className="text-sm text-gray-700 whitespace-nowrap">{roleTab === 'faculty' ? account.detail : account.program}</div>
+                      {roleTab !== 'faculty' && <div className="text-xs text-gray-400">{account.detail}</div>}
                     </td>
-                    <td className="py-4 px-4 sm:px-6 text-sm text-gray-500 whitespace-nowrap">{student.registeredAt}</td>
+                    <td className="py-4 px-4 sm:px-6 text-sm text-gray-500 whitespace-nowrap">{account.registeredAt}</td>
                     <td className="py-4 px-4 sm:px-6 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusBadge(student.status)}`}>
-                        {statusLabel(student.status)}
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusBadge(account.status)}`}>
+                        {statusLabel(account.status)}
                       </span>
                     </td>
                     <td className="py-4 px-4 sm:px-6">
-                      {student.status === 'pending' ? (
+                      {account.status === 'pending' ? (
                         <div className="flex items-center justify-center gap-2">
                           <button
-                            onClick={() => setConfirmModal({ id: student.id, action: 'approve' })}
-                            disabled={updatingId === student.id}
+                            onClick={() => setConfirmModal({ id: account.id, action: 'approve' })}
+                            disabled={updatingId === account.id}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-semibold whitespace-nowrap disabled:opacity-50"
                           >
-                            {updatingId === student.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Accept
+                            {updatingId === account.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Accept
                           </button>
                           <button
-                            onClick={() => setConfirmModal({ id: student.id, action: 'reject' })}
-                            disabled={updatingId === student.id}
+                            onClick={() => setConfirmModal({ id: account.id, action: 'reject' })}
+                            disabled={updatingId === account.id}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white transition-colors text-xs font-semibold whitespace-nowrap disabled:opacity-50"
                           >
                             <X className="w-3.5 h-3.5" /> Reject
@@ -1250,7 +1144,7 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
                         </div>
                       ) : (
                         <div className="text-center text-xs text-gray-400 italic">
-                          {student.status === 'active' ? 'Access granted' : 'Access denied'}
+                          {account.status === 'active' ? 'Access granted' : 'Access denied'}
                         </div>
                       )}
                     </td>
@@ -1262,21 +1156,19 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         )}
       </div>
 
-      {/* ── Batch Upload Modal ── */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-1">
-              <h2 className="text-lg font-bold text-gray-900">Batch Approve via File</h2>
+              <h2 className="text-lg font-bold text-gray-900">Batch Approve via File ({ROLE_TABS.find(t => t.id === roleTab)?.label})</h2>
               <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             <p className="text-sm text-gray-500 mb-5">
-              Upload a list of student IDs or names. Students on the list that are currently pending will be approved all at once. Accepted formats: <span className="font-medium text-gray-700">PDF, Excel (.xls, .xlsx)</span>.
+              Upload a list of IDs or names. Accounts on the list that are currently pending will be approved all at once. Accepted formats: <span className="font-medium text-gray-700">PDF, Excel (.xls, .xlsx)</span>.
             </p>
 
-            {/* Drop Zone */}
             <div
               onDragOver={e => { e.preventDefault(); setUploadDragOver(true); }}
               onDragLeave={() => setUploadDragOver(false)}
@@ -1326,9 +1218,8 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
               </p>
             )}
 
-            {/* Info note */}
             <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
-              <span className="font-semibold">Note:</span> The file should contain a column with Student IDs or full names matching registered students. Unmatched entries will be skipped.
+              <span className="font-semibold">Note:</span> The file should contain a column with IDs or full names matching registered {roleTab}. Unmatched entries will be skipped.
             </div>
 
             <div className="flex gap-3 mt-5">
@@ -1350,7 +1241,6 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* ── Batch Confirm Modal ── */}
       {batchConfirmOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -1359,10 +1249,10 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Batch Approval</h3>
             <p className="text-sm text-gray-500 mb-2">
-              You are about to approve all pending students matched from:
+              You are about to approve all pending {roleTab} matched from:
             </p>
             <p className="text-sm font-semibold text-gray-800 mb-1 break-all">{uploadedFile?.name}</p>
-            <p className="text-xs text-gray-400 mb-6">This action will grant portal access to all matched students at once.</p>
+            <p className="text-xs text-gray-400 mb-6">This action will grant portal access to all matched accounts at once.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setBatchConfirmOpen(false)}
@@ -1381,9 +1271,8 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
         </div>
       )}
 
-      {/* ── Individual Confirm Modal ── */}
       {confirmModal && (() => {
-        const student = students.find(s => s.id === confirmModal.id)!;
+        const account = accounts.find(a => a.id === confirmModal.id)!;
         const isApprove = confirmModal.action === 'approve';
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1392,12 +1281,12 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
                 {isApprove ? <Check className="w-7 h-7 text-green-600" /> : <X className="w-7 h-7 text-red-600" />}
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-1">
-                {isApprove ? 'Approve Student?' : 'Reject Student?'}
+                {isApprove ? 'Approve Account?' : 'Reject Account?'}
               </h3>
               <p className="text-sm text-gray-500 mb-6">
                 {isApprove
-                  ? <>You are about to grant <span className="font-semibold text-gray-800">{student.name}</span> access to the student portal.</>
-                  : <>You are about to deny <span className="font-semibold text-gray-800">{student.name}</span>'s registration request.</>
+                  ? <>You are about to grant <span className="font-semibold text-gray-800">{account.name}</span> access to the portal as {roleTab === 'faculty' ? 'a' : 'an'} {roleSingular}.</>
+                  : <>You are about to deny <span className="font-semibold text-gray-800">{account.name}</span>'s registration request.</>
                 }
               </p>
               <div className="flex gap-3">
@@ -1419,9 +1308,8 @@ function StudentApprovalsView({ departmentNames }: { departmentNames: string[] }
   );
 }
 
-/* ─────────────────────────────────────────────
-   Faculty Monitoring
-───────────────────────────────────────────── */
+
+/*Faculty Monitoring */
 function FacultyMonitoring() {
   return (
     <div>
@@ -1431,13 +1319,105 @@ function FacultyMonitoring() {
   );
 }
 
-/* ─────────────────────────────────────────────
-   Chair's own Reports (Accomplishment / Extension)
-   — separate from "Reports Monitoring" below, which
-   is for reviewing faculty submissions.
-───────────────────────────────────────────── */
+// ─── My Drafts ────────────────────────────────────────────
+interface DraftSummary {
+  id: string;
+  quarter: string;
+  year: string;
+  progress: number;
+  updated_at: string;
+  created_at: string;
+}
+
+const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
+
+function getDraftsToken() {
+  return localStorage.getItem('token');
+}
+
+function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
+  const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
+  const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const fetchDrafts = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = getDraftsToken();
+      const [accRes, extRes] = await Promise.all([
+        fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      let hadError = false;
+      if (accRes.ok) setAccDraft(await accRes.json());
+      else hadError = true;
+      if (extRes.ok) setExtDraft(await extRes.json());
+      else hadError = true;
+      if (hadError) setLoadError('Failed to load one or more drafts.');
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchDrafts(); }, []);
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  const cards = [
+    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
+    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
+  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
+      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading drafts...</span>
+        </div>
+      ) : cards.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map(({ type, label, draft }) => (
+            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 text-sm">{label}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
+                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
+              </div>
+              <button
+                onClick={() => onEdit(type)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
+              >
+                Continue Editing
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Chair's own Reports */
 function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'accomplishment' | 'extension'>('accomplishment');
+  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension'>('drafts');
 
   return (
     <div>
@@ -1447,6 +1427,12 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
       </div>
 
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          onClick={() => setTab('drafts')}
+          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          My Drafts
+        </button>
         <button
           onClick={() => setTab('accomplishment')}
           className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
@@ -1461,6 +1447,10 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
         </button>
       </div>
 
+      {tab === 'drafts' && (
+        <MyDraftsPanel onEdit={(type) => setTab(type)} />
+      )}
+
       {tab === 'accomplishment' && (
         <AccomplishmentReport userId={userId} userName={userName} />
       )}
@@ -1471,6 +1461,7 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
     </div>
   );
 }
+
 
 /* ─────────────────────────────────────────────
    Reports Monitoring
@@ -1592,39 +1583,12 @@ function ReportsMonitoring() {
    Academic Records
 ───────────────────────────────────────────── */
 function AcademicRecordsView() {
-  const handleDownload = (doc: string) => alert(`Downloading: ${doc}`);
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Records</h1>
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <div className="space-y-3">
-          {['Curriculum 2025', 'Faculty Load Summary'].map((doc, index) => (
-            <div key={index} className="p-4 bg-gray-50 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <FileText className="w-6 h-6 text-blue-600 shrink-0" />
-                <span className="font-medium text-gray-900">{doc}</span>
-              </div>
-              <button
-                onClick={() => handleDownload(doc)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all self-start sm:self-auto"
-              >
-                <Download className="w-4 h-4" /> Download
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  return <AcademicDocumentsViewer />;
 }
 
 /* ─────────────────────────────────────────────
    Announcements
 ───────────────────────────────────────────── */
-// Mirrors public.announcements. "Scheduled Date" in the UI maps to
-// expires_at — the schema has no separate "date this announcement is
-// about" column, so expires_at (closest available fit) drives the
-// Upcoming/Past badge instead.
 interface Announcement {
   id: string;
   title: string;
@@ -1655,20 +1619,25 @@ function AnnouncementsView() {
   const fetchAnnouncements = async () => {
     setLoading(true);
     setLoadError('');
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      setLoadError('Failed to load announcements: ' + error.message);
-      setAnnouncements([]);
-    } else {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(ANNOUNCEMENTS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
+        setAnnouncements([]);
+        return;
+      }
+      const data = await res.json();
       setAnnouncements((data ?? []) as Announcement[]);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setAnnouncements([]);
     }
     setLoading(false);
   };
-
   useEffect(() => {
     fetchAnnouncements();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1759,7 +1728,6 @@ function AnnouncementsView() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Announcements</h1>
@@ -1781,7 +1749,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* List */}
       {loading ? (
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" />
@@ -1799,9 +1766,7 @@ function AnnouncementsView() {
               key={ann.id}
               className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
             >
-              {/* Card top row */}
               <div className="flex items-start gap-4 p-4 sm:p-5">
-                {/* Blue accent bar */}
                 <div className="w-1 self-stretch rounded-full bg-[#1E3A8A] flex-shrink-0" />
 
                 <div className="flex-1 min-w-0">
@@ -1824,7 +1789,6 @@ function AnnouncementsView() {
                   )}
                 </div>
 
-                {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)}
@@ -1844,7 +1808,6 @@ function AnnouncementsView() {
                 </div>
               </div>
 
-              {/* Expandable description */}
               {expandedId === ann.id && (
                 <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50">
                   <p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p>
@@ -1855,7 +1818,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* ── Create Announcement Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
@@ -1876,7 +1838,6 @@ function AnnouncementsView() {
                 </div>
               )}
 
-              {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Title <span className="text-red-500">*</span>
@@ -1890,7 +1851,6 @@ function AnnouncementsView() {
                 />
               </div>
 
-              {/* Scheduled Date */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Scheduled Date <span className="text-red-500">*</span>
@@ -1904,7 +1864,6 @@ function AnnouncementsView() {
                 <p className="text-xs text-gray-400 mt-1">This is the date the announcement is about, or the event date.</p>
               </div>
 
-              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description <span className="text-red-500">*</span>
@@ -1940,7 +1899,6 @@ function AnnouncementsView() {
         </div>
       )}
 
-      {/* ── Delete Confirm Modal ── */}
       {deleteConfirm !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -1968,6 +1926,321 @@ function AnnouncementsView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   System Settings (Department Chair)
+───────────────────────────────────────────── */
+const CHAIR_NOTIF_DEFAULTS = {
+  facultyReports: true,
+  pendingReports: true,
+  studentApprovals: true,
+  departmentActivities: true,
+  announcements: true,
+  systemNotifs: true,
+};
+
+const CHAIR_SETTINGS_TABS = [
+  { id: 'profile',       label: 'Profile Information', icon: User },
+  { id: 'security',      label: 'Password & Security',  icon: KeyRound },
+  { id: 'notifications', label: 'Notifications',        icon: Bell },
+  { id: 'department',    label: 'Department Settings',  icon: Users },
+  { id: 'account',       label: 'Account Actions',       icon: ArrowLeft },
+] as const;
+
+type ChairSettingsTabId = typeof CHAIR_SETTINGS_TABS[number]['id'];
+
+function ChairToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between py-3.5 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <button
+        onClick={onChange}
+        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${checked ? 'translate-x-5' : ''}`} />
+      </button>
+    </div>
+  );
+}
+
+function ChairSystemSettings({
+  userName,
+  departmentNames,
+  onLogout,
+}: {
+  userName: string;
+  departmentNames: string[];
+  onLogout?: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<ChairSettingsTabId>('profile');
+
+  const [fullName, setFullName] = useState(userName);
+  const [email, setEmail] = useState('');
+  const [positionRole] = useState('Department Chair');
+  const [department, setDepartment] = useState(departmentNames.join(', '));
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+
+  const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
+  const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
+    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const [departmentName, setDepartmentName] = useState(departmentNames[0] ?? '');
+  const [program, setProgram] = useState('');
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [semester, setSemester] = useState('Second Semester');
+
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveChanges = async () => {
+    setSaving(true);
+    try {
+      await new Promise(res => setTimeout(res, 600));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {};
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <button
+            onClick={handleCancel}
+            className="px-4 sm:px-5 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving}
+            className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
+          {CHAIR_SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0 md:h-[560px] overflow-y-auto">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                  <input
+                    type="text"
+                    value={positionRole}
+                    disabled
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+                  Edit Profile
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+
+              <div className="space-y-4 max-w-md mb-6">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+                  Change Password
+                </button>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <ChairToggleRow
+                  label="Two-Factor Authentication"
+                  checked={twoFactorEnabled}
+                  onChange={() => setTwoFactorEnabled(v => !v)}
+                />
+              </div>
+
+              <div className="border-t border-gray-100 pt-5 mt-1">
+                <button className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                  Log Out of All Devices
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+
+              <div>
+                <ChairToggleRow label="Faculty Report Submissions" checked={notifs.facultyReports} onChange={() => toggleNotif('facultyReports')} />
+                <ChairToggleRow label="Pending Reports" checked={notifs.pendingReports} onChange={() => toggleNotif('pendingReports')} />
+                <ChairToggleRow label="Student Registration/Approval" checked={notifs.studentApprovals} onChange={() => toggleNotif('studentApprovals')} />
+                <ChairToggleRow label="Department Activities" checked={notifs.departmentActivities} onChange={() => toggleNotif('departmentActivities')} />
+                <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
+                <ChairToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'department' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Department Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure your department's current details.</p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department Name</label>
+                  <input
+                    type="text"
+                    value={departmentName}
+                    onChange={(e) => setDepartmentName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
+                  <input
+                    type="text"
+                    value={program}
+                    onChange={(e) => setProgram(e.target.value)}
+                    placeholder="e.g. BEEd, BSEd-Math"
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <input
+                    type="text"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option>First Semester</option>
+                    <option>Second Semester</option>
+                    <option>Summer</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
+
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Log Out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

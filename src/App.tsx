@@ -1,4 +1,5 @@
-import { useState, useEffect  } from 'react';
+import { useState, useEffect } from 'react';
+import { LogOut } from 'lucide-react';
 import { CollegeDeanDashboard } from './components/CollegeDeanDashboard';
 import { DepartmentChairDashboard } from './components/DepartmentChairDashboard';
 import { FacultyDashboard } from './components/dashboards/FacultyDashboard';
@@ -9,37 +10,18 @@ import { Footer } from './components/coed/Footer';
 import { HomePage } from './components/coed/HomePage';
 import { AboutPage } from './components/coed/AboutPage';
 import { DepartmentsPage } from './components/coed/DepartmentsPage';
-import { ClubsPage } from './components/coed/ClubsPage'; // ✅ Added ClubsPage import
+import { ClubsPage } from './components/coed/ClubsPage';
 import { ResearchPage } from './components/coed/ResearchPage';
 import { AchievementsPage } from './components/coed/AchievementsPage';
 import { AccreditationPage } from './components/coed/AccreditationPage';
 import { ContactPage } from './components/coed/ContactPage';
 import { LoginPage } from './components/coed/LoginPage';
-import  { ForgotPasswordPage } from './components/coed/ForgotPasswordPage';
+import { ForgotPasswordPage } from './components/coed/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/coed/ResetPasswordPage';
-
-
-/**
- * College of Education (COED) Website & Management System
- * * This application provides:
- * * PUBLIC WEBSITE:
- * - Home page with college overview
- * - About COED (history, vision, mission)
- * - Departments & Programs
- * - Clubs & Organizations
- * - Research & Extension activities
- * - Achievements & Accreditation
- * - Contact information
- * * ROLE-BASED DASHBOARDS (after login):
- * 1. College Dean - Full system access
- * 2. Department Chair - Department-level admin
- * 3. Faculty - Faculty portal (placeholder)
- * 4. Student - Student portal (placeholder)
- */
 
 type AppMode = 'public' | 'dashboard';
 type UserRole = 'dean' | 'chair' | 'faculty' | 'student' | 'alumni' | null;
-// ✅ Added 'clubs' to the PublicPage type
+
 type PublicPage =
   | 'home'
   | 'about'
@@ -54,148 +36,238 @@ type PublicPage =
   | 'reset-password';
 
 export default function App() {
+  const [initializing, setInitializing] = useState(true);
   const [appMode, setAppMode] = useState<AppMode>('public');
   const [currentRole, setCurrentRole] = useState<UserRole>(null);
   const [currentPage, setCurrentPage] = useState<PublicPage>('home');
   const [activeMenuItem, setActiveMenuItem] = useState('dashboard');
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const [currentUser, setCurrentUser] = useState<{
+    username: string;
+    role: string;
+    idNumber?: string;
+  } | null>(null);
+
+  // =====================================================
+  // RESTORE SESSION ON BROWSER REFRESH
+  // =====================================================
   useEffect(() => {
-  if (window.location.pathname === '/reset-password') {
-    setCurrentPage('reset-password');
-  }
-}, []);
-
-  const [currentUser, setCurrentUser] = useState<{ username: string; role: string; idNumber?: string } | null>(null);
-
-const handleLogin = (role: string) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setCurrentUser({
-        username: payload.fullName ?? payload.username,
-        role: payload.role,
-        idNumber: payload.idNumber ?? '',
-      });
+    if (window.location.pathname === '/reset-password') {
+      setAppMode('public');
+      setCurrentPage('reset-password');
+      setInitializing(false);
+      return;
     }
-    setCurrentRole(role as UserRole);
+
+    const token = localStorage.getItem('token');
+    const savedRole = localStorage.getItem('user_role') as UserRole;
+
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const rawRole = (payload.role || savedRole || '').toLowerCase();
+
+        let normalizedRole: UserRole = null;
+        if (rawRole === 'dean') normalizedRole = 'dean';
+        else if (rawRole === 'chair' || rawRole === 'department_chair') normalizedRole = 'chair';
+        else if (rawRole === 'faculty') normalizedRole = 'faculty';
+        else if (rawRole === 'student') normalizedRole = 'student';
+        else if (rawRole === 'alumni') normalizedRole = 'alumni';
+
+        if (normalizedRole) {
+          setCurrentUser({
+            username: payload.fullName ?? payload.username ?? 'User',
+            role: payload.role,
+            idNumber: payload.idNumber ?? '',
+          });
+          setCurrentRole(normalizedRole);
+          setAppMode('dashboard');
+        } else {
+          setAppMode('public');
+        }
+      } catch (error) {
+        console.error('Failed to parse active session:', error);
+        localStorage.clear();
+        setAppMode('public');
+      }
+    } else {
+      setAppMode('public');
+    }
+
+    setInitializing(false);
+  }, []);
+
+  // =====================================================
+  // LOGIN
+  // =====================================================
+  const handleLogin = (role: string) => {
+    const token = localStorage.getItem('token');
+    let normalizedRole: UserRole = null;
+    const rawRole = role.toLowerCase();
+
+    if (rawRole === 'dean') normalizedRole = 'dean';
+    else if (rawRole === 'chair' || rawRole === 'department_chair') normalizedRole = 'chair';
+    else if (rawRole === 'faculty') normalizedRole = 'faculty';
+    else if (rawRole === 'student') normalizedRole = 'student';
+    else if (rawRole === 'alumni') normalizedRole = 'alumni';
+
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setCurrentUser({
+          username: payload.fullName ?? payload.username ?? 'User',
+          role: payload.role,
+          idNumber: payload.idNumber ?? '',
+        });
+      } catch (error) {
+        console.error('Failed to decode login token:', error);
+      }
+    }
+
+    if (normalizedRole) {
+      localStorage.setItem('user_role', normalizedRole);
+    }
+
+    setCurrentRole(normalizedRole);
     setAppMode('dashboard');
     setActiveMenuItem('dashboard');
   };
 
+  // =====================================================
+  // LOGOUT
+  // =====================================================
   const handleLogout = () => {
-    setAppMode('public');
-    setCurrentRole(null);
-    setCurrentPage('home');
+    setShowLogoutModal(true);
   };
 
+  const confirmLogout = () => {
+    localStorage.clear();
+    setCurrentUser(null);
+    setCurrentRole(null);
+    setAppMode('public');
+    setCurrentPage('home');
+    setShowLogoutModal(false);
+  };
+
+  // =====================================================
+  // TOGGLE ROLE (DEV HELPER)
+  // =====================================================
   const toggleRole = () => {
-    if (currentRole === 'dean') {
-      setCurrentRole('chair');
-    } else {
-      setCurrentRole('dean');
-    }
+    const nextRole = currentRole === 'dean' ? 'chair' : 'dean';
+    setCurrentRole(nextRole);
+    localStorage.setItem('user_role', nextRole);
     setActiveMenuItem('dashboard');
   };
 
+  // =====================================================
+  // PUBLIC NAVIGATION
+  // =====================================================
   const handleNavigate = (page: string) => {
-  setCurrentPage(page as PublicPage);
+    setCurrentPage(page as PublicPage);
+    setTimeout(() => {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      });
+    }, 0);
+  };
 
-  setTimeout(() => {
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
-    });
-  }, 0);
-};
-  
+  // Prevent flicker during initial session restore
+  if (initializing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  // Public Website Mode
+  // =====================================================
+  // PUBLIC WEBSITE MODE
+  // =====================================================
   if (appMode === 'public') {
+    if (currentPage === 'reset-password') {
+      return (
+        <ResetPasswordPage
+          onReturnToLogin={() => {
+            window.history.replaceState({}, '', '/');
+            setCurrentPage('login');
+          }}
+        />
+      );
+    }
+
     return (
       <div className="min-h-screen bg-white">
-        {currentPage !== 'login' &&
- currentPage !== 'forgot-password' && (
-  <Header
-    onNavigate={handleNavigate}
-    currentPage={currentPage}
-  />
-)}
-        
-        {/* Remove padding-top for home page to fit perfectly with header */}
+        {currentPage !== 'login' && currentPage !== 'forgot-password' && (
+          <Header onNavigate={handleNavigate} currentPage={currentPage} />
+        )}
+
         <div
-  className={
-    currentPage !== 'login' &&
-    currentPage !== 'forgot-password' &&
-    currentPage !== 'reset-password' &&
-    currentPage !== 'home'
-      ? 'pt-20'
-      : ''
-  }
->
+          className={
+            currentPage !== 'login' &&
+            currentPage !== 'forgot-password' &&
+            currentPage !== 'home'
+              ? 'pt-20'
+              : ''
+          }
+        >
           {currentPage === 'home' && <HomePage onNavigate={handleNavigate} />}
           {currentPage === 'about' && <AboutPage />}
-          {currentPage === 'departments' && (
-  <DepartmentsPage
-    onNavigate={handleNavigate}
-  />
-)}
-          {currentPage === 'clubs' && <ClubsPage />} {/* ✅ Added ClubsPage route */}
+          {currentPage === 'departments' && <DepartmentsPage onNavigate={handleNavigate} />}
+          {currentPage === 'clubs' && <ClubsPage />}
           {currentPage === 'research' && <ResearchPage />}
           {currentPage === 'achievements' && <AchievementsPage />}
           {currentPage === 'accreditation' && <AccreditationPage />}
           {currentPage === 'contact' && <ContactPage />}
           {currentPage === 'login' && (
-  <LoginPage
-    onLogin={handleLogin}
-    onBack={() => handleNavigate('home')}
-    onForgotPassword={() => {
-  console.log('Navigate to forgot-password');
-  handleNavigate('forgot-password');
-}}
-  />
-)}
-
-{currentPage === 'forgot-password' && (
-  <ForgotPasswordPage
-    onBack={() => handleNavigate('home')}
-    onReturnToLogin={() => handleNavigate('login')}
-  />
-)}
+            <LoginPage
+              onLogin={handleLogin}
+              onBack={() => handleNavigate('home')}
+              onForgotPassword={() => handleNavigate('forgot-password')}
+            />
+          )}
+          {currentPage === 'forgot-password' && (
+            <ForgotPasswordPage
+              onBack={() => handleNavigate('home')}
+              onReturnToLogin={() => handleNavigate('login')}
+            />
+          )}
         </div>
 
-       {currentPage !== 'login' &&
- currentPage !== 'forgot-password' && (
-  <Footer onNavigate={handleNavigate} />
-)}
+        {currentPage !== 'login' && currentPage !== 'forgot-password' && (
+          <Footer onNavigate={handleNavigate} />
+        )}
       </div>
     );
-    
   }
-  {currentPage === 'reset-password' && (
-  <ResetPasswordPage
-    onBack={() => handleNavigate('home')}
-    onReturnToLogin={() => handleNavigate('login')}
-  />
-)}
 
-  // Dashboard Mode (after login)
+  // =====================================================
+  // DASHBOARD MODE
+  // =====================================================
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20">
+      {/* COLLEGE DEAN */}
       {currentRole === 'dean' && (
         <CollegeDeanDashboard
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
-           onLogout={handleLogout} 
+          onLogout={handleLogout}
         />
       )}
+
+      {/* DEPARTMENT CHAIR */}
       {currentRole === 'chair' && (
         <DepartmentChairDashboard
           onRoleChange={toggleRole}
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
-           onLogout={handleLogout} 
+          onLogout={handleLogout}
         />
       )}
+
+      {/* FACULTY */}
       {currentRole === 'faculty' && (
         <FacultyDashboard
           onRoleChange={toggleRole}
@@ -205,6 +277,8 @@ const handleLogin = (role: string) => {
           userName={currentUser?.username ?? 'Faculty'}
         />
       )}
+
+      {/* STUDENT */}
       {currentRole === 'student' && (
         <StudentDashboard
           onRoleChange={toggleRole}
@@ -214,6 +288,8 @@ const handleLogin = (role: string) => {
           userName={currentUser?.username ?? 'Student'}
         />
       )}
+
+      {/* ALUMNI */}
       {currentRole === 'alumni' && (
         <AlumniDashboard
           onRoleChange={toggleRole}
@@ -224,8 +300,37 @@ const handleLogin = (role: string) => {
           idNumber={currentUser?.idNumber ?? ''}
         />
       )}
-      
 
+      {/* GLOBAL LOGOUT CONFIRMATION MODAL */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-7 h-7 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Sign Out</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Are you sure you want to end your current session and return to the home page?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmLogout}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors shadow-sm"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

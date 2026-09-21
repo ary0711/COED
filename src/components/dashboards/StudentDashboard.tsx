@@ -34,6 +34,7 @@ const studentMenuItems = [
   { icon: Settings,     label: 'Settings',                 id: 'settings'     },
 ];
 
+const ME_API_URL = 'http://localhost:5000/api/me';
 // Available academic programs (BSIT intentionally excluded)
 const PROGRAM_OPTIONS = [
   'Bachelor of Science in Secondary Education - Mathematics',
@@ -55,7 +56,6 @@ const INQUIRY_CATEGORIES = [
   'Other',
 ];
 
-// Shape of the row we read out of `student_profiles`
 interface StudentProfile {
   student_id: string;
   full_name: string;
@@ -65,6 +65,8 @@ interface StudentProfile {
   gpa: number | null;
   academic_standing: string;
   enrollment_status: string;
+  department_id: string | null;
+  department_name: string | null;
 }
 
 // Shape of a row from the shared `inquiries` table, scoped to this student
@@ -99,8 +101,14 @@ interface StudentDashboardProps {
   userName?: string;
 }
 
-export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName = 'Student' }: StudentDashboardProps) {
+export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const handleInternalLogout = () => {
+    localStorage.clear();
+    if (onLogout) {
+      onLogout();
+    }
+  };
   const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
 
   // ── Logged-in student's profile data ──
@@ -114,32 +122,46 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
     setProfileError(null);
 
     try {
-      // This app uses a custom username/password login (not Supabase Auth),
-      // so there's no supabase.auth session to read. The logged-in user's
-      // profiles.id is stored in localStorage at login time instead.
-      const currentUserId = localStorage.getItem('userId');
-      if (!currentUserId) {
+      const token = localStorage.getItem('token');
+      if (!token) {
         setProfileError('No logged-in user found. Please sign in again.');
         setProfileLoading(false);
         return;
       }
 
-      const { data: profileData, error: profileFetchError } = await supabase
-        .from('student_profiles')
-        .select('student_id, full_name, student_no, year_level, program, gpa, academic_standing, enrollment_status')
-        .eq('user_id', currentUserId)
-        .single();
+      const res = await fetch(ME_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      if (profileFetchError) throw profileFetchError;
-
-      setProfile(profileData as StudentProfile);
-      setUserEmail(localStorage.getItem('userEmail') ?? '');
-
-      // Keep the program selector in sync with the student's actual enrolled program
-      if (profileData?.program && PROGRAM_OPTIONS.includes(profileData.program)) {
-        setSelectedProgram(profileData.program);
+      if (!res.ok) {
+        setProfileError('Failed to load your profile. Please try again.');
+        setProfileLoading(false);
+        return;
       }
-    }  finally {
+
+      const data = await res.json();
+
+      setProfile({
+        student_id: data.userId,
+        full_name: data.fullName ?? '',
+        student_no: data.studentNo ?? '',
+        year_level: data.yearLevel ?? 0,
+        program: data.program ?? '',
+        gpa: data.gpa ?? null,
+        academic_standing: data.academicStanding ?? '—',
+        enrollment_status: data.enrollmentStatus ?? '—',
+        department_id: data.departmentId ?? null,
+        department_name: data.departmentNames?.[0] ?? null,
+      });
+      setUserEmail(data.email ?? '');
+
+      // Keep the program selector in sync with the student's actual approved program
+      if (data.program) {
+        setSelectedProgram(data.program);
+      }
+    } catch {
+      setProfileError('Could not reach the server. Please try again.');
+    } finally {
       setProfileLoading(false);
     }
   };
@@ -168,6 +190,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
         userRole="Student"
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleInternalLogout}
       />
 
       {/* ── Desktop spacer so content clears the fixed sidebar ── */}
@@ -191,11 +214,8 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, userName =
               <DashboardHeader
                 userRole="Student"
                 userName={profile?.full_name ?? userName}
+                onLogout={handleInternalLogout}
               />
-            </div>
-            {/* Notification bell — shows replies to this student's inquiries */}
-            <div className="px-2 lg:pr-4">
-              <NotificationBell onGoToInquiries={() => setActiveMenuItem('inquiry')} />
             </div>
           </div>
         </div>
@@ -449,240 +469,453 @@ function StudentDashboardView({ selectedProgram, profile, loading }: StudentDash
 }
 
 // ====================== FACULTY DEPARTMENTS ======================
+interface FacultyMember {
+  id: string;
+  full_name: string;
+  email: string | null;
+  position: string | null;
+}
+
 function FacultyDepartments() {
-  const faculties = [
-    { name: 'Prof. Sarah Johnson',   dept: 'Computer Science',       position: 'Associate Professor', email: 's.johnson@university.edu' },
-    { name: 'Dr. Michael Chen',      dept: 'Mathematics',            position: 'Professor',            email: 'm.chen@university.edu'    },
-    { name: 'Dr. Patricia Williams', dept: 'Special Education',      position: 'Department Chair',     email: 'p.williams@university.edu'},
-    { name: 'Prof. Robert Anderson', dept: 'Educational Leadership', position: 'Professor',            email: 'r.anderson@university.edu'},
-  ];
+  const [faculty, setFaculty] = useState<FacultyMember[]>([]);
+  const [departmentName, setDepartmentName] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const token = localStorage.getItem('token');
+
+        const meRes = await fetch(ME_API_URL, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!meRes.ok) {
+          setLoadError('Failed to load your profile.');
+          setLoading(false);
+          return;
+        }
+        const me = await meRes.json();
+
+        if (!me.departmentId) {
+          setLoadError('No department is associated with your program yet.');
+          setLoading(false);
+          return;
+        }
+
+        setDepartmentName(me.departmentNames?.[0] ?? '');
+
+        const facultyRes = await fetch(`http://localhost:5000/api/faculty/by-department/${me.departmentId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!facultyRes.ok) {
+          setLoadError('Failed to load faculty for your department.');
+          setLoading(false);
+          return;
+        }
+        const facultyData = await facultyRes.json();
+        setFaculty(facultyData ?? []);
+      } catch {
+        setLoadError('Could not reach the server. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Departments</h1>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">My Faculty Members</h2>
-        <div className="grid gap-4">
-          {faculties.map((faculty, index) => (
-            <div key={index} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-gray-900 text-sm sm:text-base">{faculty.name}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">{faculty.position} - {faculty.dept}</div>
-                  <div className="text-xs sm:text-sm text-blue-600">{faculty.email}</div>
-                </div>
-                <User className="w-7 h-7 text-gray-400 flex-shrink-0" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Department Information</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2">Computer Science Department</h3>
-            <p className="text-sm text-gray-600 mb-2">Chair: Dr. Jennifer Lee</p>
-            <p className="text-sm text-gray-600">Office: CS Building, 3rd Floor</p>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-1">
+          {departmentName ? `${departmentName} Faculty` : 'My Faculty Members'}
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">Faculty assigned to your program's department</p>
+
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading faculty...</span>
           </div>
-          <div className="p-4 bg-green-50 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2">Mathematics Department</h3>
-            <p className="text-sm text-gray-600 mb-2">Chair: Dr. Michael Chen</p>
-            <p className="text-sm text-gray-600">Office: Math Building, 2nd Floor</p>
+        ) : faculty.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+            <User className="w-10 h-10 mb-2 opacity-40" />
+            <p className="text-sm text-gray-400">No faculty found for your department yet.</p>
           </div>
-        </div>
+        ) : (
+          <div className="grid gap-4">
+            {faculty.map((f) => (
+              <div key={f.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-gray-900 text-sm sm:text-base">{f.full_name}</div>
+                    <div className="text-xs sm:text-sm text-gray-600">{f.position ?? 'Faculty'}</div>
+                    {f.email && <div className="text-xs sm:text-sm text-blue-600">{f.email}</div>}
+                  </div>
+                  <User className="w-7 h-7 text-gray-400 flex-shrink-0" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ====================== ACADEMIC RESOURCES ======================
-// The standalone "Academic Calendar" card has been removed per request.
-// The downloadable resources list now follows the Faculty "Academic
-// Records" design language (category filter pills + list rows), but with
-// student-appropriate categories/content — not the faculty's own files.
 function AcademicResources() {
-  const handleDownload = (title: string) => alert(`📥 Downloading: ${title}`);
-  const [activeCategory, setActiveCategory] = useState('All');
+  interface AcademicDoc {
+    id: string;
+    title: string;
+    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+    file_size: number;
+    file_name?: string;
+  }
 
-  const resources = [
-    { title: 'Student Handbook 2025–2026',        category: 'Handbook', size: '5.8 MB' },
-    { title: 'Enrollment & Registration Guide',    category: 'Policy',   size: '1.2 MB' },
-    { title: 'Grading & Academic Policies',        category: 'Policy',   size: '980 KB' },
-    { title: 'Scholarship Application Form',       category: 'Form',     size: '1.5 MB' },
-    { title: 'Change of Program Form',             category: 'Form',     size: '210 KB' },
-    { title: 'Leave of Absence Request Form',      category: 'Form',     size: '150 KB' },
-    { title: 'Advisory No. 2026-02 — Class Suspensions', category: 'Memorandum', size: '190 KB' },
-  ];
-
-  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
-  const filtered = activeCategory === 'All' ? resources : resources.filter(r => r.category === activeCategory);
+  const DOC_TYPE_LABELS: Record<string, string> = {
+    handbook: 'Handbook',
+    policy: 'Policy',
+    memorandum: 'Memorandum',
+    form: 'Form',
+  };
 
   const categoryColor: Record<string, string> = {
-    Handbook:   'bg-blue-100 text-blue-700',
-    Policy:     'bg-purple-100 text-purple-700',
+    Handbook: 'bg-blue-100 text-blue-700',
+    Policy: 'bg-purple-100 text-purple-700',
     Memorandum: 'bg-orange-100 text-orange-700',
-    Form:       'bg-green-100 text-green-700',
+    Form: 'bg-green-100 text-green-700',
   };
+
+  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+
+  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(DOCS_API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to load documents.');
+        setDocuments([]);
+        return;
+      }
+      const data = await res.json();
+      setDocuments(data ?? []);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDocuments();
+  }, []);
+
+  const formatFileSize = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handlePreview = async (doc: AcademicDoc) => {
+    setPreviewingId(doc.id);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to open preview.');
+        return;
+      }
+
+      const { url, file_type } = await res.json();
+
+      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch {
+      setLoadError('Could not connect to the server for preview.');
+    } finally {
+      setPreviewingId(null);
+    }
+  };
+
+  const handleDownload = async (doc: AcademicDoc) => {
+    setDownloadingId(doc.id);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setLoadError(err.error || 'Failed to generate download link.');
+        return;
+      }
+      const { url, file_name } = await res.json();
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file_name || doc.title;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      setLoadError('Could not reach the server for download.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const filtered = activeCategory === 'All'
+    ? documents
+    : documents.filter((d) => DOC_TYPE_LABELS[d.document_type] === activeCategory);
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Resources</h1>
 
       <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map(c => (
+        {categories.map((c) => (
           <button
             key={c}
             onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${activeCategory === c ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+              activeCategory === c
+                ? 'bg-[#1E3A8A] text-white'
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
           >
             {c}
           </button>
         ))}
       </div>
 
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="divide-y divide-gray-100">
-          {filtered.map((resource, index) => (
-            <div key={index} className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3">
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{resource.title}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColor[resource.category]}`}>{resource.category}</span>
-                    <span className="text-xs text-gray-400">{resource.size}</span>
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading documents...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+            No documents found.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filtered.map((doc) => {
+              const label = DOC_TYPE_LABELS[doc.document_type] || doc.document_type;
+              const isPreviewing = previewingId === doc.id;
+              const isDownloading = downloadingId === doc.id;
+
+              return (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3"
+                >
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">
+                        {doc.title}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            categoryColor[label] || 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {label}
+                        </span>
+                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handlePreview(doc)}
+                      disabled={isPreviewing || isDownloading}
+                      className="px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {isPreviewing ? 'Opening…' : 'View'}
+                    </button>
+
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      disabled={isPreviewing || isDownloading}
+                      className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {isDownloading ? (
+                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        'Download'
+                      )}
+                    </button>
                   </div>
                 </div>
-              </div>
-              <button
-                onClick={() => handleDownload(resource.title)}
-                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
-              >
-                Download
-              </button>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ====================== ACHIEVEMENTS & ACTIVITIES ======================
+interface RealCalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string; // "YYYY-MM-DDTHH:mm:ss"
+  department_ids: string[] | null;
+  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
+  status: string | null;
+  posted_by_role: string | null;
+}
+
+const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
+
+const EVENT_TYPE_COLOR: Record<string, string> = {
+  meeting: '#3B82F6',
+  activity: '#10B981',
+  holiday: '#8B5CF6',
+  deadline: '#EF4444',
+  exam: '#F59E0B',
+};
+const DEFAULT_STUDENT_EVENT_COLOR = '#1E3A8A';
+
+const ROLE_DISPLAY_LABEL_STUDENT: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  department_chair: 'Dept. Chair',
+};
+
+function colorForStudentEvent(ev: RealCalendarEvent): string {
+  return (ev.event_type && EVENT_TYPE_COLOR[ev.event_type]) || DEFAULT_STUDENT_EVENT_COLOR;
+}
+
+function dateOnlyStudent(isoLike: string): string {
+  return isoLike.split('T')[0];
+}
+
 function AchievementsActivities() {
-  interface CalendarEvent {
-    id: string;
-    title: string;
-    date: number;
-    type: 'meeting' | 'seminar' | 'deadline' | 'event';
-    description?: string;
-    program?: string;
-    color?: string;
-  }
-
-  const calendarEventsData: CalendarEvent[] = [
-    { id: '1', title: 'Faculty Meeting', date: 5, type: 'meeting', description: 'Department faculty meeting and discussions', program: 'Education', color: '#3B82F6' },
-    { id: '2', title: 'Research Seminar', date: 12, type: 'seminar', description: 'Guest speaker on educational research methods', program: 'Research', color: '#10B981' },
-    { id: '3', title: 'Report Deadline', date: 15, type: 'deadline', description: 'Submit final research report', program: 'Academics', color: '#EF4444' },
-    { id: '4', title: 'Department Event', date: 22, type: 'event', description: 'College foundation day celebration and activities', program: 'Events', color: '#A855F7' },
-    { id: '5', title: 'Submission Period', date: 28, type: 'deadline', description: 'Academic records submission period closes', program: 'Academics', color: '#EF4444' },
-  ];
-
   const today = new Date();
-  const [currentDate] = useState(new Date(today.getFullYear(), today.getMonth()));
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const todayStr = today.toISOString().split('T')[0];
+
+  const [events, setEvents] = useState<RealCalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedEvent, setSelectedEvent] = useState<RealCalendarEvent | null>(null);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
 
-  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-  
-  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-  
-  const days = Array.from({ length: 42 }, (_, i) => {
-    const dayNumber = i - firstDay + 1;
-    return dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null;
-  });
-
-  const getEventColor = (type: string) => {
-    switch (type) {
-      case 'meeting':
-        return 'bg-blue-500';
-      case 'seminar':
-        return 'bg-green-500';
-      case 'deadline':
-        return 'bg-red-500';
-      case 'event':
-        return 'bg-purple-500';
-      default:
-        return 'bg-gray-500';
+  const fetchEvents = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(CALENDAR_API_URL_STUDENT, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setLoadError('Failed to load events.');
+        setEvents([]);
+        return;
+      }
+      const data = await res.json();
+      setEvents((data ?? []) as RealCalendarEvent[]);
+    } catch {
+      setLoadError('Could not reach the server. Please try again.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  useEffect(() => { fetchEvents(); }, []);
+
+  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+
+  const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+
   const getEventsForDay = (day: number) => {
-    return calendarEventsData.filter(event => event.date === day);
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return events.filter(e => dateOnlyStudent(e.event_date) === dateStr);
   };
 
-  const formatDate = (day: number) => {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
+  const upcomingEvents = events
+    .filter(e => dateOnlyStudent(e.event_date) >= todayStr)
+    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const historyEvents = events
+    .filter(e => dateOnlyStudent(e.event_date) < todayStr)
+    .sort((a, b) => b.event_date.localeCompare(a.event_date));
 
-  const upcomingEvents = calendarEventsData.filter(event => {
-    const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
-    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    return eventDate >= todayDate;
-  }).sort((a, b) => a.date - b.date);
-
-  const historyEvents = calendarEventsData.filter(event => {
-    const eventDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), event.date);
-    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    return eventDate < todayDate;
-  }).sort((a, b) => b.date - a.date);
-
-  const isPastDay = (day: number) => {
-    if (!day) return false;
-    const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    return dateToCheck < todayDate;
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const isToday = (day: number) => {
-    if (!day) return false;
-    return (
-      day === today.getDate() &&
-      currentDate.getMonth() === today.getMonth() &&
-      currentDate.getFullYear() === today.getFullYear()
-    );
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return dateStr === todayStr;
+  };
+  const isPastDay = (day: number) => {
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return dateStr < todayStr;
   };
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements & Activities</h1>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">College Achievements</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200 flex items-start gap-3">
-            <Award className="w-6 h-6 text-blue-600 mt-1 flex-shrink-0" />
-            <div>
-              <div className="font-semibold text-gray-900 text-sm sm:text-base">Dean's List Recognition</div>
-              <div className="text-xs sm:text-sm text-gray-600">First Semester 2025-2026</div>
-            </div>
-          </div>
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200 flex items-start gap-3">
-            <Award className="w-6 h-6 text-blue-600 mt-1 flex-shrink-0" />
-            <div>
-              <div className="font-semibold text-gray-900 text-sm sm:text-base">Math Quiz Bowl Champion</div>
-              <div className="text-xs sm:text-sm text-gray-600">January 2026</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+      )}
 
       <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
         <div className="flex items-center justify-between mb-6">
@@ -691,87 +924,71 @@ function AchievementsActivities() {
             <p className="text-sm text-gray-500">{monthName}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
+            <button onClick={prevMonth} className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
               <ChevronLeft className="w-5 h-5 text-gray-600" />
             </button>
-            <button className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
+            <button onClick={nextMonth} className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
               <ChevronRight className="w-5 h-5 text-gray-600" />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-2">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-            <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
-              {day}
-            </div>
-          ))}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading events…</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-7 gap-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">{day}</div>
+            ))}
 
-          {days.map((day, index) => {
-            const events = day ? getEventsForDay(day) : [];
-            const isTodayDate = day ? isToday(day) : false;
-            const isPast = day ? isPastDay(day) : false;
-            
-            return (
-              <div
-                key={index}
-                className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
-                  !day 
-                    ? 'bg-gray-50' 
-                    : isPast 
-                      ? 'bg-gray-200 opacity-60 hover:bg-gray-300' 
-                      : 'bg-white hover:bg-[#F8FAFC] cursor-pointer'
-                } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
-              >
-                {day && (
-                  <>
-                    <div className={`text-sm font-medium mb-1 ${
-                      isPast 
-                        ? 'text-gray-600' 
-                        : isTodayDate 
-                          ? 'text-[#2563EB]' 
-                          : 'text-gray-900'
-                    }`}>
-                      {day}
-                    </div>
-                    <div className="space-y-1">
-                      {events.map((event) => (
-                        <div
-                          key={event.id}
-                          onClick={() => setSelectedEvent(event)}
-                          className={`text-xs ${getEventColor(event.type)} text-white px-1 py-0.5 rounded truncate ${
-                            isPast ? 'opacity-70' : ''
-                          } cursor-pointer hover:shadow-md transition-all`}
-                          title={event.title}
-                        >
-                          {event.title}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
+            {Array.from({ length: firstDay }).map((_, i) => (
+              <div key={`empty-${i}`} className="min-h-[80px] p-2 bg-gray-50 rounded-lg" />
+            ))}
+
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+              const dayEvents = getEventsForDay(day);
+              const isTodayDate = isToday(day);
+              const isPast = isPastDay(day);
+
+              return (
+                <div
+                  key={day}
+                  className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
+                    isPast ? 'bg-gray-200 opacity-60' : 'bg-white hover:bg-[#F8FAFC]'
+                  } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
+                >
+                  <div className={`text-sm font-medium mb-1 ${isPast ? 'text-gray-600' : isTodayDate ? 'text-[#2563EB]' : 'text-gray-900'}`}>
+                    {day}
+                  </div>
+                  <div className="space-y-1">
+                    {dayEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        onClick={() => setSelectedEvent(event)}
+                        className={`text-xs text-white px-1 py-0.5 rounded truncate cursor-pointer hover:shadow-md transition-all ${isPast ? 'opacity-70' : ''}`}
+                        style={{ backgroundColor: colorForStudentEvent(event) }}
+                        title={event.title}
+                      >
+                        {event.title}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded"></div>
-            <span className="text-xs text-gray-600">Meeting</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded"></div>
-            <span className="text-xs text-gray-600">Seminar</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded"></div>
-            <span className="text-xs text-gray-600">Deadline</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-purple-500 rounded"></div>
-            <span className="text-xs text-gray-600">Event</span>
-          </div>
+          {Object.entries(EVENT_TYPE_COLOR).map(([type, color]) => (
+            <div key={type} className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
+              <span className="text-xs text-gray-600 capitalize">{type}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -780,31 +997,28 @@ function AchievementsActivities() {
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full animate-in">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: selectedEvent.color }} />
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: colorForStudentEvent(selectedEvent) }} />
                 <h3 className="text-lg font-semibold text-gray-900">{selectedEvent.title}</h3>
               </div>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => setSelectedEvent(null)} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Date</p>
-                <p className="text-sm text-gray-900">{formatDate(selectedEvent.date)}</p>
+                <p className="text-sm text-gray-900">{formatDate(dateOnlyStudent(selectedEvent.event_date))}</p>
               </div>
-              {selectedEvent.program && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Program</p>
-                  <p className="text-sm text-gray-900">{selectedEvent.program}</p>
-                </div>
-              )}
               {selectedEvent.description && (
                 <div>
                   <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Description</p>
                   <p className="text-sm text-gray-700">{selectedEvent.description}</p>
+                </div>
+              )}
+              {selectedEvent.posted_by_role && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Posted By</p>
+                  <p className="text-sm text-gray-900">{ROLE_DISPLAY_LABEL_STUDENT[selectedEvent.posted_by_role] ?? selectedEvent.posted_by_role}</p>
                 </div>
               )}
             </div>
@@ -844,10 +1058,13 @@ function AchievementsActivities() {
                 </div>
               ) : upcomingEvents.map(ev => (
                 <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForStudentEvent(ev) }} />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {formatDate(dateOnlyStudent(ev.event_date))}
+                      {ev.posted_by_role && ` · Posted by ${ROLE_DISPLAY_LABEL_STUDENT[ev.posted_by_role] ?? ev.posted_by_role}`}
+                    </div>
                     {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                   </div>
                 </div>
@@ -863,10 +1080,13 @@ function AchievementsActivities() {
                 </div>
               ) : historyEvents.map(ev => (
                 <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: ev.color }} />
+                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForStudentEvent(ev) }} />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{formatDate(ev.date)} · {ev.program}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
+                      {formatDate(dateOnlyStudent(ev.event_date))}
+                      {ev.posted_by_role && ` · Posted by ${ROLE_DISPLAY_LABEL_STUDENT[ev.posted_by_role] ?? ev.posted_by_role}`}
+                    </div>
                     {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                   </div>
                   <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
@@ -1150,7 +1370,11 @@ interface StudentSettingsProps {
   onProfileUpdated: () => void;
 }
 
+type StudentSettingsTab = 'profile' | 'security' | 'notifications' | 'academic' | 'account';
+
 function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
+  const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
+
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
@@ -1179,8 +1403,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
   const displayEnrollmentStatus = profile?.enrollment_status ?? '—';
 
   const handleSaveChanges = async () => {
-    if (!profile?.student_id) return;
-
     const trimmedName = fullNameInput.trim();
     const trimmedStudentNo = studentNoInput.trim();
     const trimmedEmail = emailInput.trim();
@@ -1202,26 +1424,39 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     setSaveMessage(null);
 
     try {
-      const { error: profileUpdateError } = await supabase
-        .from('student_profiles')
-        .update({ full_name: trimmedName, student_no: trimmedStudentNo })
-        .eq('student_id', profile.student_id);
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          full_name: trimmedName,
+          student_no: trimmedStudentNo,
+        }),
+      });
 
-      if (profileUpdateError) throw profileUpdateError;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes. Please try again.' });
+        return;
+      }
 
-      // Only touch auth email if it actually changed
+      // Email is intentionally not sent to the backend — this app has
+      // no real Supabase Auth session to safely re-verify a changed
+      // email against (matches the PATCH /api/me route's own note).
+      // If the user typed a different email, let them know it wasn't
+      // applied rather than silently ignoring it.
       if (trimmedEmail !== userEmail) {
-        const { error: emailUpdateError } = await supabase.auth.updateUser({ email: trimmedEmail });
-        if (emailUpdateError) throw emailUpdateError;
-        setSaveMessage({ type: 'success', text: 'Changes saved. Check your inbox to confirm your new email address.' });
+        setSaveMessage({ type: 'success', text: 'Name and Student ID saved. Email address changes are not yet supported — contact your Department Chair to update your email.' });
       } else {
         setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
       }
 
       onProfileUpdated();
-    } catch (err) {
-      console.error('Failed to update profile:', err);
-      setSaveMessage({ type: 'error', text: 'Failed to save changes. Please try again.' });
+    } catch {
+      setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -1234,200 +1469,223 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     setSaveMessage(null);
   };
 
+  const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
+    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
+    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
+    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+    { key: 'academic', label: 'Academic Settings', icon: <BookOpen className="w-4 h-4" /> },
+    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Settings</h1>
-
-      {/* ⚙️ BASIC SETTINGS */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Settings className="w-5 h-5" /> Basic Settings
-        </h2>
-
-        {/* Profile Information */}
-        <div className="mb-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Information</h3>
-
-          {loading ? (
-            <div className="animate-pulse space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="h-10 bg-gray-100 rounded-lg" />
-                <div className="h-10 bg-gray-100 rounded-lg" />
-              </div>
-              <div className="h-10 bg-gray-100 rounded-lg" />
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <input
-                    type="text"
-                    value={fullNameInput}
-                    onChange={(e) => setFullNameInput(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
-                  <input
-                    type="text"
-                    value={studentNoInput}
-                    onChange={(e) => setStudentNoInput(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-            </>
-          )}
-
-          {saveMessage && (
-            <p className={`text-sm mt-3 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {saveMessage.text}
-            </p>
-          )}
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
         </div>
-
-        {/* Password / Security */}
-        <div className="border-t border-gray-200 pt-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Lock className="w-5 h-5" /> Password & Security
-          </h3>
-          <div className="space-y-3">
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Change Password
-            </button>
-            <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Enable Two-Factor Authentication
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 🔔 NOTIFICATIONS */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <Bell className="w-5 h-5" /> Notifications
-        </h2>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Email Notifications</p>
-              <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={emailNotifications} 
-                onChange={(e) => setEmailNotifications(e.target.checked)} 
-                className="sr-only peer" 
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
-              <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={announcementAlerts} 
-                onChange={(e) => setAnnouncementAlerts(e.target.checked)} 
-                className="sr-only peer" 
-              />
-              <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* 🎓 ACADEMIC SETTINGS */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <BookOpen className="w-5 h-5" /> Academic Settings
-        </h2>
-
-        <div className="space-y-4">
-          {/* Program Selection */}
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <label htmlFor="program-select" className="text-xs text-blue-600 uppercase font-semibold mb-2 flex items-center gap-1.5">
-              <GraduationCap className="w-4 h-4" /> Select Your Program
-            </label>
-            <select
-              id="program-select"
-              value={selectedProgram}
-              onChange={(e) => setSelectedProgram(e.target.value)}
-              className="w-full mt-1 px-4 py-2 border border-blue-200 rounded-lg bg-white text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {PROGRAM_OPTIONS.map((program) => (
-                <option key={program} value={program}>
-                  {program}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-2">
-              Choose the program you are currently enrolled in.
-            </p>
-            <p className="text-xs text-gray-600 mt-3">
-              <span className="font-semibold">Year Level:</span> {displayYearLevel}
-            </p>
-          </div>
-
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <p className="text-xs text-green-600 uppercase font-semibold mb-1">Current Status</p>
-            <p className="text-sm font-medium text-gray-900">{displayEnrollmentStatus}</p>
-          </div>
-
-          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <p className="text-xs text-purple-600 uppercase font-semibold mb-1">Academic Standing</p>
-            <p className="text-sm font-medium text-gray-900">{displayStanding}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 📄 ACCOUNT ACTIONS */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-          <LogOut className="w-5 h-5" /> Account Actions
-        </h2>
-
-        <div className="space-y-3">
-          <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
-            Log Out from All Devices
+        <div className="flex gap-3">
+          <button
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            Cancel
           </button>
-          <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+          <button
+            onClick={handleSaveChanges}
+            disabled={saving || loading}
+            className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="mt-8 flex gap-3">
-        <button
-          onClick={handleSaveChanges}
-          disabled={saving || loading}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+      {saveMessage && (
+        <div
+          className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
+            saveMessage.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
         >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-        <button
-          onClick={handleCancel}
-          disabled={saving}
-          className="px-6 py-2 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          Cancel
-        </button>
+          {saveMessage.text}
+        </div>
+      )}
+
+      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
+      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+        {/* Sidebar tab list */}
+        <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
+                activeTab === tab.key
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Panel — fixed min-height so switching tabs doesn't resize the card */}
+        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+
+              {loading ? (
+                <div className="animate-pulse space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                  </div>
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <input
+                        type="text"
+                        value={fullNameInput}
+                        onChange={(e) => setFullNameInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
+                      <input
+                        type="text"
+                        value={studentNoInput}
+                        onChange={(e) => setStudentNoInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
+              <div className="space-y-3 max-w-md">
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Change Password
+                </button>
+                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                  Enable Two-Factor Authentication
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Email Notifications</p>
+                    <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={emailNotifications}
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
+                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={announcementAlerts}
+                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'academic' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Academic Settings</h2>
+              <p className="text-sm text-gray-500 mb-6">Your program, standing, and enrollment status.</p>
+
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-xs text-blue-600 uppercase font-semibold mb-2 flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4" /> Your Program
+                  </p>
+                  <p className="text-sm font-medium text-gray-900">{selectedProgram || '—'}</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    This is the program you registered under, approved by your Department Chair. Contact your Chair if this needs to change.
+                  </p>
+                  <p className="text-xs text-gray-600 mt-3">
+                    <span className="font-semibold">Year Level:</span> {displayYearLevel}
+                  </p>
+                </div>
+
+                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                  <p className="text-xs text-green-600 uppercase font-semibold mb-1">Current Status</p>
+                  <p className="text-sm font-medium text-gray-900">{displayEnrollmentStatus}</p>
+                </div>
+
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-xs text-purple-600 uppercase font-semibold mb-1">Academic Standing</p>
+                  <p className="text-sm font-medium text-gray-900">{displayStanding}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'account' && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
+              <p className="text-sm text-gray-500 mb-6">Manage your active sessions.</p>
+              <div className="space-y-3 max-w-md">
+                <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+                  Log Out from All Devices
+                </button>
+                <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

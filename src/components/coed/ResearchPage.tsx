@@ -145,7 +145,7 @@ export function ResearchPage({
 }
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] py-12">
+    <div className="min-h-screen bg-white  py-12">
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
@@ -409,23 +409,6 @@ export function ResearchPage({
 
         </section>
 
-        {/* CTA */}
-
-        <div className="mt-12 bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] rounded-xl shadow-lg p-8 text-center text-white">
-
-          <h2 className="text-2xl font-semibold mb-3">
-            {pageContent.cta?.title}
-          </h2>
-
-          <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-            {pageContent.cta?.description}
-          </p>
-
-          <button className="px-8 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-            {pageContent.cta?.content}
-          </button>
-
-        </div>
 
       </div>
 {selectedAlumni && (
