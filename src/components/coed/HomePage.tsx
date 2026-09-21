@@ -16,6 +16,7 @@ import {
   Monitor,
   Globe,
   Heart,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -59,6 +60,7 @@ interface Announcement {
   title: string;
   description: string;
   color: string;
+  image_url?: string;
 }
 
 interface AboutStatistic {
@@ -1078,6 +1080,7 @@ async function loadProfileStatistics() {
                     item.description
                   }
                   color={item.color}
+                  image_url={item.image_url}
                 />
 
               )
@@ -1471,7 +1474,9 @@ function AnnouncementCard({
   title,
   description,
   color,
+  image_url,
 }: any) {
+  const [showModal, setShowModal] = useState(false);
 
   const colorClasses = {
 
@@ -1511,108 +1516,176 @@ function AnnouncementCard({
     colorClasses.blue;
 
   return (
-    <div
-      className={`
-        group
-        relative
-        overflow-hidden
-        rounded-2xl
-        bg-white
-        shadow-lg
-        hover:shadow-2xl
-        transition-all
-        duration-300
-        hover:-translate-y-2
-        border
-        ${colors.border}
-      `}
-    >
-
-      {/* Top Color Bar */}
-
+    <>
       <div
+        onClick={() => setShowModal(true)}
         className={`
-          h-2
-          bg-gradient-to-r
-          ${colors.gradient}
+          group
+          relative
+          overflow-hidden
+          rounded-2xl
+          bg-white
+          shadow-lg
+          hover:shadow-2xl
+          transition-all
+          duration-300
+          hover:-translate-y-2
+          border
+          ${colors.border}
+          cursor-pointer
+          flex flex-col
         `}
-      />
+      >
 
-      <div className="p-6">
+        {/* Top Color Bar */}
 
-        {/* Date */}
+        <div
+          className={`
+            h-2
+            w-full
+            bg-gradient-to-r
+            ${colors.gradient}
+          `}
+        />
 
-        <div className="flex items-center gap-2 mb-4">
-
-          <div
-            className={`
-              px-3
-              py-1
-              rounded-full
-              bg-gradient-to-r
-              ${colors.gradient}
-              text-white
-              text-xs
-              font-bold
-              shadow-md
-            `}
-          >
-            {date}
+        {/* Image on Card Face */}
+        {image_url && (
+          <div className="w-full h-48 overflow-hidden bg-gray-100 border-b border-gray-100 shrink-0">
+            <img 
+              src={image_url} 
+              alt={title} 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
           </div>
+        )}
+
+        <div className="p-6 flex-1 flex flex-col">
+
+          {/* Date */}
+
+          <div className="flex items-center gap-2 mb-4">
+
+            <div
+              className={`
+                px-3
+                py-1
+                rounded-full
+                bg-gradient-to-r
+                ${colors.gradient}
+                text-white
+                text-xs
+                font-bold
+                shadow-md
+              `}
+            >
+              {date}
+            </div>
+
+          </div>
+
+          {/* Title */}
+
+          <h3
+            className="
+              text-xl
+              font-bold
+              text-gray-900
+              mb-2
+              group-hover:text-blue-600
+              transition-colors
+            "
+          >
+            {title}
+          </h3>
+
+          {/* Description */}
+
+          <p
+            className="
+              text-gray-600
+              mb-4
+              line-clamp-3
+              flex-1
+            "
+          >
+            {description}
+          </p>
+
+          {/* Read More */}
+
+          <button
+            className="
+              text-blue-600
+              font-semibold
+              text-sm
+              flex
+              items-center
+              gap-2
+              group-hover:gap-3
+              transition-all
+              mt-auto
+            "
+          >
+
+            Read More
+
+            <ChevronRight
+              className="w-4 h-4"
+            />
+
+          </button>
 
         </div>
 
-        {/* Title */}
-
-        <h3
-          className="
-            text-xl
-            font-bold
-            text-gray-900
-            mb-2
-            group-hover:text-blue-600
-            transition-colors
-          "
-        >
-          {title}
-        </h3>
-
-        {/* Description */}
-
-        <p
-          className="
-            text-gray-600
-            mb-4
-          "
-        >
-          {description}
-        </p>
-
-        {/* Read More */}
-
-        <button
-          className="
-            text-blue-600
-            font-semibold
-            text-sm
-            flex
-            items-center
-            gap-2
-            group-hover:gap-3
-            transition-all
-          "
-        >
-
-          Read More
-
-          <ChevronRight
-            className="w-4 h-4"
-          />
-
-        </button>
-
       </div>
 
-    </div>
+      {/* Modal Popup */}
+      {showModal && (
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+          onClick={() => setShowModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className={`px-3 py-1 rounded-full bg-gradient-to-r ${colors.gradient} text-white text-xs font-bold shadow-md`}>
+                {date}
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">{title}</h2>
+            
+            {image_url && (
+              <div className="mb-6 w-full flex justify-center rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                <img 
+                  src={image_url} 
+                  alt={title} 
+                  className="w-full h-auto max-h-[500px] object-contain"
+                />
+              </div>
+            )}
+            
+            <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {description}
+            </p>
+            
+            <div className="mt-8 flex justify-end">
+              <button 
+                onClick={() => setShowModal(false)}
+                className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-medium transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

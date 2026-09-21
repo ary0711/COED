@@ -784,11 +784,25 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   );
 }
 
+
 // ─── User Management ──────────────────────────────────────────────────────────
+const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
+  student: { length: 7, label: '7 digits' },
+  faculty: { length: 6, label: '6 digits' },
+  staff:   { length: 6, label: '6 digits' },
+  admin:   { length: 6, label: '6 digits' },
+  Admin:   { length: 6, label: '6 digits' },
+  dean:    { length: 6, label: '6 digits' },
+  Dean:    { length: 6, label: '6 digits' },
+  department_chair: { length: 6, label: '6 digits' },
+  'Department Chair': { length: 6, label: '6 digits' },
+  alumni:  { length: 5, label: '5 digits' },
+};
+
 function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
-  const [users, setUsers]               = useState<Profile[]>([]);
-  const [filtered, setFiltered]         = useState<Profile[]>([]);
+  const [users, setUsers]               = useState<any[]>([]);
+  const [filtered, setFiltered]         = useState<any[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [roleFilter, setRoleFilter]     = useState('all');
@@ -798,13 +812,13 @@ function UserManagement() {
   const [activating, setActivating]     = useState<string | null>(null);
 
   const [modal, setModal]         = useState<'add' | 'edit' | 'delete' | null>(null);
-  const [selected, setSelected]   = useState<Profile | null>(null);
+  const [selected, setSelected]   = useState<any | null>(null);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
   const [fetchError, setFetchError] = useState('');
 
   const [form, setForm] = useState({
-    full_name: '', email: '', role: 'student',
+    username: '', full_name: '', email: '', role: 'student',
     id_number: '', department: '', status: 'active', password: '',
   });
 
@@ -839,6 +853,7 @@ function UserManagement() {
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(u =>
+        (u.username || '').toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         u.id_number.toLowerCase().includes(q) ||
@@ -857,14 +872,15 @@ function UserManagement() {
   const pendingCount = users.filter(u => u.status === 'pending').length;
 
   const openAdd = () => {
-    setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
     setShowPassword(false);
     setFormError('');
     setModal('add');
   };
-  const openEdit = (user: Profile) => {
+  const openEdit = (user: any) => {
     setSelected(user);
     setForm({
+      username: user.username || '',
       full_name: user.full_name, email: user.email, role: user.role,
       id_number: user.id_number, department: user.department ?? '',
       status: user.status, password: '',
@@ -873,25 +889,40 @@ function UserManagement() {
     setFormError('');
     setModal('edit');
   };
-  const openDelete = (user: Profile) => { setSelected(user); setModal('delete'); };
+  const openDelete = (user: any) => { setSelected(user); setModal('delete'); };
 
   const handleAdd = async () => {
     setFormError('');
+    if (!form.username.trim()) { setFormError('Username is required.'); return; }
     if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
     if (!form.email.trim()) { setFormError('Email address is required.'); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.email.trim())) { setFormError('Please enter a valid email address.'); return; }
     if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+
+    const idConfig = ID_LENGTH_CONFIG[form.role];
+    if (idConfig) {
+      const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+      if (!digitRegex.test(form.id_number.trim())) {
+        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        return;
+      }
+    }
+
     if (!form.password) { setFormError('Password is required.'); return; }
     if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
 
     setSaving(true);
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
         body: JSON.stringify({
-          username: form.email.trim(),
+          username: form.username.trim(),
           email: form.email.trim(),
           password: form.password,
           role: form.role,
@@ -917,7 +948,7 @@ function UserManagement() {
             case 400: errorMessage = 'Invalid user information. Please check the form and try again.'; break;
             case 401: errorMessage = 'You are not authorized to create this account.'; break;
             case 403: errorMessage = 'You do not have permission to create users.'; break;
-            case 409: errorMessage = 'A user with this email or ID number already exists.'; break;
+            case 409: errorMessage = 'A user with this username, email or ID number already exists.'; break;
             case 500: errorMessage = 'The server encountered an error while creating the account.'; break;
             default:  errorMessage = `Failed to create account. Server returned ${response.status}.`;
           }
@@ -928,7 +959,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       setShowPassword(false);
       setFormError('');
       await fetchUsers();
@@ -945,8 +976,19 @@ function UserManagement() {
 
   const handleEdit = async () => {
     setFormError('');
+    if (!form.username.trim()) { setFormError('Username is required.'); return; }
     if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
     if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+
+    const idConfig = ID_LENGTH_CONFIG[form.role];
+    if (idConfig) {
+      const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+      if (!digitRegex.test(form.id_number.trim())) {
+        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        return;
+      }
+    }
+
     if (!selected) return;
 
     setSaving(true);
@@ -959,6 +1001,7 @@ function UserManagement() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          username: form.username.trim(),
           full_name: form.full_name.trim(),
           role: form.role,
           id_number: form.id_number.trim(),
@@ -976,7 +1019,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error.message || 'Unable to connect to the backend.');
@@ -990,9 +1033,13 @@ function UserManagement() {
     setFormError('');
     setSaving(true);
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
       });
 
       const text = await response.text();
@@ -1011,7 +1058,7 @@ function UserManagement() {
       setModal(null);
       setSelected(null);
       setFormError('');
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error?.message || 'Unable to connect to the backend server.');
@@ -1020,7 +1067,7 @@ function UserManagement() {
     }
   };
 
-  const activatePending = async (user: Profile) => {
+  const activatePending = async (user: any) => {
     setActivating(user.id);
     try {
       const token = localStorage.getItem('token');
@@ -1037,13 +1084,16 @@ function UserManagement() {
 
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profile) {
-        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.email).single();
+        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.username || profile.email).single();
         if (!existingUser) {
           await fetch('http://localhost:5000/api/auth/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
             body: JSON.stringify({
-              username: profile.email,
+              username: profile.username || profile.email,
               password: 'ChangeMe@123',
               role: profile.role,
             }),
@@ -1056,7 +1106,7 @@ function UserManagement() {
     }
   };
 
-  const toggleStatus = async (user: Profile) => {
+  const toggleStatus = async (user: any) => {
     if (user.status === 'pending') return;
     const next = user.status === 'active' ? 'inactive' : 'active';
     const token = localStorage.getItem('token');
@@ -1114,7 +1164,7 @@ function UserManagement() {
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Search name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" placeholder="Search username, name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -1151,6 +1201,7 @@ function UserManagement() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Dept.</th>
@@ -1176,6 +1227,9 @@ function UserManagement() {
                             <div className="text-xs text-gray-400 truncate max-w-[120px] sm:max-w-none">{user.email}</div>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <span className="text-xs sm:text-sm font-medium text-gray-900">{user.username || '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <span className="text-xs sm:text-sm font-mono text-gray-700 bg-gray-100 px-1.5 sm:px-2 py-1 rounded-lg">{user.id_number}</span>
@@ -1235,7 +1289,10 @@ function UserManagement() {
       </div>
 
       {(modal === 'add' || modal === 'edit') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">{modal === 'add' ? 'Add New User' : 'Edit User'}</h2>
@@ -1243,10 +1300,17 @@ function UserManagement() {
             </div>
             {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
-                <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl text-sm" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Username *</label>
+                  <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
+                  <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                </div>
               </div>
               {modal === 'add' && (
                 <div>
@@ -1257,9 +1321,26 @@ function UserManagement() {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">ID Number *</label>
-                  <input type="text" value={form.id_number} onChange={e => setForm({ ...form, id_number: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    ID Number * ({ID_LENGTH_CONFIG[form.role]?.label || 'Digits only'})
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={ID_LENGTH_CONFIG[form.role]?.length ?? 10}
+                    placeholder={`e.g. ${'1'.repeat(ID_LENGTH_CONFIG[form.role]?.length ?? 6)}`}
+                    value={form.id_number}
+                    onChange={e => {
+                      const maxLen = ID_LENGTH_CONFIG[form.role]?.length;
+                      const cleaned = e.target.value.replace(/\D/g, '');
+                      setForm({
+                        ...form,
+                        id_number: maxLen ? cleaned.slice(0, maxLen) : cleaned,
+                      });
+                    }}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
@@ -1270,8 +1351,19 @@ function UserManagement() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Role *</label>
-                  <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm">
+                  <select 
+                    value={form.role} 
+                    onChange={e => {
+                      const nextRole = e.target.value;
+                      const maxLen = ID_LENGTH_CONFIG[nextRole]?.length;
+                      setForm(prev => ({
+                        ...prev,
+                        role: nextRole,
+                        id_number: maxLen ? prev.id_number.slice(0, maxLen) : prev.id_number,
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border rounded-xl text-sm"
+                  >
                     {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
@@ -1316,10 +1408,14 @@ function UserManagement() {
       )}
 
       {modal === 'delete' && selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <h2 className="text-lg font-bold text-gray-900 mb-2">Delete User</h2>
             <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete {selected.full_name}?</p>
+            {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
             <div className="flex gap-3">
               <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
               <button onClick={handleDelete} disabled={saving} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm">
@@ -1332,6 +1428,7 @@ function UserManagement() {
     </div>
   );
 }
+
 
 // ─── Calendar & Activities (DEAN DASHBOARD) ───────────────────────────────────
 
@@ -7383,7 +7480,6 @@ function AnnouncementsContent() {
   );
 }
 
-// ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
   function updateClubsField(section: string, field: string, value: string) {
     setClubsContent((prev: any) => ({
@@ -7745,33 +7841,90 @@ function LandingPageManagement() {
   }
 
   async function saveHomePage() {
-    const { error: contentError } = await saveHomepageContent(homeContent);
-    if (contentError) {
-      setModalMessage(`Error: ${contentError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
+    try {
+      // 1. Save Content
+      const { error: contentError } = await saveHomepageContent(homeContent);
+      if (contentError) throw contentError;
 
-    const { error: statsError } = await saveHomepageStats(stats);
-    if (statsError) {
-      setModalMessage(`Error: ${statsError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
+      // 2. Save Stats
+      const { error: statsError } = await saveHomepageStats(stats);
+      if (statsError) throw statsError;
 
-    const { error: featuresError } = await saveHomepageFeatures(features);
-    if (featuresError) {
-      setModalMessage(
-        `Error: ${featuresError instanceof Error ? featuresError.message : String(featuresError)}`
+      // 3. Save Features
+      const { error: featuresError } = await saveHomepageFeatures(features);
+      if (featuresError) throw featuresError;
+
+      // 4. Save Announcements (with robust Supabase image upload handling)
+      const processedAnnouncements = await Promise.all(
+        announcements.map(async (announcement) => {
+          let finalImageUrl = announcement.image_url;
+
+          // If the image_url is a newly selected Base64 string
+          if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
+            try {
+              // Convert Base64 data URL to a clean Blob file object
+              const res = await fetch(finalImageUrl);
+              const blob = await res.blob();
+              const ext = blob.type.split('/')[1] || 'jpeg';
+              const fileName = `announcements/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+
+              // Upload the blob file to the Supabase 'announcements' bucket
+              const { error: uploadError } = await supabase.storage
+                .from('announcements')
+                .upload(fileName, blob, {
+                  contentType: blob.type,
+                  upsert: true,
+                });
+
+              if (uploadError) {
+                console.error('Storage upload failed:', uploadError.message);
+                throw new Error(`Image upload failed: ${uploadError.message}`);
+              }
+
+              // Fetch the final public URL from Supabase
+              const { data: publicUrlData } = supabase.storage
+                .from('announcements')
+                .getPublicUrl(fileName);
+
+              finalImageUrl = publicUrlData.publicUrl;
+            } catch (imgErr) {
+              console.error('Error processing announcement image:', imgErr);
+              throw imgErr;
+            }
+          }
+
+          return {
+            id: announcement.id,
+            title: announcement.title,
+            description: announcement.description,
+            color: announcement.color,
+            image_url: finalImageUrl || null,
+            announcement_date: announcement.announcement_date,
+            sort_order: announcement.sort_order,
+          };
+        })
       );
+
+      // Save processed announcements to database
+      const { error: announcementsError } = await supabase
+        .from('homepage_announcements')
+        .upsert(processedAnnouncements);
+
+      if (announcementsError) throw announcementsError;
+
+      // Success notification
+      setModalMessage('Homepage and announcements updated successfully!');
       setShowSuccessModal(true);
-      return;
+
+      // Reload announcements to reflect the newly saved public URLs instantly
+      loadAnnouncements();
+
+    } catch (error: any) {
+      console.error('Save failed:', error);
+      setModalMessage(`Error saving homepage: ${error.message || String(error)}`);
+      setShowSuccessModal(true);
     }
-
-    setModalMessage('Homepage updated successfully!');
-    setShowSuccessModal(true);
   }
-
   async function saveDepartmentsPage() {
     await saveColleges(colleges);
     await saveDepartmentContent(departmentContent);
@@ -7968,7 +8121,7 @@ function LandingPageManagement() {
       {showSuccessModal && (
         <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Success</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Notification</h2>
             <p className="text-gray-600 mb-6">{modalMessage}</p>
             <div className="flex justify-end">
               <button
