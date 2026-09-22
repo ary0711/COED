@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
   Calendar,
@@ -314,6 +315,9 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
   );
 }
 
+// IMPORTANT: Add this to the very top of your file with your other imports!
+// import { createPortal } from 'react-dom';
+
 /* ─────────────────────────────────────────────
    Department Calendar
 ───────────────────────────────────────────── */
@@ -330,17 +334,21 @@ const TYPE_TO_COLOR: Record<string, string> = {
   deadline: '#F59E0B',
   exam: '#EF4444',
 };
+
+const PREDEFINED_TYPES = [
+  { id: 'meeting', label: 'Meeting', color: '#3B82F6' },
+  { id: 'activity', label: 'Activity', color: '#10B981' },
+  { id: 'holiday', label: 'Holiday', color: '#8B5CF6' },
+  { id: 'deadline', label: 'Deadline', color: '#F59E0B' },
+  { id: 'exam', label: 'Exam', color: '#EF4444' },
+];
+
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
   dean: 'Dean',
   admin: 'Admin',
   department_chair: 'Dept. Chair',
 };
-
-function eventTypeForColor(color: string): CalendarEvent['event_type'] | null {
-  const entry = Object.entries(TYPE_TO_COLOR).find(([, c]) => c === color);
-  return entry ? (entry[0] as CalendarEvent['event_type']) : null;
-}
 
 function colorForEvent(ev: CalendarEvent): string {
   return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
@@ -379,10 +387,13 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
     title: '',
     date: '',
     description: '',
+    type: 'meeting',
+    customType: '',
     color: '#3B82F6',
     audience: 'all',
   };
   const [form, setForm] = useState(emptyForm);
+  const [isCustomType, setIsCustomType] = useState(false);
   const [formError, setFormError] = useState('');
 
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -436,12 +447,14 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
   const resetForm = () => {
     setForm(emptyForm);
     setFormError('');
+    setIsCustomType(false);
   };
 
   const handleAddEvent = async () => {
     setFormError('');
     if (!form.title.trim()) { setFormError('Event title is required.'); return; }
-    if (!form.date)          { setFormError('Please select a date.'); return; }
+    if (!form.date)         { setFormError('Please select a date.'); return; }
+    if (isCustomType && !form.customType.trim()) { setFormError('Custom activity type is required.'); return; }
 
     setSubmitting(true);
 
@@ -449,7 +462,8 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: toTimestamp(form.date),
-      event_type: eventTypeForColor(form.color),
+      event_type: isCustomType ? form.customType.trim() : form.type,
+      color: form.color,
       audience: form.audience,
       status: 'upcoming',
     };
@@ -667,9 +681,10 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+      {/* PORTAL USED HERE TO BREAK OUT OF THE LAYOUT */}
+      {showModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">Add New Event</h2>
               <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
@@ -741,19 +756,66 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 />
               </div>
 
+              {/* Event Type and Color Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Event Color</label>
-                <div className="flex gap-2">
-                  {COLOR_OPTIONS.map(c => (
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type of Activity *</label>
+                <div className="flex flex-wrap gap-2.5 mb-3">
+                  {PREDEFINED_TYPES.map(pt => (
                     <button
-                      key={c}
+                      key={pt.id}
                       type="button"
-                      onClick={() => setForm({ ...form, color: c })}
-                      className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : 'hover:scale-110'}`}
-                      style={{ backgroundColor: c }}
-                    />
+                      onClick={() => {
+                        setIsCustomType(false);
+                        setForm({ ...form, type: pt.id, color: pt.color });
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                        !isCustomType && form.type === pt.id 
+                          ? 'border-gray-400 bg-gray-50 shadow-sm' 
+                          : 'border-transparent hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: pt.color }} />
+                      <span className="text-gray-700">{pt.label}</span>
+                    </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomType(true)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                      isCustomType 
+                        ? 'border-gray-400 bg-gray-50 shadow-sm' 
+                        : 'border-transparent hover:bg-gray-50'
+                    }`}
+                  >
+                    <Plus className="w-3 h-3 text-gray-500" />
+                    <span className="text-gray-700">Custom</span>
+                  </button>
                 </div>
+
+                {/* Shows only when Dean clicks 'Custom' */}
+                {isCustomType && (
+                  <div className="flex gap-2 items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        placeholder="Enter custom activity type..."
+                        value={form.customType}
+                        onChange={e => setForm({ ...form, customType: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A]"
+                      />
+                    </div>
+                    <div className="flex-shrink-0 flex items-center gap-2 border-l border-gray-200 pl-2">
+                      <span className="text-xs text-gray-500 font-medium">Color:</span>
+                      <input
+                        type="color"
+                        value={form.color}
+                        onChange={e => setForm({ ...form, color: e.target.value })}
+                        className="w-7 h-7 rounded cursor-pointer border-0 p-0 bg-transparent"
+                        title="Choose custom color"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -775,7 +837,8 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -1309,12 +1372,71 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
 }
 
 
-/*Faculty Monitoring */
+// --- Modal Component ---
+function ReminderConfirmModal({ isOpen, onClose, onConfirm }) {
+  if (!isOpen) return null;
+
+  return (
+    // Removed backdrop-blur-sm, changed to bg-black/80 for a dark black background, and added z-[9999] for full-screen coverage
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+      <div className="bg-white rounded-xl shadow-lg p-6 w-11/12 max-w-md border border-gray-100">
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Send Reminders</h3>
+        <p className="text-sm text-gray-600 mb-6">
+          Are you sure you want to send reminders to all faculty members with pending or overdue reports?
+        </p>
+        
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm font-medium text-white bg-[#1E3A8A] rounded-lg hover:bg-[#1E40AF] transition-colors"
+          >
+            Confirm & Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Faculty Monitoring Component ---
 function FacultyMonitoring() {
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+
+  const handleConfirmSend = () => {
+    // Add logic to send reminders here
+    console.log("Reminders sent!");
+    setIsReminderModalOpen(false);
+  };
+
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty Monitoring</h1>
+      {/* Top Header with the SINGLE Send Reminder Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Faculty Monitoring</h1>
+        
+        <button 
+          onClick={() => setIsReminderModalOpen(true)}
+          className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors"
+        >
+          Send Reminder
+        </button>
+      </div>
+
+      {/* Table Component (Make sure you delete the button inside this file!) */}
       <FacultyMonitoringTable />
+
+      {/* Confirmation Modal */}
+      <ReminderConfirmModal 
+        isOpen={isReminderModalOpen} 
+        onClose={() => setIsReminderModalOpen(false)} 
+        onConfirm={handleConfirmSend} 
+      />
     </div>
   );
 }
@@ -1461,7 +1583,6 @@ function ChairReportsView({ userId, userName }: { userId: string; userName: stri
     </div>
   );
 }
-
 
 /* ─────────────────────────────────────────────
    Reports Monitoring

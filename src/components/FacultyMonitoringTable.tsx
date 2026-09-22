@@ -20,11 +20,6 @@ const facultyData: FacultyMember[] = [
 ];
 
 export function FacultyMonitoringTable() {
-  // Logic para sa General Reminder button
-  const handleSendGeneralReminder = () => {
-    alert("Sending reminders to all faculty members with pending or overdue reports...");
-  };
-
   // Logic para sa View Details button
   const handleViewDetails = (name: string) => {
     alert(`Opening detailed submission history for ${name}.`);
@@ -66,13 +61,7 @@ export function FacultyMonitoringTable() {
             <h3 className="text-lg font-semibold text-gray-900">Faculty Monitoring</h3>
             <p className="text-sm text-gray-500">Report submission status</p>
           </div>
-          {/* UPDATED: Added onClick diri */}
-          <button 
-            onClick={handleSendGeneralReminder}
-            className="px-4 py-2 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E3A8A] transition-colors text-sm"
-          >
-            Send Reminder
-          </button>
+          {/* Send Reminder button has been removed from here */}
         </div>
       </div>
 
@@ -103,7 +92,6 @@ export function FacultyMonitoringTable() {
                   <div className="text-sm text-gray-600">{faculty.lastSubmission}</div>
                 </td>
                 <td className="px-6 py-4">
-                  {/* UPDATED: Added onClick diri */}
                   <button 
                     onClick={() => handleViewDetails(faculty.name)}
                     className="text-[#2563EB] hover:text-[#1E3A8A] text-sm font-medium transition-colors"
