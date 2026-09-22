@@ -5,6 +5,8 @@ import {
   BarChart3,
   Calendar,
   ArrowLeft,
+  DollarSign,
+  Building,
   Users,
   ExternalLink,
   Download,
@@ -32,15 +34,18 @@ import {
   Eye,
   FolderOpen,
   User,
+  CalendarDays,
+  MapPin,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AccomplishmentReport } from './AccomplishmentReport';
 import { ExtensionReport } from './ExtensionReport';
 import { DeansListGenerator } from './DeansListGenerator';
 import { WfhReport } from '../WfhReport'; 
 import { ReportTrackerPanel } from '../ReportTrackerPanel';
+import { ResearchExtension } from '../ResearchExtension'; 
 
 const facultyMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',          id: 'dashboard' },
@@ -63,6 +68,18 @@ interface FacultyDashboardProps {
 }
 
 const ME_API_URL = 'http://localhost:5000/api/me';
+const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
+
+function getResearchToken() {
+  return localStorage.getItem('token');
+}
+
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
 
 export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -782,601 +799,6 @@ function TeachingLoad() {
   );
 }
 
-// ====================== 5.2 RESEARCH & EXTENSION ======================
-
-const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
-
-function getResearchToken() {
-  return localStorage.getItem('token');
-}
-
-interface FileAttachment {
-  name: string;
-  url: string;
-  size?: number;
-  type?: string;
-}
-
-interface ResearchSubmission {
-  id: string;
-  title: string;
-  type: 'research' | 'extension';
-  publication_link?: string | null;
-  file_name: string | null;
-  file_url: string | null;
-  files?: FileAttachment[] | null;
-  status: 'pending' | 'approved' | 'rejected';
-  dean_remarks?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface ModalState {
-  isOpen: boolean;
-  type: 'success' | 'error' | 'validation';
-  title: string;
-  message: string;
-}
-
-export function ResearchExtension({ userId }: { userId: string }) {
-  const [tab, setTab] = useState<'submit' | 'track' | 'approved'>('submit');
-  const [researchTitle, setResearchTitle] = useState('');
-  const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
-  const [publicationLink, setPublicationLink] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [submissions, setSubmissions] = useState<ResearchSubmission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [modal, setModal] = useState<ModalState>({
-    isOpen: false,
-    type: 'success',
-    title: '',
-    message: '',
-  });
-
-  const closeModal = () => {
-    setModal(prev => ({ ...prev, isOpen: false }));
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-
-    const newFiles = Array.from(e.target.files);
-    const oversized = newFiles.filter(f => f.size > 15 * 1024 * 1024);
-    if (oversized.length > 0) {
-      setModal({
-        isOpen: true,
-        type: 'validation',
-        title: 'File Too Large',
-        message: `Some files exceed 15MB: ${oversized.map(f => f.name).join(', ')}`,
-      });
-      return;
-    }
-
-    setSelectedFiles(prev => [...prev, ...newFiles]);
-    e.target.value = '';
-  };
-
-  const removeSelectedFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const getSubmissionFiles = (s: ResearchSubmission): FileAttachment[] => {
-    if (Array.isArray(s.files) && s.files.length > 0) {
-      return s.files;
-    }
-    if (s.file_url) {
-      return [{ name: s.file_name || 'Attached Document', url: s.file_url }];
-    }
-    return [];
-  };
-
-  const openFileViewer = (url: string, name: string) => {
-    const ext = (name.split('.').pop() || '').toLowerCase();
-    const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
-
-    if (isImageOrPdf) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } else {
-      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-      window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
-          headers: { Authorization: `Bearer ${getResearchToken()}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setSubmissions((data ?? []).filter((s: any) => s.type === 'research' || s.type === 'extension'));
-        }
-      } catch {
-        // silent
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [userId]);
-
-  const approved = submissions.filter(s => s.status === 'approved');
-  const pendingCount = submissions.filter(s => s.status === 'pending').length;
-  const rejectedCount = submissions.filter(s => s.status === 'rejected').length;
-
-  const displayType = (type: string) => (type === 'research' ? 'Research' : 'Extension');
-  const displayStatus = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-  const statusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      approved: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700',
-    };
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${map[status] || map.pending}`}>
-        {displayStatus(status)}
-      </span>
-    );
-  };
-
-  const statusIcon = (status: string) => {
-    if (status === 'approved') return <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />;
-    if (status === 'rejected') return <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />;
-    return <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
-  };
-
-  const handleSubmit = async () => {
-    if (!researchTitle.trim()) {
-      setModal({
-        isOpen: true,
-        type: 'validation',
-        title: 'Missing Required Field',
-        message: 'Please enter a title before submitting.',
-      });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append('title', researchTitle.trim());
-      formData.append('type', researchType);
-      if (researchType === 'research' && publicationLink.trim()) {
-        formData.append('publication_link', publicationLink.trim());
-      }
-
-      selectedFiles.forEach(file => {
-        formData.append('files', file);
-      });
-
-      const res = await fetch(RESEARCH_API_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getResearchToken()}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setModal({
-          isOpen: true,
-          type: 'error',
-          title: 'Submission Failed',
-          message: err.error || res.statusText || 'Failed to submit.',
-        });
-        return;
-      }
-
-      const data: ResearchSubmission = await res.json();
-      setSubmissions(prev => [data, ...prev]);
-      setResearchTitle('');
-      setPublicationLink('');
-      setSelectedFiles([]);
-      setModal({
-        isOpen: true,
-        type: 'success',
-        title: 'Output Submitted',
-        message: 'Your submission and attachments have been sent for approval!',
-      });
-    } catch {
-      setModal({
-        isOpen: true,
-        type: 'error',
-        title: 'Connection Error',
-        message: 'Could not reach the server. Please try again.',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Research & Extension</h1>
-      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
-        {[
-          { id: 'submit', label: 'Submit' },
-          { id: 'track', label: 'Track Status' },
-          { id: 'approved', label: 'Approved' },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id as any)}
-            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-              tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <div className="lg:col-span-2">
-          {tab === 'submit' && (
-            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Output</h2>
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Type</label>
-                  <div className="flex gap-3 sm:gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setResearchType('research')}
-                      className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${
-                        researchType === 'research' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      Research
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setResearchType('extension')}
-                      className={`flex-1 py-3 rounded-xl text-sm sm:text-base font-medium transition-all ${
-                        researchType === 'extension' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      Extension Activity
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                  <input
-                    type="text"
-                    value={researchTitle}
-                    onChange={e => setResearchTitle(e.target.value)}
-                    placeholder="Enter output title"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-
-                {/* Publication Link (Shown for Research) */}
-                {researchType === 'research' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Publication Link <span className="text-xs text-gray-400 font-normal">(Optional — DOI or Journal URL)</span>
-                    </label>
-                    <input
-                      type="url"
-                      value={publicationLink}
-                      onChange={e => setPublicationLink(e.target.value)}
-                      placeholder="https://doi.org/... or https://journal.org/article"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
-                  </div>
-                )}
-
-                {/* Multi-file Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Upload Documents & Evidences (Multiple files allowed)
-                  </label>
-                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block bg-gray-50/50">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600 font-medium">Click to select files or drag and drop</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX, JPG, PNG up to 15MB each</p>
-                    <input
-                      type="file"
-                      multiple
-                      accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                  </label>
-
-                  {/* Selected files preview list */}
-                  {selectedFiles.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs font-semibold text-gray-500">
-                        {selectedFiles.length} file(s) selected:
-                      </p>
-                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                        {selectedFiles.map((file, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-xs"
-                          >
-                            <span className="truncate max-w-[280px] font-medium text-blue-900">
-                              {file.name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
-                              <button
-                                type="button"
-                                onClick={() => removeSelectedFile(idx)}
-                                className="text-red-500 hover:text-red-700 p-0.5 rounded transition-colors"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60"
-                >
-                  {submitting ? 'Submitting...' : 'Submit for Approval'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {tab === 'track' && (
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-              <div className="p-4 sm:p-6 border-b border-gray-100">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Submission Tracker</h2>
-              </div>
-              {loading ? (
-                <div className="p-12 text-center text-gray-400">Loading…</div>
-              ) : submissions.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {submissions.map(s => {
-                    const files = getSubmissionFiles(s);
-                    return (
-                      <div key={s.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-start sm:items-center justify-between gap-3 mb-2">
-                          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                            {statusIcon(s.status)}
-                            <div className="min-w-0">
-                              <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                              <div className="text-xs sm:text-sm text-gray-500">
-                                {displayType(s.type)} · Submitted {formatDate(s.created_at)}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex-shrink-0">{statusBadge(s.status)}</div>
-                        </div>
-
-                        {/* Publication link if provided */}
-                        {s.publication_link && (
-                          <div className="pl-8 sm:pl-9 mb-2">
-                            <a
-                              href={s.publication_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <ExternalLink size={12} />
-                              <span className="truncate max-w-[320px]">{s.publication_link}</span>
-                            </a>
-                          </div>
-                        )}
-
-                        {/* Inline Attachment Viewers */}
-                        {files.length > 0 && (
-                          <div className="pl-8 sm:pl-9 flex flex-wrap gap-1.5 mt-1">
-                            {files.map((file, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => openFileViewer(file.url, file.name)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
-                              >
-                                <Eye size={12} />
-                                <span className="max-w-[160px] truncate">{file.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {s.dean_remarks && (
-                          <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg ml-8 sm:ml-9">
-                            Remarks: {s.dean_remarks}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'approved' && (
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-              <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Research & Extension</h2>
-                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">
-                  {approved.length} Total
-                </span>
-              </div>
-              {loading ? (
-                <div className="p-12 text-center text-gray-400">Loading…</div>
-              ) : approved.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">No approved submissions yet.</div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {approved.map(s => {
-                    const files = getSubmissionFiles(s);
-                    return (
-                      <div key={s.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-start sm:items-center justify-between gap-3 mb-2">
-                          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-                            <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
-                            <div className="min-w-0">
-                              <div className="font-medium text-gray-900 text-sm sm:text-base">{s.title}</div>
-                              <div className="text-xs sm:text-sm text-gray-500">
-                                {displayType(s.type)} · Approved on {formatDate(s.updated_at)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Publication link if provided */}
-                        {s.publication_link && (
-                          <div className="pl-8 sm:pl-9 mb-2">
-                            <a
-                              href={s.publication_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <ExternalLink size={12} />
-                              <span className="truncate max-w-[320px]">{s.publication_link}</span>
-                            </a>
-                          </div>
-                        )}
-
-                        {/* Inline Attachment Viewers */}
-                        {files.length > 0 && (
-                          <div className="pl-8 sm:pl-9 flex flex-wrap gap-1.5 mt-1">
-                            {files.map((file, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => openFileViewer(file.url, file.name)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
-                              >
-                                <Eye size={13} />
-                                <span className="max-w-[160px] truncate">{file.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600" /> Submission Overview
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-sm text-gray-600">Total Submitted</span>
-                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-green-500" /> Approved
-                </span>
-                <span className="text-lg font-bold text-green-700">{approved.length}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-yellow-500" /> Pending
-                </span>
-                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4 text-red-500" /> Rejected
-                </span>
-                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" /> Submission Guidelines
-            </h3>
-            <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2">
-                <span className="text-blue-600 font-bold">•</span>
-                <span>You can upload multiple documents, images, and proposals at once.</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-blue-600 font-bold">•</span>
-                <span>Accepted formats: PDF, DOCX, JPG, PNG (up to 15MB each).</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-blue-600 font-bold">•</span>
-                <span>Include direct DOI or URL links for completed publications.</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-blue-600 font-bold">•</span>
-                <span>Review usually takes 5–7 business days.</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {modal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
-            <button
-              onClick={closeModal}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="flex flex-col items-center text-center">
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
-                  modal.type === 'success'
-                    ? 'bg-green-100 text-green-600'
-                    : modal.type === 'error'
-                    ? 'bg-red-100 text-red-600'
-                    : 'bg-yellow-100 text-yellow-600'
-                }`}
-              >
-                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
-                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
-                {modal.type === 'validation' && <Info className="w-6 h-6" />}
-              </div>
-
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{modal.title}</h3>
-              <p className="text-sm text-gray-600 mb-6">{modal.message}</p>
-
-              <button
-                type="button"
-                onClick={closeModal}
-                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
-              >
-                Okay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ====================== 5.3 ACHIEVEMENTS ======================
 interface FileAttachment {
   name: string;
@@ -1402,7 +824,7 @@ interface AchievementSubmission {
 export default function FacultyAchievements() {
   const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
   const [awardTitle, setAwardTitle] = useState('');
-  const [awardCategory, setAwardCategory] = useState('Research');
+  const [awardCategory, setAwardCategory] = useState('');
   const [awardDate, setAwardDate] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [submissions, setSubmissions] = useState<AchievementSubmission[]>([]);
@@ -1420,7 +842,6 @@ export default function FacultyAchievements() {
     setModal((prev) => ({ ...prev, isOpen: false }));
   };
 
-  // ── File Selection Handler ──────────────────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -1437,10 +858,7 @@ export default function FacultyAchievements() {
       return;
     }
 
-    // Appends newly selected files to existing list
     setSelectedFiles((prev) => [...prev, ...newFiles]);
-
-    // Resets input value so user can pick the same file or select files repeatedly
     e.target.value = '';
   };
 
@@ -1491,10 +909,9 @@ export default function FacultyAchievements() {
       const formData = new FormData();
       formData.append('title', awardTitle.trim());
       formData.append('type', 'achievement');
-      formData.append('category', awardCategory);
+      formData.append('category', awardCategory.trim());
       if (awardDate) formData.append('date_received', awardDate);
 
-      // Append all selected files under the field name 'files'
       selectedFiles.forEach((file) => {
         formData.append('files', file);
       });
@@ -1519,7 +936,7 @@ export default function FacultyAchievements() {
       const data: AchievementSubmission = await res.json();
       setSubmissions((prev) => [data, ...prev]);
       setAwardTitle('');
-      setAwardCategory('Research');
+      setAwardCategory('');
       setAwardDate('');
       setSelectedFiles([]);
 
@@ -1556,75 +973,116 @@ export default function FacultyAchievements() {
   };
 
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Achievements</h1>
-      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        {[
-          { id: 'submit', label: 'Submit' },
-          { id: 'approved', label: 'Approved' },
-          { id: 'history', label: 'History' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id as any)}
-            className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="space-y-6">
+      {/* Header with Title & Tab Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Faculty Achievements</h1>
+          <p className="text-sm text-gray-500 mt-1">Submit, monitor, and document your academic and professional recognitions.</p>
+        </div>
+        
+        {/* Navigation Tabs */}
+        <div className="flex gap-1.5 p-1 bg-gray-100/80 rounded-xl w-fit border border-gray-200/60 self-start sm:self-auto">
+          {[
+            { id: 'submit', label: 'Submit Achievement', count: null },
+            { id: 'approved', label: 'Approved', count: approved.length },
+            { id: 'history', label: 'History & Tracking', count: submissions.length },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as any)}
+              className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                tab === t.id
+                  ? 'bg-white text-blue-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+              }`}
+            >
+              <span>{t.label}</span>
+              {t.count !== null && (
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${
+                  tab === t.id ? 'bg-blue-50 text-blue-800' : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Left Column: Form / Lists */}
         <div className="lg:col-span-2">
           {tab === 'submit' && (
-            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-8">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6">Submit New Achievement</h2>
-              <div className="space-y-5">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
+              <div className="border-b border-gray-100 pb-4 mb-6">
+                <h2 className="text-lg font-bold text-gray-900">Submit New Achievement</h2>
+                <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+                  Provide verified information and certificates regarding your achievement for Dean evaluation.
+                </p>
+              </div>
+
+              <div className="space-y-6">
+                {/* Group 1: General Details */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Award / Achievement Title *
-                  </label>
-                  <input
-                    type="text"
-                    value={awardTitle}
-                    onChange={(e) => setAwardTitle(e.target.value)}
-                    placeholder="e.g., Best Paper Award"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                  <select
-                    value={awardCategory}
-                    onChange={(e) => setAwardCategory(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                  >
-                    <option>Research</option>
-                    <option>Teaching</option>
-                    <option>Extension</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
-                  <input
-                    type="date"
-                    value={awardDate}
-                    onChange={(e) => setAwardDate(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <span className="w-5 h-5 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
+                    Achievement Information
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Award / Achievement Title <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={awardTitle}
+                        onChange={(e) => setAwardTitle(e.target.value)}
+                        placeholder="e.g., Outstanding Researcher of the Year, Best Paper Award"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Category</label>
+                        <input
+                          type="text"
+                          value={awardCategory}
+                          onChange={(e) => setAwardCategory(e.target.value)}
+                          placeholder="e.g., Research, Teaching, Community Outreach"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Date Received / Conferred</label>
+                        <input
+                          type="date"
+                          value={awardDate}
+                          onChange={(e) => setAwardDate(e.target.value)}
+                          className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-700 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Multiple Files Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Upload Certificates & Evidences (Multiple files allowed)
-                  </label>
-                  <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block bg-gray-50/50">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600 font-medium">Click to select files or drag and drop</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG, DOCX up to 15MB each</p>
+                {/* Group 2: Supporting Documents */}
+                <div className="pt-2">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <span className="w-5 h-5 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
+                    Supporting Certificates & Evidences
+                  </h3>
+
+                  <label className="border-2 border-dashed border-gray-200 hover:border-blue-500 hover:bg-blue-50/20 rounded-2xl p-6 text-center transition-all cursor-pointer block bg-gray-50/40 group">
+                    <div className="w-10 h-10 bg-white shadow-xs border border-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2.5 group-hover:scale-105 transition-transform">
+                      <Upload className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                    </div>
+                    <p className="text-xs sm:text-sm font-semibold text-gray-700">
+                      Click to browse or drop certificate files here
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-1">PDF, JPG, PNG, DOCX up to 15MB each</p>
                     <input
                       type="file"
                       multiple
@@ -1634,27 +1092,31 @@ export default function FacultyAchievements() {
                     />
                   </label>
 
-                  {/* Selected files preview list with remove buttons */}
+                  {/* Selected files preview list */}
                   {selectedFiles.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs font-semibold text-gray-500">
-                        {selectedFiles.length} file(s) selected:
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-bold text-gray-500">
+                        {selectedFiles.length} file(s) attached:
                       </p>
-                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                         {selectedFiles.map((file, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center justify-between p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-xs"
+                            className="flex items-center justify-between p-2.5 bg-blue-50/50 border border-blue-100/80 rounded-xl text-xs"
                           >
-                            <span className="truncate max-w-[280px] font-medium text-blue-900">
-                              {file.name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span className="truncate max-w-[240px] sm:max-w-[340px] font-medium text-blue-950">
+                                {file.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-gray-400 text-[11px]">{(file.size / 1024).toFixed(0)} KB</span>
                               <button
                                 type="button"
                                 onClick={() => removeSelectedFile(idx)}
-                                className="text-red-500 hover:text-red-700 p-0.5 rounded transition-colors"
+                                className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="Remove file"
                               >
                                 <X size={14} />
                               </button>
@@ -1666,29 +1128,50 @@ export default function FacultyAchievements() {
                   )}
                 </div>
 
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="w-full py-4 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-colors text-sm sm:text-base disabled:opacity-60"
-                >
-                  {submitting ? 'Submitting...' : 'Submit for Review'}
-                </button>
+                {/* Submit Action Button */}
+                <div className="pt-4 border-t border-gray-100 flex justify-end">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-all text-xs sm:text-sm disabled:opacity-60 shadow-xs flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      'Submit for Endorsement'
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
           {tab === 'approved' && (
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Approved Achievements</h2>
-                <span className="bg-green-100 text-green-700 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">
-                  {approved.length} Total
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Endorsed Achievements</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Officially recognized achievements by the College Dean</p>
+                </div>
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-bold px-2.5 py-1 rounded-full">
+                  {approved.length} Verified
                 </span>
               </div>
+
               {loading ? (
-                <div className="p-12 text-center text-gray-400">Loading…</div>
+                <div className="py-16 text-center text-gray-400">
+                  <Loader2 className="w-7 h-7 text-blue-600 animate-spin mx-auto mb-2" />
+                  <span className="text-xs sm:text-sm">Loading achievements…</span>
+                </div>
               ) : approved.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">No approved achievements yet.</div>
+                <div className="py-16 text-center text-gray-400">
+                  <Award className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-600">No approved achievements yet.</p>
+                  <p className="text-xs text-gray-400 mt-1">Submitted achievements that are verified will be archived here.</p>
+                </div>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {approved.map((a) => {
@@ -1696,33 +1179,41 @@ export default function FacultyAchievements() {
                     return (
                       <div
                         key={a.id}
-                        className="p-4 sm:p-5 hover:bg-gray-50 transition-colors flex flex-col gap-3"
+                        className="p-4 sm:p-5 hover:bg-gray-50/70 transition-colors flex flex-col gap-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-                            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yellow-50 rounded-full flex items-center justify-center flex-shrink-0">
-                              <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-amber-50 border border-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                              <Star className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
                             </div>
                             <div className="min-w-0">
-                              <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                              <div className="text-xs sm:text-sm text-gray-500">
-                                {a.category ?? '—'} · Approved on {formatDate(a.updated_at)}
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                                  {a.category || 'General'}
+                                </span>
+                                <h4 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{a.title}</h4>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Approved on {formatDate(a.updated_at)}
                               </div>
                             </div>
                           </div>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-200">
+                            Approved
+                          </span>
                         </div>
 
                         {files.length > 0 && (
-                          <div className="pl-12 flex flex-wrap gap-2 pt-1">
+                          <div className="pl-12 sm:pl-14 flex flex-wrap gap-2 pt-1">
                             {files.map((f, i) => (
                               <button
                                 key={i}
                                 onClick={() => openFile(f.url)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-100 hover:bg-blue-50 hover:text-blue-700 text-gray-700 transition-colors border border-gray-200"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-colors border border-gray-200/80 font-medium"
                                 title="Open attachment"
                               >
-                                <Eye size={13} />
-                                <span className="max-w-[150px] truncate">{f.name}</span>
+                                <Eye size={12} />
+                                <span className="max-w-[160px] truncate">{f.name}</span>
                               </button>
                             ))}
                           </div>
@@ -1736,34 +1227,48 @@ export default function FacultyAchievements() {
           )}
 
           {tab === 'history' && (
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4 sm:p-6 border-b border-gray-100">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Achievement History</h2>
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Achievement Records</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Timeline of all submitted awards and recognition filings</p>
               </div>
+
               {loading ? (
-                <div className="p-12 text-center text-gray-400">Loading…</div>
+                <div className="py-16 text-center text-gray-400">
+                  <Loader2 className="w-7 h-7 text-blue-600 animate-spin mx-auto mb-2" />
+                  <span className="text-xs sm:text-sm">Loading history…</span>
+                </div>
               ) : submissions.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">No submissions yet.</div>
+                <div className="py-16 text-center text-gray-400">
+                  <History className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-600">No submission records found.</p>
+                </div>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {submissions.map((a) => {
                     const files = getSubmissionFiles(a);
                     return (
-                      <div key={a.id} className="p-4 sm:p-5 hover:bg-gray-50 transition-colors">
+                      <div key={a.id} className="p-4 sm:p-5 hover:bg-gray-50/70 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div>
-                            <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                            <div className="text-xs text-gray-500">
-                              {a.category ?? '—'} · {formatDate(a.date_received)}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                                {a.category || 'General'}
+                              </span>
+                              <div className="font-semibold text-gray-900 text-sm sm:text-base">{a.title}</div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Conferred: {formatDate(a.date_received)} · Submitted: {formatDate(a.created_at)}
                             </div>
                           </div>
+                          
                           <span
-                            className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider border ${
                               a.status === 'approved'
-                                ? 'bg-green-100 text-green-700'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : a.status === 'rejected'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-yellow-100 text-yellow-700'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
                             {displayStatus(a.status)}
@@ -1771,21 +1276,22 @@ export default function FacultyAchievements() {
                         </div>
 
                         {a.dean_remarks && (
-                          <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg mb-2">
-                            Remarks: {a.dean_remarks}
-                          </p>
+                          <div className="mt-2.5 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-800">
+                            <span className="font-bold block mb-0.5">Dean's Feedback:</span>
+                            {a.dean_remarks}
+                          </div>
                         )}
 
                         {files.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
+                          <div className="flex flex-wrap gap-1.5 mt-3">
                             {files.map((f, i) => (
                               <button
                                 key={i}
                                 onClick={() => openFile(f.url)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-gray-100 hover:bg-blue-50 text-blue-700 border border-gray-200"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-50 hover:bg-blue-50 text-blue-700 border border-gray-200/80 font-medium"
                               >
                                 <Eye size={12} />
-                                <span className="max-w-[140px] truncate">{f.name}</span>
+                                <span className="max-w-[160px] truncate">{f.name}</span>
                               </button>
                             ))}
                           </div>
@@ -1799,99 +1305,92 @@ export default function FacultyAchievements() {
           )}
         </div>
 
+        {/* Right Column: Summaries and Guidelines */}
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600" /> Achievement Overview
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+            <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-blue-600" /> Achievement Overview
             </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-sm text-gray-600">Total Submitted</span>
-                <span className="text-lg font-bold text-gray-900">{submissions.length}</span>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between p-3 bg-gray-50/70 rounded-xl border border-gray-100">
+                <span className="text-xs sm:text-sm text-gray-600 font-medium">Total Filings</span>
+                <span className="text-base font-bold text-gray-900">{submissions.length}</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-green-500" /> Approved
+              <div className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/60">
+                <span className="text-xs sm:text-sm text-emerald-800 font-medium flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" /> Approved
                 </span>
-                <span className="text-lg font-bold text-green-700">{approved.length}</span>
+                <span className="text-base font-bold text-emerald-700">{approved.length}</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-yellow-500" /> Pending
+              <div className="flex items-center justify-between p-3 bg-amber-50/50 rounded-xl border border-amber-100/60">
+                <span className="text-xs sm:text-sm text-amber-800 font-medium flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-amber-500" /> Under Review
                 </span>
-                <span className="text-lg font-bold text-yellow-700">{pendingCount}</span>
+                <span className="text-base font-bold text-amber-700">{pendingCount}</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <span className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <XCircle className="w-4 h-4 text-red-500" /> Rejected
+              <div className="flex items-center justify-between p-3 bg-rose-50/50 rounded-xl border border-rose-100/60">
+                <span className="text-xs sm:text-sm text-rose-800 font-medium flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 text-rose-500" /> Action Required
                 </span>
-                <span className="text-lg font-bold text-red-700">{rejectedCount}</span>
+                <span className="text-base font-bold text-rose-700">{rejectedCount}</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Info className="w-5 h-5 text-blue-600" /> Submission Guidelines
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+            <h3 className="text-sm font-bold text-gray-900 mb-3.5 flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600" /> Guidelines & Reminders
             </h3>
-            <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2">
+            <ul className="space-y-2.5 text-xs sm:text-sm text-gray-600">
+              <li className="flex gap-2.5">
                 <span className="text-blue-600 font-bold">•</span>
-                <span>You can upload multiple certificates or citations at once.</span>
+                <span>Upload authentic certifications, plaque scans, or official citations.</span>
               </li>
-              <li className="flex gap-2">
+              <li className="flex gap-2.5">
                 <span className="text-blue-600 font-bold">•</span>
-                <span>Accepted formats: PDF, JPG, PNG, DOCX (up to 15MB each).</span>
+                <span>Supported formats: PDF, JPG, PNG, DOCX (up to 15MB per file).</span>
               </li>
-              <li className="flex gap-2">
+              <li className="flex gap-2.5">
                 <span className="text-blue-600 font-bold">•</span>
-                <span>Review usually takes 3–5 business days.</span>
+                <span>Evaluation usually takes 3–5 working days by the Dean's Office.</span>
               </li>
-              <li className="flex gap-2">
+              <li className="flex gap-2.5">
                 <span className="text-blue-600 font-bold">•</span>
-                <span>Dean remarks will appear in the History tab if revisions are needed.</span>
+                <span>Check the History tab for reviewer feedback if revisions are requested.</span>
               </li>
             </ul>
           </div>
         </div>
       </div>
 
+      {/* Modal Popup */}
       {modal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative transform transition-all">
-            <button
-              onClick={closeModal}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center border border-gray-100">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                modal.type === 'success'
+                  ? 'bg-emerald-100 text-emerald-600'
+                  : modal.type === 'error'
+                  ? 'bg-rose-100 text-rose-600'
+                  : 'bg-amber-100 text-amber-600'
+              }`}
             >
-              <X size={20} />
-            </button>
-
-            <div className="flex flex-col items-center text-center">
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
-                  modal.type === 'success'
-                    ? 'bg-green-100 text-green-600'
-                    : modal.type === 'error'
-                    ? 'bg-red-100 text-red-600'
-                    : 'bg-yellow-100 text-yellow-600'
-                }`}
-              >
-                {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
-                {modal.type === 'error' && <XCircle className="w-6 h-6" />}
-                {modal.type === 'validation' && <Info className="w-6 h-6" />}
-              </div>
-
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{modal.title}</h3>
-              <p className="text-sm text-gray-600 mb-6">{modal.message}</p>
-
-              <button
-                type="button"
-                onClick={closeModal}
-                className="w-full py-3 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-medium text-sm transition-colors"
-              >
-                Okay
-              </button>
+              {modal.type === 'success' && <CheckCircle className="w-6 h-6" />}
+              {modal.type === 'error' && <XCircle className="w-6 h-6" />}
+              {modal.type === 'validation' && <Info className="w-6 h-6" />}
             </div>
+
+            <h3 className="text-base font-bold text-gray-900 mb-1">{modal.title}</h3>
+            <p className="text-xs sm:text-sm text-gray-600 mb-6">{modal.message}</p>
+
+            <button
+              type="button"
+              onClick={closeModal}
+              className="w-full py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold text-xs transition-colors shadow-xs"
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}
@@ -2029,7 +1528,6 @@ function ReportsView({ userId, userName }: { userId: string; userName: string })
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
 
-      {/* Tab Navigation */}
       <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
         <button
           type="button"
@@ -2082,7 +1580,6 @@ function ReportsView({ userId, userName }: { userId: string; userName: string })
         </button>
       </div>
 
-      {/* Strict Tab Views */}
       {tab === 'drafts' && <MyDraftsPanel onEdit={(type) => setTab(type as any)} />}
       {tab === 'track' && <ReportTrackerPanel />}
       {tab === 'accomplishment' && <AccomplishmentReport userId={userId} userName={userName} />}
@@ -2100,7 +1597,8 @@ interface CalendarEvent {
   event_date: string;
   end_date: string | null;
   location: string | null;
-  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | null;
+  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
+  audience?: string | null;
   organizer_id: string | null;
   department: string | null;
   department_ids: string[] | null;
@@ -2120,18 +1618,59 @@ const TYPE_TO_COLOR: Record<string, string> = {
   exam: '#EF4444',
 };
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
+
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
   dean: 'Dean',
   admin: 'Admin',
+  college_dean: 'Dean',
   department_chair: 'Dept. Chair',
+  faculty: 'Faculty',
 };
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 function colorForEvent(ev: CalendarEvent): string {
-  return (ev.event_type && TYPE_TO_COLOR[ev.event_type]) || DEFAULT_EVENT_COLOR;
+  if (!ev.event_type) return DEFAULT_EVENT_COLOR;
+  if (ev.event_type.includes('::')) {
+    const parts = ev.event_type.split('::');
+    if (parts[1] && parts[1].startsWith('#')) {
+      return parts[1];
+    }
+  }
+  const normalized = ev.event_type.trim().toLowerCase();
+  return TYPE_TO_COLOR[normalized] || DEFAULT_EVENT_COLOR;
+}
+
+function displayEventType(ev: CalendarEvent): string {
+  if (!ev.event_type) return 'Activity';
+  if (ev.event_type.includes('::')) {
+    return ev.event_type.split('::')[0];
+  }
+  return ev.event_type;
 }
 
 function dateOnly(isoLike: string): string {
+  if (!isoLike) return '';
   return isoLike.split('T')[0];
+}
+
+function formatTimeFromDate(isoLike: string): string | null {
+  if (!isoLike || !isoLike.includes('T')) return null;
+  const timePart = isoLike.split('T')[1];
+  if (!timePart || timePart.startsWith('00:00:00')) return null;
+  const d = new Date(isoLike);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Client-side defense-in-depth audience guard for Faculty
+function isFacultyAuthorizedEvent(ev: CalendarEvent): boolean {
+  if (!ev.audience) return true;
+  const aud = ev.audience.trim().toLowerCase();
+  return ['all', 'everyone', 'faculty'].includes(aud);
 }
 
 function FacultyCalendar() {
@@ -2142,16 +1681,21 @@ function FacultyCalendar() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
 
-  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const jumpToToday = () => {
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedCalendarDate(todayStr);
+  };
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -2168,7 +1712,9 @@ function FacultyCalendar() {
         return;
       }
       const data = await res.json();
-      setEvents((data ?? []) as CalendarEvent[]);
+      // Strict frontend sanitization ensuring no Student-only or Alumni-only events render for faculty
+      const facultyOnly = (Array.isArray(data) ? data : []).filter(isFacultyAuthorizedEvent);
+      setEvents(facultyOnly);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
       setEvents([]);
@@ -2181,114 +1727,397 @@ function FacultyCalendar() {
     fetchEvents();
   }, []);
 
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    events.forEach((ev) => {
+      const d = dateOnly(ev.event_date);
+      if (!d) return;
+      const current = map.get(d) || [];
+      current.push(ev);
+      map.set(d, current);
+    });
+    return map;
+  }, [events]);
+
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter(e => dateOnly(e.event_date) === dateStr);
+    return eventsByDate.get(dateStr) || [];
   };
 
-  const upcomingEvents = events
-    .filter(e => dateOnly(e.event_date) >= todayStr)
-    .sort((a, b) => a.event_date.localeCompare(b.event_date));
-  const historyEvents = events
-    .filter(e => dateOnly(e.event_date) < todayStr)
-    .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnly(e.event_date) >= todayStr)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  }, [events, todayStr]);
+
+  const historyEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnly(e.event_date) < todayStr)
+      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  }, [events, todayStr]);
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const formatLongDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const DAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Calendar</h1>
+    <div className="space-y-6">
+      {/* ── Top Header ── */}
+      <div>
+        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+          Faculty Calendar & Activities
+        </h1>
+        <p className="text-gray-500 text-sm mt-1">
+          View academic schedules, departmental meetings, and faculty-wide deadlines.
+        </p>
+      </div>
 
       {loadError && (
-        <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {loadError}
+          <span>{loadError}</span>
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">{monthName}</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* ── Main Calendar Grid (2 Cols on lg) ── */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+          {/* Month & Year Selection Bar */}
+          <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
+            <div className="flex items-center gap-2">
+              <select
+                aria-label="Select month"
+                value={currentMonth.getMonth()}
+                onChange={(e) =>
+                  setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
+                }
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+              >
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={idx}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Select year"
+                value={currentMonth.getFullYear()}
+                onChange={(e) =>
+                  setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
+                }
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+              >
+                {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={jumpToToday}
+                className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+              >
+                Today
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={prevMonth}
+                aria-label="Previous month"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={nextMonth}
+                aria-label="Next month"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
-            </button>
-            <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <ChevronRight className="w-5 h-5 text-gray-600" />
-            </button>
+
+          {/* Days Header */}
+          <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
+            {DAYS.map((d, i) => (
+              <div
+                key={d}
+                className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                <span className="hidden sm:inline">{d}</span>
+                <span className="sm:hidden">{DAYS_SHORT[i]}</span>
+              </div>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
+              <span className="text-sm font-medium">Loading events…</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-7">
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div
+                  key={`empty-${i}`}
+                  className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
+                />
+              ))}
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                const dayIndexInWeek = (firstDay + day - 1) % 7;
+                const isRightmostCol = dayIndexInWeek >= 5;
+                const dateStr = `${currentMonth.getFullYear()}-${String(
+                  currentMonth.getMonth() + 1
+                ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                const dayEvents = getEventsForDay(day);
+                const hasEvents = dayEvents.length > 0;
+                const isTodayDate = dateStr === todayStr;
+                const isPast = dateStr < todayStr;
+                const isSelected = selectedCalendarDate === dateStr;
+                const isHovered = hoveredDate === dateStr;
+                const showPopover = (isHovered || isSelected) && hasEvents;
+
+                return (
+                  <div
+                    key={day}
+                    tabIndex={hasEvents ? 0 : -1}
+                    aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
+                    onMouseEnter={() => setHoveredDate(dateStr)}
+                    onMouseLeave={() => setHoveredDate(null)}
+                    onClick={() => {
+                      setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                    }}
+                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                      isSelected
+                        ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                        : isPast
+                        ? 'bg-gray-50/40 hover:bg-gray-100/50'
+                        : 'bg-white hover:bg-blue-50/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
+                          isTodayDate
+                            ? 'bg-[#1E3A8A] text-white shadow-xs'
+                            : isPast
+                            ? 'text-gray-400'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {day}
+                      </span>
+
+                      {hasEvents && (
+                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                          {dayEvents.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Desktop Event Pills */}
+                    <div className="hidden sm:flex flex-col gap-1">
+                      {dayEvents.slice(0, 2).map((ev) => (
+                        <button
+                          key={ev.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEvent(ev);
+                          }}
+                          className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                          style={{ backgroundColor: colorForEvent(ev) }}
+                          title={ev.title}
+                        >
+                          {ev.title}
+                        </button>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <span className="text-[10px] font-semibold text-gray-400 px-1">
+                          +{dayEvents.length - 2} more
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Mobile Event Dots */}
+                    {hasEvents && (
+                      <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
+                        {dayEvents.slice(0, 3).map((ev) => (
+                          <span
+                            key={ev.id}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: colorForEvent(ev) }}
+                          />
+                        ))}
+                        {dayEvents.length > 3 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tooltip Hover Preview */}
+                    {showPopover && (
+                      <div
+                        role="tooltip"
+                        className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
+                          isRightmostCol ? 'right-0' : 'left-0'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                          <span className="text-xs font-bold text-gray-900">
+                            {formatLongDate(dateStr)}
+                          </span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                            {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
+                          {dayEvents.map((ev) => {
+                            const timeStr = formatTimeFromDate(ev.event_date);
+                            const evColor = colorForEvent(ev);
+                            const evTypeName = displayEventType(ev);
+
+                            return (
+                              <div
+                                key={ev.id}
+                                onClick={() => setSelectedEvent(ev)}
+                                className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
+                                style={{ borderLeftColor: evColor }}
+                              >
+                                <div className="text-xs font-semibold text-gray-900 leading-snug">
+                                  {ev.title}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                                  {timeStr && (
+                                    <span className="flex items-center gap-1 font-medium text-gray-700">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      {timeStr}
+                                    </span>
+                                  )}
+                                  <span
+                                    className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                    style={{ backgroundColor: evColor }}
+                                  >
+                                    {evTypeName}
+                                  </span>
+                                </div>
+                                {ev.location && (
+                                  <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                    <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                    <span className="truncate">{ev.location}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Activity-Type Color Legend */}
+          <div className="flex items-center gap-4 px-4 sm:px-6 py-3 border-t border-gray-100 bg-gray-50/30 flex-wrap">
+            <span className="text-xs font-semibold text-gray-500">Activity Types:</span>
+            {Object.entries(TYPE_TO_COLOR).map(([type, color]) => (
+              <div key={type} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-xs text-gray-600 font-medium capitalize">{type}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading events…</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-7 gap-2">
-            {DAYS.map((day) => (
-              <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
-                {day}
-              </div>
-            ))}
-
-            {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="min-h-[80px] p-2 bg-gray-50 rounded-lg" />
-            ))}
-
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-              const dayEvents = getEventsForDay(day);
-              const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const isTodayDate = dateStr === todayStr;
-              const isPast = dateStr < todayStr;
-
-              return (
-                <div
-                  key={day}
-                  className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
-                    isPast ? 'bg-gray-200 opacity-60' : 'bg-white hover:bg-gray-50'
-                  } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
-                >
-                  <div className={`text-sm font-medium mb-1 ${isPast ? 'text-gray-600' : isTodayDate ? 'text-[#2563EB]' : 'text-gray-900'}`}>
-                    {day}
-                  </div>
-                  <div className="space-y-1">
-                    {dayEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        onClick={() => setSelectedEvent(event)}
-                        className={`text-xs text-white px-1 py-0.5 rounded truncate cursor-pointer hover:shadow-md transition-all ${isPast ? 'opacity-70' : ''}`}
-                        style={{ backgroundColor: colorForEvent(event) }}
-                        title={event.title}
-                      >
-                        {event.title}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
-          {Object.entries(TYPE_TO_COLOR).map(([type, color]) => (
-            <div key={type} className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
-              <span className="text-xs text-gray-600 capitalize">{type}</span>
+        {/* Upcoming Agenda Panel */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+              <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
             </div>
-          ))}
+            <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
+              {upcomingEvents.length}
+            </span>
+          </div>
+
+          {upcomingEvents.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-xs font-medium">No upcoming faculty events</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+              {upcomingEvents.map((ev) => {
+                const evDate = dateOnly(ev.event_date);
+                const isDueToday = evDate === todayStr;
+                const timeStr = formatTimeFromDate(ev.event_date);
+                const evColor = colorForEvent(ev);
+
+                return (
+                  <div
+                    key={ev.id}
+                    onClick={() => setSelectedEvent(ev)}
+                    className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                    style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
+                        {ev.title}
+                      </span>
+                      {isDueToday ? (
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
+                          Today
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                          {formatDate(evDate)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                      {timeStr && (
+                        <span className="flex items-center gap-1 font-medium text-gray-700">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {timeStr}
+                        </span>
+                      )}
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: evColor }}
+                      />
+                      <span className="truncate capitalize font-medium">{displayEventType(ev)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* ── Tabs for Upcoming / History List View ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
         <div className="flex border-b border-gray-100">
           <button
             onClick={() => setActiveTab('upcoming')}
@@ -2320,18 +2149,21 @@ function FacultyCalendar() {
                   <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No upcoming activities</p>
                 </div>
-              ) : upcomingEvents.map(ev => (
-                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: colorForEvent(ev) }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+              ) : upcomingEvents.map(ev => {
+                const evColor = colorForEvent(ev);
+                return (
+                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
+                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: evColor }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                      </div>
+                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                     </div>
-                    {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="space-y-3">
@@ -2340,28 +2172,32 @@ function FacultyCalendar() {
                   <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No past activities</p>
                 </div>
-              ) : historyEvents.map(ev => (
-                <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
-                  <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: colorForEvent(ev) }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+              ) : historyEvents.map(ev => {
+                const evColor = colorForEvent(ev);
+                return (
+                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
+                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: evColor }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
+                      </div>
+                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
                     </div>
-                    {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
                   </div>
-                  <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
+      {/* ── Event Details Modal ── */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
-            <div className="flex items-start justify-between mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm space-y-4">
+            <div className="flex items-start justify-between">
               <div className="flex items-start gap-3 min-w-0">
                 <div
                   className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
@@ -2369,7 +2205,7 @@ function FacultyCalendar() {
                 />
                 <div className="min-w-0">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900">{selectedEvent.title}</h2>
-                  <p className="text-xs sm:text-sm text-gray-500">{formatDate(dateOnly(selectedEvent.event_date))}</p>
+                  <p className="text-xs sm:text-sm text-gray-500">{formatLongDate(dateOnly(selectedEvent.event_date))}</p>
                 </div>
               </div>
               <button
@@ -2389,7 +2225,7 @@ function FacultyCalendar() {
               )}
 
               {selectedEvent.event_type && (
-                <div className="pt-4 border-t border-gray-200">
+                <div className="pt-2">
                   <span
                     className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase"
                     style={{
@@ -2397,7 +2233,7 @@ function FacultyCalendar() {
                       color: colorForEvent(selectedEvent),
                     }}
                   >
-                    {selectedEvent.event_type}
+                    {displayEventType(selectedEvent)}
                   </span>
                 </div>
               )}
@@ -2414,7 +2250,6 @@ function FacultyCalendar() {
     </div>
   );
 }
-
 // ====================== 5.6 SETTINGS ======================
 type TabKey = 'profile' | 'security' | 'notifications' | 'account';
 
@@ -2538,7 +2373,6 @@ function FacultySettings() {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
@@ -2579,9 +2413,7 @@ function FacultySettings() {
         </div>
       )}
 
-      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-        {/* Sidebar tab list */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
@@ -2599,7 +2431,6 @@ function FacultySettings() {
           ))}
         </nav>
 
-        {/* Panel */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           {activeTab === 'profile' && (
             <div>

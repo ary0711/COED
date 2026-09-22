@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -54,6 +54,7 @@ import {
   BarChart3,
   Megaphone,
   Plus,
+  ExternalLink,
   Edit,
   Trash2,
   Download,
@@ -84,6 +85,18 @@ import {
   LogOut,
   Info,
   KeyRound,
+  Loader2,
+  Building,
+  Target,
+  DollarSign,
+  Calendar as CalendarIcon,
+  Archive,
+  MapPin,
+  Clock,
+  Tag,
+  Filter,
+  CalendarDays,
+  Pencil,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -1428,9 +1441,7 @@ function UserManagement() {
     </div>
   );
 }
-
-
-// ─── Calendar & Activities (DEAN DASHBOARD) ───────────────────────────────────
+// ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
   id: string;
@@ -1482,6 +1493,18 @@ const ROLE_DISPLAY_LABEL: Record<string, string> = {
   faculty: 'Faculty',
 };
 
+const AUDIENCE_LABELS: Record<string, string> = {
+  all: 'General College Community',
+  alumni: 'Alumni Only',
+  students: 'Students Only',
+  faculty: 'Faculty & Staff Only',
+};
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 function colorForCalendarEvent(ev: CalendarEvent): string {
   const t = ev.event_type?.toLowerCase() || '';
   return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
@@ -1492,21 +1515,41 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
-function CalendarActivities() {
+function formatTimeFromDate(isoLike: string): string | null {
+  if (!isoLike || !isoLike.includes('T')) return null;
+  const timePart = isoLike.split('T')[1];
+  if (!timePart || timePart.startsWith('00:00:00')) return null;
+  const d = new Date(isoLike);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+export default function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
+  // Core Data States
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
+  // Primary View Mode: Active Planning vs. History / Archive
+  const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
+
+  // Calendar Navigation
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+
+  // Modals & Inspection
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Form State
   const emptyForm = {
     title: '',
     date: '',
@@ -1521,6 +1564,13 @@ function CalendarActivities() {
   const [formError, setFormError] = useState('');
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
 
+  // Archive Search & Filter State
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveYear, setArchiveYear] = useState<string>('all');
+  const [archiveMonth, setArchiveMonth] = useState<string>('all');
+  const [archiveType, setArchiveType] = useState<string>('all');
+  const [archiveDept, setArchiveDept] = useState<string>('all');
+
   const getToken = () => localStorage.getItem('token');
 
   const getDepartmentColor = (name: string) => {
@@ -1531,12 +1581,15 @@ function CalendarActivities() {
     return '#8B5CF6';
   };
 
-  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const jumpToToday = () => {
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedCalendarDate(todayStr);
+  };
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -1562,7 +1615,10 @@ function CalendarActivities() {
   };
 
   const fetchDepartments = async () => {
-    const { data, error } = await supabase.from('departments').select('id, name').order('name');
+    const { data, error } = await (window as any).supabase
+      ?.from('departments')
+      .select('id, name')
+      .order('name');
     if (!error && data) setDepartments(data);
   };
 
@@ -1570,41 +1626,136 @@ function CalendarActivities() {
     fetchEvents();
     fetchDepartments();
 
-    const channel = supabase
-      .channel('dean-calendar-events-sync')
-      .on(
+    const channel = (window as any).supabase
+      ?.channel('dean-calendar-events-sync')
+      ?.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'calendar_events' },
         () => {
           fetchEvents();
         }
       )
-      .subscribe();
+      ?.subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) (window as any).supabase?.removeChannel(channel);
     };
   }, []);
 
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    events.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (!d) return;
+      const current = map.get(d) || [];
+      current.push(ev);
+      map.set(d, current);
+    });
+    return map;
+  }, [events]);
+
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter((e) => dateOnlyStr(e.event_date) === dateStr);
+    return eventsByDate.get(dateStr) || [];
   };
 
-  const upcomingEvents = events
-    .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
-    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  }, [events, todayStr]);
 
-  const historyEvents = events
-    .filter((e) => dateOnlyStr(e.event_date) < todayStr)
-    .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  const pastEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnlyStr(e.event_date) < todayStr)
+      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  }, [events, todayStr]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    pastEvents.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (d) years.add(d.split('-')[0]);
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [pastEvents]);
+
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    pastEvents.forEach((ev) => {
+      if (ev.event_type) types.add(ev.event_type.toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [pastEvents]);
+
+  const filteredArchiveEvents = useMemo(() => {
+    const query = archiveSearch.toLowerCase().trim();
+    return pastEvents.filter((ev) => {
+      const date = dateOnlyStr(ev.event_date);
+      const [year, month] = date.split('-');
+
+      if (archiveYear !== 'all' && year !== archiveYear) return false;
+      if (archiveMonth !== 'all' && parseInt(month, 10) !== parseInt(archiveMonth, 10)) return false;
+      if (archiveType !== 'all' && (ev.event_type || '').toLowerCase() !== archiveType) return false;
+      if (archiveDept !== 'all') {
+        const hasDept = ev.department_ids && ev.department_ids.includes(archiveDept);
+        if (!hasDept) return false;
+      }
+
+      if (!query) return true;
+
+      const titleMatch = ev.title?.toLowerCase().includes(query);
+      const descMatch = ev.description?.toLowerCase().includes(query);
+      const locMatch = ev.location?.toLowerCase().includes(query);
+      const typeMatch = ev.event_type?.toLowerCase().includes(query);
+      return titleMatch || descMatch || locMatch || typeMatch;
+    });
+  }, [pastEvents, archiveSearch, archiveYear, archiveMonth, archiveType, archiveDept]);
+
+  const groupedArchiveEvents = useMemo(() => {
+    const groups: { [key: string]: CalendarEvent[] } = {};
+    filteredArchiveEvents.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (!d) return;
+      const dateObj = new Date(d + 'T00:00:00');
+      const key = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ev);
+    });
+    return groups;
+  }, [filteredArchiveEvents]);
 
   const resetForm = () => {
     setForm(emptyForm);
     setFormError('');
+    setEditingEventId(null);
   };
 
-  const handleAddEvent = async () => {
+  // Open modal pre-populated with existing event values
+  const handleStartEdit = (ev: CalendarEvent) => {
+    const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.value === ev.event_type);
+    const existingDept = ev.department_ids && ev.department_ids.length > 0 ? ev.department_ids[0] : '';
+
+    setForm({
+      title: ev.title || '',
+      date: dateOnlyStr(ev.event_date) || '',
+      location: ev.location || '',
+      description: ev.description || '',
+      event_type: isStandardType ? (ev.event_type as string) : 'other',
+      custom_event_type: isStandardType ? '' : ev.event_type || '',
+      audience: ev.audience || 'all',
+      target_department_id: existingDept,
+    });
+    setFormError('');
+    setEditingEventId(ev.id);
+    setShowModal(true);
+    if (inspectingEvent?.id === ev.id) {
+      setInspectingEvent(null);
+    }
+  };
+
+  // Shared submit handler (POST for new, PUT for edit)
+  const handleSaveEvent = async () => {
     setFormError('');
     if (!form.title.trim()) {
       setFormError('Event title is required.');
@@ -1625,9 +1776,13 @@ function CalendarActivities() {
     }
 
     setSubmitting(true);
+    const isEditing = Boolean(editingEventId);
+    const url = isEditing ? `${CALENDAR_API_URL}/${editingEventId}` : CALENDAR_API_URL;
+    const method = isEditing ? 'PUT' : 'POST';
+
     try {
-      const res = await fetch(CALENDAR_API_URL, {
-        method: 'POST',
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`,
@@ -1646,7 +1801,7 @@ function CalendarActivities() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setFormError('Failed to save event: ' + (err.error || res.statusText));
+        setFormError(`Failed to ${isEditing ? 'update' : 'save'} event: ` + (err.error || res.statusText));
         return;
       }
 
@@ -1674,6 +1829,9 @@ function CalendarActivities() {
         return;
       }
       setEvents((prev) => prev.filter((e) => e.id !== id));
+      if (inspectingEvent?.id === id) {
+        setInspectingEvent(null);
+      }
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -1687,6 +1845,12 @@ function CalendarActivities() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const formatLongDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
   const departmentLabel = (ev: CalendarEvent) => {
     if (!ev.department_ids || ev.department_ids.length === 0) return 'All Departments';
     const names = ev.department_ids.map((id) => departments.find((d) => d.id === id)?.name ?? 'Department');
@@ -1697,23 +1861,62 @@ function CalendarActivities() {
   const DAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-6">
+      {/* ── Top Bar ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage events and track activity history</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+            Calendar & Activities
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Schedule upcoming college activities, review event records, and browse past institutional archives.
+          </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowModal(true);
-          }}
-          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Add Event</span>
-          <span className="sm:hidden">Add</span>
-        </button>
+
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {/* Calendar vs Event History Switcher */}
+          <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 shadow-2xs">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4" />
+              <span>Calendar</span>
+            </button>
+            <button
+              onClick={() => setViewMode('archive')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'archive'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              <span>Event History</span>
+              {pastEvents.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">
+                  {pastEvents.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              resetForm();
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-all font-medium text-sm shadow-sm active:scale-[0.99] flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Add Event</span>
+            <span className="sm:hidden">Add</span>
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -1722,224 +1925,641 @@ function CalendarActivities() {
         </div>
       )}
 
-      {/* Calendar Grid View */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
-          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <h2 className="text-base sm:text-lg font-bold text-gray-900">{monthName}</h2>
-          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <ChevronRight className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-7 border-b border-gray-100">
-          {DAYS.map((d, i) => (
-            <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              <span className="hidden sm:inline">{d}</span>
-              <span className="sm:hidden">{DAYS_SHORT[i]}</span>
-            </div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading events…</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-7">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
-            ))}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-              const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const dayEvents = getEventsForDay(day);
-              const isToday = dateStr === todayStr;
-              const isPast = dateStr < todayStr;
-
-              return (
-                <div
-                  key={day}
-                  className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${
-                    isPast ? 'bg-gray-50/60' : 'bg-white'
-                  }`}
+      {/* ── Mode 1: Calendar View ── */}
+      {viewMode === 'calendar' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Select month"
+                  value={currentMonth.getMonth()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 >
-                  <div
-                    className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                      isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
-                    }`}
-                  >
-                    {day}
-                  </div>
-                  <div className="space-y-0.5">
-                    {dayEvents.slice(0, 1).map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block"
-                        style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                        title={ev.title}
-                      >
-                        {ev.title}
-                      </div>
-                    ))}
-                    {dayEvents.length > 0 && (
-                      <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
-                        {dayEvents.slice(0, 3).map((ev) => (
-                          <span
-                            key={ev.id}
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {dayEvents.length > 1 && (
-                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">
-                        +{dayEvents.length - 1} more
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  {MONTH_NAMES.map((m, idx) => (
+                    <option key={m} value={idx}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
-              activeTab === 'upcoming'
-                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="hidden sm:inline">Upcoming Activities</span>
-            <span className="sm:hidden">Upcoming</span>
-            {upcomingEvents.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                <select
+                  aria-label="Select year"
+                  value={currentMonth.getFullYear()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                >
+                  {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={jumpToToday}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={prevMonth}
+                  aria-label="Previous month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={nextMonth}
+                  aria-label="Next month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Days Header */}
+            <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
+              {DAYS.map((d, i) => (
+                <div
+                  key={d}
+                  className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{DAYS_SHORT[i]}</span>
+                </div>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
+                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Loading events…</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-7">
+                {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                  <div
+                    key={`empty-${i}`}
+                    className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
+                  />
+                ))}
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                  const dayIndexInWeek = (firstDayOfMonth + day - 1) % 7;
+                  const isRightmostCol = dayIndexInWeek >= 5;
+                  const dateStr = `${currentMonth.getFullYear()}-${String(
+                    currentMonth.getMonth() + 1
+                  ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                  const dayEvents = getEventsForDay(day);
+                  const hasEvents = dayEvents.length > 0;
+                  const isToday = dateStr === todayStr;
+                  const isPast = dateStr < todayStr;
+                  const isSelected = selectedCalendarDate === dateStr;
+                  const isHovered = hoveredDate === dateStr;
+                  const showPopover = (isHovered || isSelected) && hasEvents;
+
+                  return (
+                    <div
+                      key={day}
+                      tabIndex={hasEvents ? 0 : -1}
+                      aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
+                      onMouseEnter={() => setHoveredDate(dateStr)}
+                      onMouseLeave={() => setHoveredDate(null)}
+                      onClick={() => {
+                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      }}
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                        isSelected
+                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                          : isPast
+                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
+                          : 'bg-white hover:bg-blue-50/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
+                            isToday
+                              ? 'bg-[#1E3A8A] text-white shadow-xs'
+                              : isPast
+                              ? 'text-gray-400'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {day}
+                        </span>
+
+                        {hasEvents && (
+                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                            {dayEvents.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Event pills on desktop */}
+                      <div className="hidden sm:flex flex-col gap-1">
+                        {dayEvents.slice(0, 2).map((ev) => (
+                          <button
+                            key={ev.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInspectingEvent(ev);
+                            }}
+                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                            style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                            title={ev.title}
+                          >
+                            {ev.title}
+                          </button>
+                        ))}
+                        {dayEvents.length > 2 && (
+                          <span className="text-[10px] font-semibold text-gray-400 px-1">
+                            +{dayEvents.length - 2} more
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Indicators on mobile */}
+                      {hasEvents && (
+                        <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
+                          {dayEvents.slice(0, 3).map((ev) => (
+                            <span
+                              key={ev.id}
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                            />
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tooltip Preview */}
+                      {showPopover && (
+                        <div
+                          role="tooltip"
+                          className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
+                            isRightmostCol ? 'right-0' : 'left-0'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                            <span className="text-xs font-bold text-gray-900">
+                              {formatLongDate(dateStr)}
+                            </span>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                              {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
+                            {dayEvents.map((ev) => {
+                              const timeStr = formatTimeFromDate(ev.event_date);
+                              return (
+                                <div
+                                  key={ev.id}
+                                  onClick={() => setInspectingEvent(ev)}
+                                  className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
+                                  style={{ borderLeftColor: colorForCalendarEvent(ev) }}
+                                >
+                                  <div className="text-xs font-semibold text-gray-900 leading-snug">
+                                    {ev.title}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                                    {timeStr && (
+                                      <span className="flex items-center gap-1 font-medium text-gray-700">
+                                        <Clock className="w-3 h-3 text-gray-400" />
+                                        {timeStr}
+                                      </span>
+                                    )}
+                                    {ev.event_type && (
+                                      <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
+                                        <Tag className="w-2.5 h-2.5 text-gray-400" />
+                                        {ev.event_type}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {ev.location && (
+                                    <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                      <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                      <span className="truncate">{ev.location}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming Agenda Panel */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+                <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
+              </div>
+              <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
                 {upcomingEvents.length}
               </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
-              activeTab === 'history'
-                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span className="hidden sm:inline">Activity History</span>
-            <span className="sm:hidden">History</span>
-            {historyEvents.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                {historyEvents.length}
-              </span>
-            )}
-          </button>
-        </div>
+            </div>
 
-        <div className="p-4 sm:p-6">
-          {activeTab === 'upcoming' && (
-            <div className="space-y-3">
-              {upcomingEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No upcoming events</p>
-                </div>
-              ) : (
-                upcomingEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors group"
-                  >
+            {upcomingEvents.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs font-medium">No upcoming events scheduled</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+                {upcomingEvents.map((ev) => {
+                  const evDate = dateOnlyStr(ev.event_date);
+                  const isDueToday = evDate === todayStr;
+                  const timeStr = formatTimeFromDate(ev.event_date);
+
+                  return (
                     <div
-                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
-                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
-                        {ev.location && ` · 📍 ${ev.location}`}
-                        {ev.event_type && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
-                            {ev.event_type}
-                          </span>
-                        )}
-                      </div>
-                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
-                    </div>
-                    <button
-                      onClick={() => deleteEvent(ev.id)}
-                      disabled={deletingId === ev.id}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40"
+                      key={ev.id}
+                      onClick={() => setInspectingEvent(ev)}
+                      className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-          {activeTab === 'history' && (
-            <div className="space-y-3">
-              {historyEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No past events</p>
-                </div>
-              ) : (
-                historyEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50"
-                  >
-                    <div
-                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50"
-                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
-                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
-                        {ev.location && ` · 📍 ${ev.location}`}
-                        {ev.event_type && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
-                            {ev.event_type}
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
+                          {ev.title}
+                        </span>
+                        {isDueToday ? (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
+                            Today
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                            {formatDate(evDate)}
                           </span>
                         )}
                       </div>
-                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                        {timeStr && (
+                          <span className="flex items-center gap-1 font-medium text-gray-700">
+                            <Clock className="w-3 h-3 text-gray-400" />
+                            {timeStr}
+                          </span>
+                        )}
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                        />
+                        <span className="truncate">{departmentLabel(ev)}</span>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
-                  </div>
-                ))
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mode 2: Event History / Archive ── */}
+      {viewMode === 'archive' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-6">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search past events by title, description, location, or type..."
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/40"
+                />
+                {archiveSearch && (
+                  <button
+                    onClick={() => setArchiveSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {(archiveSearch || archiveYear !== 'all' || archiveMonth !== 'all' || archiveType !== 'all' || archiveDept !== 'all') && (
+                <button
+                  onClick={() => {
+                    setArchiveSearch('');
+                    setArchiveYear('all');
+                    setArchiveMonth('all');
+                    setArchiveType('all');
+                    setArchiveDept('all');
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors whitespace-nowrap self-end sm:self-auto"
+                >
+                  Reset Filters
+                </button>
               )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-gray-500 flex items-center gap-1 mr-1">
+                <Filter className="w-3.5 h-3.5" /> Filters:
+              </span>
+
+              <select
+                aria-label="Filter by year"
+                value={archiveYear}
+                onChange={(e) => setArchiveYear(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Years</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by month"
+                value={archiveMonth}
+                onChange={(e) => setArchiveMonth(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Months</option>
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={String(idx + 1).padStart(2, '0')}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by type"
+                value={archiveType}
+                onChange={(e) => setArchiveType(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
+              >
+                <option value="all">All Types</option>
+                {availableTypes.map((t) => (
+                  <option key={t} value={t} className="capitalize">
+                    {t}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by department"
+                value={archiveDept}
+                onChange={(e) => setArchiveDept(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {filteredArchiveEvents.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <Archive className="w-10 h-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">No events match your criteria</p>
+              <p className="text-xs text-gray-400 mt-1">Try relaxing your search terms or filter constraints.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {Object.keys(groupedArchiveEvents).map((groupMonth) => (
+                <div key={groupMonth} className="space-y-3">
+                  <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      {groupMonth}
+                    </h3>
+                    <div className="h-px flex-1 bg-gray-100" />
+                    <span className="text-[11px] font-semibold text-gray-400">
+                      {groupedArchiveEvents[groupMonth].length} events
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {groupedArchiveEvents[groupMonth].map((ev) => {
+                      const timeStr = formatTimeFromDate(ev.event_date);
+                      return (
+                        <div
+                          key={ev.id}
+                          onClick={() => setInspectingEvent(ev)}
+                          className="flex flex-col justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 bg-gray-50/40 hover:bg-white transition-all cursor-pointer group shadow-2xs space-y-3"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="text-sm font-semibold text-gray-900 group-hover:text-[#1E3A8A] transition-colors leading-snug">
+                                {ev.title}
+                              </h4>
+                              {ev.event_type && (
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600 flex-shrink-0">
+                                  {ev.event_type}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-500">
+                              <span className="font-medium text-gray-700">
+                                {formatDate(dateOnlyStr(ev.event_date))}
+                              </span>
+                              {timeStr && (
+                                <>
+                                  <span>·</span>
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-gray-400" />
+                                    {timeStr}
+                                  </span>
+                                </>
+                              )}
+                              <span>·</span>
+                              <span className="truncate">{departmentLabel(ev)}</span>
+                            </div>
+
+                            {ev.location && (
+                              <div className="text-xs text-gray-500 flex items-center gap-1 truncate">
+                                <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                <span className="truncate">{ev.location}</span>
+                              </div>
+                            )}
+
+                            {ev.description && (
+                              <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed pt-0.5">
+                                {ev.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100/80 text-[11px] text-gray-400">
+                            <span>Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(ev);
+                                }}
+                                className="text-gray-600 hover:text-[#1E3A8A] font-semibold flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <span className="text-[#1E3A8A] font-semibold flex items-center gap-1">
+                                <Eye className="w-3.5 h-3.5" /> View
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Add Event Modal */}
+      {/* ── Event Details Modal (With Edit & Delete Options) ── */}
+      {inspectingEvent && (
+        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <span
+                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
+                  style={{ backgroundColor: colorForCalendarEvent(inspectingEvent) }}
+                >
+                  {inspectingEvent.event_type || 'Activity'}
+                </span>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug">
+                  {inspectingEvent.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setInspectingEvent(null)}
+                aria-label="Close modal"
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Date:</span>
+                <span>{formatLongDate(dateOnlyStr(inspectingEvent.event_date))}</span>
+              </div>
+
+              {formatTimeFromDate(inspectingEvent.event_date) && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Time:</span>
+                  <span>{formatTimeFromDate(inspectingEvent.event_date)}</span>
+                </div>
+              )}
+
+              {inspectingEvent.location && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Location:</span>
+                  <span>{inspectingEvent.location}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Target Department:</span>
+                <span>{departmentLabel(inspectingEvent)}</span>
+              </div>
+
+              {inspectingEvent.audience && (
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Audience:</span>
+                  <span>{AUDIENCE_LABELS[inspectingEvent.audience] || inspectingEvent.audience}</span>
+                </div>
+              )}
+            </div>
+
+            {inspectingEvent.description && (
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Description / Agenda</h4>
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed whitespace-pre-wrap bg-white p-3 rounded-xl border border-gray-100">
+                  {inspectingEvent.description}
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs text-gray-400">
+              <span>Posted by: {ROLE_DISPLAY_LABEL[inspectingEvent.posted_by_role ?? ''] ?? 'Dean'}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleStartEdit(inspectingEvent)}
+                  className="px-3 py-1.5 text-[#1E3A8A] hover:bg-blue-50 rounded-lg transition-colors font-semibold flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => deleteEvent(inspectingEvent.id)}
+                  disabled={deletingId === inspectingEvent.id}
+                  className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Unified Add / Edit Event Modal ── */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={() => {
+              resetForm();
+              setShowModal(false);
+            }}
+          />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add New Event</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X className="w-5 h-5 text-gray-500" />
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                {editingEventId ? 'Edit Event' : 'Add New Event'}
+              </h2>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowModal(false);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1957,7 +2577,7 @@ function CalendarActivities() {
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Alumni Homecoming Orientation"
+                  placeholder="e.g. Faculty Deliberation & Academic Planning"
                 />
               </div>
 
@@ -2006,7 +2626,11 @@ function CalendarActivities() {
                         : 'All Departments (Visible to All)'}
                     </span>
                   </div>
-                  <ChevronLeft className={`w-4 h-4 text-gray-500 transition-transform -rotate-90 ${showDepartmentDropdown ? 'rotate-90' : ''}`} />
+                  <ChevronLeft
+                    className={`w-4 h-4 text-gray-500 transition-transform -rotate-90 ${
+                      showDepartmentDropdown ? 'rotate-90' : ''
+                    }`}
+                  />
                 </button>
 
                 {showDepartmentDropdown && (
@@ -2081,7 +2705,7 @@ function CalendarActivities() {
                 </select>
 
                 {form.event_type === 'other' && (
-                  <div className="mt-2.5 animate-in fade-in duration-200">
+                  <div className="mt-2.5">
                     <label className="block text-[11px] font-semibold text-gray-500 mb-1">
                       Specify Custom Event Type *
                     </label>
@@ -2110,24 +2734,34 @@ function CalendarActivities() {
                   <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
                 </select>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  Selecting "Alumni Only" guarantees only verified alumni see this activity on their calendar.
+                  Selecting &quot;Alumni Only&quot; guarantees only verified alumni see this activity on their calendar.
                 </p>
               </div>
             </div>
 
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  resetForm();
+                  setShowModal(false);
+                }}
                 className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleAddEvent}
+                onClick={handleSaveEvent}
                 disabled={submitting}
                 className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
               >
-                {submitting ? 'Saving...' : (<><Check className="w-4 h-4" /> Add Event</>)}
+                {submitting ? (
+                  'Saving...'
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>{editingEventId ? 'Save Changes' : 'Add Event'}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -2959,6 +3593,16 @@ interface ResearchSubmissionRow {
   title: string;
   type: 'research' | 'extension' | 'achievement';
   category: string | null;
+  description?: string | null;
+  publication_link?: string | null;
+  funding_source?: string | null;
+  authors?: string | null;
+  budget?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  partner_organization?: string | null;
+  beneficiaries?: number | null;
+  sdg_alignment?: string[] | string | null;
   file_name: string | null;
   file_url: string | null;
   files?: FileAttachment[] | null;
@@ -2983,12 +3627,16 @@ function getResearchTokenDean() {
 export function ResearchAchievements() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'research' | 'extension' | 'achievement'>('all');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [searchQuery, setSearchQuery] = useState('');
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  
+  // Action & Modal States
   const [actionId, setActionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<ResearchSubmissionRow | null>(null);
   const [remarksInput, setRemarksInput] = useState('');
+  const [viewingItem, setViewingItem] = useState<ResearchSubmissionRow | null>(null);
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -3012,7 +3660,9 @@ export function ResearchAchievements() {
     }
   };
 
-  useEffect(() => { fetchSubmissions(); }, [statusFilter]);
+  useEffect(() => {
+    fetchSubmissions();
+  }, [statusFilter]);
 
   const decide = async (submission: ResearchSubmissionRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
     setActionId(submission.id);
@@ -3027,9 +3677,17 @@ export function ResearchAchievements() {
         setLoadError(err.error || 'Failed to update submission status.');
         return;
       }
-      setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      
+      setSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s));
+      if (statusFilter !== 'all') {
+        setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      }
+      
       setRejectFor(null);
       setRemarksInput('');
+      if (viewingItem && viewingItem.id === submission.id) {
+        setViewingItem(null);
+      }
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -3037,7 +3695,16 @@ export function ResearchAchievements() {
     }
   };
 
-  // Helper to normalize multi-file and single-file formats
+  const parseSdgs = (raw: string[] | string | null | undefined): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  };
+
   const getAllAttachments = (item: ResearchSubmissionRow): FileAttachment[] => {
     if (Array.isArray(item.files) && item.files.length > 0) {
       return item.files;
@@ -3048,7 +3715,6 @@ export function ResearchAchievements() {
     return [];
   };
 
-  // Inline view handler without forced browser download
   const handleViewFile = (file: FileAttachment) => {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
@@ -3056,129 +3722,284 @@ export function ResearchAchievements() {
     if (isImageOrPdf) {
       window.open(file.url, '_blank', 'noopener,noreferrer');
     } else {
-      // Office docs (.docx, .doc, .xlsx) require a web viewer for inline browser viewing
       const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file.url)}`;
       window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formatDate = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
 
-  const typeLabel = (t: string) => t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement';
-  const filtered = typeFilter === 'all' ? submissions : submissions.filter(s => s.type === typeFilter);
+  const typeLabel = (t: string) => (t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement');
+
+  const filtered = useMemo(() => {
+    return submissions.filter(s => {
+      const matchesType = typeFilter === 'all' || s.type === typeFilter;
+      const term = searchQuery.toLowerCase();
+      const matchesSearch =
+        s.title.toLowerCase().includes(term) ||
+        (s.submitter?.full_name && s.submitter.full_name.toLowerCase().includes(term)) ||
+        (s.submitter?.department && s.submitter.department.toLowerCase().includes(term)) ||
+        (s.partner_organization && s.partner_organization.toLowerCase().includes(term)) ||
+        (s.category && s.category.toLowerCase().includes(term));
+
+      return matchesType && matchesSearch;
+    });
+  }, [submissions, typeFilter, searchQuery]);
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Research, Extension & Achievements</h1>
-        <div className="flex gap-2">
+    <div className="space-y-6">
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Research, Extension & Achievements</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            Review, inspect, and evaluate faculty scholarly and extension output.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search title, faculty, dept..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+
           <select
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value as any)}
-            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
           >
-            <option value="all">All Types</option>
+            <option value="all">All Disciplines</option>
             <option value="research">Research</option>
-            <option value="extension">Extension</option>
-            <option value="achievement">Achievements</option>
+            <option value="extension">Extension Activities</option>
+            <option value="achievement">Faculty Achievements</option>
           </select>
+
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
           >
-            <option value="pending">Pending Review</option>
+            <option value="pending">Pending Evaluation</option>
             <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="all">All</option>
+            <option value="rejected">Rejected / Revisions</option>
+            <option value="all">All Statuses</option>
           </select>
         </div>
       </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-          {statusFilter === 'pending' ? 'Pending Approvals' : statusFilter === 'approved' ? 'Approved Submissions' : statusFilter === 'rejected' ? 'Rejected Submissions' : 'All Submissions'}
-        </h2>
+      {/* Main List */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">
+            {statusFilter === 'pending'
+              ? 'Pending Endorsements'
+              : statusFilter === 'approved'
+              ? 'Approved Submissions'
+              : statusFilter === 'rejected'
+              ? 'Rejected Filings'
+              : 'All Submissions'}
+          </h2>
+          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+            {filtered.length} Record(s)
+          </span>
+        </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading submissions...</span>
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+            <Loader2 className="w-7 h-7 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Retrieving submissions...</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No submissions found.</div>
+          <div className="py-20 text-center text-gray-400 text-sm">
+            <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="font-medium text-gray-600">No submissions found.</p>
+            <p className="text-xs text-gray-400 mt-1">There are no records matching your current filter selection.</p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {filtered.map((item) => {
+          <div className="divide-y divide-gray-100">
+            {filtered.map(item => {
               const cfg = RESEARCH_STATUS_LABEL[item.status] || RESEARCH_STATUS_LABEL.pending;
               const attachments = getAllAttachments(item);
+              const sdgs = parseSdgs(item.sdg_alignment);
 
               return (
-                <div key={item.id} className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-gray-300 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-gray-900 text-sm sm:text-base">{item.title}</div>
-                      <div className="text-xs sm:text-sm text-gray-600 mt-0.5">
-                        <span className="font-medium text-gray-800">{item.submitter?.full_name ?? 'Unknown Faculty'}</span>
-                        {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
-                        {' · '}<span className="capitalize">{typeLabel(item.type)}</span>
-                        {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
+                <div key={item.id} className="p-4 sm:p-6 hover:bg-gray-50/60 transition-colors">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    {/* Item Details */}
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                          {typeLabel(item.type)}
+                        </span>
+                        <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
                       </div>
 
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
-                          {cfg.label}
+                      {/* Submitter info */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span className="font-semibold text-gray-800 flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          {item.submitter?.full_name ?? 'Unknown Faculty'}
                         </span>
+                        <span>·</span>
+                        <span>{item.submitter?.department ?? 'No Department Specified'}</span>
+                        <span>·</span>
+                        <span>Submitted on {formatDate(item.created_at)}</span>
+                      </div>
 
-                        {/* Evidences & Documents inline view triggers */}
-                        {attachments.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap ml-1">
-                            {attachments.map((file, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleViewFile(file)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-                                title={`View ${file.name} inline`}
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span className="max-w-[160px] truncate">{file.name}</span>
-                              </button>
-                            ))}
-                          </div>
+                      {/* Fields Preview */}
+                      <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                        {item.type === 'research' && (
+                          <>
+                            {item.authors && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium">
+                                Authors: {item.authors}
+                              </span>
+                            )}
+                            {item.funding_source && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <DollarSign className="w-3 h-3 text-gray-400" />
+                                Funding: {item.funding_source}
+                              </span>
+                            )}
+                            {item.budget !== null && item.budget !== undefined && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium">
+                                ₱{Number(item.budget).toLocaleString()}
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                        {item.type === 'extension' && (
+                          <>
+                            {item.partner_organization && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Building className="w-3 h-3 text-gray-400" />
+                                Partner: {item.partner_organization}
+                              </span>
+                            )}
+                            {item.beneficiaries !== null && item.beneficiaries !== undefined && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Users className="w-3 h-3 text-gray-400" />
+                                {Number(item.beneficiaries).toLocaleString()} Beneficiaries
+                              </span>
+                            )}
+                            {sdgs.length > 0 && (
+                              <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Target className="w-3 h-3 text-blue-500" />
+                                {sdgs.length} SDG(s) Aligned
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                        {item.type === 'achievement' && item.category && (
+                          <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg font-medium">
+                            Category: {item.category}
+                          </span>
+                        )}
+
+                        {(item.start_date || item.end_date) && (
+                          <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-gray-400" />
+                            {formatDate(item.start_date)} - {formatDate(item.end_date)}
+                          </span>
                         )}
                       </div>
 
+                      {item.description && (
+                        <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
+                      )}
+
+                      {/* Attachments & Link */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2">
+                        {item.publication_link && (
+                          <a
+                            href={item.publication_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold mr-2"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Journal / DOI Link</span>
+                          </a>
+                        )}
+
+                        {attachments.map((file, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleViewFile(file)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                            title={`Inspect ${file.name}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span className="max-w-[150px] truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+
                       {item.dean_remarks && (
-                        <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg border border-red-100">
-                          <strong>Remarks:</strong> {item.dean_remarks}
-                        </p>
+                        <div className="p-2.5 bg-rose-50 border border-rose-100 text-rose-700 rounded-xl text-xs mt-2">
+                          <span className="font-bold">Evaluation Remarks:</span> {item.dean_remarks}
+                        </div>
                       )}
                     </div>
 
-                    {item.status === 'pending' && (
-                      <div className="flex gap-2 flex-shrink-0 pt-1 sm:pt-0">
+                    {/* Actions & Status Column */}
+                    <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
+                      <span
+                        className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
+                        style={{ background: cfg.bg, color: cfg.color }}
+                      >
+                        {cfg.label}
+                      </span>
+
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => decide(item, 'approved')}
-                          disabled={actionId === item.id}
-                          className="px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
+                          type="button"
+                          onClick={() => setViewingItem(item)}
+                          className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                         >
-                          {actionId === item.id ? 'Working...' : 'Approve'}
+                          Review & Inspect
                         </button>
-                        <button
-                          onClick={() => { setRejectFor(item); setRemarksInput(''); }}
-                          disabled={actionId === item.id}
-                          className="px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
-                        >
-                          Reject
-                        </button>
+
+                        {item.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => decide(item, 'approved')}
+                              disabled={actionId === item.id}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
+                            >
+                              {actionId === item.id ? 'Saving...' : 'Approve'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectFor(item);
+                                setRemarksInput('');
+                              }}
+                              disabled={actionId === item.id}
+                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
@@ -3187,27 +4008,214 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {rejectFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Submission?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Rejecting <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s "{rejectFor.title}".
+      {/* Complete Inspection Modal */}
+      {viewingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+            <button
+              onClick={() => setViewingItem(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded">
+                {typeLabel(viewingItem.type)}
+              </span>
+              <span
+                className="text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase"
+                style={{
+                  background: (RESEARCH_STATUS_LABEL[viewingItem.status] || RESEARCH_STATUS_LABEL.pending).bg,
+                  color: (RESEARCH_STATUS_LABEL[viewingItem.status] || RESEARCH_STATUS_LABEL.pending).color,
+                }}
+              >
+                {viewingItem.status}
+              </span>
+            </div>
+
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">{viewingItem.title}</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Submitted by <span className="font-semibold text-gray-700">{viewingItem.submitter?.full_name}</span> (
+              {viewingItem.submitter?.department || 'Department Unassigned'}) on {formatDate(viewingItem.created_at)}
             </p>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reason (optional)</label>
+
+            <div className="space-y-4 border-t border-b border-gray-100 py-4 text-xs sm:text-sm text-gray-700">
+              {viewingItem.description && (
+                <div>
+                  <span className="font-bold text-gray-900 block mb-1">Project Description / Summary</span>
+                  <p className="bg-gray-50 p-3 rounded-xl leading-relaxed text-gray-700">{viewingItem.description}</p>
+                </div>
+              )}
+
+              {/* Research Detail */}
+              {viewingItem.type === 'research' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Authors / Researchers</span>
+                    <span>{viewingItem.authors || 'None documented'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Funding Source</span>
+                    <span>{viewingItem.funding_source || 'None / Institutional'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Allocated Budget</span>
+                    <span>
+                      {viewingItem.budget !== null && viewingItem.budget !== undefined
+                        ? `₱${Number(viewingItem.budget).toLocaleString()}`
+                        : 'Not specified'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Implementation Period</span>
+                    <span>{formatDate(viewingItem.start_date)} – {formatDate(viewingItem.end_date)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Extension Detail */}
+              {viewingItem.type === 'extension' && (
+                <div className="space-y-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Partner Organization</span>
+                      <span>{viewingItem.partner_organization || 'Not documented'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Target Beneficiaries</span>
+                      <span>
+                        {viewingItem.beneficiaries !== null && viewingItem.beneficiaries !== undefined
+                          ? Number(viewingItem.beneficiaries).toLocaleString()
+                          : 'Not documented'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Duration</span>
+                      <span>{formatDate(viewingItem.start_date)} – {formatDate(viewingItem.end_date)}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="font-semibold text-gray-500 block mb-1.5">Aligned Sustainable Development Goals</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {parseSdgs(viewingItem.sdg_alignment).map((sdg, idx) => (
+                        <span key={idx} className="bg-blue-50 text-blue-800 text-xs px-2.5 py-1 rounded-lg font-medium">
+                          {sdg}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Achievement Detail */}
+              {viewingItem.type === 'achievement' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Achievement Category</span>
+                    <span>{viewingItem.category || 'General Recognition'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Date Conferred</span>
+                    <span>{formatDate(viewingItem.start_date || viewingItem.created_at)}</span>
+                  </div>
+                </div>
+              )}
+
+              {viewingItem.publication_link && (
+                <div>
+                  <span className="font-semibold text-gray-500 block mb-1">Publication / Evidence URL</span>
+                  <a
+                    href={viewingItem.publication_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>{viewingItem.publication_link}</span>
+                  </a>
+                </div>
+              )}
+
+              {getAllAttachments(viewingItem).length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-500 block mb-2">Attached Documents & Evidences</span>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllAttachments(viewingItem).map((file, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleViewFile(file)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span className="max-w-[200px] truncate">{file.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setViewingItem(null)}
+                className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+              {viewingItem.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setRejectFor(viewingItem);
+                      setRemarksInput('');
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-colors"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => decide(viewingItem, 'approved')}
+                    disabled={actionId === viewingItem.id}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs"
+                  >
+                    {actionId === viewingItem.id ? 'Approving...' : 'Endorse & Approve'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100">
+            <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
+            </p>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reviewer Feedback / Remarks</label>
             <textarea
               value={remarksInput}
               onChange={e => setRemarksInput(e.target.value)}
               rows={3}
-              placeholder="Let them know what needs revision..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
+              placeholder="State reasons or corrective items needed..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
             />
-            <div className="flex gap-3">
-              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRejectFor(null)}
+                className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
               <button
                 onClick={() => decide(rejectFor, 'rejected', remarksInput)}
                 disabled={actionId === rejectFor.id}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
               >
                 {actionId === rejectFor.id ? 'Rejecting...' : 'Confirm Reject'}
               </button>

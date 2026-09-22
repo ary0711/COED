@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 
 // ====================== TRACER SURVEY API HELPERS ======================
@@ -956,30 +956,73 @@ interface BackendCalendarEvent {
   audience?: string;
   location?: string | null;
   department_ids?: string[] | null;
+  posted_by_role?: string | null;
+}
+
+const EVENT_TYPE_COLOR: Record<string, string> = {
+  meeting: '#3B82F6',
+  activity: '#10B981',
+  holiday: '#8B5CF6',
+  deadline: '#F59E0B',
+  exam: '#EF4444',
+};
+const DEFAULT_ALUMNI_EVENT_COLOR = '#1E3A8A';
+
+const ROLE_DISPLAY_LABEL_ALUMNI: Record<string, string> = {
+  dean: 'Dean',
+  admin: 'Admin',
+  college_dean: 'Dean',
+  department_chair: 'Dept. Chair',
+  faculty: 'Faculty',
+};
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function colorForAlumniEvent(ev: BackendCalendarEvent): string {
+  const t = ev.event_type?.toLowerCase() || '';
+  return EVENT_TYPE_COLOR[t] || DEFAULT_ALUMNI_EVENT_COLOR;
+}
+
+function dateOnlyAlumni(isoLike: string): string {
+  if (!isoLike) return '';
+  return isoLike.split('T')[0];
+}
+
+function formatTimeFromDate(isoLike: string): string | null {
+  if (!isoLike || !isoLike.includes('T')) return null;
+  const timePart = isoLike.split('T')[1];
+  if (!timePart || timePart.startsWith('00:00:00')) return null;
+  const d = new Date(isoLike);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Client-side defense-in-depth audience guard
+function isAlumniAuthorizedEvent(ev: BackendCalendarEvent): boolean {
+  if (!ev.audience) return true;
+  const aud = ev.audience.trim().toLowerCase();
+  return ['all', 'everyone', 'alumni'].includes(aud);
 }
 
 function AlumniCalendar() {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
   const [events, setEvents] = useState<BackendCalendarEvent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [currentDate, setCurrentDate] = useState<Date>(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
+  const [loadError, setLoadError] = useState<string>('');
+
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<BackendCalendarEvent | null>(null);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
-
-  // Filter out events that are not intended for alumni
-  const isAlumniTargetedEvent = (event: BackendCalendarEvent) => {
-    if (event.audience) {
-      return event.audience === 'alumni' || event.audience === 'all';
-    }
-
-    const type = (event.event_type || '').toLowerCase();
-    return type !== 'exam' && type !== 'deadline';
-  };
 
   const fetchCalendarEvents = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(CALENDAR_API_URL, {
@@ -991,18 +1034,17 @@ function AlumniCalendar() {
 
       if (res.ok) {
         const data = await res.json();
-        setEvents(Array.isArray(data) ? data.filter(isAlumniTargetedEvent) : []);
+        // Enforce audience filter strictly
+        const alumniOnly = (Array.isArray(data) ? data : []).filter(isAlumniAuthorizedEvent);
+        setEvents(alumniOnly);
       } else {
-        const { data, error } = await supabase
-          .from('calendar_events')
-          .select('*')
-          .order('event_date', { ascending: true });
-        if (!error && data) {
-          setEvents((data as BackendCalendarEvent[]).filter(isAlumniTargetedEvent));
-        }
+        setLoadError('Failed to load alumni events.');
+        setEvents([]);
       }
     } catch (err) {
       console.error('Failed to load calendar events:', err);
+      setLoadError('Could not connect to the calendar server. Please try again.');
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -1012,7 +1054,7 @@ function AlumniCalendar() {
     fetchCalendarEvents();
 
     const channel = supabase
-      .channel('alumni-calendar-realtime')
+      .channel('alumni-calendar-realtime-sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'calendar_events' },
@@ -1025,282 +1067,440 @@ function AlumniCalendar() {
     };
   }, []);
 
-  const prevMonth = () => {
-    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+
+  const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const jumpToToday = () => {
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedCalendarDate(todayStr);
   };
 
-  const nextMonth = () => {
-    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-  };
-
-  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-
-  const getEventBadgeColor = (type?: string) => {
-    switch (type) {
-      case 'activity':
-        return { bg: 'bg-blue-500', hex: '#3B82F6', label: 'Activity' };
-      case 'meeting':
-        return { bg: 'bg-purple-500', hex: '#A855F7', label: 'Meeting' };
-      case 'deadline':
-        return { bg: 'bg-rose-500', hex: '#F43F5E', label: 'Deadline' };
-      case 'holiday':
-        return { bg: 'bg-amber-500', hex: '#F59E0B', label: 'Holiday' };
-      case 'exam':
-        return { bg: 'bg-emerald-500', hex: '#10B981', label: 'Exam' };
-      default:
-        return { bg: 'bg-indigo-500', hex: '#6366F1', label: 'Event' };
-    }
-  };
-
-  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-
-  const days = Array.from({ length: 42 }, (_, i) => {
-    const dayNumber = i - firstDay + 1;
-    return dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null;
-  });
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, BackendCalendarEvent[]>();
+    events.forEach((ev) => {
+      const d = dateOnlyAlumni(ev.event_date);
+      if (!d) return;
+      const current = map.get(d) || [];
+      current.push(ev);
+      map.set(d, current);
+    });
+    return map;
+  }, [events]);
 
   const getEventsForDay = (day: number) => {
-    return events.filter((e) => {
-      if (!e.event_date) return false;
-      const d = new Date(e.event_date);
-      return (
-        d.getDate() === day &&
-        d.getMonth() === currentDate.getMonth() &&
-        d.getFullYear() === currentDate.getFullYear()
-      );
-    });
+    const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return eventsByDate.get(dateStr) || [];
   };
 
-  const isToday = (day: number) => {
-    if (!day) return false;
-    const today = new Date();
-    return (
-      day === today.getDate() &&
-      currentDate.getMonth() === today.getMonth() &&
-      currentDate.getFullYear() === today.getFullYear()
-    );
-  };
-
-  const isPastDay = (day: number) => {
-    if (!day) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return dayDate < today;
-  };
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnlyAlumni(e.event_date) >= todayStr)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  }, [events, todayStr]);
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const formatLongDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+  };
 
-  const upcomingEvents = events
-    .filter((e) => new Date(e.event_date) >= today)
-    .sort((a, b) => new Date(a.event_date).getTime() - new Date(b.event_date).getTime());
-
-  const historyEvents = events
-    .filter((e) => new Date(e.event_date) < today)
-    .sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime());
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const DAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Alumni Calendar</h1>
-
-      <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Alumni Activities</h3>
-            <p className="text-sm text-gray-500">{monthName}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={prevMonth} className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
-            </button>
-            <button onClick={nextMonth} className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors">
-              <ChevronRight className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-7 gap-2">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-            <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
-              {day}
-            </div>
-          ))}
-
-          {days.map((day, index) => {
-            const dayEvents = day ? getEventsForDay(day) : [];
-            const isTodayDate = day ? isToday(day) : false;
-            const isPast = day ? isPastDay(day) : false;
-
-            return (
-              <div
-                key={index}
-                className={`min-h-[80px] p-2 border border-gray-100 rounded-lg ${
-                  !day ? 'bg-gray-50' : isPast ? 'bg-gray-200 opacity-60 hover:bg-gray-300' : 'bg-white hover:bg-[#F8FAFC] cursor-pointer'
-                } ${isTodayDate ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''} transition-colors`}
-              >
-                {day && (
-                  <>
-                    <div className={`text-sm font-medium mb-1 ${isPast ? 'text-gray-600' : isTodayDate ? 'text-[#2563EB]' : 'text-gray-900'}`}>
-                      {day}
-                    </div>
-                    <div className="space-y-1">
-                      {dayEvents.map((event) => {
-                        const badge = getEventBadgeColor(event.event_type);
-                        return (
-                          <div
-                            key={event.id}
-                            onClick={() => setSelectedEvent(event)}
-                            className={`text-xs ${badge.bg} text-white px-1 py-0.5 rounded truncate ${isPast ? 'opacity-70' : ''} cursor-pointer hover:shadow-md transition-all`}
-                            title={event.title}
-                          >
-                            {event.title}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-4 mt-6 pt-4 border-t border-gray-100 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded"></div>
-            <span className="text-xs text-gray-600">Activity</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-purple-500 rounded"></div>
-            <span className="text-xs text-gray-600">Meeting</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-rose-500 rounded"></div>
-            <span className="text-xs text-gray-600">Deadline</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-amber-500 rounded"></div>
-            <span className="text-xs text-gray-600">Holiday</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-emerald-500 rounded"></div>
-            <span className="text-xs text-gray-600">Exam</span>
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* ── Top Header ── */}
+      <div>
+        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+          Alumni Calendar & Activities
+        </h1>
+        <p className="text-gray-500 text-sm mt-1">
+          Keep track of college alumni homecomings, seminars, mentorship schedules, and institutional events.
+        </p>
       </div>
 
-      {selectedEvent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full animate-in">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: getEventBadgeColor(selectedEvent.event_type).hex }} />
-                <h3 className="text-lg font-semibold text-gray-900">{selectedEvent.title}</h3>
-              </div>
-              <button onClick={() => setSelectedEvent(null)} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Date</p>
-                <p className="text-sm text-gray-900">{formatDate(selectedEvent.event_date)}</p>
-              </div>
-              {selectedEvent.location && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Location</p>
-                  <p className="text-sm text-gray-900">{selectedEvent.location}</p>
-                </div>
-              )}
-              {selectedEvent.description && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Description</p>
-                  <p className="text-sm text-gray-700">{selectedEvent.description}</p>
-                </div>
-              )}
-            </div>
-          </div>
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+          {loadError}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'upcoming' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <CalendarIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Upcoming Activities</span>
-            <span className="sm:hidden">Upcoming</span>
-            {upcomingEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{upcomingEvents.length}</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'history' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <History className="w-4 h-4" />
-            <span className="hidden sm:inline">Activity History</span>
-            <span className="sm:hidden">History</span>
-            {historyEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{historyEvents.length}</span>}
-          </button>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* ── Main Calendar Grid (2 cols on lg) ── */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+          {/* Quick Month & Year Selection Bar */}
+          <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
+            <div className="flex items-center gap-2">
+              <select
+                aria-label="Select month"
+                value={currentMonth.getMonth()}
+                onChange={(e) =>
+                  setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
+                }
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+              >
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={idx}>
+                    {m}
+                  </option>
+                ))}
+              </select>
 
-        <div className="p-4 sm:p-6">
-          {activeTab === 'upcoming' && (
-            <div className="space-y-3">
-              {upcomingEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <CalendarIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No upcoming events</p>
-                </div>
-              ) : (
-                upcomingEvents.map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: getEventBadgeColor(ev.event_type).hex }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(ev.event_date)}{ev.location ? ` · ${ev.location}` : ''}</div>
-                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
+              <select
+                aria-label="Select year"
+                value={currentMonth.getFullYear()}
+                onChange={(e) =>
+                  setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
+                }
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+              >
+                {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={jumpToToday}
+                className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+              >
+                Today
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={prevMonth}
+                aria-label="Previous month"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={nextMonth}
+                aria-label="Next month"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Days of Week Header */}
+          <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
+            {DAYS.map((d, i) => (
+              <div
+                key={d}
+                className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                <span className="hidden sm:inline">{d}</span>
+                <span className="sm:hidden">{DAYS_SHORT[i]}</span>
+              </div>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
+              <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-medium">Loading events…</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-7">
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div
+                  key={`empty-${i}`}
+                  className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
+                />
+              ))}
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                const dayIndexInWeek = (firstDay + day - 1) % 7;
+                const isRightmostCol = dayIndexInWeek >= 5;
+                const dateStr = `${currentMonth.getFullYear()}-${String(
+                  currentMonth.getMonth() + 1
+                ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                const dayEvents = getEventsForDay(day);
+                const hasEvents = dayEvents.length > 0;
+                const isTodayDate = dateStr === todayStr;
+                const isPast = dateStr < todayStr;
+                const isSelected = selectedCalendarDate === dateStr;
+                const isHovered = hoveredDate === dateStr;
+                const showPopover = (isHovered || isSelected) && hasEvents;
+
+                return (
+                  <div
+                    key={day}
+                    tabIndex={hasEvents ? 0 : -1}
+                    aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
+                    onMouseEnter={() => setHoveredDate(dateStr)}
+                    onMouseLeave={() => setHoveredDate(null)}
+                    onClick={() => {
+                      setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                    }}
+                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                      isSelected
+                        ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                        : isPast
+                        ? 'bg-gray-50/40 hover:bg-gray-100/50'
+                        : 'bg-white hover:bg-blue-50/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
+                          isTodayDate
+                            ? 'bg-[#1E3A8A] text-white shadow-xs'
+                            : isPast
+                            ? 'text-gray-400'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {day}
+                      </span>
+
+                      {hasEvents && (
+                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                          {dayEvents.length}
+                        </span>
+                      )}
                     </div>
+
+                    {/* Desktop Event Pills */}
+                    <div className="hidden sm:flex flex-col gap-1">
+                      {dayEvents.slice(0, 2).map((ev) => (
+                        <button
+                          key={ev.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEvent(ev);
+                          }}
+                          className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                          style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                          title={ev.title}
+                        >
+                          {ev.title}
+                        </button>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <span className="text-[10px] font-semibold text-gray-400 px-1">
+                          +{dayEvents.length - 2} more
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Mobile Dots */}
+                    {hasEvents && (
+                      <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
+                        {dayEvents.slice(0, 3).map((ev) => (
+                          <span
+                            key={ev.id}
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                          />
+                        ))}
+                        {dayEvents.length > 3 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tooltip Hover Preview */}
+                    {showPopover && (
+                      <div
+                        role="tooltip"
+                        className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
+                          isRightmostCol ? 'right-0' : 'left-0'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                          <span className="text-xs font-bold text-gray-900">
+                            {formatLongDate(dateStr)}
+                          </span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                            {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
+                          {dayEvents.map((ev) => {
+                            const timeStr = formatTimeFromDate(ev.event_date);
+                            return (
+                              <div
+                                key={ev.id}
+                                onClick={() => setSelectedEvent(ev)}
+                                className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
+                                style={{ borderLeftColor: colorForAlumniEvent(ev) }}
+                              >
+                                <div className="text-xs font-semibold text-gray-900 leading-snug">
+                                  {ev.title}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                                  {timeStr && (
+                                    <span className="font-medium text-gray-700">
+                                      {timeStr}
+                                    </span>
+                                  )}
+                                  {ev.event_type && (
+                                    <span className="uppercase text-[9px] font-bold text-gray-600">
+                                      {ev.event_type}
+                                    </span>
+                                  )}
+                                </div>
+                                {ev.location && (
+                                  <p className="text-[11px] text-gray-500 truncate">
+                                    📍 {ev.location}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
           )}
-          {activeTab === 'history' && (
-            <div className="space-y-3">
-              {historyEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No past events</p>
-                </div>
-              ) : (
-                historyEvents.map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: getEventBadgeColor(ev.event_type).hex }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{formatDate(ev.event_date)}{ev.location ? ` · ${ev.location}` : ''}</div>
-                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+        </div>
+
+        {/* ── Upcoming Activities Side Panel ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <h2 className="text-sm font-bold text-gray-900">Upcoming Activities</h2>
+            <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
+              {upcomingEvents.length}
+            </span>
+          </div>
+
+          {upcomingEvents.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-xs font-medium">No upcoming events scheduled</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+              {upcomingEvents.map((ev) => {
+                const evDate = dateOnlyAlumni(ev.event_date);
+                const isDueToday = evDate === todayStr;
+                const timeStr = formatTimeFromDate(ev.event_date);
+
+                return (
+                  <div
+                    key={ev.id}
+                    onClick={() => setSelectedEvent(ev)}
+                    className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
+                        {ev.title}
+                      </span>
+                      {isDueToday ? (
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
+                          Today
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                          {formatDate(evDate)}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
+
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                      {timeStr && (
+                        <span className="font-medium text-gray-700">
+                          {timeStr}
+                        </span>
+                      )}
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                      />
+                      <span className="truncate capitalize">{ev.event_type || 'Activity'}</span>
+                    </div>
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {/* ── Event Details Modal ── */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span
+                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
+                  style={{ backgroundColor: colorForAlumniEvent(selectedEvent) }}
+                >
+                  {selectedEvent.event_type || 'Activity'}
+                </span>
+                <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                  {selectedEvent.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
+              <div>
+                <span className="font-semibold text-gray-900">Date: </span>
+                <span>{formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}</span>
+              </div>
+
+              {formatTimeFromDate(selectedEvent.event_date) && (
+                <div>
+                  <span className="font-semibold text-gray-900">Time: </span>
+                  <span>{formatTimeFromDate(selectedEvent.event_date)}</span>
+                </div>
+              )}
+
+              {selectedEvent.location && (
+                <div>
+                  <span className="font-semibold text-gray-900">Location: </span>
+                  <span>{selectedEvent.location}</span>
+                </div>
+              )}
+
+              <div>
+                <span className="font-semibold text-gray-900">Posted by: </span>
+                <span>
+                  {ROLE_DISPLAY_LABEL_ALUMNI[selectedEvent.posted_by_role ?? ''] ??
+                    selectedEvent.posted_by_role ??
+                    'College Administration'}
+                </span>
+              </div>
+            </div>
+
+            {selectedEvent.description && (
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Description</h4>
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed bg-white p-3 rounded-xl border border-gray-100 whitespace-pre-wrap">
+                  {selectedEvent.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
