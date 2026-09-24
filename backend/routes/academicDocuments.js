@@ -15,7 +15,7 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
-const ALLOWED_DOCUMENT_TYPES = ['handbook', 'policy', 'form', 'memorandum'];
+// Gi-luagan ang allowed types kay naa nay custom categories ang frontend
 const ALLOWED_TARGET_ROLES = ['student', 'faculty', 'department_chair', 'staff', 'alumni'];
 
 const upload = multer({
@@ -67,8 +67,8 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Title is required.' });
   }
-  if (!document_type || !ALLOWED_DOCUMENT_TYPES.includes(document_type)) {
-    return res.status(400).json({ error: 'document_type must be one of: ' + ALLOWED_DOCUMENT_TYPES.join(', ') });
+  if (!document_type) {
+    return res.status(400).json({ error: 'document_type is required.' });
   }
 
   // Parse and validate target audience roles
@@ -94,7 +94,8 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
   }
 
   const ext = req.file.originalname.split('.').pop();
-  const storagePath = `${document_type}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const safeDocType = document_type.replace(/[^a-zA-Z0-9]/g, '_');
+  const storagePath = `${safeDocType}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
@@ -141,9 +142,6 @@ router.get('/', authenticate, async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (document_type) {
-    if (!ALLOWED_DOCUMENT_TYPES.includes(document_type)) {
-      return res.status(400).json({ error: 'Invalid document_type filter.' });
-    }
     query = query.eq('document_type', document_type);
   }
 
@@ -192,6 +190,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
   return res.json(data);
 });
+
 // ── GET /api/academic-records/documents/:id/preview — signed URL for inline viewing ──
 router.get('/:id/preview', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -219,7 +218,7 @@ router.get('/:id/preview', authenticate, async (req, res) => {
 
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(doc.file_path, 300); // 5-minute validity, enough time to load in viewer
+    .createSignedUrl(doc.file_path, 300); // 5-minute validity
 
   if (signError) {
     return res.status(500).json({ error: 'Failed to generate preview link: ' + signError.message });
@@ -227,6 +226,44 @@ router.get('/:id/preview', authenticate, async (req, res) => {
 
   return res.json({ url: signed.signedUrl, file_type: doc.file_type, file_name: doc.file_name });
 });
+
+// ── GET /api/academic-records/documents/:id/download — signed URL for downloading ──
+// Gi-add ni para sa Download Button sa frontend
+router.get('/:id/download', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const userRole = req.user.role;
+  const isPrivileged = userRole === 'dean' || userRole === 'admin';
+
+  const { data: doc, error: fetchError } = await supabase
+    .from('academic_documents')
+    .select('file_path, status, target_roles')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchError) {
+    return res.status(500).json({ error: fetchError.message });
+  }
+  if (!doc) {
+    return res.status(404).json({ error: 'Document not found.' });
+  }
+
+  if (!isPrivileged) {
+    if (doc.status === 'archived' || !doc.target_roles.includes(userRole)) {
+      return res.status(403).json({ error: 'You do not have permission to download this document.' });
+    }
+  }
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(doc.file_path, 300, { download: true }); // Gi-butangan og download: true
+
+  if (signError) {
+    return res.status(500).json({ error: 'Failed to generate download link: ' + signError.message });
+  }
+
+  return res.json({ url: signed.signedUrl });
+});
+
 
 // ── PUT /api/academic-records/documents/:id — update metadata and/or replace file (Dean/Admin only) ──
 router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {
@@ -253,9 +290,6 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
   }
   if (description !== undefined) patch.description = description?.trim() || null;
   if (document_type !== undefined) {
-    if (!ALLOWED_DOCUMENT_TYPES.includes(document_type)) {
-      return res.status(400).json({ error: 'Invalid document_type.' });
-    }
     patch.document_type = document_type;
   }
   if (status !== undefined) {
@@ -288,7 +322,8 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
     }
 
     const ext = req.file.originalname.split('.').pop();
-    const newPath = `${document_type || 'general'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const safeDocType = (document_type || 'general').replace(/[^a-zA-Z0-9]/g, '_');
+    const newPath = `${safeDocType}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)

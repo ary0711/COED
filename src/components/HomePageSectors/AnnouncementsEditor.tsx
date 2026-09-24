@@ -1,4 +1,5 @@
 import React from "react";
+import { Upload, X, Image as ImageIcon } from "lucide-react";
 
 interface Props {
   announcements: any[];
@@ -160,6 +161,24 @@ export function AnnouncementsEditor({
     );
   };
 
+  // ===================================================
+  // HANDLE IMAGE UPLOAD
+  // ===================================================
+
+  const handleImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Convert the file to a Base64 string for preview and saving
+    // Note: If you prefer to upload to Supabase Storage first, 
+    // you would place your Supabase upload logic here instead.
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      updateAnnouncement(index, "image_url", reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="bg-white rounded-xl p-6 shadow mb-6">
 
@@ -173,8 +192,7 @@ export function AnnouncementsEditor({
         </h2>
 
         <p className="text-sm text-gray-500 mt-1">
-          Edit your announcement content and choose a
-          color for each announcement.
+          Edit your announcement content, upload a photo, and choose a color for each announcement.
         </p>
       </div>
 
@@ -195,6 +213,52 @@ export function AnnouncementsEditor({
               key={announcement.id}
               className="border border-gray-200 rounded-xl p-5 mb-5 bg-gray-50"
             >
+
+              {/* ========================================= */}
+              {/* IMAGE UPLOAD */}
+              {/* ========================================= */}
+
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Announcement Photo (Optional)
+              </label>
+
+              {announcement.image_url ? (
+                <div className="relative mb-4 w-full rounded-lg overflow-hidden border border-gray-200 group bg-white flex justify-center">
+                  <img 
+                    src={announcement.image_url} 
+                    alt="Announcement Preview" 
+                    className="w-full h-auto max-h-[600px] object-contain"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                      onClick={() => updateAnnouncement(index, "image_url", "")}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors shadow-lg"
+                    >
+                      <X className="w-4 h-4" /> Remove Photo
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-white hover:bg-gray-50 transition-colors group">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <div className="w-10 h-10 mb-2 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm text-gray-500 font-medium">
+                        <span className="text-blue-600">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">PNG, JPG, or GIF</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => handleImageUpload(index, e)} 
+                    />
+                  </label>
+                </div>
+              )}
 
               {/* ========================================= */}
               {/* TITLE */}
@@ -252,81 +316,81 @@ export function AnnouncementsEditor({
                 Announcement Color
               </label>
 
-             {/* ========================================= */}
-{/* COLOR OPTIONS */}
-{/* ========================================= */}
+              {/* ========================================= */}
+              {/* COLOR OPTIONS */}
+              {/* ========================================= */}
 
-<div className="flex flex-wrap items-center gap-4 mb-4">
-  {COLOR_OPTIONS.map((option) => {
-    const isSelected = currentColor === option.value;
+              <div className="flex flex-wrap items-center gap-4 mb-4">
+                {COLOR_OPTIONS.map((option) => {
+                  const isSelected = currentColor === option.value;
 
-    return (
-      <button
-        key={option.value}
-        type="button"
-        title={option.name}
-        aria-label={`Select ${option.name} color`}
-        onClick={() =>
-          updateAnnouncement(
-            index,
-            "color",
-            option.value
-          )
-        }
-        className={`
-          relative
-          w-11
-          h-11
-          rounded-full
-          ${option.className}
-          transition-all
-          duration-200
-          hover:scale-110
-          active:scale-95
-          focus:outline-none
-          focus:ring-2
-          focus:ring-blue-300
-          focus:ring-offset-2
-          ${
-            isSelected
-              ? "ring-4 ring-blue-300 ring-offset-2 scale-110"
-              : "ring-1 ring-gray-200"
-          }
-        `}
-      >
-        {isSelected && (
-          <span
-            className="
-              absolute
-              inset-0
-              flex
-              items-center
-              justify-center
-            "
-          >
-            <span
-              className="
-                w-5
-                h-5
-                bg-white
-                text-blue-600
-                rounded-full
-                flex
-                items-center
-                justify-center
-                text-xs
-                font-bold
-                shadow
-              "
-            >
-              ✓
-            </span>
-          </span>
-        )}
-      </button>
-    );
-  })}
-</div>
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      title={option.name}
+                      aria-label={`Select ${option.name} color`}
+                      onClick={() =>
+                        updateAnnouncement(
+                          index,
+                          "color",
+                          option.value
+                        )
+                      }
+                      className={`
+                        relative
+                        w-11
+                        h-11
+                        rounded-full
+                        ${option.className}
+                        transition-all
+                        duration-200
+                        hover:scale-110
+                        active:scale-95
+                        focus:outline-none
+                        focus:ring-2
+                        focus:ring-blue-300
+                        focus:ring-offset-2
+                        ${
+                          isSelected
+                            ? "ring-4 ring-blue-300 ring-offset-2 scale-110"
+                            : "ring-1 ring-gray-200"
+                        }
+                      `}
+                    >
+                      {isSelected && (
+                        <span
+                          className="
+                            absolute
+                            inset-0
+                            flex
+                            items-center
+                            justify-center
+                          "
+                        >
+                          <span
+                            className="
+                              w-5
+                              h-5
+                              bg-white
+                              text-blue-600
+                              rounded-full
+                              flex
+                              items-center
+                              justify-center
+                              text-xs
+                              font-bold
+                              shadow
+                            "
+                          >
+                            ✓
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
               {/* ========================================= */}
               {/* CURRENT DATABASE VALUE */}
@@ -381,12 +445,24 @@ export function AnnouncementsEditor({
                   `}
                 >
 
-                  <h3 className="text-lg font-bold">
+                  {/* PREVIEW IMAGE */}
+                  {announcement.image_url && (
+                    <div className="mb-4 rounded-lg overflow-hidden border border-white/20 shadow-sm bg-white/10 flex justify-center">
+                      <img 
+                        src={announcement.image_url} 
+                        alt="Preview" 
+                        className="w-full h-auto max-h-[600px] object-contain"
+                      />
+                    </div>
+                  )}
+
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    {!announcement.image_url && <ImageIcon className="w-5 h-5 opacity-70" />}
                     {announcement.title ||
                       "Announcement Title"}
                   </h3>
 
-                  <p className="text-sm text-white/90 mt-1">
+                  <p className="text-sm text-white/90 mt-2">
                     {announcement.description ||
                       "Announcement description will appear here."}
                   </p>
@@ -405,7 +481,7 @@ export function AnnouncementsEditor({
       {/* ================================================= */}
 
       {announcements.length === 0 && (
-        <div className="text-center py-10 text-gray-500">
+        <div className="text-center py-10 text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
 
           <p className="font-medium">
             No announcements available.

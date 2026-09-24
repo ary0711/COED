@@ -24,6 +24,15 @@ const upload = multer({
 
 const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
 
+const ALLOWED_SDGS = [
+  'SDG 1: No Poverty',
+  'SDG 3: Good Health & Well-being',
+  'SDG 4: Quality Education',
+  'SDG 5: Gender Equality',
+  'SDG 9: Industry, Innovation, & Infrastructure',
+  'SDG 16: Peace, Justice, & Strong Institutions',
+];
+
 // GET /api/research-submissions/mine
 router.get('/mine', authenticate, async (req, res) => {
   const { data, error } = await supabase
@@ -103,7 +112,7 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   return res.json(merged);
 });
 
-// PATCH /api/research-submissions/:id/status (Dean-only)
+// PATCH /api/research-submissions/:id/status (Dean-only review)
 router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
   const { id } = req.params;
   const { status, dean_remarks } = req.body;
@@ -142,10 +151,24 @@ router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
   return res.json(data);
 });
 
-// POST /api/research-submissions
-// Changed from upload.single('file') to upload.any() to handle multiple files
+// POST /api/research-submissions (Create New Submission)
 router.post('/', authenticate, upload.any(), async (req, res) => {
-  const { title, type, category, date_received } = req.body;
+  const {
+    title,
+    type,
+    category,
+    date_received,
+    publication_link,
+    description,
+    start_date,
+    end_date,
+    funding_source,
+    authors,
+    budget,
+    partner_organization,
+    beneficiaries,
+    sdg_alignment,
+  } = req.body;
 
   if (!title || !String(title).trim()) {
     return res.status(400).json({ error: 'Title is required.' });
@@ -154,10 +177,54 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
     return res.status(400).json({ error: 'Invalid type.' });
   }
 
+  if (start_date && isNaN(Date.parse(start_date))) {
+    return res.status(400).json({ error: 'Invalid Start Date format.' });
+  }
+  if (end_date && isNaN(Date.parse(end_date))) {
+    return res.status(400).json({ error: 'Invalid End Date format.' });
+  }
+  if (start_date && end_date && new Date(end_date) < new Date(start_date)) {
+    return res.status(400).json({ error: 'End Date cannot be earlier than Start Date.' });
+  }
+
+  let parsedBudget = null;
+  if (type === 'research' && budget !== undefined && budget !== null && budget !== '') {
+    parsedBudget = parseFloat(budget);
+    if (isNaN(parsedBudget) || parsedBudget < 0) {
+      return res.status(400).json({ error: 'Budget must be a non-negative number.' });
+    }
+  }
+
+  let parsedBeneficiaries = null;
+  let parsedSdgs = [];
+
+  if (type === 'extension') {
+    if (beneficiaries !== undefined && beneficiaries !== null && beneficiaries !== '') {
+      parsedBeneficiaries = parseInt(beneficiaries, 10);
+      if (isNaN(parsedBeneficiaries) || parsedBeneficiaries < 0) {
+        return res.status(400).json({ error: 'Beneficiaries must be a non-negative whole number.' });
+      }
+    }
+
+    if (sdg_alignment) {
+      try {
+        parsedSdgs = typeof sdg_alignment === 'string' ? JSON.parse(sdg_alignment) : sdg_alignment;
+        if (!Array.isArray(parsedSdgs)) {
+          return res.status(400).json({ error: 'SDG alignment must be an array.' });
+        }
+        const invalidSdg = parsedSdgs.find((sdg) => !ALLOWED_SDGS.includes(sdg));
+        if (invalidSdg) {
+          return res.status(400).json({ error: `Invalid SDG selection: "${invalidSdg}".` });
+        }
+      } catch {
+        return res.status(400).json({ error: 'Malformed SDG data received.' });
+      }
+    }
+  }
+
   const filesArray = [];
   const uploadedFiles = req.files ?? [];
 
-  // Loop over every uploaded file and push to Supabase storage
   for (const file of uploadedFiles) {
     const ext = file.originalname.split('.').pop();
     const filePath = `${req.user.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -181,7 +248,6 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
     });
   }
 
-  // Fallback to preserve legacy single-file fields
   const firstFile = filesArray[0] || null;
 
   const insertPayload = {
@@ -190,10 +256,20 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
     type,
     category: category || null,
     date_received: date_received || null,
+    description: description?.trim() || null,
+    start_date: start_date || null,
+    end_date: end_date || null,
+    publication_link: type === 'research' ? (publication_link?.trim() || null) : null,
+    funding_source: type === 'research' ? (funding_source?.trim() || null) : null,
+    authors: type === 'research' ? (authors?.trim() || null) : null,
+    budget: type === 'research' ? parsedBudget : null,
+    partner_organization: type === 'extension' ? (partner_organization?.trim() || null) : null,
+    beneficiaries: type === 'extension' ? parsedBeneficiaries : null,
+    sdg_alignment: type === 'extension' ? parsedSdgs : [],
     file_path: firstFile ? firstFile.path : null,
     file_url: firstFile ? firstFile.url : null,
     file_name: firstFile ? firstFile.name : null,
-    files: filesArray, // Array of all uploaded files stored as JSONB
+    files: filesArray,
     status: 'pending',
   };
 
@@ -206,7 +282,115 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
   if (error) {
     return res.status(500).json({ error: error.message });
   }
+
   return res.status(201).json(data);
+});
+
+// PUT /api/research-submissions/:id (Edit & Resubmit)
+router.put('/:id', authenticate, upload.any(), async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.userId;
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('research_submissions')
+    .select('*')
+    .eq('id', id)
+    .eq('submitted_by', userId)
+    .single();
+
+  if (fetchErr || !existing) {
+    return res.status(404).json({ error: 'Submission not found or access denied.' });
+  }
+
+  if (existing.status === 'approved') {
+    return res.status(400).json({ error: 'Approved submissions cannot be modified.' });
+  }
+
+  const {
+    title,
+    description,
+    start_date,
+    end_date,
+    publication_link,
+    funding_source,
+    authors,
+    budget,
+    partner_organization,
+    beneficiaries,
+    sdg_alignment,
+  } = req.body;
+
+  if (start_date && end_date && new Date(end_date) < new Date(start_date)) {
+    return res.status(400).json({ error: 'End Date cannot be earlier than Start Date.' });
+  }
+
+  let updatedFiles = Array.isArray(existing.files) ? [...existing.files] : [];
+  const uploadedFiles = req.files ?? [];
+
+  for (const file of uploadedFiles) {
+    const ext = file.originalname.split('.').pop();
+    const filePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(filePath, file.buffer, { contentType: file.mimetype });
+
+    if (!uploadError) {
+      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+      updatedFiles.push({
+        name: file.originalname,
+        url: urlData.publicUrl,
+        path: filePath,
+        size: file.size,
+        type: file.mimetype,
+      });
+    }
+  }
+
+  let parsedBudget = existing.budget;
+  if (existing.type === 'research' && budget !== undefined && budget !== '') {
+    parsedBudget = parseFloat(budget);
+  }
+
+  let parsedBeneficiaries = existing.beneficiaries;
+  let parsedSdgs = existing.sdg_alignment;
+  if (existing.type === 'extension') {
+    if (beneficiaries !== undefined && beneficiaries !== '') {
+      parsedBeneficiaries = parseInt(beneficiaries, 10);
+    }
+    if (sdg_alignment) {
+      try {
+        parsedSdgs = typeof sdg_alignment === 'string' ? JSON.parse(sdg_alignment) : sdg_alignment;
+      } catch {}
+    }
+  }
+
+  const updatePayload = {
+    title: title ? String(title).trim() : existing.title,
+    description: description !== undefined ? description.trim() : existing.description,
+    start_date: start_date || null,
+    end_date: end_date || null,
+    publication_link: publication_link !== undefined ? publication_link.trim() : existing.publication_link,
+    funding_source: funding_source !== undefined ? funding_source.trim() : existing.funding_source,
+    authors: authors !== undefined ? authors.trim() : existing.authors,
+    budget: parsedBudget,
+    partner_organization: partner_organization !== undefined ? partner_organization.trim() : existing.partner_organization,
+    beneficiaries: parsedBeneficiaries,
+    sdg_alignment: parsedSdgs,
+    files: updatedFiles,
+    status: 'pending', // Resubmissions re-enter the pending review queue
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('research_submissions')
+    .update(updatePayload)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
 });
 
 module.exports = router;

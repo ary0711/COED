@@ -212,3 +212,76 @@ export async function getProgramStatistics() {
     error: null,
   };
 }
+
+// ============================================================
+// SAVE ANNOUNCEMENTS
+// Handles base64 image uploads during the save process and 
+// upserts the data into the homepage_announcements table.
+// ============================================================
+
+export async function saveHomepageAnnouncements(announcements: any[]) {
+  try {
+    const processedAnnouncements = await Promise.all(
+      announcements.map(async (announcement) => {
+        let finalImageUrl = announcement.image_url;
+
+        // If the image_url is a new Base64 string (newly uploaded photo)
+        if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
+          // Convert Base64 to a Blob for Supabase upload
+          const response = await fetch(finalImageUrl);
+          const blob = await response.blob();
+          const ext = blob.type.split('/')[1] || 'jpeg';
+          
+          // Generate a unique filename
+          const fileName = `announcements/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+
+          // Upload to the 'announcements' bucket
+          const { error: uploadError } = await supabase.storage
+            .from('announcements')
+            .upload(fileName, blob, {
+              contentType: blob.type,
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.error('Error uploading announcement image:', uploadError);
+            throw uploadError;
+          }
+
+          // Get the permanent public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('announcements')
+            .getPublicUrl(fileName);
+
+          finalImageUrl = publicUrl;
+        }
+
+        // Return the clean object to be saved to the database
+        return {
+          id: announcement.id,
+          title: announcement.title,
+          description: announcement.description,
+          color: announcement.color,
+          // If finalImageUrl is empty (user clicked X), save as null
+          image_url: finalImageUrl || null,
+          announcement_date: announcement.announcement_date,
+          sort_order: announcement.sort_order,
+        };
+      })
+    );
+
+    const { error } = await supabase
+      .from('homepage_announcements')
+      .upsert(processedAnnouncements);
+
+    if (error) {
+      console.error('Error saving homepage announcements:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Unexpected error saving homepage announcements:', error);
+    return { success: false, error };
+  }
+}

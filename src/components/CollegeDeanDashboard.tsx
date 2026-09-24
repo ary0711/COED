@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -54,6 +54,7 @@ import {
   BarChart3,
   Megaphone,
   Plus,
+  ExternalLink,
   Edit,
   Trash2,
   Download,
@@ -84,6 +85,18 @@ import {
   LogOut,
   Info,
   KeyRound,
+  Loader2,
+  Building,
+  Target,
+  DollarSign,
+  Calendar as CalendarIcon,
+  Archive,
+  MapPin,
+  Clock,
+  Tag,
+  Filter,
+  CalendarDays,
+  Pencil,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -220,10 +233,18 @@ export function CollegeDeanDashboard({
   onLogout,
 }: CollegeDeanDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inquiriesInitialTab, setInquiriesInitialTab] = useState<'student' | 'alumni' | 'contact'>('student');
 
   const handleMenuItemClick = (id: string) => {
     setActiveMenuItem(id);
     setSidebarOpen(false);
+  };
+
+  const handleNavigate = (menuItem: string, subTab?: string) => {
+    setActiveMenuItem(menuItem);
+    if (menuItem === 'inquiries' && subTab) {
+      setInquiriesInitialTab(subTab as 'student' | 'alumni' | 'contact');
+    }
   };
 
   return (
@@ -259,14 +280,14 @@ export function CollegeDeanDashboard({
         </div>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {activeMenuItem === 'dashboard'     && <DashboardView onGoToInquiries={() => setActiveMenuItem('inquiries')} />}
+          {activeMenuItem === 'dashboard'     && <DashboardView onNavigate={handleNavigate} />}
           {activeMenuItem === 'users'         && <UserManagement />}
           {activeMenuItem === 'records'       && <AcademicRecords />}
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
-          {activeMenuItem === 'inquiries'     && <InquiriesManagement />}
+          {activeMenuItem === 'inquiries'     && <InquiriesManagement initialTab={inquiriesInitialTab} />}
           {activeMenuItem === 'landing'       && <LandingPageManagement />}
           {activeMenuItem === 'announcements' && <AnnouncementsContent />}
           {activeMenuItem === 'reports'       && <ReportsAnalytics />}
@@ -415,7 +436,8 @@ function AlumniEmploymentCard() {
 }
 
 // ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
-function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
+// ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
+function InquiriesSummaryCard({ onNavigateToInquiries }: { onNavigateToInquiries: (tab?: 'student' | 'alumni' | 'contact') => void }) {
   const [studentPending, setStudentPending] = useState(0);
   const [alumniPending, setAlumniPending]   = useState(0);
   const [contactPending, setContactPending] = useState(0);
@@ -476,21 +498,33 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#DBEAFE' }}>
+          <button 
+            onClick={() => onNavigateToInquiries('student')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#DBEAFE' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#1D4ED8', opacity: 0.8 }}>Student</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#1D4ED8' }}>{loading ? '—' : studentPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#1D4ED8', opacity: 0.65 }}>unreplied</p>
-          </div>
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#FCE7F3' }}>
+          </button>
+          <button 
+            onClick={() => onNavigateToInquiries('alumni')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#FCE7F3' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#BE185D', opacity: 0.8 }}>Alumni</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#BE185D' }}>{loading ? '—' : alumniPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#BE185D', opacity: 0.65 }}>unreplied</p>
-          </div>
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#D1FAE5' }}>
+          </button>
+          <button 
+            onClick={() => onNavigateToInquiries('contact')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#D1FAE5' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#059669', opacity: 0.8 }}>Contact</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#059669' }}>{loading ? '—' : contactPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#059669', opacity: 0.65 }}>unreplied</p>
-          </div>
+          </button>
         </div>
 
         <div className="flex-1 space-y-2 min-h-0 overflow-y-auto">
@@ -527,8 +561,8 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
         </div>
 
         <button
-          onClick={onViewAll}
-          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1E3A8A] hover:bg-blue-50 py-2 rounded-lg transition-colors flex-shrink-0"
+          onClick={() => onNavigateToInquiries()}
+          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1E3A8A] hover:bg-blue-50 py-2 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
         >
           View all inquiries <ArrowRight className="w-3.5 h-3.5" />
         </button>
@@ -538,7 +572,7 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 }
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
-function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
+function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?: string) => void }) {
   const [facultyCount, setFacultyCount] = useState<number>(0);
   const [facultyLoading, setFacultyLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number>(0);
@@ -552,6 +586,71 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   const [alumniResponsesCount, setAlumniResponsesCount] = useState<number>(0);
   const [tracerLoading, setTracerLoading] = useState(true);
   const [tracerResponseRate, setTracerResponseRate] = useState<number>(0);
+
+  // --- STATES FOR DEPARTMENT MODAL ---
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  // UPDATE: Gi-add ang staff diri sa state type
+  const [deptStats, setDeptStats] = useState<{ name: string; faculty: number; students: number; staff: number }[]>([]);
+  const [loadingDeptStats, setLoadingDeptStats] = useState(false);
+
+  // Function to fetch department statistics dynamically
+  const openDeptModal = async () => {
+    setIsDeptModalOpen(true);
+    setLoadingDeptStats(true);
+    try {
+      // 1. Fetch all official department names
+      const { data: depts } = await supabase.from('departments').select('name');
+      
+      // 2. Fetch all faculty, student, AND staff profiles with their departments
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('department, role')
+        .in('role', ['faculty', 'student', 'staff']); // Gi-apil ang 'staff'
+
+      const statsMap: Record<string, { originalName: string; faculty: number; students: number; staff: number }> = {};
+      
+      // Initialize map with known departments from the DB
+      if (depts) {
+        depts.forEach(d => {
+          // Use uppercase key to prevent case-sensitivity duplicates (e.g. BEEd vs BEED)
+          const key = d.name.trim().toUpperCase();
+          statsMap[key] = { originalName: d.name.trim(), faculty: 0, students: 0, staff: 0 };
+        });
+      }
+
+      // Aggregate counts from profiles that HAVE an assigned department
+      if (profiles) {
+        profiles.forEach(p => {
+          if (!p.department) return; // Skip accounts with no department
+          
+          const key = p.department.trim().toUpperCase();
+          
+          // Only count if the department actually exists in the official DB map
+          if (statsMap[key]) {
+            if (p.role === 'faculty') statsMap[key].faculty++;
+            if (p.role === 'student') statsMap[key].students++;
+            if (p.role === 'staff') statsMap[key].staff++; // Ihap para sa staff
+          }
+        });
+      }
+
+      // Convert map back to an array for rendering
+      const statsArray = Object.keys(statsMap)
+        .map(key => ({
+          name: statsMap[key].originalName,
+          faculty: statsMap[key].faculty,
+          students: statsMap[key].students,
+          staff: statsMap[key].staff
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setDeptStats(statsArray);
+    } catch (err) {
+      console.error('Failed to load department stats:', err);
+    } finally {
+      setLoadingDeptStats(false);
+    }
+  };
 
   // 1. Department count
   useEffect(() => {
@@ -699,29 +798,33 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   }, [loadPendingReports, loadTracerStats]);
 
   const mobileMetrics = [
-    { label: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
-    { label: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'All operational', color: '#7C3AED', bg: '#EDE9FE' },
-    { label: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), sub: 'Awaiting Dean review', color: '#B45309', bg: '#FEF3C7' },
-    { label: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), sub: `${tracerResponseRate}% response rate`, color: '#BE185D', bg: '#FCE7F3' },
-    { label: 'Evaluation Rating', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
-    { label: 'Research Submitted', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Completion Rate', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
+    { label: 'Total Faculty', target: 'faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
+    { label: 'Total Students', target: 'users', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Active Departments', target: 'departments_modal', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'Click to view breakdown', color: '#7C3AED', bg: '#EDE9FE' },
+    { label: 'Pending Reports', target: 'reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), sub: 'Awaiting Dean review', color: '#B45309', bg: '#FEF3C7' },
+    { label: 'Alumni Responses', target: 'alumni', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), sub: `${tracerResponseRate}% response rate`, color: '#BE185D', bg: '#FCE7F3' },
+    { label: 'Evaluation Rating', target: '', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
+    { label: 'Research Submitted', target: 'research', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Completion Rate', target: '', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       <div className="mb-4">
         {/* MOBILE */}
         <div className="flex gap-3 overflow-x-auto pb-4 sm:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
           {[
-            { title: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
-            { title: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
-            { title: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
-            { title: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: String(pendingReportsCount), trendUp: false },
-            { title: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: `${tracerResponseRate}%`, trendUp: true },
+            { title: 'Total Faculty', target: 'faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
+            { title: 'Total Students', target: 'users', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
+            { title: 'Active Departments', target: 'departments_modal', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
+            { title: 'Pending Reports', target: 'reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: String(pendingReportsCount), trendUp: false },
+            { title: 'Alumni Responses', target: 'alumni', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: `${tracerResponseRate}%`, trendUp: true },
           ].map((card) => (
-            <div key={card.title} className="flex-shrink-0 w-48 h-40">
+            <div 
+              key={card.title} 
+              className="flex-shrink-0 w-48 h-40 cursor-pointer transition-transform hover:scale-105 active:scale-95" 
+              onClick={() => card.target === 'departments_modal' ? openDeptModal() : onNavigate(card.target)}
+            >
               <SummaryCard {...card} />
             </div>
           ))}
@@ -729,19 +832,20 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
         {/* DESKTOP */}
         <div className="hidden sm:grid sm:grid-cols-3 xl:grid-cols-5 gap-4">
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('faculty')}>
             <SummaryCard title="Total Faculty" value={facultyLoading ? '...' : facultyCount.toLocaleString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('users')}>
             <SummaryCard title="Total Students" value={studentLoading ? '...' : studentCount.toLocaleString()} icon={Users} iconColor="#10B981" iconBgColor="#D1FAE5" />
           </div>
-          <div className="min-h-[160px]">
+          {/* Active Departments Modal Trigger */}
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={openDeptModal}>
             <SummaryCard title="Active Departments" value={departmentLoading ? '...' : departmentCount.toLocaleString()} icon={Building2} iconColor="#8B5CF6" iconBgColor="#EDE9FE" />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('reports')}>
             <SummaryCard title="Pending Reports" value={pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString()} icon={FileText} iconColor="#F59E0B" iconBgColor="#FEF3C7" trend={String(pendingReportsCount)} trendUp={false} />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('alumni')}>
             <SummaryCard title="Alumni Responses" value={tracerLoading ? '...' : alumniResponsesCount.toLocaleString()} icon={UserCheck} iconColor="#EF4444" iconBgColor="#FEE2E2" trend={`${tracerResponseRate}%`} trendUp={true} />
           </div>
         </div>
@@ -754,7 +858,12 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         </p>
         <div className="grid grid-cols-2 gap-3">
           {mobileMetrics.map((m) => (
-            <div key={m.label} className="rounded-2xl p-4" style={{ backgroundColor: m.bg }}>
+            <div 
+              key={m.label} 
+              className={`rounded-2xl p-4 ${m.target ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''}`}
+              style={{ backgroundColor: m.bg }}
+              onClick={() => m.target === 'departments_modal' ? openDeptModal() : (m.target && onNavigate(m.target))}
+            >
               <p className="text-xs font-medium mb-1" style={{ color: m.color, opacity: 0.75 }}>{m.label}</p>
               <p className="text-2xl font-bold leading-none mb-1" style={{ color: m.color }}>{m.value}</p>
               <p className="text-xs" style={{ color: m.color, opacity: 0.6 }}>{m.sub}</p>
@@ -764,31 +873,138 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
       </div>
 
       <div className="hidden lg:grid lg:grid-cols-2 gap-4 flex-1 min-h-0">
-          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
-            <AlumniEmploymentCard />
-          </div>
-          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
-            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
-          </div>
+        <div className="min-h-0 lg:max-h-[calc(100vh-280px)] cursor-pointer transition-transform hover:scale-[1.02] active:scale-95" onClick={() => onNavigate('alumni')}>
+          <AlumniEmploymentCard />
         </div>
+        <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
+          <InquiriesSummaryCard onNavigateToInquiries={(tab) => onNavigate('inquiries', tab)} />
+        </div>
+      </div>
 
-        <div className="lg:hidden flex flex-col gap-4">
-          <div className="h-80">
-            <AlumniEmploymentCard />
-          </div>
-          <div className="h-80">
-            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+      <div className="lg:hidden flex flex-col gap-4">
+        <div className="h-80 cursor-pointer transition-transform hover:scale-[1.02] active:scale-95" onClick={() => onNavigate('alumni')}>
+          <AlumniEmploymentCard />
+        </div>
+        <div className="h-80">
+          <InquiriesSummaryCard onNavigateToInquiries={(tab) => onNavigate('inquiries', tab)} />
+        </div>
+      </div>
+
+      {/* --- DEPARTMENT MODAL OVERLAY --- */}
+      {isDeptModalOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Departments Overview</h2>
+                  <p className="text-[11px] text-gray-500">Live breakdown of registered accounts</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsDeptModalOpen(false)} 
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 overflow-y-auto flex-1">
+              {loadingDeptStats ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-sm font-medium text-gray-500">Loading department statistics...</p>
+                </div>
+              ) : deptStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                  <Building2 className="w-10 h-10 mb-2 opacity-30" />
+                  <p className="text-sm font-medium">No official departments found.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deptStats.map(dept => (
+                    <div 
+                      key={dept.name} 
+                      className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50 hover:border-indigo-200 transition-colors shadow-sm"
+                    >
+                      <p className="font-semibold text-gray-800 text-sm truncate pr-4">{dept.name}</p>
+                      
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        {/* Students stat */}
+                        <div className="flex flex-col items-center" title="Total Students">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <Users className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.students}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Students</span>
+                        </div>
+                        
+                        <div className="w-px h-6 bg-gray-200" />
+
+                        {/* Faculty stat */}
+                        <div className="flex flex-col items-center" title="Total Faculty">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.faculty}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Faculty</span>
+                        </div>
+
+                        <div className="w-px h-6 bg-gray-200" />
+
+                        {/* Staff stat */}
+                        <div className="flex flex-col items-center" title="Total Staff">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <UserCircle className="w-3.5 h-3.5 text-amber-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.staff}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Staff</span>
+                        </div>
+
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+              <button 
+                onClick={() => setIsDeptModalOpen(false)}
+                className="px-5 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
+      )}
     </div>
   );
 }
 
+
 // ─── User Management ──────────────────────────────────────────────────────────
+const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
+  student: { length: 7, label: '7 digits' },
+  faculty: { length: 6, label: '6 digits' },
+  staff:   { length: 6, label: '6 digits' },
+  admin:   { length: 6, label: '6 digits' },
+  Admin:   { length: 6, label: '6 digits' },
+  dean:    { length: 6, label: '6 digits' },
+  Dean:    { length: 6, label: '6 digits' },
+  department_chair: { length: 6, label: '6 digits' },
+  'Department Chair': { length: 6, label: '6 digits' },
+  alumni:  { length: 5, label: '5 digits' },
+};
+
 function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
-  const [users, setUsers]               = useState<Profile[]>([]);
-  const [filtered, setFiltered]         = useState<Profile[]>([]);
+  const [users, setUsers]               = useState<any[]>([]);
+  const [filtered, setFiltered]         = useState<any[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [roleFilter, setRoleFilter]     = useState('all');
@@ -798,13 +1014,13 @@ function UserManagement() {
   const [activating, setActivating]     = useState<string | null>(null);
 
   const [modal, setModal]         = useState<'add' | 'edit' | 'delete' | null>(null);
-  const [selected, setSelected]   = useState<Profile | null>(null);
+  const [selected, setSelected]   = useState<any | null>(null);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
   const [fetchError, setFetchError] = useState('');
 
   const [form, setForm] = useState({
-    full_name: '', email: '', role: 'student',
+    username: '', full_name: '', email: '', role: 'student',
     id_number: '', department: '', status: 'active', password: '',
   });
 
@@ -839,6 +1055,7 @@ function UserManagement() {
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(u =>
+        (u.username || '').toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         u.id_number.toLowerCase().includes(q) ||
@@ -857,14 +1074,15 @@ function UserManagement() {
   const pendingCount = users.filter(u => u.status === 'pending').length;
 
   const openAdd = () => {
-    setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
     setShowPassword(false);
     setFormError('');
     setModal('add');
   };
-  const openEdit = (user: Profile) => {
+  const openEdit = (user: any) => {
     setSelected(user);
     setForm({
+      username: user.username || '',
       full_name: user.full_name, email: user.email, role: user.role,
       id_number: user.id_number, department: user.department ?? '',
       status: user.status, password: '',
@@ -873,25 +1091,40 @@ function UserManagement() {
     setFormError('');
     setModal('edit');
   };
-  const openDelete = (user: Profile) => { setSelected(user); setModal('delete'); };
+  const openDelete = (user: any) => { setSelected(user); setModal('delete'); };
 
   const handleAdd = async () => {
     setFormError('');
+    if (!form.username.trim()) { setFormError('Username is required.'); return; }
     if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
     if (!form.email.trim()) { setFormError('Email address is required.'); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.email.trim())) { setFormError('Please enter a valid email address.'); return; }
     if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+
+    const idConfig = ID_LENGTH_CONFIG[form.role];
+    if (idConfig) {
+      const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+      if (!digitRegex.test(form.id_number.trim())) {
+        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        return;
+      }
+    }
+
     if (!form.password) { setFormError('Password is required.'); return; }
     if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
 
     setSaving(true);
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
         body: JSON.stringify({
-          username: form.email.trim(),
+          username: form.username.trim(),
           email: form.email.trim(),
           password: form.password,
           role: form.role,
@@ -917,7 +1150,7 @@ function UserManagement() {
             case 400: errorMessage = 'Invalid user information. Please check the form and try again.'; break;
             case 401: errorMessage = 'You are not authorized to create this account.'; break;
             case 403: errorMessage = 'You do not have permission to create users.'; break;
-            case 409: errorMessage = 'A user with this email or ID number already exists.'; break;
+            case 409: errorMessage = 'A user with this username, email or ID number already exists.'; break;
             case 500: errorMessage = 'The server encountered an error while creating the account.'; break;
             default:  errorMessage = `Failed to create account. Server returned ${response.status}.`;
           }
@@ -928,7 +1161,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       setShowPassword(false);
       setFormError('');
       await fetchUsers();
@@ -945,8 +1178,19 @@ function UserManagement() {
 
   const handleEdit = async () => {
     setFormError('');
+    if (!form.username.trim()) { setFormError('Username is required.'); return; }
     if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
     if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+
+    const idConfig = ID_LENGTH_CONFIG[form.role];
+    if (idConfig) {
+      const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+      if (!digitRegex.test(form.id_number.trim())) {
+        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        return;
+      }
+    }
+
     if (!selected) return;
 
     setSaving(true);
@@ -959,6 +1203,7 @@ function UserManagement() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          username: form.username.trim(),
           full_name: form.full_name.trim(),
           role: form.role,
           id_number: form.id_number.trim(),
@@ -976,7 +1221,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error.message || 'Unable to connect to the backend.');
@@ -990,9 +1235,13 @@ function UserManagement() {
     setFormError('');
     setSaving(true);
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
       });
 
       const text = await response.text();
@@ -1011,7 +1260,7 @@ function UserManagement() {
       setModal(null);
       setSelected(null);
       setFormError('');
-      setForm({ full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error?.message || 'Unable to connect to the backend server.');
@@ -1020,7 +1269,7 @@ function UserManagement() {
     }
   };
 
-  const activatePending = async (user: Profile) => {
+  const activatePending = async (user: any) => {
     setActivating(user.id);
     try {
       const token = localStorage.getItem('token');
@@ -1037,13 +1286,16 @@ function UserManagement() {
 
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profile) {
-        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.email).single();
+        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.username || profile.email).single();
         if (!existingUser) {
           await fetch('http://localhost:5000/api/auth/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
             body: JSON.stringify({
-              username: profile.email,
+              username: profile.username || profile.email,
               password: 'ChangeMe@123',
               role: profile.role,
             }),
@@ -1056,7 +1308,7 @@ function UserManagement() {
     }
   };
 
-  const toggleStatus = async (user: Profile) => {
+  const toggleStatus = async (user: any) => {
     if (user.status === 'pending') return;
     const next = user.status === 'active' ? 'inactive' : 'active';
     const token = localStorage.getItem('token');
@@ -1114,7 +1366,7 @@ function UserManagement() {
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Search name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" placeholder="Search username, name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -1151,6 +1403,7 @@ function UserManagement() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Dept.</th>
@@ -1176,6 +1429,9 @@ function UserManagement() {
                             <div className="text-xs text-gray-400 truncate max-w-[120px] sm:max-w-none">{user.email}</div>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                        <span className="text-xs sm:text-sm font-medium text-gray-900">{user.username || '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <span className="text-xs sm:text-sm font-mono text-gray-700 bg-gray-100 px-1.5 sm:px-2 py-1 rounded-lg">{user.id_number}</span>
@@ -1235,7 +1491,10 @@ function UserManagement() {
       </div>
 
       {(modal === 'add' || modal === 'edit') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">{modal === 'add' ? 'Add New User' : 'Edit User'}</h2>
@@ -1243,10 +1502,17 @@ function UserManagement() {
             </div>
             {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
-                <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl text-sm" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Username *</label>
+                  <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
+                  <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                </div>
               </div>
               {modal === 'add' && (
                 <div>
@@ -1257,9 +1523,26 @@ function UserManagement() {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">ID Number *</label>
-                  <input type="text" value={form.id_number} onChange={e => setForm({ ...form, id_number: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    ID Number * ({ID_LENGTH_CONFIG[form.role]?.label || 'Digits only'})
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={ID_LENGTH_CONFIG[form.role]?.length ?? 10}
+                    placeholder={`e.g. ${'1'.repeat(ID_LENGTH_CONFIG[form.role]?.length ?? 6)}`}
+                    value={form.id_number}
+                    onChange={e => {
+                      const maxLen = ID_LENGTH_CONFIG[form.role]?.length;
+                      const cleaned = e.target.value.replace(/\D/g, '');
+                      setForm({
+                        ...form,
+                        id_number: maxLen ? cleaned.slice(0, maxLen) : cleaned,
+                      });
+                    }}
+                    className="w-full px-3 py-2 border rounded-xl text-sm" 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
@@ -1270,8 +1553,19 @@ function UserManagement() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">Role *</label>
-                  <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm">
+                  <select 
+                    value={form.role} 
+                    onChange={e => {
+                      const nextRole = e.target.value;
+                      const maxLen = ID_LENGTH_CONFIG[nextRole]?.length;
+                      setForm(prev => ({
+                        ...prev,
+                        role: nextRole,
+                        id_number: maxLen ? prev.id_number.slice(0, maxLen) : prev.id_number,
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border rounded-xl text-sm"
+                  >
                     {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
@@ -1316,10 +1610,14 @@ function UserManagement() {
       )}
 
       {modal === 'delete' && selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <h2 className="text-lg font-bold text-gray-900 mb-2">Delete User</h2>
             <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete {selected.full_name}?</p>
+            {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
             <div className="flex gap-3">
               <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
               <button onClick={handleDelete} disabled={saving} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm">
@@ -1332,8 +1630,7 @@ function UserManagement() {
     </div>
   );
 }
-
-// ─── Calendar & Activities (DEAN DASHBOARD) ───────────────────────────────────
+// ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
   id: string;
@@ -1350,6 +1647,7 @@ interface CalendarEvent {
   organizer_id?: string | null;
   created_at: string;
   updated_at: string;
+  color?: string | null; // Added for custom colors
 }
 
 interface DeptOption {
@@ -1369,12 +1667,11 @@ const TYPE_TO_COLOR: Record<string, string> = {
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
 
 const STANDARD_EVENT_TYPES = [
-  { value: 'activity', label: 'Activity' },
-  { value: 'meeting', label: 'Meeting' },
-  { value: 'deadline', label: 'Deadline' },
-  { value: 'holiday', label: 'Holiday' },
-  { value: 'exam', label: 'Exam' },
-  { value: 'other', label: 'Other (Enter custom type)...' },
+  { id: 'meeting', label: 'Meeting', color: '#3B82F6' },
+  { id: 'activity', label: 'Activity', color: '#10B981' },
+  { id: 'holiday', label: 'Holiday', color: '#8B5CF6' },
+  { id: 'deadline', label: 'Deadline', color: '#F59E0B' },
+  { id: 'exam', label: 'Exam', color: '#EF4444' },
 ];
 
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
@@ -1385,7 +1682,20 @@ const ROLE_DISPLAY_LABEL: Record<string, string> = {
   faculty: 'Faculty',
 };
 
+const AUDIENCE_LABELS: Record<string, string> = {
+  all: 'General College Community',
+  alumni: 'Alumni Only',
+  students: 'Students Only',
+  faculty: 'Faculty & Staff Only',
+};
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 function colorForCalendarEvent(ev: CalendarEvent): string {
+  if (ev.color) return ev.color;
   const t = ev.event_type?.toLowerCase() || '';
   return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
 }
@@ -1395,21 +1705,41 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
-function CalendarActivities() {
+function formatTimeFromDate(isoLike: string): string | null {
+  if (!isoLike || !isoLike.includes('T')) return null;
+  const timePart = isoLike.split('T')[1];
+  if (!timePart || timePart.startsWith('00:00:00')) return null;
+  const d = new Date(isoLike);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+export default function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
+  // Core Data States
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
+  // Primary View Mode: Active Planning vs. History / Archive
+  const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
+
+  // Calendar Navigation
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+
+  // Modals & Inspection
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Form State
   const emptyForm = {
     title: '',
     date: '',
@@ -1417,29 +1747,31 @@ function CalendarActivities() {
     description: '',
     event_type: 'activity',
     custom_event_type: '',
+    event_color: '#10B981', // Default to Activity green
     audience: 'all',
     target_department_id: '',
   };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
-  const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
+
+  // Archive Search & Filter State
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveYear, setArchiveYear] = useState<string>('all');
+  const [archiveMonth, setArchiveMonth] = useState<string>('all');
+  const [archiveType, setArchiveType] = useState<string>('all');
+  const [archiveDept, setArchiveDept] = useState<string>('all');
 
   const getToken = () => localStorage.getItem('token');
 
-  const getDepartmentColor = (name: string) => {
-    if (name === 'All Departments') return '#3B82F6';
-    if (name.toLowerCase().includes('technology and livelihood')) return '#EAB308';
-    if (name.toLowerCase().includes('math') || name.toLowerCase().includes('english')) return '#F97316';
-    if (name.toLowerCase().includes('elementary education')) return '#22C55E';
-    return '#8B5CF6';
-  };
-
-  const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const jumpToToday = () => {
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedCalendarDate(todayStr);
+  };
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -1465,8 +1797,17 @@ function CalendarActivities() {
   };
 
   const fetchDepartments = async () => {
-    const { data, error } = await supabase.from('departments').select('id, name').order('name');
-    if (!error && data) setDepartments(data);
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name')
+        .order('name');
+      if (!error && data) {
+        setDepartments(data);
+      }
+    } catch (err) {
+      console.error('Error fetching departments:', err);
+    }
   };
 
   useEffect(() => {
@@ -1489,32 +1830,126 @@ function CalendarActivities() {
     };
   }, []);
 
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    events.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (!d) return;
+      const current = map.get(d) || [];
+      current.push(ev);
+      map.set(d, current);
+    });
+    return map;
+  }, [events]);
+
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter((e) => dateOnlyStr(e.event_date) === dateStr);
+    return eventsByDate.get(dateStr) || [];
   };
 
-  const upcomingEvents = events
-    .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
-    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+  }, [events, todayStr]);
 
-  const historyEvents = events
-    .filter((e) => dateOnlyStr(e.event_date) < todayStr)
-    .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  const pastEvents = useMemo(() => {
+    return events
+      .filter((e) => dateOnlyStr(e.event_date) < todayStr)
+      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+  }, [events, todayStr]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    pastEvents.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (d) years.add(d.split('-')[0]);
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [pastEvents]);
+
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    pastEvents.forEach((ev) => {
+      if (ev.event_type) types.add(ev.event_type.toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [pastEvents]);
+
+  const filteredArchiveEvents = useMemo(() => {
+    const query = archiveSearch.toLowerCase().trim();
+    return pastEvents.filter((ev) => {
+      const date = dateOnlyStr(ev.event_date);
+      const [year, month] = date.split('-');
+
+      if (archiveYear !== 'all' && year !== archiveYear) return false;
+      if (archiveMonth !== 'all' && parseInt(month, 10) !== parseInt(archiveMonth, 10)) return false;
+      if (archiveType !== 'all' && (ev.event_type || '').toLowerCase() !== archiveType) return false;
+      if (archiveDept !== 'all') {
+        const hasDept = ev.department_ids && ev.department_ids.includes(archiveDept);
+        if (!hasDept) return false;
+      }
+
+      if (!query) return true;
+
+      const titleMatch = ev.title?.toLowerCase().includes(query);
+      const descMatch = ev.description?.toLowerCase().includes(query);
+      const locMatch = ev.location?.toLowerCase().includes(query);
+      const typeMatch = ev.event_type?.toLowerCase().includes(query);
+      return titleMatch || descMatch || locMatch || typeMatch;
+    });
+  }, [pastEvents, archiveSearch, archiveYear, archiveMonth, archiveType, archiveDept]);
+
+  const groupedArchiveEvents = useMemo(() => {
+    const groups: { [key: string]: CalendarEvent[] } = {};
+    filteredArchiveEvents.forEach((ev) => {
+      const d = dateOnlyStr(ev.event_date);
+      if (!d) return;
+      const dateObj = new Date(d + 'T00:00:00');
+      const key = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ev);
+    });
+    return groups;
+  }, [filteredArchiveEvents]);
 
   const resetForm = () => {
     setForm(emptyForm);
     setFormError('');
+    setEditingEventId(null);
   };
 
-  const handleAddEvent = async () => {
+  // Open modal pre-populated with existing event values
+  const handleStartEdit = (ev: CalendarEvent) => {
+    const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.id === ev.event_type);
+    const existingDept = ev.department_ids && ev.department_ids.length > 0 ? ev.department_ids[0] : '';
+
+    setForm({
+      title: ev.title || '',
+      date: dateOnlyStr(ev.event_date) || '',
+      location: ev.location || '',
+      description: ev.description || '',
+      event_type: isStandardType ? (ev.event_type as string) : 'other',
+      custom_event_type: isStandardType ? '' : ev.event_type || '',
+      event_color: ev.color || colorForCalendarEvent(ev),
+      audience: ev.audience || 'all',
+      target_department_id: existingDept,
+    });
     setFormError('');
-    if (!form.title.trim()) {
-      setFormError('Event title is required.');
-      return;
+    setEditingEventId(ev.id);
+    setShowModal(true);
+    if (inspectingEvent?.id === ev.id) {
+      setInspectingEvent(null);
     }
-    if (!form.date) {
-      setFormError('Please select a date.');
+  };
+
+  // Shared submit handler (POST for new, PUT for edit)
+  const handleSaveEvent = async () => {
+    setFormError('');
+    
+    // ERROR HANDLING: Check all required fields (Description is optional)
+    if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
+      setFormError('Please complete all required fields. Only the description is optional.');
       return;
     }
 
@@ -1528,9 +1963,13 @@ function CalendarActivities() {
     }
 
     setSubmitting(true);
+    const isEditing = Boolean(editingEventId);
+    const url = isEditing ? `${CALENDAR_API_URL}/${editingEventId}` : CALENDAR_API_URL;
+    const method = isEditing ? 'PUT' : 'POST';
+
     try {
-      const res = await fetch(CALENDAR_API_URL, {
-        method: 'POST',
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`,
@@ -1541,6 +1980,7 @@ function CalendarActivities() {
           location: form.location.trim() || null,
           event_date: `${form.date}T08:00:00.000Z`,
           event_type: finalEventType,
+          color: form.event_color,
           audience: form.audience,
           status: 'upcoming',
           target_department_id: form.target_department_id || null,
@@ -1549,7 +1989,7 @@ function CalendarActivities() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setFormError('Failed to save event: ' + (err.error || res.statusText));
+        setFormError(`Failed to ${isEditing ? 'update' : 'save'} event: ` + (err.error || res.statusText));
         return;
       }
 
@@ -1577,6 +2017,9 @@ function CalendarActivities() {
         return;
       }
       setEvents((prev) => prev.filter((e) => e.id !== id));
+      if (inspectingEvent?.id === id) {
+        setInspectingEvent(null);
+      }
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -1590,6 +2033,12 @@ function CalendarActivities() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const formatLongDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
   const departmentLabel = (ev: CalendarEvent) => {
     if (!ev.department_ids || ev.department_ids.length === 0) return 'All Departments';
     const names = ev.department_ids.map((id) => departments.find((d) => d.id === id)?.name ?? 'Department');
@@ -1600,23 +2049,62 @@ function CalendarActivities() {
   const DAYS_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-6">
+      {/* ── Top Bar ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Calendar & Activities</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage events and track activity history</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+            Calendar & Activities
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Schedule upcoming college activities, review event records, and browse past institutional archives.
+          </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowModal(true);
-          }}
-          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Add Event</span>
-          <span className="sm:hidden">Add</span>
-        </button>
+
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {/* Calendar vs Event History Switcher */}
+          <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 shadow-2xs">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4" />
+              <span>Calendar</span>
+            </button>
+            <button
+              onClick={() => setViewMode('archive')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'archive'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              <span>Event History</span>
+              {pastEvents.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">
+                  {pastEvents.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              resetForm();
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-all font-medium text-sm shadow-sm active:scale-[0.99] flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Add Event</span>
+            <span className="sm:hidden">Add</span>
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -1625,234 +2113,656 @@ function CalendarActivities() {
         </div>
       )}
 
-      {/* Calendar Grid View */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100">
-          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <h2 className="text-base sm:text-lg font-bold text-gray-900">{monthName}</h2>
-          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <ChevronRight className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-7 border-b border-gray-100">
-          {DAYS.map((d, i) => (
-            <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              <span className="hidden sm:inline">{d}</span>
-              <span className="sm:hidden">{DAYS_SHORT[i]}</span>
-            </div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading events…</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-7">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <div key={`empty-${i}`} className="min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-50 bg-gray-50/30" />
-            ))}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-              const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const dayEvents = getEventsForDay(day);
-              const isToday = dateStr === todayStr;
-              const isPast = dateStr < todayStr;
-
-              return (
-                <div
-                  key={day}
-                  className={`min-h-[56px] sm:min-h-[80px] border-b border-r border-gray-100 p-1 sm:p-1.5 ${
-                    isPast ? 'bg-gray-50/60' : 'bg-white'
-                  }`}
+      {/* ── Mode 1: Calendar View ── */}
+      {viewMode === 'calendar' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Select month"
+                  value={currentMonth.getMonth()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 >
-                  <div
-                    className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                      isToday ? 'bg-[#1E3A8A] text-white' : isPast ? 'text-gray-400' : 'text-gray-700'
-                    }`}
-                  >
-                    {day}
-                  </div>
-                  <div className="space-y-0.5">
-                    {dayEvents.slice(0, 1).map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="text-[9px] sm:text-[10px] font-medium px-1 py-0.5 rounded truncate text-white hidden sm:block"
-                        style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                        title={ev.title}
-                      >
-                        {ev.title}
-                      </div>
-                    ))}
-                    {dayEvents.length > 0 && (
-                      <div className="sm:hidden flex gap-0.5 flex-wrap px-0.5">
-                        {dayEvents.slice(0, 3).map((ev) => (
-                          <span
-                            key={ev.id}
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {dayEvents.length > 1 && (
-                      <div className="text-[9px] text-gray-400 px-1 hidden sm:block">
-                        +{dayEvents.length - 1} more
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  {MONTH_NAMES.map((m, idx) => (
+                    <option key={m} value={idx}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
-              activeTab === 'upcoming'
-                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="hidden sm:inline">Upcoming Activities</span>
-            <span className="sm:hidden">Upcoming</span>
-            {upcomingEvents.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                <select
+                  aria-label="Select year"
+                  value={currentMonth.getFullYear()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                >
+                  {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={jumpToToday}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={prevMonth}
+                  aria-label="Previous month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={nextMonth}
+                  aria-label="Next month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Days Header */}
+            <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
+              {DAYS.map((d, i) => (
+                <div
+                  key={d}
+                  className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{DAYS_SHORT[i]}</span>
+                </div>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
+                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Loading events…</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-7">
+                {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                  <div
+                    key={`empty-${i}`}
+                    className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
+                  />
+                ))}
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                  const dayIndexInWeek = (firstDayOfMonth + day - 1) % 7;
+                  const isRightmostCol = dayIndexInWeek >= 5;
+                  const dateStr = `${currentMonth.getFullYear()}-${String(
+                    currentMonth.getMonth() + 1
+                  ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                  const dayEvents = getEventsForDay(day);
+                  const hasEvents = dayEvents.length > 0;
+                  const isToday = dateStr === todayStr;
+                  const isPast = dateStr < todayStr;
+                  const isSelected = selectedCalendarDate === dateStr;
+                  const isHovered = hoveredDate === dateStr;
+                  const showPopover = (isHovered || isSelected) && hasEvents;
+
+                  return (
+                    <div
+                      key={day}
+                      tabIndex={hasEvents ? 0 : -1}
+                      aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
+                      onMouseEnter={() => setHoveredDate(dateStr)}
+                      onMouseLeave={() => setHoveredDate(null)}
+                      onClick={() => {
+                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      }}
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                        isSelected
+                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                          : isPast
+                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
+                          : 'bg-white hover:bg-blue-50/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
+                            isToday
+                              ? 'bg-[#1E3A8A] text-white shadow-xs'
+                              : isPast
+                              ? 'text-gray-400'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {day}
+                        </span>
+
+                        {hasEvents && (
+                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                            {dayEvents.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Event pills on desktop */}
+                      <div className="hidden sm:flex flex-col gap-1">
+                        {dayEvents.slice(0, 2).map((ev) => (
+                          <button
+                            key={ev.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInspectingEvent(ev);
+                            }}
+                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                            style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                            title={ev.title}
+                          >
+                            {ev.title}
+                          </button>
+                        ))}
+                        {dayEvents.length > 2 && (
+                          <span className="text-[10px] font-semibold text-gray-400 px-1">
+                            +{dayEvents.length - 2} more
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Indicators on mobile */}
+                      {hasEvents && (
+                        <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
+                          {dayEvents.slice(0, 3).map((ev) => (
+                            <span
+                              key={ev.id}
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                            />
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tooltip Preview */}
+                      {showPopover && (
+                        <div
+                          role="tooltip"
+                          className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
+                            isRightmostCol ? 'right-0' : 'left-0'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                            <span className="text-xs font-bold text-gray-900">
+                              {formatLongDate(dateStr)}
+                            </span>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                              {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
+                            {dayEvents.map((ev) => {
+                              const timeStr = formatTimeFromDate(ev.event_date);
+                              return (
+                                <div
+                                  key={ev.id}
+                                  onClick={() => setInspectingEvent(ev)}
+                                  className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
+                                  style={{ borderLeftColor: colorForCalendarEvent(ev) }}
+                                >
+                                  <div className="text-xs font-semibold text-gray-900 leading-snug">
+                                    {ev.title}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                                    {timeStr && (
+                                      <span className="flex items-center gap-1 font-medium text-gray-700">
+                                        <Clock className="w-3 h-3 text-gray-400" />
+                                        {timeStr}
+                                      </span>
+                                    )}
+                                    {ev.event_type && (
+                                      <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
+                                        <Tag className="w-2.5 h-2.5 text-gray-400" />
+                                        {ev.event_type}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {ev.location && (
+                                    <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                      <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                      <span className="truncate">{ev.location}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming Agenda Panel */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+                <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
+              </div>
+              <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
                 {upcomingEvents.length}
               </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${
-              activeTab === 'history'
-                ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span className="hidden sm:inline">Activity History</span>
-            <span className="sm:hidden">History</span>
-            {historyEvents.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                {historyEvents.length}
-              </span>
-            )}
-          </button>
-        </div>
+            </div>
 
-        <div className="p-4 sm:p-6">
-          {activeTab === 'upcoming' && (
-            <div className="space-y-3">
-              {upcomingEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No upcoming events</p>
-                </div>
-              ) : (
-                upcomingEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors group"
-                  >
+            {upcomingEvents.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs font-medium">No upcoming events scheduled</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+                {upcomingEvents.map((ev) => {
+                  const evDate = dateOnlyStr(ev.event_date);
+                  const isDueToday = evDate === todayStr;
+                  const timeStr = formatTimeFromDate(ev.event_date);
+
+                  return (
                     <div
-                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
-                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
-                        {ev.location && ` · 📍 ${ev.location}`}
-                        {ev.event_type && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
-                            {ev.event_type}
-                          </span>
-                        )}
-                      </div>
-                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
-                    </div>
-                    <button
-                      onClick={() => deleteEvent(ev.id)}
-                      disabled={deletingId === ev.id}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-all flex-shrink-0 disabled:opacity-40"
+                      key={ev.id}
+                      onClick={() => setInspectingEvent(ev)}
+                      className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-          {activeTab === 'history' && (
-            <div className="space-y-3">
-              {historyEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No past events</p>
-                </div>
-              ) : (
-                historyEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50"
-                  >
-                    <div
-                      className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50"
-                      style={{ backgroundColor: colorForCalendarEvent(ev) }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {formatDate(dateOnlyStr(ev.event_date))} · {departmentLabel(ev)} · Posted by{' '}
-                        {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}
-                        {ev.location && ` · 📍 ${ev.location}`}
-                        {ev.event_type && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600">
-                            {ev.event_type}
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
+                          {ev.title}
+                        </span>
+                        {isDueToday ? (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
+                            Today
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                            {formatDate(evDate)}
                           </span>
                         )}
                       </div>
-                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
+
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                        {timeStr && (
+                          <span className="flex items-center gap-1 font-medium text-gray-700">
+                            <Clock className="w-3 h-3 text-gray-400" />
+                            {timeStr}
+                          </span>
+                        )}
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                        />
+                        <span className="truncate">{departmentLabel(ev)}</span>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
-                  </div>
-                ))
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mode 2: Event History / Archive ── */}
+      {viewMode === 'archive' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-6">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search past events by title, description, location, or type..."
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/40"
+                />
+                {archiveSearch && (
+                  <button
+                    onClick={() => setArchiveSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {(archiveSearch || archiveYear !== 'all' || archiveMonth !== 'all' || archiveType !== 'all' || archiveDept !== 'all') && (
+                <button
+                  onClick={() => {
+                    setArchiveSearch('');
+                    setArchiveYear('all');
+                    setArchiveMonth('all');
+                    setArchiveType('all');
+                    setArchiveDept('all');
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors whitespace-nowrap self-end sm:self-auto"
+                >
+                  Reset Filters
+                </button>
               )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-gray-500 flex items-center gap-1 mr-1">
+                <Filter className="w-3.5 h-3.5" /> Filters:
+              </span>
+
+              <select
+                aria-label="Filter by year"
+                value={archiveYear}
+                onChange={(e) => setArchiveYear(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Years</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by month"
+                value={archiveMonth}
+                onChange={(e) => setArchiveMonth(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Months</option>
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={String(idx + 1).padStart(2, '0')}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by type"
+                value={archiveType}
+                onChange={(e) => setArchiveType(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
+              >
+                <option value="all">All Types</option>
+                {availableTypes.map((t) => (
+                  <option key={t} value={t} className="capitalize">
+                    {t}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by department"
+                value={archiveDept}
+                onChange={(e) => setArchiveDept(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {filteredArchiveEvents.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <Archive className="w-10 h-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">No events match your criteria</p>
+              <p className="text-xs text-gray-400 mt-1">Try relaxing your search terms or filter constraints.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {Object.keys(groupedArchiveEvents).map((groupMonth) => (
+                <div key={groupMonth} className="space-y-3">
+                  <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      {groupMonth}
+                    </h3>
+                    <div className="h-px flex-1 bg-gray-100" />
+                    <span className="text-[11px] font-semibold text-gray-400">
+                      {groupedArchiveEvents[groupMonth].length} events
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {groupedArchiveEvents[groupMonth].map((ev) => {
+                      const timeStr = formatTimeFromDate(ev.event_date);
+                      return (
+                        <div
+                          key={ev.id}
+                          onClick={() => setInspectingEvent(ev)}
+                          className="flex flex-col justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 bg-gray-50/40 hover:bg-white transition-all cursor-pointer group shadow-2xs space-y-3"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="text-sm font-semibold text-gray-900 group-hover:text-[#1E3A8A] transition-colors leading-snug">
+                                {ev.title}
+                              </h4>
+                              {ev.event_type && (
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600 flex-shrink-0">
+                                  {ev.event_type}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-500">
+                              <span className="font-medium text-gray-700">
+                                {formatDate(dateOnlyStr(ev.event_date))}
+                              </span>
+                              {timeStr && (
+                                <>
+                                  <span>·</span>
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-gray-400" />
+                                    {timeStr}
+                                  </span>
+                                </>
+                              )}
+                              <span>·</span>
+                              <span className="truncate">{departmentLabel(ev)}</span>
+                            </div>
+
+                            {ev.location && (
+                              <div className="text-xs text-gray-500 flex items-center gap-1 truncate">
+                                <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                <span className="truncate">{ev.location}</span>
+                              </div>
+                            )}
+
+                            {ev.description && (
+                              <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed pt-0.5">
+                                {ev.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100/80 text-[11px] text-gray-400">
+                            <span>Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Dean'}</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(ev);
+                                }}
+                                className="text-gray-600 hover:text-[#1E3A8A] font-semibold flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <span className="text-[#1E3A8A] font-semibold flex items-center gap-1">
+                                <Eye className="w-3.5 h-3.5" /> View
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Add Event Modal */}
-      {showModal && (
+      {/* ── Event Details Modal (With Edit & Delete Options) ── */}
+      {inspectingEvent && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add New Event</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X className="w-5 h-5 text-gray-500" />
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <span
+                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
+                  style={{ backgroundColor: colorForCalendarEvent(inspectingEvent) }}
+                >
+                  {inspectingEvent.event_type || 'Activity'}
+                </span>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug">
+                  {inspectingEvent.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setInspectingEvent(null)}
+                aria-label="Close modal"
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {formError && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-                {formError}
+            <div className="space-y-3 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Date:</span>
+                <span>{formatLongDate(dateOnlyStr(inspectingEvent.event_date))}</span>
+              </div>
+
+              {formatTimeFromDate(inspectingEvent.event_date) && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Time:</span>
+                  <span>{formatTimeFromDate(inspectingEvent.event_date)}</span>
+                </div>
+              )}
+
+              {inspectingEvent.location && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Location:</span>
+                  <span>{inspectingEvent.location}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Target Department:</span>
+                <span>{departmentLabel(inspectingEvent)}</span>
+              </div>
+
+              {inspectingEvent.audience && (
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Audience:</span>
+                  <span>{AUDIENCE_LABELS[inspectingEvent.audience] || inspectingEvent.audience}</span>
+                </div>
+              )}
+            </div>
+
+            {inspectingEvent.description && (
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Description / Agenda</h4>
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed whitespace-pre-wrap bg-white p-3 rounded-xl border border-gray-100">
+                  {inspectingEvent.description}
+                </p>
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs text-gray-400">
+              <span>Posted by: {ROLE_DISPLAY_LABEL[inspectingEvent.posted_by_role ?? ''] ?? 'Dean'}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleStartEdit(inspectingEvent)}
+                  className="px-3 py-1.5 text-[#1E3A8A] hover:bg-blue-50 rounded-lg transition-colors font-semibold flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => deleteEvent(inspectingEvent.id)}
+                  disabled={deletingId === inspectingEvent.id}
+                  className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Unified Add / Edit Event Modal ── */}
+      {showModal && (
+        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={() => {
+              resetForm();
+              setShowModal(false);
+            }}
+          />
+          {/* Inayos na Modal Layout: Hidden overflow sa main parent, overflow-y-auto lang sa body para malinis ang scrollbar */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md z-[10000] max-h-[90vh] flex flex-col overflow-hidden">
+            
+            {/* Header - Non-scrolling */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-white shrink-0 z-10">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                {editingEventId ? 'Edit Event' : 'Add New Event'}
+              </h2>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowModal(false);
+                }}
+                className="p-1.5 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body - Scrollable */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
+              {formError && (
+                <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+                  {formError}
+                </div>
+              )}
+
+              {/* 1. Event Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Title *</label>
                 <input
@@ -1860,10 +2770,11 @@ function CalendarActivities() {
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Alumni Homecoming Orientation"
+                  placeholder="e.g. Faculty Deliberation & Academic Planning"
                 />
               </div>
 
+              {/* 2. Date */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
@@ -1874,8 +2785,9 @@ function CalendarActivities() {
                 />
               </div>
 
+              {/* 3. Location */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location *</label>
                 <input
                   type="text"
                   value={form.location}
@@ -1885,79 +2797,7 @@ function CalendarActivities() {
                 />
               </div>
 
-              <div className="relative">
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department</label>
-                <button
-                  type="button"
-                  onClick={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{
-                        backgroundColor: getDepartmentColor(
-                          form.target_department_id
-                            ? departments.find((d) => d.id === form.target_department_id)?.name || ''
-                            : 'All Departments'
-                        ),
-                      }}
-                    />
-                    <span className="truncate">
-                      {form.target_department_id
-                        ? departments.find((d) => d.id === form.target_department_id)?.name || 'All Departments'
-                        : 'All Departments (Visible to All)'}
-                    </span>
-                  </div>
-                  <ChevronLeft className={`w-4 h-4 text-gray-500 transition-transform -rotate-90 ${showDepartmentDropdown ? 'rotate-90' : ''}`} />
-                </button>
-
-                {showDepartmentDropdown && (
-                  <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({ ...form, target_department_id: '' });
-                        setShowDepartmentDropdown(false);
-                      }}
-                      className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-                        form.target_department_id === '' ? 'bg-blue-50' : ''
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#3B82F6' }} />
-                      <span className="truncate">All Departments</span>
-                      {form.target_department_id === '' && (
-                        <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
-                      )}
-                    </button>
-
-                    {departments.map((d) => {
-                      const isSelected = form.target_department_id === d.id;
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => {
-                            setForm({ ...form, target_department_id: d.id });
-                            setShowDepartmentDropdown(false);
-                          }}
-                          className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-                            isSelected ? 'bg-blue-50' : ''
-                          }`}
-                        >
-                          <span
-                            className="w-3 h-3 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: getDepartmentColor(d.name) }}
-                          />
-                          <span className="truncate">{d.name}</span>
-                          {isSelected && <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
+              {/* 4. Description (Optional) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea
@@ -1969,37 +2809,86 @@ function CalendarActivities() {
                 />
               </div>
 
+              {/* 5. Target Department */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Type</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department *</label>
+                {/* Standard Select Tag gaya ng nasa instruction para sa malinis na pagpili */}
                 <select
-                  value={form.event_type}
-                  onChange={(e) => setForm({ ...form, event_type: e.target.value })}
+                  value={form.target_department_id}
+                  onChange={(e) => setForm({ ...form, target_department_id: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {STANDARD_EVENT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
+                  <option value="">All Departments (Visible to All)</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* 6. Type of Activity */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-2">Type of Activity *</label>
+                {/* Pilil / Buttons Layout para sa Event Type */}
+                <div className="flex flex-wrap gap-2">
+                  {STANDARD_EVENT_TYPES.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, event_type: type.id, event_color: type.color })}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                        form.event_type === type.id
+                          ? 'bg-white shadow-sm ring-1 ring-offset-1'
+                          : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                      style={{
+                        borderColor: form.event_type === type.id ? type.color : '#E5E7EB',
+                        color: form.event_type === type.id ? '#111827' : '#4B5563',
+                        boxShadow: form.event_type === type.id ? `0 0 0 1px ${type.color}` : 'none'
+                      }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: type.color }} />
+                      {type.label}
+                    </button>
+                  ))}
+                  
+                  {/* Custom Option */}
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, event_type: 'other', event_color: '#64748B' })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                      form.event_type === 'other'
+                        ? 'bg-white shadow-sm ring-1 ring-offset-1 border-gray-400 text-gray-900'
+                        : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="text-gray-400 text-sm leading-none">+</span> Custom
+                  </button>
+                </div>
 
                 {form.event_type === 'other' && (
-                  <div className="mt-2.5 animate-in fade-in duration-200">
-                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">
-                      Specify Custom Event Type *
-                    </label>
+                  <div className="mt-3 flex items-center gap-2">
                     <input
                       type="text"
                       value={form.custom_event_type}
                       onChange={(e) => setForm({ ...form, custom_event_type: e.target.value })}
-                      placeholder="e.g. Orientation, Seminar, Homecoming, Workshop"
-                      className="w-full px-3 py-2 border border-blue-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/20"
+                      placeholder="Enter custom type... e.g. Seminar"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       autoFocus
                     />
+                    <div className="relative group">
+                      <input
+                        type="color"
+                        value={form.event_color}
+                        onChange={(e) => setForm({ ...form, event_color: e.target.value })}
+                        className="w-10 h-10 p-0.5 border border-gray-200 rounded-lg cursor-pointer bg-white"
+                        title="Choose custom color"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
 
+              {/* 7. Target Audience (Optional/Default to All) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Audience *</label>
                 <select
@@ -2013,33 +2902,59 @@ function CalendarActivities() {
                   <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
                 </select>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  Selecting "Alumni Only" guarantees only verified alumni see this activity on their calendar.
+                  Selecting &quot;Alumni Only&quot; guarantees only verified alumni see this activity on their calendar.
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            {/* Footer - Non-scrolling */}
+            <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3 shrink-0">
               <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
+                onClick={() => {
+                  resetForm();
+                  setShowModal(false);
+                }}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleAddEvent}
+                onClick={handleSaveEvent}
                 disabled={submitting}
                 className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl font-medium text-sm hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
               >
-                {submitting ? 'Saving...' : (<><Check className="w-4 h-4" /> Add Event</>)}
+                {submitting ? (
+                  'Saving...'
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>{editingEventId ? 'Save Changes' : 'Add Event'}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Basic global styles para hindi makapal ang scrollbar sa loob ng modal */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #CBD5E1;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 }
 // ─── Academic Records ─────────────────────────────────────────────────────────
+
 interface TargetRoleOption {
   id: string;
   label: string;
@@ -2063,7 +2978,7 @@ interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
-  document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+  document_type: string;
   target_roles?: string[];
   file_name: string;
   file_type: string;
@@ -2074,7 +2989,7 @@ interface AcademicDocument {
   updated_at: string;
 }
 
-const DOC_TYPE_LABELS: Record<string, string> = {
+const DEFAULT_CATEGORIES: Record<string, string> = {
   handbook: 'Handbook',
   policy: 'Policy',
   form: 'Form',
@@ -2093,10 +3008,19 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AcademicRecords() {
+export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState('');
+  
+  // Categories State (Dynamic)
+  const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('custom_doc_categories');
+    return saved ? { ...DEFAULT_CATEGORIES, ...JSON.parse(saved) } : DEFAULT_CATEGORIES;
+  });
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
 
@@ -2105,7 +3029,7 @@ function AcademicRecords() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    document_type: 'handbook' as 'handbook' | 'policy' | 'form' | 'memorandum',
+    document_type: 'handbook',
     target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
@@ -2117,7 +3041,15 @@ function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const fetchDocuments = async () => {
+  // Preview Modal States
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; url: string | null; name: string; isLocalDocx: boolean }>({
+    open: false,
+    url: null,
+    name: '',
+    isLocalDocx: false,
+  });
+
+  const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
@@ -2142,17 +3074,38 @@ function AcademicRecords() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [typeFilter, statusFilter]);
 
   useEffect(() => {
     fetchDocuments();
-  }, [typeFilter, statusFilter]);
+  }, [fetchDocuments]);
+
+  // --- Category Management ---
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    const key = newCategoryName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const updated = { ...docCategories, [key]: newCategoryName.trim() };
+    setDocCategories(updated);
+    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
+    setNewCategoryName('');
+  };
+
+  const handleDeleteCategory = (key: string) => {
+    if (!confirm(`Are you sure you want to delete the category "${docCategories[key]}"? Documents under this category will still exist.`)) return;
+    const updated = { ...docCategories };
+    delete updated[key];
+    setDocCategories(updated);
+    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
+    if (typeFilter === key) setTypeFilter('all');
+    if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
+  };
+  // ---------------------------
 
   const resetForm = () => {
     setForm({
       title: '',
       description: '',
-      document_type: 'handbook',
+      document_type: Object.keys(docCategories)[0] || 'handbook',
       target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
@@ -2230,6 +3183,64 @@ function AcademicRecords() {
     }
   };
   // -----------------------------------
+
+  // --- PREVIEW LOGIC (Saktong paingon sa /preview endpoint sa backend) ---
+  const handlePreview = async (doc: AcademicDocument) => {
+    setDownloadingId(doc.id); 
+    setLoadError('');
+    try {
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        let errorMsg = 'Failed to retrieve document preview link.';
+        try {
+          const errJson = JSON.parse(errText);
+          errorMsg = errJson.error || errJson.message || errorMsg;
+        } catch {
+          errorMsg = errText || errorMsg;
+        }
+        throw new Error(errorMsg);
+      }
+      
+      const data = await res.json();
+      if (!data.url) throw new Error('Backend did not return a valid URL.');
+      
+      const ext = doc.file_name.split('.').pop()?.toLowerCase();
+      const isDocx = ext === 'doc' || ext === 'docx';
+      
+      setPreviewModal({
+        open: true,
+        url: isDocx ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(data.url)}` : data.url,
+        name: doc.title,
+        isLocalDocx: false
+      });
+    } catch (err: any) {
+      console.error("Preview Error:", err);
+      setLoadError(`Preview Error: ${err.message}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleLocalPreview = () => {
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const isDocx = ext === 'doc' || ext === 'docx';
+      const localUrl = URL.createObjectURL(file);
+      setPreviewModal({
+        open: true,
+        url: localUrl,
+        name: file.name,
+        isLocalDocx: isDocx // We cannot use officeapps.live.com for local blob URLs
+      });
+    } else if (editingDoc) {
+      handlePreview(editingDoc);
+    }
+  };
+  // ---------------------
 
   const handleSave = async () => {
     setFormError('');
@@ -2319,17 +3330,27 @@ function AcademicRecords() {
 
   const handleDownload = async (doc: AcademicDocument) => {
     setDownloadingId(doc.id);
+    setLoadError('');
     try {
       const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
         headers: { Authorization: `Bearer ${getDocsToken()}` },
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
+        const errText = await res.text();
+        let errorMsg = 'Failed to generate download link.';
+        try {
+          const errJson = JSON.parse(errText);
+          errorMsg = errJson.error || errJson.message || errorMsg;
+        } catch {
+          errorMsg = errText || errorMsg;
+        }
+        throw new Error(errorMsg);
       }
-      const { url } = await res.json();
-      window.open(url, '_blank');
+      const data = await res.json();
+      if(data.url) window.open(data.url, '_blank');
+    } catch (err: any) {
+      console.error("Download Error:", err);
+      setLoadError(`Download Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
     }
@@ -2350,21 +3371,32 @@ function AcademicRecords() {
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="all">All Categories</option>
-          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4 relative z-10">
+        <div className="flex flex-1 gap-2">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">All Categories</option>
+            {Object.entries(docCategories).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowCategoryModal(true)}
+            className="px-3 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
+            title="Manage Categories"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">Categories</span>
+          </button>
+        </div>
+        
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="w-full sm:w-48 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="active">Active</option>
           <option value="archived">Archived</option>
@@ -2373,7 +3405,9 @@ function AcademicRecords() {
       </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl font-medium">
+          {loadError}
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
@@ -2394,14 +3428,14 @@ function AcademicRecords() {
               const isAllAudience = targetRoles.length === DOC_AUDIENCE_ROLES.length;
 
               return (
-                <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
+                <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3 border border-gray-100 hover:border-blue-100 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
                       <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                          {DOC_TYPE_LABELS[doc.document_type]}
+                          {docCategories[doc.document_type] || doc.document_type}
                         </span>
                         {doc.status === 'archived' && (
                           <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>
@@ -2431,17 +3465,26 @@ function AcademicRecords() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* View Button */}
                     <button
-                      onClick={() => handleDownload(doc)}
+                      onClick={() => handlePreview(doc)}
                       disabled={downloadingId === doc.id}
-                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
-                      title="Download"
+                      className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-40"
+                      title="Preview Document"
                     >
                       {downloadingId === doc.id ? (
-                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                       ) : (
-                        <Download className="w-5 h-5" />
+                        <Eye className="w-5 h-5" />
                       )}
+                    </button>
+                    {/* Download Button */}
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-5 h-5" />
                     </button>
                     <button onClick={() => openEdit(doc)} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors" title="Edit">
                       <Edit className="w-4 h-4" />
@@ -2464,8 +3507,103 @@ function AcademicRecords() {
         )}
       </div>
 
+      {/* --- PREVIEW MODAL --- */}
+      {previewModal.open && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                <h3 className="font-bold text-gray-900 truncate">{previewModal.name}</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setPreviewModal({ open: false, url: null, name: '', isLocalDocx: false });
+                  if (previewModal.url && previewModal.url.startsWith('blob:')) URL.revokeObjectURL(previewModal.url);
+                }} 
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors shrink-0"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 bg-gray-100 relative">
+              {previewModal.isLocalDocx ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
+                  <FileText className="w-16 h-16 text-gray-300 mb-4" />
+                  <h4 className="text-lg font-bold text-gray-700">Preview Not Available for Local Word Docs</h4>
+                  <p className="text-sm text-gray-500 max-w-sm mt-2">
+                    Because this is an unpublished Word Document (.doc/.docx), it cannot be previewed in the browser. Please save the document to view it normally, or upload a PDF instead.
+                  </p>
+                </div>
+              ) : previewModal.url ? (
+                <iframe 
+                  src={previewModal.url} 
+                  className="w-full h-full border-0" 
+                  title="Document Preview"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CATEGORY MANAGEMENT MODAL --- */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900">Manage Categories</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
+              {Object.entries(docCategories).map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
+                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                  <button 
+                    onClick={() => handleDeleteCategory(key)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                    title="Delete Category"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newCategoryName}
+                  onChange={e => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Certificates" 
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button 
+                  onClick={handleAddCategory}
+                  disabled={!newCategoryName.trim()}
+                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- UPLOAD MODAL --- */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
@@ -2475,7 +3613,7 @@ function AcademicRecords() {
             </div>
 
             {formError && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl font-medium">
                 {formError}
               </div>
             )}
@@ -2496,10 +3634,10 @@ function AcademicRecords() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                 <select
                   value={form.document_type}
-                  onChange={(e) => setForm({ ...form, document_type: e.target.value as any })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => setForm({ ...form, document_type: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                  {Object.entries(docCategories).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
                   ))}
                 </select>
@@ -2576,10 +3714,17 @@ function AcademicRecords() {
                   />
                   
                   {file ? (
-                    <div className="flex items-center justify-between w-full max-w-[260px] bg-white border border-gray-200 px-3 py-2 rounded-lg shadow-sm">
+                    <div 
+                      className="flex items-center justify-between w-full max-w-[300px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation(); // prevent reopening file picker
+                        handleLocalPreview();
+                      }}
+                      title="Click to preview file"
+                    >
                       <div className="flex items-center gap-2 text-[#1E3A8A] overflow-hidden">
-                        <FileText className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-xs font-medium truncate">
+                        <Eye className="w-4 h-4 flex-shrink-0 text-blue-500" />
+                        <span className="text-xs font-semibold truncate hover:underline cursor-pointer">
                           {file.name}
                         </span>
                       </div>
@@ -2611,9 +3756,17 @@ function AcademicRecords() {
                 </div>
                 
                 {editingDoc && !file && (
-                  <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                  <p className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5" /> 
-                    Current file: <span className="font-medium text-gray-600 truncate">{editingDoc.file_name}</span>
+                    Current file: 
+                    <button 
+                      type="button"
+                      onClick={() => handleLocalPreview()} 
+                      className="font-medium text-blue-600 hover:underline truncate"
+                      title="Click to preview current file"
+                    >
+                      {editingDoc.file_name}
+                    </button>
                   </p>
                 )}
               </div>
@@ -2669,185 +3822,184 @@ function AcademicRecords() {
     </div>
   );
 }
+
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
   const [facultyList, setFacultyList] = useState<Profile[]>([]);
   const [staffList, setStaffList] = useState<Profile[]>([]);
-  const [facultyCount, setFacultyCount] = useState(0);
-  const [staffCount, setStaffCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [loadingList, setLoadingList] = useState(false);
-  const [viewModal, setViewModal] = useState<'faculty' | 'staff' | null>(null);
   const [search, setSearch] = useState('');
 
-  const loadCounts = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const facultyResponse = await fetch('http://localhost:5000/api/auth/faculty-count');
-      const facultyResult = await facultyResponse.json();
-      if (!facultyResponse.ok || !facultyResult.success) {
-        setFacultyCount(0);
-      } else {
-        setFacultyCount(Number(facultyResult.count) || 0);
-      }
+      const [facultyRes, staffRes] = await Promise.all([
+        fetch('http://localhost:5000/api/auth/faculty'),
+        fetch('http://localhost:5000/api/auth/staff')
+      ]);
 
-      const staffResponse = await fetch('http://localhost:5000/api/auth/staff-count');
-      const staffResult = await staffResponse.json();
-      if (!staffResponse.ok || !staffResult.success) {
-        setStaffCount(0);
-      } else {
-        setStaffCount(Number(staffResult.count) || 0);
-      }
-    } catch {
-      setFacultyCount(0);
-      setStaffCount(0);
+      const facultyResult = await facultyRes.json();
+      const staffResult = await staffRes.json();
+
+      setFacultyList(facultyResult.success && Array.isArray(facultyResult.data) ? facultyResult.data : []);
+      setStaffList(staffResult.success && Array.isArray(staffResult.data) ? staffResult.data : []);
+    } catch (err) {
+      console.error('Failed to load faculty and staff data:', err);
+      setFacultyList([]);
+      setStaffList([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadCounts(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const openList = async (type: 'faculty' | 'staff') => {
-    setViewModal(type);
-    setSearch('');
-    setLoadingList(true);
-    try {
-      if (type === 'faculty') {
-        const response = await fetch('http://localhost:5000/api/auth/faculty');
-        const result = await response.json();
-        setFacultyList(result.success && Array.isArray(result.data) ? result.data : []);
-      } else {
-        const response = await fetch('http://localhost:5000/api/auth/staff');
-        const result = await response.json();
-        setStaffList(result.success && Array.isArray(result.data) ? result.data : []);
-      }
-    } catch {
-      if (type === 'faculty') setFacultyList([]);
-      else setStaffList([]);
-    } finally {
-      setLoadingList(false);
+  const filterPerson = (person: Profile) => {
+    if (!search.trim()) return true;
+    const searchText = search.toLowerCase().trim();
+    return (
+      (person.full_name ?? '').toLowerCase().includes(searchText) ||
+      (person.email ?? '').toLowerCase().includes(searchText) ||
+      (person.id_number ?? '').toLowerCase().includes(searchText) ||
+      (person.department ?? '').toLowerCase().includes(searchText)
+    );
+  };
+
+  const filteredFaculty = facultyList.filter(filterPerson);
+  const filteredStaff = staffList.filter(filterPerson);
+
+  const renderList = (list: Profile[], role: 'faculty' | 'staff', emptyMessage: string) => {
+    const isFaculty = role === 'faculty';
+    const accent = isFaculty ? '#2563EB' : '#16A34A';
+    const accentBg = isFaculty ? '#DBEAFE' : '#D1FAE5';
+
+    if (loading) {
+      return (
+        <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+          <div className={`w-7 h-7 border-2 border-gray-200 rounded-full animate-spin mb-3 ${isFaculty ? 'border-t-blue-600' : 'border-t-green-600'}`} />
+          <p className="text-sm">Loading {role}...</p>
+        </div>
+      );
     }
+
+    if (list.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-40 text-gray-300">
+          <Users className="w-10 h-10 mb-2 opacity-40" />
+          <p className="text-sm text-gray-400">
+            {search ? `No ${role} found matching "${search}"` : emptyMessage}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 overflow-y-auto max-h-[600px] pr-2">
+        {list.map((person) => {
+          const name = person.full_name || 'Unnamed User';
+          const deptOrRole = person.department || (isFaculty ? 'Faculty' : 'Staff');
+          const initial = name.charAt(0).toUpperCase();
+
+          return (
+            <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors shadow-sm">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
+                {initial}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
+                <p className="text-xs font-medium text-gray-600 truncate">{deptOrRole}</p>
+                {person.id_number && (
+                  <p className="text-[11px] text-gray-400 truncate mt-0.5">ID: <span className="font-mono">{person.id_number}</span></p>
+                )}
+                {person.email && (
+                  <p className="text-[11px] text-gray-400 truncate">{person.email}</p>
+                )}
+              </div>
+              <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
+                {role}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
-
-  const closeList = () => {
-    setViewModal(null);
-    setSearch('');
-  };
-
-  const activeList = viewModal === 'faculty' ? facultyList : viewModal === 'staff' ? staffList : [];
-  const filteredList = search.trim()
-    ? activeList.filter((person) => {
-        const searchText = search.toLowerCase().trim();
-        return (
-          (person.full_name ?? '').toLowerCase().includes(searchText) ||
-          (person.email ?? '').toLowerCase().includes(searchText) ||
-          (person.id_number ?? '').toLowerCase().includes(searchText) ||
-          (person.department ?? '').toLowerCase().includes(searchText)
-        );
-      })
-    : activeList;
-
-  const accent = viewModal === 'faculty' ? '#2563EB' : '#16A34A';
-  const accentBg = viewModal === 'faculty' ? '#DBEAFE' : '#D1FAE5';
 
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
-          <p className="text-3xl font-bold text-blue-600 mb-2">{loading ? '...' : facultyCount.toLocaleString()}</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Faculty Members</p>
-          <button onClick={() => openList('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            View All Faculty
-          </button>
+    <div className="flex flex-col h-full">
+      {/* Header & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Faculty & Staff</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage all registered personnel accounts</p>
         </div>
-
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
-          <p className="text-3xl font-bold text-green-600 mb-2">{loading ? '...' : staffCount.toLocaleString()}</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Staff Members</p>
-          <button onClick={() => openList('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            View All Staff
+        
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, ID, email, dept..."
+              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
+            />
+          </div>
+          <button 
+            onClick={loadData} 
+            className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors bg-white shadow-sm"
+            title="Refresh List"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {viewModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeList} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
-                  {viewModal === 'faculty' ? 'All Faculty' : 'All Staff'}
-                  <span className="ml-2 text-sm font-semibold text-gray-400">({filteredList.length})</span>
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {viewModal === 'faculty' ? 'Active faculty members registered in the system' : 'Active staff members registered in the system'}
-                </p>
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
+        
+        {/* Faculty Column */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/30">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                <GraduationCap className="w-4 h-4" />
               </div>
-              <button onClick={closeList} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+              <h2 className="text-base font-bold text-gray-900">Faculty Profiles</h2>
             </div>
-
-            <div className="relative mb-4 flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={viewModal === 'faculty' ? 'Search faculty name, email, department...' : 'Search staff name, email, department...'}
-                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 -mx-1 px-1">
-              {loadingList ? (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-                  <div className="w-7 h-7 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-3" />
-                  <p className="text-sm">Loading {viewModal}...</p>
-                </div>
-              ) : filteredList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-                  <Users className="w-10 h-10 mb-2 opacity-40" />
-                  <p className="text-sm text-gray-400">
-                    {search ? `No ${viewModal} found matching "${search}"` : `No active ${viewModal} found`}
-                  </p>
-                </div>
-              ) : (
-                filteredList.map((person) => {
-                  const isFaculty = viewModal === 'faculty';
-                  const name = person.full_name || 'Unnamed User';
-                  const role = person.department || (isFaculty ? 'Faculty' : 'Staff');
-                  const initial = name.charAt(0).toUpperCase();
-
-                  return (
-                    <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
-                        {initial}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
-                        <p className="text-xs text-gray-500 truncate">{role}</p>
-                        {person.email && <p className="text-[11px] text-gray-400 truncate mt-0.5">{person.email}</p>}
-                        {person.id_number && <p className="text-[11px] text-gray-400 truncate">ID: {person.id_number}</p>}
-                      </div>
-                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
-                        {isFaculty ? 'Faculty' : 'Staff'}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            <span className="text-xs font-bold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
+              {filteredFaculty.length} {filteredFaculty.length === 1 ? 'Member' : 'Members'}
+            </span>
+          </div>
+          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
+            {renderList(filteredFaculty, 'faculty', 'No active faculty members found')}
           </div>
         </div>
-      )}
+
+        {/* Staff Column */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-green-50/30">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-green-100 text-green-700 rounded-lg">
+                <UserCircle className="w-4 h-4" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Staff Profiles</h2>
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 bg-green-100 text-green-700 rounded-full">
+              {filteredStaff.length} {filteredStaff.length === 1 ? 'Member' : 'Members'}
+            </span>
+          </div>
+          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
+            {renderList(filteredStaff, 'staff', 'No active staff members found')}
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
-
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {
@@ -2862,6 +4014,16 @@ interface ResearchSubmissionRow {
   title: string;
   type: 'research' | 'extension' | 'achievement';
   category: string | null;
+  description?: string | null;
+  publication_link?: string | null;
+  funding_source?: string | null;
+  authors?: string | null;
+  budget?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  partner_organization?: string | null;
+  beneficiaries?: number | null;
+  sdg_alignment?: string[] | string | null;
   file_name: string | null;
   file_url: string | null;
   files?: FileAttachment[] | null;
@@ -2886,12 +4048,16 @@ function getResearchTokenDean() {
 export function ResearchAchievements() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'research' | 'extension' | 'achievement'>('all');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [searchQuery, setSearchQuery] = useState('');
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  
+  // Action & Modal States
   const [actionId, setActionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<ResearchSubmissionRow | null>(null);
   const [remarksInput, setRemarksInput] = useState('');
+  const [viewingItem, setViewingItem] = useState<ResearchSubmissionRow | null>(null);
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -2915,7 +4081,9 @@ export function ResearchAchievements() {
     }
   };
 
-  useEffect(() => { fetchSubmissions(); }, [statusFilter]);
+  useEffect(() => {
+    fetchSubmissions();
+  }, [statusFilter]);
 
   const decide = async (submission: ResearchSubmissionRow, status: 'approved' | 'rejected', dean_remarks?: string) => {
     setActionId(submission.id);
@@ -2930,9 +4098,17 @@ export function ResearchAchievements() {
         setLoadError(err.error || 'Failed to update submission status.');
         return;
       }
-      setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      
+      setSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s));
+      if (statusFilter !== 'all') {
+        setSubmissions(prev => prev.filter(s => s.id !== submission.id));
+      }
+      
       setRejectFor(null);
       setRemarksInput('');
+      if (viewingItem && viewingItem.id === submission.id) {
+        setViewingItem(null);
+      }
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -2940,7 +4116,16 @@ export function ResearchAchievements() {
     }
   };
 
-  // Helper to normalize multi-file and single-file formats
+  const parseSdgs = (raw: string[] | string | null | undefined): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  };
+
   const getAllAttachments = (item: ResearchSubmissionRow): FileAttachment[] => {
     if (Array.isArray(item.files) && item.files.length > 0) {
       return item.files;
@@ -2951,7 +4136,6 @@ export function ResearchAchievements() {
     return [];
   };
 
-  // Inline view handler without forced browser download
   const handleViewFile = (file: FileAttachment) => {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
@@ -2959,129 +4143,284 @@ export function ResearchAchievements() {
     if (isImageOrPdf) {
       window.open(file.url, '_blank', 'noopener,noreferrer');
     } else {
-      // Office docs (.docx, .doc, .xlsx) require a web viewer for inline browser viewing
       const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file.url)}`;
       window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formatDate = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
 
-  const typeLabel = (t: string) => t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement';
-  const filtered = typeFilter === 'all' ? submissions : submissions.filter(s => s.type === typeFilter);
+  const typeLabel = (t: string) => (t === 'research' ? 'Research' : t === 'extension' ? 'Extension' : 'Achievement');
+
+  const filtered = useMemo(() => {
+    return submissions.filter(s => {
+      const matchesType = typeFilter === 'all' || s.type === typeFilter;
+      const term = searchQuery.toLowerCase();
+      const matchesSearch =
+        s.title.toLowerCase().includes(term) ||
+        (s.submitter?.full_name && s.submitter.full_name.toLowerCase().includes(term)) ||
+        (s.submitter?.department && s.submitter.department.toLowerCase().includes(term)) ||
+        (s.partner_organization && s.partner_organization.toLowerCase().includes(term)) ||
+        (s.category && s.category.toLowerCase().includes(term));
+
+      return matchesType && matchesSearch;
+    });
+  }, [submissions, typeFilter, searchQuery]);
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Research, Extension & Achievements</h1>
-        <div className="flex gap-2">
+    <div className="space-y-6">
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-bold text-gray-900">Research, Extension & Achievements</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            Review, inspect, and evaluate faculty scholarly and extension output.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search title, faculty, dept..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+
           <select
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value as any)}
-            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
           >
-            <option value="all">All Types</option>
+            <option value="all">All Disciplines</option>
             <option value="research">Research</option>
-            <option value="extension">Extension</option>
-            <option value="achievement">Achievements</option>
+            <option value="extension">Extension Activities</option>
+            <option value="achievement">Faculty Achievements</option>
           </select>
+
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            className="px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
           >
-            <option value="pending">Pending Review</option>
+            <option value="pending">Pending Evaluation</option>
             <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="all">All</option>
+            <option value="rejected">Rejected / Revisions</option>
+            <option value="all">All Statuses</option>
           </select>
         </div>
       </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
-          {statusFilter === 'pending' ? 'Pending Approvals' : statusFilter === 'approved' ? 'Approved Submissions' : statusFilter === 'rejected' ? 'Rejected Submissions' : 'All Submissions'}
-        </h2>
+      {/* Main List */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">
+            {statusFilter === 'pending'
+              ? 'Pending Endorsements'
+              : statusFilter === 'approved'
+              ? 'Approved Submissions'
+              : statusFilter === 'rejected'
+              ? 'Rejected Filings'
+              : 'All Submissions'}
+          </h2>
+          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+            {filtered.length} Record(s)
+          </span>
+        </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading submissions...</span>
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+            <Loader2 className="w-7 h-7 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Retrieving submissions...</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">No submissions found.</div>
+          <div className="py-20 text-center text-gray-400 text-sm">
+            <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="font-medium text-gray-600">No submissions found.</p>
+            <p className="text-xs text-gray-400 mt-1">There are no records matching your current filter selection.</p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {filtered.map((item) => {
+          <div className="divide-y divide-gray-100">
+            {filtered.map(item => {
               const cfg = RESEARCH_STATUS_LABEL[item.status] || RESEARCH_STATUS_LABEL.pending;
               const attachments = getAllAttachments(item);
+              const sdgs = parseSdgs(item.sdg_alignment);
 
               return (
-                <div key={item.id} className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-gray-300 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-gray-900 text-sm sm:text-base">{item.title}</div>
-                      <div className="text-xs sm:text-sm text-gray-600 mt-0.5">
-                        <span className="font-medium text-gray-800">{item.submitter?.full_name ?? 'Unknown Faculty'}</span>
-                        {item.submitter?.department ? ` · ${item.submitter.department}` : ''}
-                        {' · '}<span className="capitalize">{typeLabel(item.type)}</span>
-                        {item.category ? ` (${item.category})` : ''} · {formatDate(item.created_at)}
+                <div key={item.id} className="p-4 sm:p-6 hover:bg-gray-50/60 transition-colors">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    {/* Item Details */}
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                          {typeLabel(item.type)}
+                        </span>
+                        <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
                       </div>
 
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: cfg.bg, color: cfg.color }}>
-                          {cfg.label}
+                      {/* Submitter info */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span className="font-semibold text-gray-800 flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          {item.submitter?.full_name ?? 'Unknown Faculty'}
                         </span>
+                        <span>·</span>
+                        <span>{item.submitter?.department ?? 'No Department Specified'}</span>
+                        <span>·</span>
+                        <span>Submitted on {formatDate(item.created_at)}</span>
+                      </div>
 
-                        {/* Evidences & Documents inline view triggers */}
-                        {attachments.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap ml-1">
-                            {attachments.map((file, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleViewFile(file)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-                                title={`View ${file.name} inline`}
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span className="max-w-[160px] truncate">{file.name}</span>
-                              </button>
-                            ))}
-                          </div>
+                      {/* Fields Preview */}
+                      <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                        {item.type === 'research' && (
+                          <>
+                            {item.authors && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium">
+                                Authors: {item.authors}
+                              </span>
+                            )}
+                            {item.funding_source && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <DollarSign className="w-3 h-3 text-gray-400" />
+                                Funding: {item.funding_source}
+                              </span>
+                            )}
+                            {item.budget !== null && item.budget !== undefined && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium">
+                                ₱{Number(item.budget).toLocaleString()}
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                        {item.type === 'extension' && (
+                          <>
+                            {item.partner_organization && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Building className="w-3 h-3 text-gray-400" />
+                                Partner: {item.partner_organization}
+                              </span>
+                            )}
+                            {item.beneficiaries !== null && item.beneficiaries !== undefined && (
+                              <span className="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Users className="w-3 h-3 text-gray-400" />
+                                {Number(item.beneficiaries).toLocaleString()} Beneficiaries
+                              </span>
+                            )}
+                            {sdgs.length > 0 && (
+                              <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <Target className="w-3 h-3 text-blue-500" />
+                                {sdgs.length} SDG(s) Aligned
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                        {item.type === 'achievement' && item.category && (
+                          <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg font-medium">
+                            Category: {item.category}
+                          </span>
+                        )}
+
+                        {(item.start_date || item.end_date) && (
+                          <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-gray-400" />
+                            {formatDate(item.start_date)} - {formatDate(item.end_date)}
+                          </span>
                         )}
                       </div>
 
+                      {item.description && (
+                        <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
+                      )}
+
+                      {/* Attachments & Link */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2">
+                        {item.publication_link && (
+                          <a
+                            href={item.publication_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline font-semibold mr-2"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Journal / DOI Link</span>
+                          </a>
+                        )}
+
+                        {attachments.map((file, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleViewFile(file)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                            title={`Inspect ${file.name}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span className="max-w-[150px] truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+
                       {item.dean_remarks && (
-                        <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded-lg border border-red-100">
-                          <strong>Remarks:</strong> {item.dean_remarks}
-                        </p>
+                        <div className="p-2.5 bg-rose-50 border border-rose-100 text-rose-700 rounded-xl text-xs mt-2">
+                          <span className="font-bold">Evaluation Remarks:</span> {item.dean_remarks}
+                        </div>
                       )}
                     </div>
 
-                    {item.status === 'pending' && (
-                      <div className="flex gap-2 flex-shrink-0 pt-1 sm:pt-0">
+                    {/* Actions & Status Column */}
+                    <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
+                      <span
+                        className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
+                        style={{ background: cfg.bg, color: cfg.color }}
+                      >
+                        {cfg.label}
+                      </span>
+
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => decide(item, 'approved')}
-                          disabled={actionId === item.id}
-                          className="px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
+                          type="button"
+                          onClick={() => setViewingItem(item)}
+                          className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                         >
-                          {actionId === item.id ? 'Working...' : 'Approve'}
+                          Review & Inspect
                         </button>
-                        <button
-                          onClick={() => { setRejectFor(item); setRemarksInput(''); }}
-                          disabled={actionId === item.id}
-                          className="px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-60 transition-colors shadow-sm"
-                        >
-                          Reject
-                        </button>
+
+                        {item.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => decide(item, 'approved')}
+                              disabled={actionId === item.id}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
+                            >
+                              {actionId === item.id ? 'Saving...' : 'Approve'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectFor(item);
+                                setRemarksInput('');
+                              }}
+                              disabled={actionId === item.id}
+                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
@@ -3090,27 +4429,214 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {rejectFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Reject Submission?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Rejecting <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s "{rejectFor.title}".
+      {/* Complete Inspection Modal */}
+      {viewingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+            <button
+              onClick={() => setViewingItem(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded">
+                {typeLabel(viewingItem.type)}
+              </span>
+              <span
+                className="text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase"
+                style={{
+                  background: (RESEARCH_STATUS_LABEL[viewingItem.status] || RESEARCH_STATUS_LABEL.pending).bg,
+                  color: (RESEARCH_STATUS_LABEL[viewingItem.status] || RESEARCH_STATUS_LABEL.pending).color,
+                }}
+              >
+                {viewingItem.status}
+              </span>
+            </div>
+
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">{viewingItem.title}</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Submitted by <span className="font-semibold text-gray-700">{viewingItem.submitter?.full_name}</span> (
+              {viewingItem.submitter?.department || 'Department Unassigned'}) on {formatDate(viewingItem.created_at)}
             </p>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reason (optional)</label>
+
+            <div className="space-y-4 border-t border-b border-gray-100 py-4 text-xs sm:text-sm text-gray-700">
+              {viewingItem.description && (
+                <div>
+                  <span className="font-bold text-gray-900 block mb-1">Project Description / Summary</span>
+                  <p className="bg-gray-50 p-3 rounded-xl leading-relaxed text-gray-700">{viewingItem.description}</p>
+                </div>
+              )}
+
+              {/* Research Detail */}
+              {viewingItem.type === 'research' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Authors / Researchers</span>
+                    <span>{viewingItem.authors || 'None documented'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Funding Source</span>
+                    <span>{viewingItem.funding_source || 'None / Institutional'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Allocated Budget</span>
+                    <span>
+                      {viewingItem.budget !== null && viewingItem.budget !== undefined
+                        ? `₱${Number(viewingItem.budget).toLocaleString()}`
+                        : 'Not specified'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Implementation Period</span>
+                    <span>{formatDate(viewingItem.start_date)} – {formatDate(viewingItem.end_date)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Extension Detail */}
+              {viewingItem.type === 'extension' && (
+                <div className="space-y-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Partner Organization</span>
+                      <span>{viewingItem.partner_organization || 'Not documented'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Target Beneficiaries</span>
+                      <span>
+                        {viewingItem.beneficiaries !== null && viewingItem.beneficiaries !== undefined
+                          ? Number(viewingItem.beneficiaries).toLocaleString()
+                          : 'Not documented'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-500 block">Duration</span>
+                      <span>{formatDate(viewingItem.start_date)} – {formatDate(viewingItem.end_date)}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="font-semibold text-gray-500 block mb-1.5">Aligned Sustainable Development Goals</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {parseSdgs(viewingItem.sdg_alignment).map((sdg, idx) => (
+                        <span key={idx} className="bg-blue-50 text-blue-800 text-xs px-2.5 py-1 rounded-lg font-medium">
+                          {sdg}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Achievement Detail */}
+              {viewingItem.type === 'achievement' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Achievement Category</span>
+                    <span>{viewingItem.category || 'General Recognition'}</span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-500 block">Date Conferred</span>
+                    <span>{formatDate(viewingItem.start_date || viewingItem.created_at)}</span>
+                  </div>
+                </div>
+              )}
+
+              {viewingItem.publication_link && (
+                <div>
+                  <span className="font-semibold text-gray-500 block mb-1">Publication / Evidence URL</span>
+                  <a
+                    href={viewingItem.publication_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>{viewingItem.publication_link}</span>
+                  </a>
+                </div>
+              )}
+
+              {getAllAttachments(viewingItem).length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-500 block mb-2">Attached Documents & Evidences</span>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllAttachments(viewingItem).map((file, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleViewFile(file)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span className="max-w-[200px] truncate">{file.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setViewingItem(null)}
+                className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+              {viewingItem.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setRejectFor(viewingItem);
+                      setRemarksInput('');
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-colors"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => decide(viewingItem, 'approved')}
+                    disabled={actionId === viewingItem.id}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs"
+                  >
+                    {actionId === viewingItem.id ? 'Approving...' : 'Endorse & Approve'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100">
+            <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
+            </p>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Reviewer Feedback / Remarks</label>
             <textarea
               value={remarksInput}
               onChange={e => setRemarksInput(e.target.value)}
               rows={3}
-              placeholder="Let them know what needs revision..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
+              placeholder="State reasons or corrective items needed..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-4"
             />
-            <div className="flex gap-3">
-              <button onClick={() => setRejectFor(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRejectFor(null)}
+                className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
               <button
                 onClick={() => decide(rejectFor, 'rejected', remarksInput)}
                 disabled={actionId === rejectFor.id}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold disabled:opacity-60 transition-colors shadow-xs"
               >
                 {actionId === rejectFor.id ? 'Rejecting...' : 'Confirm Reject'}
               </button>
@@ -3615,14 +5141,19 @@ function AlumniTracer() {
 }
 
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
-function InquiriesManagement() {
+function InquiriesManagement({ initialTab = 'student' }: { initialTab?: 'student' | 'alumni' | 'contact' }) {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries] = useState<Inquiry[]>([]);
   const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeSection, setActiveSection] =
-    useState<'student' | 'alumni' | 'contact'>('student');
+const [activeSection, setActiveSection] = useState<'student' | 'alumni' | 'contact'>(initialTab);
+
+useEffect(() => {
+    if (initialTab) {
+      setActiveSection(initialTab);
+    }
+  }, [initialTab]);
 
   const [studentFilter, setStudentFilter] =
     useState<'all' | 'pending' | 'answered'>('all');
@@ -7133,7 +8664,7 @@ function AnnouncementsContent() {
                             key={r}
                             className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
                               conf
-                                ? `${conf.bg} ${conf.text} ${conf.border}`
+                                ? `${conf.bg} ${conf.text}${conf.border}`
                                 : 'bg-gray-100 text-gray-700 border-gray-200'
                             }`}
                           >
@@ -7167,8 +8698,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* COMPOSER MODAL (Full screen coverage with w-screen h-screen) */}
       {isComposerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 bg-gray-50/80 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-2 text-gray-900 font-bold text-base">
@@ -7315,8 +8847,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* DELETE MODAL (Full screen coverage with w-screen h-screen) */}
       {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
             <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3.5">
               <Trash2 className="w-6 h-6" />
@@ -7349,8 +8882,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* SUCCESS/ERROR MODAL (Full screen coverage with w-screen h-screen) */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
@@ -7383,7 +8917,6 @@ function AnnouncementsContent() {
   );
 }
 
-// ─── Landing Page Management ──────────────────────────────────────────────────
 function LandingPageManagement() {
   function updateClubsField(section: string, field: string, value: string) {
     setClubsContent((prev: any) => ({
@@ -7745,33 +9278,90 @@ function LandingPageManagement() {
   }
 
   async function saveHomePage() {
-    const { error: contentError } = await saveHomepageContent(homeContent);
-    if (contentError) {
-      setModalMessage(`Error: ${contentError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
+    try {
+      // 1. Save Content
+      const { error: contentError } = await saveHomepageContent(homeContent);
+      if (contentError) throw contentError;
 
-    const { error: statsError } = await saveHomepageStats(stats);
-    if (statsError) {
-      setModalMessage(`Error: ${statsError.message}`);
-      setShowSuccessModal(true);
-      return;
-    }
+      // 2. Save Stats
+      const { error: statsError } = await saveHomepageStats(stats);
+      if (statsError) throw statsError;
 
-    const { error: featuresError } = await saveHomepageFeatures(features);
-    if (featuresError) {
-      setModalMessage(
-        `Error: ${featuresError instanceof Error ? featuresError.message : String(featuresError)}`
+      // 3. Save Features
+      const { error: featuresError } = await saveHomepageFeatures(features);
+      if (featuresError) throw featuresError;
+
+      // 4. Save Announcements (with robust Supabase image upload handling)
+      const processedAnnouncements = await Promise.all(
+        announcements.map(async (announcement) => {
+          let finalImageUrl = announcement.image_url;
+
+          // If the image_url is a newly selected Base64 string
+          if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
+            try {
+              // Convert Base64 data URL to a clean Blob file object
+              const res = await fetch(finalImageUrl);
+              const blob = await res.blob();
+              const ext = blob.type.split('/')[1] || 'jpeg';
+              const fileName = `announcements/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+
+              // Upload the blob file to the Supabase 'announcements' bucket
+              const { error: uploadError } = await supabase.storage
+                .from('announcements')
+                .upload(fileName, blob, {
+                  contentType: blob.type,
+                  upsert: true,
+                });
+
+              if (uploadError) {
+                console.error('Storage upload failed:', uploadError.message);
+                throw new Error(`Image upload failed: ${uploadError.message}`);
+              }
+
+              // Fetch the final public URL from Supabase
+              const { data: publicUrlData } = supabase.storage
+                .from('announcements')
+                .getPublicUrl(fileName);
+
+              finalImageUrl = publicUrlData.publicUrl;
+            } catch (imgErr) {
+              console.error('Error processing announcement image:', imgErr);
+              throw imgErr;
+            }
+          }
+
+          return {
+            id: announcement.id,
+            title: announcement.title,
+            description: announcement.description,
+            color: announcement.color,
+            image_url: finalImageUrl || null,
+            announcement_date: announcement.announcement_date,
+            sort_order: announcement.sort_order,
+          };
+        })
       );
+
+      // Save processed announcements to database
+      const { error: announcementsError } = await supabase
+        .from('homepage_announcements')
+        .upsert(processedAnnouncements);
+
+      if (announcementsError) throw announcementsError;
+
+      // Success notification
+      setModalMessage('Homepage and announcements updated successfully!');
       setShowSuccessModal(true);
-      return;
+
+      // Reload announcements to reflect the newly saved public URLs instantly
+      loadAnnouncements();
+
+    } catch (error: any) {
+      console.error('Save failed:', error);
+      setModalMessage(`Error saving homepage: ${error.message || String(error)}`);
+      setShowSuccessModal(true);
     }
-
-    setModalMessage('Homepage updated successfully!');
-    setShowSuccessModal(true);
   }
-
   async function saveDepartmentsPage() {
     await saveColleges(colleges);
     await saveDepartmentContent(departmentContent);
@@ -7968,7 +9558,7 @@ function LandingPageManagement() {
       {showSuccessModal && (
         <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Success</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Notification</h2>
             <p className="text-gray-600 mb-6">{modalMessage}</p>
             <div className="flex justify-end">
               <button
