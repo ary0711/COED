@@ -233,10 +233,18 @@ export function CollegeDeanDashboard({
   onLogout,
 }: CollegeDeanDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inquiriesInitialTab, setInquiriesInitialTab] = useState<'student' | 'alumni' | 'contact'>('student');
 
   const handleMenuItemClick = (id: string) => {
     setActiveMenuItem(id);
     setSidebarOpen(false);
+  };
+
+  const handleNavigate = (menuItem: string, subTab?: string) => {
+    setActiveMenuItem(menuItem);
+    if (menuItem === 'inquiries' && subTab) {
+      setInquiriesInitialTab(subTab as 'student' | 'alumni' | 'contact');
+    }
   };
 
   return (
@@ -272,14 +280,14 @@ export function CollegeDeanDashboard({
         </div>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {activeMenuItem === 'dashboard'     && <DashboardView onGoToInquiries={() => setActiveMenuItem('inquiries')} />}
+          {activeMenuItem === 'dashboard'     && <DashboardView onNavigate={handleNavigate} />}
           {activeMenuItem === 'users'         && <UserManagement />}
           {activeMenuItem === 'records'       && <AcademicRecords />}
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
-          {activeMenuItem === 'inquiries'     && <InquiriesManagement />}
+          {activeMenuItem === 'inquiries'     && <InquiriesManagement initialTab={inquiriesInitialTab} />}
           {activeMenuItem === 'landing'       && <LandingPageManagement />}
           {activeMenuItem === 'announcements' && <AnnouncementsContent />}
           {activeMenuItem === 'reports'       && <ReportsAnalytics />}
@@ -428,7 +436,8 @@ function AlumniEmploymentCard() {
 }
 
 // ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
-function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
+// ─── Inquiries Summary Card (Dashboard) ───────────────────────────────────────
+function InquiriesSummaryCard({ onNavigateToInquiries }: { onNavigateToInquiries: (tab?: 'student' | 'alumni' | 'contact') => void }) {
   const [studentPending, setStudentPending] = useState(0);
   const [alumniPending, setAlumniPending]   = useState(0);
   const [contactPending, setContactPending] = useState(0);
@@ -489,21 +498,33 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#DBEAFE' }}>
+          <button 
+            onClick={() => onNavigateToInquiries('student')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#DBEAFE' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#1D4ED8', opacity: 0.8 }}>Student</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#1D4ED8' }}>{loading ? '—' : studentPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#1D4ED8', opacity: 0.65 }}>unreplied</p>
-          </div>
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#FCE7F3' }}>
+          </button>
+          <button 
+            onClick={() => onNavigateToInquiries('alumni')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#FCE7F3' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#BE185D', opacity: 0.8 }}>Alumni</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#BE185D' }}>{loading ? '—' : alumniPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#BE185D', opacity: 0.65 }}>unreplied</p>
-          </div>
-          <div className="rounded-xl p-3" style={{ backgroundColor: '#D1FAE5' }}>
+          </button>
+          <button 
+            onClick={() => onNavigateToInquiries('contact')}
+            className="rounded-xl p-3 text-left transition-transform hover:scale-105 active:scale-95 border-none outline-none cursor-pointer" 
+            style={{ backgroundColor: '#D1FAE5' }}
+          >
             <p className="text-xs font-medium mb-1" style={{ color: '#059669', opacity: 0.8 }}>Contact</p>
             <p className="text-2xl font-bold leading-none" style={{ color: '#059669' }}>{loading ? '—' : contactPending}</p>
             <p className="text-[11px] mt-1" style={{ color: '#059669', opacity: 0.65 }}>unreplied</p>
-          </div>
+          </button>
         </div>
 
         <div className="flex-1 space-y-2 min-h-0 overflow-y-auto">
@@ -540,8 +561,8 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
         </div>
 
         <button
-          onClick={onViewAll}
-          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1E3A8A] hover:bg-blue-50 py-2 rounded-lg transition-colors flex-shrink-0"
+          onClick={() => onNavigateToInquiries()}
+          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1E3A8A] hover:bg-blue-50 py-2 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
         >
           View all inquiries <ArrowRight className="w-3.5 h-3.5" />
         </button>
@@ -551,7 +572,7 @@ function InquiriesSummaryCard({ onViewAll }: { onViewAll: () => void }) {
 }
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
-function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
+function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?: string) => void }) {
   const [facultyCount, setFacultyCount] = useState<number>(0);
   const [facultyLoading, setFacultyLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number>(0);
@@ -565,6 +586,71 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   const [alumniResponsesCount, setAlumniResponsesCount] = useState<number>(0);
   const [tracerLoading, setTracerLoading] = useState(true);
   const [tracerResponseRate, setTracerResponseRate] = useState<number>(0);
+
+  // --- STATES FOR DEPARTMENT MODAL ---
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  // UPDATE: Gi-add ang staff diri sa state type
+  const [deptStats, setDeptStats] = useState<{ name: string; faculty: number; students: number; staff: number }[]>([]);
+  const [loadingDeptStats, setLoadingDeptStats] = useState(false);
+
+  // Function to fetch department statistics dynamically
+  const openDeptModal = async () => {
+    setIsDeptModalOpen(true);
+    setLoadingDeptStats(true);
+    try {
+      // 1. Fetch all official department names
+      const { data: depts } = await supabase.from('departments').select('name');
+      
+      // 2. Fetch all faculty, student, AND staff profiles with their departments
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('department, role')
+        .in('role', ['faculty', 'student', 'staff']); // Gi-apil ang 'staff'
+
+      const statsMap: Record<string, { originalName: string; faculty: number; students: number; staff: number }> = {};
+      
+      // Initialize map with known departments from the DB
+      if (depts) {
+        depts.forEach(d => {
+          // Use uppercase key to prevent case-sensitivity duplicates (e.g. BEEd vs BEED)
+          const key = d.name.trim().toUpperCase();
+          statsMap[key] = { originalName: d.name.trim(), faculty: 0, students: 0, staff: 0 };
+        });
+      }
+
+      // Aggregate counts from profiles that HAVE an assigned department
+      if (profiles) {
+        profiles.forEach(p => {
+          if (!p.department) return; // Skip accounts with no department
+          
+          const key = p.department.trim().toUpperCase();
+          
+          // Only count if the department actually exists in the official DB map
+          if (statsMap[key]) {
+            if (p.role === 'faculty') statsMap[key].faculty++;
+            if (p.role === 'student') statsMap[key].students++;
+            if (p.role === 'staff') statsMap[key].staff++; // Ihap para sa staff
+          }
+        });
+      }
+
+      // Convert map back to an array for rendering
+      const statsArray = Object.keys(statsMap)
+        .map(key => ({
+          name: statsMap[key].originalName,
+          faculty: statsMap[key].faculty,
+          students: statsMap[key].students,
+          staff: statsMap[key].staff
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setDeptStats(statsArray);
+    } catch (err) {
+      console.error('Failed to load department stats:', err);
+    } finally {
+      setLoadingDeptStats(false);
+    }
+  };
 
   // 1. Department count
   useEffect(() => {
@@ -712,29 +798,33 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   }, [loadPendingReports, loadTracerStats]);
 
   const mobileMetrics = [
-    { label: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
-    { label: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'All operational', color: '#7C3AED', bg: '#EDE9FE' },
-    { label: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), sub: 'Awaiting Dean review', color: '#B45309', bg: '#FEF3C7' },
-    { label: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), sub: `${tracerResponseRate}% response rate`, color: '#BE185D', bg: '#FCE7F3' },
-    { label: 'Evaluation Rating', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
-    { label: 'Research Submitted', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
-    { label: 'Completion Rate', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
+    { label: 'Total Faculty', target: 'faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), sub: 'Faculty members', color: '#1E3A8A', bg: '#DBEAFE' },
+    { label: 'Total Students', target: 'users', value: studentLoading ? '...' : studentCount.toLocaleString(), sub: 'Active student accounts', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Active Departments', target: 'departments_modal', value: departmentLoading ? '...' : departmentCount.toLocaleString(), sub: 'Click to view breakdown', color: '#7C3AED', bg: '#EDE9FE' },
+    { label: 'Pending Reports', target: 'reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), sub: 'Awaiting Dean review', color: '#B45309', bg: '#FEF3C7' },
+    { label: 'Alumni Responses', target: 'alumni', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), sub: `${tracerResponseRate}% response rate`, color: '#BE185D', bg: '#FCE7F3' },
+    { label: 'Evaluation Rating', target: '', value: '4.6', sub: 'Out of 5.0 avg.', color: '#0369A1', bg: '#E0F2FE' },
+    { label: 'Research Submitted', target: 'research', value: '14', sub: '2 pending approval', color: '#065F46', bg: '#D1FAE5' },
+    { label: 'Completion Rate', target: '', value: '94%', sub: 'Student evaluations', color: '#9D174D', bg: '#FCE7F3' },
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       <div className="mb-4">
         {/* MOBILE */}
         <div className="flex gap-3 overflow-x-auto pb-4 sm:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
           {[
-            { title: 'Total Faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
-            { title: 'Total Students', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
-            { title: 'Active Departments', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
-            { title: 'Pending Reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: String(pendingReportsCount), trendUp: false },
-            { title: 'Alumni Responses', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: `${tracerResponseRate}%`, trendUp: true },
+            { title: 'Total Faculty', target: 'faculty', value: facultyLoading ? '...' : facultyCount.toLocaleString(), icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE' },
+            { title: 'Total Students', target: 'users', value: studentLoading ? '...' : studentCount.toLocaleString(), icon: Users, iconColor: '#10B981', iconBgColor: '#D1FAE5' },
+            { title: 'Active Departments', target: 'departments_modal', value: departmentLoading ? '...' : departmentCount.toLocaleString(), icon: Building2, iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
+            { title: 'Pending Reports', target: 'reports', value: pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString(), icon: FileText, iconColor: '#F59E0B', iconBgColor: '#FEF3C7', trend: String(pendingReportsCount), trendUp: false },
+            { title: 'Alumni Responses', target: 'alumni', value: tracerLoading ? '...' : alumniResponsesCount.toLocaleString(), icon: UserCheck, iconColor: '#EF4444', iconBgColor: '#FEE2E2', trend: `${tracerResponseRate}%`, trendUp: true },
           ].map((card) => (
-            <div key={card.title} className="flex-shrink-0 w-48 h-40">
+            <div 
+              key={card.title} 
+              className="flex-shrink-0 w-48 h-40 cursor-pointer transition-transform hover:scale-105 active:scale-95" 
+              onClick={() => card.target === 'departments_modal' ? openDeptModal() : onNavigate(card.target)}
+            >
               <SummaryCard {...card} />
             </div>
           ))}
@@ -742,19 +832,20 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
 
         {/* DESKTOP */}
         <div className="hidden sm:grid sm:grid-cols-3 xl:grid-cols-5 gap-4">
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('faculty')}>
             <SummaryCard title="Total Faculty" value={facultyLoading ? '...' : facultyCount.toLocaleString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('users')}>
             <SummaryCard title="Total Students" value={studentLoading ? '...' : studentCount.toLocaleString()} icon={Users} iconColor="#10B981" iconBgColor="#D1FAE5" />
           </div>
-          <div className="min-h-[160px]">
+          {/* Active Departments Modal Trigger */}
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={openDeptModal}>
             <SummaryCard title="Active Departments" value={departmentLoading ? '...' : departmentCount.toLocaleString()} icon={Building2} iconColor="#8B5CF6" iconBgColor="#EDE9FE" />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('reports')}>
             <SummaryCard title="Pending Reports" value={pendingReportsLoading ? '...' : pendingReportsCount.toLocaleString()} icon={FileText} iconColor="#F59E0B" iconBgColor="#FEF3C7" trend={String(pendingReportsCount)} trendUp={false} />
           </div>
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] cursor-pointer transition-transform hover:scale-105 active:scale-95" onClick={() => onNavigate('alumni')}>
             <SummaryCard title="Alumni Responses" value={tracerLoading ? '...' : alumniResponsesCount.toLocaleString()} icon={UserCheck} iconColor="#EF4444" iconBgColor="#FEE2E2" trend={`${tracerResponseRate}%`} trendUp={true} />
           </div>
         </div>
@@ -767,7 +858,12 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
         </p>
         <div className="grid grid-cols-2 gap-3">
           {mobileMetrics.map((m) => (
-            <div key={m.label} className="rounded-2xl p-4" style={{ backgroundColor: m.bg }}>
+            <div 
+              key={m.label} 
+              className={`rounded-2xl p-4 ${m.target ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''}`}
+              style={{ backgroundColor: m.bg }}
+              onClick={() => m.target === 'departments_modal' ? openDeptModal() : (m.target && onNavigate(m.target))}
+            >
               <p className="text-xs font-medium mb-1" style={{ color: m.color, opacity: 0.75 }}>{m.label}</p>
               <p className="text-2xl font-bold leading-none mb-1" style={{ color: m.color }}>{m.value}</p>
               <p className="text-xs" style={{ color: m.color, opacity: 0.6 }}>{m.sub}</p>
@@ -777,22 +873,115 @@ function DashboardView({ onGoToInquiries }: { onGoToInquiries: () => void }) {
       </div>
 
       <div className="hidden lg:grid lg:grid-cols-2 gap-4 flex-1 min-h-0">
-          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
-            <AlumniEmploymentCard />
-          </div>
-          <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
-            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
-          </div>
+        <div className="min-h-0 lg:max-h-[calc(100vh-280px)] cursor-pointer transition-transform hover:scale-[1.02] active:scale-95" onClick={() => onNavigate('alumni')}>
+          <AlumniEmploymentCard />
         </div>
+        <div className="min-h-0 lg:max-h-[calc(100vh-280px)]">
+          <InquiriesSummaryCard onNavigateToInquiries={(tab) => onNavigate('inquiries', tab)} />
+        </div>
+      </div>
 
-        <div className="lg:hidden flex flex-col gap-4">
-          <div className="h-80">
-            <AlumniEmploymentCard />
-          </div>
-          <div className="h-80">
-            <InquiriesSummaryCard onViewAll={onGoToInquiries} />
+      <div className="lg:hidden flex flex-col gap-4">
+        <div className="h-80 cursor-pointer transition-transform hover:scale-[1.02] active:scale-95" onClick={() => onNavigate('alumni')}>
+          <AlumniEmploymentCard />
+        </div>
+        <div className="h-80">
+          <InquiriesSummaryCard onNavigateToInquiries={(tab) => onNavigate('inquiries', tab)} />
+        </div>
+      </div>
+
+      {/* --- DEPARTMENT MODAL OVERLAY --- */}
+      {isDeptModalOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Departments Overview</h2>
+                  <p className="text-[11px] text-gray-500">Live breakdown of registered accounts</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsDeptModalOpen(false)} 
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 overflow-y-auto flex-1">
+              {loadingDeptStats ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-sm font-medium text-gray-500">Loading department statistics...</p>
+                </div>
+              ) : deptStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                  <Building2 className="w-10 h-10 mb-2 opacity-30" />
+                  <p className="text-sm font-medium">No official departments found.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deptStats.map(dept => (
+                    <div 
+                      key={dept.name} 
+                      className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50 hover:border-indigo-200 transition-colors shadow-sm"
+                    >
+                      <p className="font-semibold text-gray-800 text-sm truncate pr-4">{dept.name}</p>
+                      
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        {/* Students stat */}
+                        <div className="flex flex-col items-center" title="Total Students">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <Users className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.students}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Students</span>
+                        </div>
+                        
+                        <div className="w-px h-6 bg-gray-200" />
+
+                        {/* Faculty stat */}
+                        <div className="flex flex-col items-center" title="Total Faculty">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.faculty}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Faculty</span>
+                        </div>
+
+                        <div className="w-px h-6 bg-gray-200" />
+
+                        {/* Staff stat */}
+                        <div className="flex flex-col items-center" title="Total Staff">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <UserCircle className="w-3.5 h-3.5 text-amber-600" />
+                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.staff}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">Staff</span>
+                        </div>
+
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+              <button 
+                onClick={() => setIsDeptModalOpen(false)}
+                className="px-5 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
+      )}
     </div>
   );
 }
@@ -1458,6 +1647,7 @@ interface CalendarEvent {
   organizer_id?: string | null;
   created_at: string;
   updated_at: string;
+  color?: string | null; // Added for custom colors
 }
 
 interface DeptOption {
@@ -1477,12 +1667,11 @@ const TYPE_TO_COLOR: Record<string, string> = {
 const DEFAULT_EVENT_COLOR = '#1E3A8A';
 
 const STANDARD_EVENT_TYPES = [
-  { value: 'activity', label: 'Activity' },
-  { value: 'meeting', label: 'Meeting' },
-  { value: 'deadline', label: 'Deadline' },
-  { value: 'holiday', label: 'Holiday' },
-  { value: 'exam', label: 'Exam' },
-  { value: 'other', label: 'Other (Enter custom type)...' },
+  { id: 'meeting', label: 'Meeting', color: '#3B82F6' },
+  { id: 'activity', label: 'Activity', color: '#10B981' },
+  { id: 'holiday', label: 'Holiday', color: '#8B5CF6' },
+  { id: 'deadline', label: 'Deadline', color: '#F59E0B' },
+  { id: 'exam', label: 'Exam', color: '#EF4444' },
 ];
 
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
@@ -1506,6 +1695,7 @@ const MONTH_NAMES = [
 ];
 
 function colorForCalendarEvent(ev: CalendarEvent): string {
+  if (ev.color) return ev.color;
   const t = ev.event_type?.toLowerCase() || '';
   return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
 }
@@ -1557,12 +1747,12 @@ export default function CalendarActivities() {
     description: '',
     event_type: 'activity',
     custom_event_type: '',
+    event_color: '#10B981', // Default to Activity green
     audience: 'all',
     target_department_id: '',
   };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
-  const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
 
   // Archive Search & Filter State
   const [archiveSearch, setArchiveSearch] = useState('');
@@ -1572,14 +1762,6 @@ export default function CalendarActivities() {
   const [archiveDept, setArchiveDept] = useState<string>('all');
 
   const getToken = () => localStorage.getItem('token');
-
-  const getDepartmentColor = (name: string) => {
-    if (name === 'All Departments') return '#3B82F6';
-    if (name.toLowerCase().includes('technology and livelihood')) return '#EAB308';
-    if (name.toLowerCase().includes('math') || name.toLowerCase().includes('english')) return '#F97316';
-    if (name.toLowerCase().includes('elementary education')) return '#22C55E';
-    return '#8B5CF6';
-  };
 
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
@@ -1615,30 +1797,36 @@ export default function CalendarActivities() {
   };
 
   const fetchDepartments = async () => {
-    const { data, error } = await (window as any).supabase
-      ?.from('departments')
-      .select('id, name')
-      .order('name');
-    if (!error && data) setDepartments(data);
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name')
+        .order('name');
+      if (!error && data) {
+        setDepartments(data);
+      }
+    } catch (err) {
+      console.error('Error fetching departments:', err);
+    }
   };
 
   useEffect(() => {
     fetchEvents();
     fetchDepartments();
 
-    const channel = (window as any).supabase
-      ?.channel('dean-calendar-events-sync')
-      ?.on(
+    const channel = supabase
+      .channel('dean-calendar-events-sync')
+      .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'calendar_events' },
         () => {
           fetchEvents();
         }
       )
-      ?.subscribe();
+      .subscribe();
 
     return () => {
-      if (channel) (window as any).supabase?.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -1733,7 +1921,7 @@ export default function CalendarActivities() {
 
   // Open modal pre-populated with existing event values
   const handleStartEdit = (ev: CalendarEvent) => {
-    const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.value === ev.event_type);
+    const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.id === ev.event_type);
     const existingDept = ev.department_ids && ev.department_ids.length > 0 ? ev.department_ids[0] : '';
 
     setForm({
@@ -1743,6 +1931,7 @@ export default function CalendarActivities() {
       description: ev.description || '',
       event_type: isStandardType ? (ev.event_type as string) : 'other',
       custom_event_type: isStandardType ? '' : ev.event_type || '',
+      event_color: ev.color || colorForCalendarEvent(ev),
       audience: ev.audience || 'all',
       target_department_id: existingDept,
     });
@@ -1757,12 +1946,10 @@ export default function CalendarActivities() {
   // Shared submit handler (POST for new, PUT for edit)
   const handleSaveEvent = async () => {
     setFormError('');
-    if (!form.title.trim()) {
-      setFormError('Event title is required.');
-      return;
-    }
-    if (!form.date) {
-      setFormError('Please select a date.');
+    
+    // ERROR HANDLING: Check all required fields (Description is optional)
+    if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
+      setFormError('Please complete all required fields. Only the description is optional.');
       return;
     }
 
@@ -1793,6 +1980,7 @@ export default function CalendarActivities() {
           location: form.location.trim() || null,
           event_date: `${form.date}T08:00:00.000Z`,
           event_type: finalEventType,
+          color: form.event_color,
           audience: form.audience,
           status: 'upcoming',
           target_department_id: form.target_department_id || null,
@@ -2547,8 +2735,11 @@ export default function CalendarActivities() {
               setShowModal(false);
             }}
           />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
+          {/* Inayos na Modal Layout: Hidden overflow sa main parent, overflow-y-auto lang sa body para malinis ang scrollbar */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md z-[10000] max-h-[90vh] flex flex-col overflow-hidden">
+            
+            {/* Header - Non-scrolling */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-white shrink-0 z-10">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">
                 {editingEventId ? 'Edit Event' : 'Add New Event'}
               </h2>
@@ -2557,19 +2748,21 @@ export default function CalendarActivities() {
                   resetForm();
                   setShowModal(false);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
+                className="p-1.5 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {formError && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-                {formError}
-              </div>
-            )}
+            {/* Body - Scrollable */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
+              {formError && (
+                <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+                  {formError}
+                </div>
+              )}
 
-            <div className="space-y-4">
+              {/* 1. Event Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Title *</label>
                 <input
@@ -2581,6 +2774,7 @@ export default function CalendarActivities() {
                 />
               </div>
 
+              {/* 2. Date */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
@@ -2591,8 +2785,9 @@ export default function CalendarActivities() {
                 />
               </div>
 
+              {/* 3. Location */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location *</label>
                 <input
                   type="text"
                   value={form.location}
@@ -2602,83 +2797,7 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              <div className="relative">
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department</label>
-                <button
-                  type="button"
-                  onClick={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{
-                        backgroundColor: getDepartmentColor(
-                          form.target_department_id
-                            ? departments.find((d) => d.id === form.target_department_id)?.name || ''
-                            : 'All Departments'
-                        ),
-                      }}
-                    />
-                    <span className="truncate">
-                      {form.target_department_id
-                        ? departments.find((d) => d.id === form.target_department_id)?.name || 'All Departments'
-                        : 'All Departments (Visible to All)'}
-                    </span>
-                  </div>
-                  <ChevronLeft
-                    className={`w-4 h-4 text-gray-500 transition-transform -rotate-90 ${
-                      showDepartmentDropdown ? 'rotate-90' : ''
-                    }`}
-                  />
-                </button>
-
-                {showDepartmentDropdown && (
-                  <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({ ...form, target_department_id: '' });
-                        setShowDepartmentDropdown(false);
-                      }}
-                      className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-                        form.target_department_id === '' ? 'bg-blue-50' : ''
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#3B82F6' }} />
-                      <span className="truncate">All Departments</span>
-                      {form.target_department_id === '' && (
-                        <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />
-                      )}
-                    </button>
-
-                    {departments.map((d) => {
-                      const isSelected = form.target_department_id === d.id;
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => {
-                            setForm({ ...form, target_department_id: d.id });
-                            setShowDepartmentDropdown(false);
-                          }}
-                          className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-gray-50 transition-colors ${
-                            isSelected ? 'bg-blue-50' : ''
-                          }`}
-                        >
-                          <span
-                            className="w-3 h-3 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: getDepartmentColor(d.name) }}
-                          />
-                          <span className="truncate">{d.name}</span>
-                          {isSelected && <Check className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
+              {/* 4. Description (Optional) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea
@@ -2690,37 +2809,86 @@ export default function CalendarActivities() {
                 />
               </div>
 
+              {/* 5. Target Department */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Type</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department *</label>
+                {/* Standard Select Tag gaya ng nasa instruction para sa malinis na pagpili */}
                 <select
-                  value={form.event_type}
-                  onChange={(e) => setForm({ ...form, event_type: e.target.value })}
+                  value={form.target_department_id}
+                  onChange={(e) => setForm({ ...form, target_department_id: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {STANDARD_EVENT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
+                  <option value="">All Departments (Visible to All)</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* 6. Type of Activity */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-2">Type of Activity *</label>
+                {/* Pilil / Buttons Layout para sa Event Type */}
+                <div className="flex flex-wrap gap-2">
+                  {STANDARD_EVENT_TYPES.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, event_type: type.id, event_color: type.color })}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                        form.event_type === type.id
+                          ? 'bg-white shadow-sm ring-1 ring-offset-1'
+                          : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                      style={{
+                        borderColor: form.event_type === type.id ? type.color : '#E5E7EB',
+                        color: form.event_type === type.id ? '#111827' : '#4B5563',
+                        boxShadow: form.event_type === type.id ? `0 0 0 1px ${type.color}` : 'none'
+                      }}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: type.color }} />
+                      {type.label}
+                    </button>
+                  ))}
+                  
+                  {/* Custom Option */}
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, event_type: 'other', event_color: '#64748B' })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                      form.event_type === 'other'
+                        ? 'bg-white shadow-sm ring-1 ring-offset-1 border-gray-400 text-gray-900'
+                        : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="text-gray-400 text-sm leading-none">+</span> Custom
+                  </button>
+                </div>
 
                 {form.event_type === 'other' && (
-                  <div className="mt-2.5">
-                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">
-                      Specify Custom Event Type *
-                    </label>
+                  <div className="mt-3 flex items-center gap-2">
                     <input
                       type="text"
                       value={form.custom_event_type}
                       onChange={(e) => setForm({ ...form, custom_event_type: e.target.value })}
-                      placeholder="e.g. Orientation, Seminar, Homecoming, Workshop"
-                      className="w-full px-3 py-2 border border-blue-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/20"
+                      placeholder="Enter custom type... e.g. Seminar"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       autoFocus
                     />
+                    <div className="relative group">
+                      <input
+                        type="color"
+                        value={form.event_color}
+                        onChange={(e) => setForm({ ...form, event_color: e.target.value })}
+                        className="w-10 h-10 p-0.5 border border-gray-200 rounded-lg cursor-pointer bg-white"
+                        title="Choose custom color"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
 
+              {/* 7. Target Audience (Optional/Default to All) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Audience *</label>
                 <select
@@ -2739,13 +2907,14 @@ export default function CalendarActivities() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            {/* Footer - Non-scrolling */}
+            <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3 shrink-0">
               <button
                 onClick={() => {
                   resetForm();
                   setShowModal(false);
                 }}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>
@@ -2767,10 +2936,25 @@ export default function CalendarActivities() {
           </div>
         </div>
       )}
+
+      {/* Basic global styles para hindi makapal ang scrollbar sa loob ng modal */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #CBD5E1;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 }
 // ─── Academic Records ─────────────────────────────────────────────────────────
+
 interface TargetRoleOption {
   id: string;
   label: string;
@@ -2794,7 +2978,7 @@ interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
-  document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+  document_type: string;
   target_roles?: string[];
   file_name: string;
   file_type: string;
@@ -2805,7 +2989,7 @@ interface AcademicDocument {
   updated_at: string;
 }
 
-const DOC_TYPE_LABELS: Record<string, string> = {
+const DEFAULT_CATEGORIES: Record<string, string> = {
   handbook: 'Handbook',
   policy: 'Policy',
   form: 'Form',
@@ -2824,10 +3008,19 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AcademicRecords() {
+export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState('');
+  
+  // Categories State (Dynamic)
+  const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('custom_doc_categories');
+    return saved ? { ...DEFAULT_CATEGORIES, ...JSON.parse(saved) } : DEFAULT_CATEGORIES;
+  });
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
 
@@ -2836,7 +3029,7 @@ function AcademicRecords() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    document_type: 'handbook' as 'handbook' | 'policy' | 'form' | 'memorandum',
+    document_type: 'handbook',
     target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
@@ -2848,7 +3041,15 @@ function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const fetchDocuments = async () => {
+  // Preview Modal States
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; url: string | null; name: string; isLocalDocx: boolean }>({
+    open: false,
+    url: null,
+    name: '',
+    isLocalDocx: false,
+  });
+
+  const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
@@ -2873,17 +3074,38 @@ function AcademicRecords() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [typeFilter, statusFilter]);
 
   useEffect(() => {
     fetchDocuments();
-  }, [typeFilter, statusFilter]);
+  }, [fetchDocuments]);
+
+  // --- Category Management ---
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    const key = newCategoryName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const updated = { ...docCategories, [key]: newCategoryName.trim() };
+    setDocCategories(updated);
+    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
+    setNewCategoryName('');
+  };
+
+  const handleDeleteCategory = (key: string) => {
+    if (!confirm(`Are you sure you want to delete the category "${docCategories[key]}"? Documents under this category will still exist.`)) return;
+    const updated = { ...docCategories };
+    delete updated[key];
+    setDocCategories(updated);
+    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
+    if (typeFilter === key) setTypeFilter('all');
+    if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
+  };
+  // ---------------------------
 
   const resetForm = () => {
     setForm({
       title: '',
       description: '',
-      document_type: 'handbook',
+      document_type: Object.keys(docCategories)[0] || 'handbook',
       target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
@@ -2961,6 +3183,64 @@ function AcademicRecords() {
     }
   };
   // -----------------------------------
+
+  // --- PREVIEW LOGIC (Saktong paingon sa /preview endpoint sa backend) ---
+  const handlePreview = async (doc: AcademicDocument) => {
+    setDownloadingId(doc.id); 
+    setLoadError('');
+    try {
+      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        let errorMsg = 'Failed to retrieve document preview link.';
+        try {
+          const errJson = JSON.parse(errText);
+          errorMsg = errJson.error || errJson.message || errorMsg;
+        } catch {
+          errorMsg = errText || errorMsg;
+        }
+        throw new Error(errorMsg);
+      }
+      
+      const data = await res.json();
+      if (!data.url) throw new Error('Backend did not return a valid URL.');
+      
+      const ext = doc.file_name.split('.').pop()?.toLowerCase();
+      const isDocx = ext === 'doc' || ext === 'docx';
+      
+      setPreviewModal({
+        open: true,
+        url: isDocx ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(data.url)}` : data.url,
+        name: doc.title,
+        isLocalDocx: false
+      });
+    } catch (err: any) {
+      console.error("Preview Error:", err);
+      setLoadError(`Preview Error: ${err.message}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleLocalPreview = () => {
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const isDocx = ext === 'doc' || ext === 'docx';
+      const localUrl = URL.createObjectURL(file);
+      setPreviewModal({
+        open: true,
+        url: localUrl,
+        name: file.name,
+        isLocalDocx: isDocx // We cannot use officeapps.live.com for local blob URLs
+      });
+    } else if (editingDoc) {
+      handlePreview(editingDoc);
+    }
+  };
+  // ---------------------
 
   const handleSave = async () => {
     setFormError('');
@@ -3050,17 +3330,27 @@ function AcademicRecords() {
 
   const handleDownload = async (doc: AcademicDocument) => {
     setDownloadingId(doc.id);
+    setLoadError('');
     try {
       const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
         headers: { Authorization: `Bearer ${getDocsToken()}` },
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
+        const errText = await res.text();
+        let errorMsg = 'Failed to generate download link.';
+        try {
+          const errJson = JSON.parse(errText);
+          errorMsg = errJson.error || errJson.message || errorMsg;
+        } catch {
+          errorMsg = errText || errorMsg;
+        }
+        throw new Error(errorMsg);
       }
-      const { url } = await res.json();
-      window.open(url, '_blank');
+      const data = await res.json();
+      if(data.url) window.open(data.url, '_blank');
+    } catch (err: any) {
+      console.error("Download Error:", err);
+      setLoadError(`Download Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
     }
@@ -3081,21 +3371,32 @@ function AcademicRecords() {
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="all">All Categories</option>
-          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4 relative z-10">
+        <div className="flex flex-1 gap-2">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">All Categories</option>
+            {Object.entries(docCategories).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowCategoryModal(true)}
+            className="px-3 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
+            title="Manage Categories"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">Categories</span>
+          </button>
+        </div>
+        
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="w-full sm:w-48 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="active">Active</option>
           <option value="archived">Archived</option>
@@ -3104,7 +3405,9 @@ function AcademicRecords() {
       </div>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl font-medium">
+          {loadError}
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
@@ -3125,14 +3428,14 @@ function AcademicRecords() {
               const isAllAudience = targetRoles.length === DOC_AUDIENCE_ROLES.length;
 
               return (
-                <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3">
+                <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3 border border-gray-100 hover:border-blue-100 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
                       <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                          {DOC_TYPE_LABELS[doc.document_type]}
+                          {docCategories[doc.document_type] || doc.document_type}
                         </span>
                         {doc.status === 'archived' && (
                           <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>
@@ -3162,17 +3465,26 @@ function AcademicRecords() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* View Button */}
                     <button
-                      onClick={() => handleDownload(doc)}
+                      onClick={() => handlePreview(doc)}
                       disabled={downloadingId === doc.id}
-                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
-                      title="Download"
+                      className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-40"
+                      title="Preview Document"
                     >
                       {downloadingId === doc.id ? (
-                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                       ) : (
-                        <Download className="w-5 h-5" />
+                        <Eye className="w-5 h-5" />
                       )}
+                    </button>
+                    {/* Download Button */}
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-5 h-5" />
                     </button>
                     <button onClick={() => openEdit(doc)} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors" title="Edit">
                       <Edit className="w-4 h-4" />
@@ -3195,8 +3507,103 @@ function AcademicRecords() {
         )}
       </div>
 
+      {/* --- PREVIEW MODAL --- */}
+      {previewModal.open && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                <h3 className="font-bold text-gray-900 truncate">{previewModal.name}</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setPreviewModal({ open: false, url: null, name: '', isLocalDocx: false });
+                  if (previewModal.url && previewModal.url.startsWith('blob:')) URL.revokeObjectURL(previewModal.url);
+                }} 
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors shrink-0"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 bg-gray-100 relative">
+              {previewModal.isLocalDocx ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
+                  <FileText className="w-16 h-16 text-gray-300 mb-4" />
+                  <h4 className="text-lg font-bold text-gray-700">Preview Not Available for Local Word Docs</h4>
+                  <p className="text-sm text-gray-500 max-w-sm mt-2">
+                    Because this is an unpublished Word Document (.doc/.docx), it cannot be previewed in the browser. Please save the document to view it normally, or upload a PDF instead.
+                  </p>
+                </div>
+              ) : previewModal.url ? (
+                <iframe 
+                  src={previewModal.url} 
+                  className="w-full h-full border-0" 
+                  title="Document Preview"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CATEGORY MANAGEMENT MODAL --- */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900">Manage Categories</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
+              {Object.entries(docCategories).map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
+                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                  <button 
+                    onClick={() => handleDeleteCategory(key)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                    title="Delete Category"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newCategoryName}
+                  onChange={e => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Certificates" 
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button 
+                  onClick={handleAddCategory}
+                  disabled={!newCategoryName.trim()}
+                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- UPLOAD MODAL --- */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
@@ -3206,7 +3613,7 @@ function AcademicRecords() {
             </div>
 
             {formError && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl font-medium">
                 {formError}
               </div>
             )}
@@ -3227,10 +3634,10 @@ function AcademicRecords() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                 <select
                   value={form.document_type}
-                  onChange={(e) => setForm({ ...form, document_type: e.target.value as any })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => setForm({ ...form, document_type: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                  {Object.entries(docCategories).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
                   ))}
                 </select>
@@ -3307,10 +3714,17 @@ function AcademicRecords() {
                   />
                   
                   {file ? (
-                    <div className="flex items-center justify-between w-full max-w-[260px] bg-white border border-gray-200 px-3 py-2 rounded-lg shadow-sm">
+                    <div 
+                      className="flex items-center justify-between w-full max-w-[300px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation(); // prevent reopening file picker
+                        handleLocalPreview();
+                      }}
+                      title="Click to preview file"
+                    >
                       <div className="flex items-center gap-2 text-[#1E3A8A] overflow-hidden">
-                        <FileText className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-xs font-medium truncate">
+                        <Eye className="w-4 h-4 flex-shrink-0 text-blue-500" />
+                        <span className="text-xs font-semibold truncate hover:underline cursor-pointer">
                           {file.name}
                         </span>
                       </div>
@@ -3342,9 +3756,17 @@ function AcademicRecords() {
                 </div>
                 
                 {editingDoc && !file && (
-                  <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                  <p className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5" /> 
-                    Current file: <span className="font-medium text-gray-600 truncate">{editingDoc.file_name}</span>
+                    Current file: 
+                    <button 
+                      type="button"
+                      onClick={() => handleLocalPreview()} 
+                      className="font-medium text-blue-600 hover:underline truncate"
+                      title="Click to preview current file"
+                    >
+                      {editingDoc.file_name}
+                    </button>
                   </p>
                 )}
               </div>
@@ -3400,185 +3822,184 @@ function AcademicRecords() {
     </div>
   );
 }
+
 // ─── Faculty & Staff ──────────────────────────────────────────────────────────
 function FacultyStaffManagement() {
   const [facultyList, setFacultyList] = useState<Profile[]>([]);
   const [staffList, setStaffList] = useState<Profile[]>([]);
-  const [facultyCount, setFacultyCount] = useState(0);
-  const [staffCount, setStaffCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [loadingList, setLoadingList] = useState(false);
-  const [viewModal, setViewModal] = useState<'faculty' | 'staff' | null>(null);
   const [search, setSearch] = useState('');
 
-  const loadCounts = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const facultyResponse = await fetch('http://localhost:5000/api/auth/faculty-count');
-      const facultyResult = await facultyResponse.json();
-      if (!facultyResponse.ok || !facultyResult.success) {
-        setFacultyCount(0);
-      } else {
-        setFacultyCount(Number(facultyResult.count) || 0);
-      }
+      const [facultyRes, staffRes] = await Promise.all([
+        fetch('http://localhost:5000/api/auth/faculty'),
+        fetch('http://localhost:5000/api/auth/staff')
+      ]);
 
-      const staffResponse = await fetch('http://localhost:5000/api/auth/staff-count');
-      const staffResult = await staffResponse.json();
-      if (!staffResponse.ok || !staffResult.success) {
-        setStaffCount(0);
-      } else {
-        setStaffCount(Number(staffResult.count) || 0);
-      }
-    } catch {
-      setFacultyCount(0);
-      setStaffCount(0);
+      const facultyResult = await facultyRes.json();
+      const staffResult = await staffRes.json();
+
+      setFacultyList(facultyResult.success && Array.isArray(facultyResult.data) ? facultyResult.data : []);
+      setStaffList(staffResult.success && Array.isArray(staffResult.data) ? staffResult.data : []);
+    } catch (err) {
+      console.error('Failed to load faculty and staff data:', err);
+      setFacultyList([]);
+      setStaffList([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadCounts(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const openList = async (type: 'faculty' | 'staff') => {
-    setViewModal(type);
-    setSearch('');
-    setLoadingList(true);
-    try {
-      if (type === 'faculty') {
-        const response = await fetch('http://localhost:5000/api/auth/faculty');
-        const result = await response.json();
-        setFacultyList(result.success && Array.isArray(result.data) ? result.data : []);
-      } else {
-        const response = await fetch('http://localhost:5000/api/auth/staff');
-        const result = await response.json();
-        setStaffList(result.success && Array.isArray(result.data) ? result.data : []);
-      }
-    } catch {
-      if (type === 'faculty') setFacultyList([]);
-      else setStaffList([]);
-    } finally {
-      setLoadingList(false);
+  const filterPerson = (person: Profile) => {
+    if (!search.trim()) return true;
+    const searchText = search.toLowerCase().trim();
+    return (
+      (person.full_name ?? '').toLowerCase().includes(searchText) ||
+      (person.email ?? '').toLowerCase().includes(searchText) ||
+      (person.id_number ?? '').toLowerCase().includes(searchText) ||
+      (person.department ?? '').toLowerCase().includes(searchText)
+    );
+  };
+
+  const filteredFaculty = facultyList.filter(filterPerson);
+  const filteredStaff = staffList.filter(filterPerson);
+
+  const renderList = (list: Profile[], role: 'faculty' | 'staff', emptyMessage: string) => {
+    const isFaculty = role === 'faculty';
+    const accent = isFaculty ? '#2563EB' : '#16A34A';
+    const accentBg = isFaculty ? '#DBEAFE' : '#D1FAE5';
+
+    if (loading) {
+      return (
+        <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+          <div className={`w-7 h-7 border-2 border-gray-200 rounded-full animate-spin mb-3 ${isFaculty ? 'border-t-blue-600' : 'border-t-green-600'}`} />
+          <p className="text-sm">Loading {role}...</p>
+        </div>
+      );
     }
+
+    if (list.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-40 text-gray-300">
+          <Users className="w-10 h-10 mb-2 opacity-40" />
+          <p className="text-sm text-gray-400">
+            {search ? `No ${role} found matching "${search}"` : emptyMessage}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 overflow-y-auto max-h-[600px] pr-2">
+        {list.map((person) => {
+          const name = person.full_name || 'Unnamed User';
+          const deptOrRole = person.department || (isFaculty ? 'Faculty' : 'Staff');
+          const initial = name.charAt(0).toUpperCase();
+
+          return (
+            <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors shadow-sm">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
+                {initial}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
+                <p className="text-xs font-medium text-gray-600 truncate">{deptOrRole}</p>
+                {person.id_number && (
+                  <p className="text-[11px] text-gray-400 truncate mt-0.5">ID: <span className="font-mono">{person.id_number}</span></p>
+                )}
+                {person.email && (
+                  <p className="text-[11px] text-gray-400 truncate">{person.email}</p>
+                )}
+              </div>
+              <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
+                {role}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
-
-  const closeList = () => {
-    setViewModal(null);
-    setSearch('');
-  };
-
-  const activeList = viewModal === 'faculty' ? facultyList : viewModal === 'staff' ? staffList : [];
-  const filteredList = search.trim()
-    ? activeList.filter((person) => {
-        const searchText = search.toLowerCase().trim();
-        return (
-          (person.full_name ?? '').toLowerCase().includes(searchText) ||
-          (person.email ?? '').toLowerCase().includes(searchText) ||
-          (person.id_number ?? '').toLowerCase().includes(searchText) ||
-          (person.department ?? '').toLowerCase().includes(searchText)
-        );
-      })
-    : activeList;
-
-  const accent = viewModal === 'faculty' ? '#2563EB' : '#16A34A';
-  const accentBg = viewModal === 'faculty' ? '#DBEAFE' : '#D1FAE5';
 
   return (
-    <div>
-      <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Staff Management</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Faculty Profiles</h2>
-          <p className="text-3xl font-bold text-blue-600 mb-2">{loading ? '...' : facultyCount.toLocaleString()}</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Faculty Members</p>
-          <button onClick={() => openList('faculty')} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            View All Faculty
-          </button>
+    <div className="flex flex-col h-full">
+      {/* Header & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Faculty & Staff</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage all registered personnel accounts</p>
         </div>
-
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Staff Profiles</h2>
-          <p className="text-3xl font-bold text-green-600 mb-2">{loading ? '...' : staffCount.toLocaleString()}</p>
-          <p className="text-gray-600 mb-4 text-sm sm:text-base">Active Staff Members</p>
-          <button onClick={() => openList('staff')} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            View All Staff
+        
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, ID, email, dept..."
+              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
+            />
+          </div>
+          <button 
+            onClick={loadData} 
+            className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors bg-white shadow-sm"
+            title="Refresh List"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {viewModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeList} />
-          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl p-5 sm:p-6 z-10 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
-                  {viewModal === 'faculty' ? 'All Faculty' : 'All Staff'}
-                  <span className="ml-2 text-sm font-semibold text-gray-400">({filteredList.length})</span>
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {viewModal === 'faculty' ? 'Active faculty members registered in the system' : 'Active staff members registered in the system'}
-                </p>
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
+        
+        {/* Faculty Column */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/30">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                <GraduationCap className="w-4 h-4" />
               </div>
-              <button onClick={closeList} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+              <h2 className="text-base font-bold text-gray-900">Faculty Profiles</h2>
             </div>
-
-            <div className="relative mb-4 flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={viewModal === 'faculty' ? 'Search faculty name, email, department...' : 'Search staff name, email, department...'}
-                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 -mx-1 px-1">
-              {loadingList ? (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-                  <div className="w-7 h-7 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-3" />
-                  <p className="text-sm">Loading {viewModal}...</p>
-                </div>
-              ) : filteredList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-                  <Users className="w-10 h-10 mb-2 opacity-40" />
-                  <p className="text-sm text-gray-400">
-                    {search ? `No ${viewModal} found matching "${search}"` : `No active ${viewModal} found`}
-                  </p>
-                </div>
-              ) : (
-                filteredList.map((person) => {
-                  const isFaculty = viewModal === 'faculty';
-                  const name = person.full_name || 'Unnamed User';
-                  const role = person.department || (isFaculty ? 'Faculty' : 'Staff');
-                  const initial = name.charAt(0).toUpperCase();
-
-                  return (
-                    <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
-                        {initial}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
-                        <p className="text-xs text-gray-500 truncate">{role}</p>
-                        {person.email && <p className="text-[11px] text-gray-400 truncate mt-0.5">{person.email}</p>}
-                        {person.id_number && <p className="text-[11px] text-gray-400 truncate">ID: {person.id_number}</p>}
-                      </div>
-                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
-                        {isFaculty ? 'Faculty' : 'Staff'}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            <span className="text-xs font-bold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
+              {filteredFaculty.length} {filteredFaculty.length === 1 ? 'Member' : 'Members'}
+            </span>
+          </div>
+          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
+            {renderList(filteredFaculty, 'faculty', 'No active faculty members found')}
           </div>
         </div>
-      )}
+
+        {/* Staff Column */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-green-50/30">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-green-100 text-green-700 rounded-lg">
+                <UserCircle className="w-4 h-4" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Staff Profiles</h2>
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 bg-green-100 text-green-700 rounded-full">
+              {filteredStaff.length} {filteredStaff.length === 1 ? 'Member' : 'Members'}
+            </span>
+          </div>
+          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
+            {renderList(filteredStaff, 'staff', 'No active staff members found')}
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
-
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {
@@ -4720,14 +5141,19 @@ function AlumniTracer() {
 }
 
 // ─── Inquiries (Student & Alumni Q&A) ─────────────────────────────────────────
-function InquiriesManagement() {
+function InquiriesManagement({ initialTab = 'student' }: { initialTab?: 'student' | 'alumni' | 'contact' }) {
   const [studentInquiries, setStudentInquiries] = useState<Inquiry[]>([]);
   const [alumniInquiries, setAlumniInquiries] = useState<Inquiry[]>([]);
   const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeSection, setActiveSection] =
-    useState<'student' | 'alumni' | 'contact'>('student');
+const [activeSection, setActiveSection] = useState<'student' | 'alumni' | 'contact'>(initialTab);
+
+useEffect(() => {
+    if (initialTab) {
+      setActiveSection(initialTab);
+    }
+  }, [initialTab]);
 
   const [studentFilter, setStudentFilter] =
     useState<'all' | 'pending' | 'answered'>('all');
@@ -8238,7 +8664,7 @@ function AnnouncementsContent() {
                             key={r}
                             className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
                               conf
-                                ? `${conf.bg} ${conf.text} ${conf.border}`
+                                ? `${conf.bg} ${conf.text}${conf.border}`
                                 : 'bg-gray-100 text-gray-700 border-gray-200'
                             }`}
                           >
@@ -8272,8 +8698,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* COMPOSER MODAL (Full screen coverage with w-screen h-screen) */}
       {isComposerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 bg-gray-50/80 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-2 text-gray-900 font-bold text-base">
@@ -8420,8 +8847,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* DELETE MODAL (Full screen coverage with w-screen h-screen) */}
       {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
             <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3.5">
               <Trash2 className="w-6 h-6" />
@@ -8454,8 +8882,9 @@ function AnnouncementsContent() {
         </div>
       )}
 
+      {/* SUCCESS/ERROR MODAL (Full screen coverage with w-screen h-screen) */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
