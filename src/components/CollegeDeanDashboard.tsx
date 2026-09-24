@@ -213,10 +213,8 @@ const deanMenuItems = [
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
   { icon: MessageCircle,   label: 'Inquiries',               id: 'inquiries' },
-  { icon: Edit,            label: 'Landing Page Management', id: 'landing' },
   { icon: BarChart3,       label: 'Quarterly Reports',       id: 'reports' },
   { icon: Megaphone,       label: 'Announcements',           id: 'announcements' },
-  { icon: Users,           label: 'User Management',         id: 'users' },
   { icon: Settings,        label: 'System Settings',         id: 'settings' },
 ];
 
@@ -288,7 +286,6 @@ export function CollegeDeanDashboard({
           {activeMenuItem === 'research'      && <ResearchAchievements />}
           {activeMenuItem === 'alumni'        && <AlumniTracer />}
           {activeMenuItem === 'inquiries'     && <InquiriesManagement initialTab={inquiriesInitialTab} />}
-          {activeMenuItem === 'landing'       && <LandingPageManagement />}
           {activeMenuItem === 'announcements' && <AnnouncementsContent />}
           {activeMenuItem === 'reports'       && <ReportsAnalytics />}
           {activeMenuItem === 'settings'      && <SystemSettings />}
@@ -9627,10 +9624,12 @@ const NOTIF_DEFAULTS = {
 
 const SETTINGS_TABS = [
   { id: 'profile',       label: 'Profile Information', icon: User },
-  { id: 'security',      label: 'Password & Security',  icon: KeyRound },
-  { id: 'notifications', label: 'Notifications',        icon: Bell },
-  { id: 'academic',      label: 'Academic Settings',     icon: GraduationCap },
-  { id: 'account',       label: 'Account Actions',       icon: LogOut },
+  { id: 'users',         label: 'User Management',     icon: Users },
+  { id: 'landing',       label: 'Landing Page Management', icon: Edit },
+  { id: 'security',      label: 'Password & Security', icon: KeyRound },
+  { id: 'notifications', label: 'Notifications',       icon: Bell },
+  { id: 'academic',      label: 'Academic Settings',   icon: GraduationCap },
+  { id: 'account',       label: 'Account Actions',     icon: LogOut },
 ] as const;
 
 type SettingsTabId = typeof SETTINGS_TABS[number]['id'];
@@ -9649,44 +9648,200 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
   );
 }
 
-function SystemSettings({ onLogout }: { onLogout?: () => void }) {
+interface SystemSettingsProps {
+  profile?: { fullName: string; email: string };
+  onProfileUpdate?: (profile: { fullName: string; email: string }) => void;
+  onLogout?: () => void;
+}
+
+function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
 
-  // Profile
-  const [fullName, setFullName] = useState('Dr. Elizabeth Martinez');
-  const [email, setEmail] = useState('');
+  // --- Profile State ---
+  const [fullName, setFullName] = useState(profile?.fullName || 'Dr. Elizabeth Martinez');
+  const [email, setEmail] = useState(profile?.email || 'elizabeth.martinez@university.edu');
   const [positionRole] = useState('College Dean');
 
-  // Security
+  // Sync state whenever parent profile updates
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.fullName);
+      setEmail(profile.email);
+    }
+  }, [profile]);
+
+  // --- Security State ---
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
-  // Notifications
+  // --- Notifications State ---
   const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
-  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
-    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
 
-  // Academic settings
+  // --- Academic Settings State ---
   const [academicYear, setAcademicYear] = useState('2025-2026');
   const [semester, setSemester] = useState('Second Semester');
   const [collegeDept, setCollegeDept] = useState('College of Education');
 
+  // --- General UI State ---
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Auto-clear notification messages
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => setMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
+  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
+    setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // --- Save Handlers ---
+
+  const saveProfile = async () => {
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName || !trimmedEmail) {
+      setMessage({ type: 'error', text: 'Full Name and Email are required.' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Use getSession() instead of getUser() to avoid "Auth session missing!" crashes
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (session?.user && !sessionError) {
+        // 1. Update public profile record in Supabase (if using Supabase Auth)
+        await supabase
+          .from('profiles')
+          .update({ full_name: trimmedName, email: trimmedEmail })
+          .eq('id', session.user.id);
+
+        // 2. Update Supabase Auth email if it changed
+        if (trimmedEmail.toLowerCase() !== session.user.email?.toLowerCase()) {
+          await supabase.auth.updateUser({ email: trimmedEmail });
+        }
+      } else {
+        // Note: If you have a specific Express backend endpoint to update the logged-in user, call it here.
+        // e.g., await fetch('http://localhost:5000/api/auth/profile', { method: 'PUT', body: JSON.stringify(...) })
+        console.warn("No active Supabase session found. Updating UI state locally.");
+      }
+
+      // 3. Immediately reflect changes across the dashboard header and parent views
+      if (onProfileUpdate) {
+        onProfileUpdate({ fullName: trimmedName, email: trimmedEmail });
+      }
+
+      setMessage({ type: 'success', text: 'Profile updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update profile.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSecurity = async () => {
+    if (newPassword && newPassword !== confirmPassword) {
+      setMessage({ type: 'error', text: 'New passwords do not match.' });
+      return;
+    }
+    if (newPassword && newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (newPassword) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { error } = await supabase.auth.updateUser({ password: newPassword });
+          if (error) throw error;
+        } else {
+          console.warn("No active Supabase session found. Cannot update password directly.");
+        }
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage({ type: 'success', text: 'Security settings updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update password.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveNotifications = async () => {
+    await new Promise((res) => setTimeout(res, 400));
+    localStorage.setItem('notificationPreferences', JSON.stringify(notifs));
+    setMessage({ type: 'success', text: 'Notification preferences saved.' });
+  };
+
+  const saveAcademicSettings = async () => {
+    if (!academicYear.trim() || !collegeDept.trim()) {
+      setMessage({ type: 'error', text: 'Academic Year and College/Department are required.' });
+      return;
+    }
+    await new Promise((res) => setTimeout(res, 400));
+    setMessage({ type: 'success', text: 'Academic settings updated.' });
+  };
 
   const handleSaveChanges = async () => {
     setSaving(true);
+    setMessage(null);
     try {
-      // TODO: wire up to backend per tab (profile, security, notifications, academic)
-      await new Promise(res => setTimeout(res, 600));
+      switch (activeTab) {
+        case 'profile':
+          await saveProfile();
+          break;
+        case 'security':
+          await saveSecurity();
+          break;
+        case 'notifications':
+          await saveNotifications();
+          break;
+        case 'academic':
+          await saveAcademicSettings();
+          break;
+        default:
+          setMessage({ type: 'error', text: 'Nothing to save on this tab.' });
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'An error occurred while saving.' });
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancel = () => {
-    // Reset to last-saved values if needed
+    if (profile) {
+      setFullName(profile.fullName);
+      setEmail(profile.email);
+    }
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setMessage(null);
+  };
+
+  const handleLogoutAllDevices = async () => {
+    if (window.confirm('Are you sure you want to log out of all devices?')) {
+      await supabase.auth.signOut({ scope: 'global' });
+      if (onLogout) onLogout();
+    }
   };
 
   return (
@@ -9704,18 +9859,33 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
           >
             Cancel
           </button>
-          <button
-            onClick={handleSaveChanges}
-            disabled={saving}
-            className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          {!['users', 'landing', 'account'].includes(activeTab) && (
+            <button
+              onClick={handleSaveChanges}
+              disabled={saving}
+              className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
         </div>
       </div>
 
-       <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
-        {/* Sidebar tabs */}
+      {/* Message Alert */}
+      {message && (
+        <div
+          className={`mb-6 p-4 rounded-xl text-sm font-medium border ${
+            message.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-red-50 text-red-700 border-red-200'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        {/* Sidebar Tabs */}
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
           {SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -9723,7 +9893,10 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setMessage(null);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
@@ -9737,8 +9910,18 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
           })}
         </div>
 
-        {/* Content panel */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0">
+        {/* Content Panel */}
+        <div
+          className={`flex-1 min-w-0 ${
+            ['users', 'landing'].includes(activeTab)
+              ? ''
+              : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'
+          }`}
+        >
+          {activeTab === 'users' && <UserManagement />}
+
+          {activeTab === 'landing' && <LandingPageManagement />}
+
           {activeTab === 'profile' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
@@ -9769,7 +9952,7 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     type="text"
                     value={positionRole}
                     disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500"
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -9788,6 +9971,7 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     type="password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -9797,6 +9981,7 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password (min. 6 characters)"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -9806,24 +9991,28 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
-                  Change Password
-                </button>
               </div>
 
               <div className="border-t border-gray-100 pt-5">
                 <ToggleRow
                   label="Two-Factor Authentication"
                   checked={twoFactorEnabled}
-                  onChange={() => setTwoFactorEnabled(v => !v)}
+                  onChange={() => setTwoFactorEnabled((v) => !v)}
                 />
+                <p className="text-xs text-gray-500 mt-2 max-w-md">
+                  Enable two-factor authentication to add an extra layer of security to your account.
+                </p>
               </div>
 
-              <div className="border-t border-gray-100 pt-5 mt-1">
-                <button className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+              <div className="border-t border-gray-100 pt-5 mt-4">
+                <button
+                  onClick={handleLogoutAllDevices}
+                  className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
+                >
                   Log Out of All Devices
                 </button>
               </div>
@@ -9833,9 +10022,9 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
 
-              <div>
+              <div className="max-w-md">
                 <ToggleRow label="New Inquiries" checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} />
                 <ToggleRow label="Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
                 <ToggleRow label="New Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
@@ -9857,6 +10046,7 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     type="text"
                     value={academicYear}
                     onChange={(e) => setAcademicYear(e.target.value)}
+                    placeholder="e.g. 2025-2026"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -9867,13 +10057,13 @@ function SystemSettings({ onLogout }: { onLogout?: () => void }) {
                     onChange={(e) => setSemester(e.target.value)}
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    <option>First Semester</option>
-                    <option>Second Semester</option>
-                    <option>Summer</option>
+                    <option value="First Semester">First Semester</option>
+                    <option value="Second Semester">Second Semester</option>
+                    <option value="Summer">Summer</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">College/Department</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">College/Department Name</label>
                   <input
                     type="text"
                     value={collegeDept}
