@@ -1,6 +1,5 @@
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
-
 interface HeaderProps {
   onNavigate: (page: string) => void;
   currentPage: string;
