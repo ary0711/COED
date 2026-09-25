@@ -21,6 +21,7 @@ import {
   Lock,
   LogOut,
   Check,
+  Calendar,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -952,6 +953,8 @@ interface BackendCalendarEvent {
   title: string;
   description?: string | null;
   event_date: string;
+  start_time?: string | null; // Added for synchronized start time support
+  end_time?: string | null;   // Added for synchronized end time support
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string;
   audience?: string;
   location?: string | null;
@@ -989,6 +992,37 @@ function colorForAlumniEvent(ev: BackendCalendarEvent): string {
 function dateOnlyAlumni(isoLike: string): string {
   if (!isoLike) return '';
   return isoLike.split('T')[0];
+}
+
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+function sortEventsChronologically(a: BackendCalendarEvent, b: BackendCalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
 function formatTimeFromDate(isoLike: string): string | null {
@@ -1079,7 +1113,8 @@ function AlumniCalendar() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, BackendCalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnlyAlumni(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -1097,7 +1132,7 @@ function AlumniCalendar() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyAlumni(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const formatDate = (dateStr: string) => {
@@ -1313,7 +1348,7 @@ function AlumniCalendar() {
                       </div>
                     )}
 
-                    {/* Tooltip Hover Preview */}
+                    {/* Tooltip Hover Preview with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1333,7 +1368,7 @@ function AlumniCalendar() {
 
                         <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                           {dayEvents.map((ev) => {
-                            const timeStr = formatTimeFromDate(ev.event_date);
+                            const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                             return (
                               <div
                                 key={ev.id}
@@ -1345,11 +1380,9 @@ function AlumniCalendar() {
                                   {ev.title}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                  {timeStr && (
-                                    <span className="font-medium text-gray-700">
-                                      {timeStr}
-                                    </span>
-                                  )}
+                                  <span className="font-medium text-gray-700">
+                                    {timeRangeStr}
+                                  </span>
                                   {ev.event_type && (
                                     <span className="uppercase text-[9px] font-bold text-gray-600">
                                       {ev.event_type}
@@ -1385,7 +1418,7 @@ function AlumniCalendar() {
 
           {upcomingEvents.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
-              <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
               <p className="text-xs font-medium">No upcoming events scheduled</p>
             </div>
           ) : (
@@ -1393,7 +1426,7 @@ function AlumniCalendar() {
               {upcomingEvents.map((ev) => {
                 const evDate = dateOnlyAlumni(ev.event_date);
                 const isDueToday = evDate === todayStr;
-                const timeStr = formatTimeFromDate(ev.event_date);
+                const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
 
                 return (
                   <div
@@ -1417,11 +1450,9 @@ function AlumniCalendar() {
                     </div>
 
                     <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                      {timeStr && (
-                        <span className="font-medium text-gray-700">
-                          {timeStr}
-                        </span>
-                      )}
+                      <span className="font-medium text-gray-700">
+                        {timeRangeStr}
+                      </span>
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ backgroundColor: colorForAlumniEvent(ev) }}
@@ -1466,12 +1497,10 @@ function AlumniCalendar() {
                 <span>{formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(selectedEvent.event_date) && (
-                <div>
-                  <span className="font-semibold text-gray-900">Time: </span>
-                  <span>{formatTimeFromDate(selectedEvent.event_date)}</span>
-                </div>
-              )}
+              <div>
+                <span className="font-semibold text-gray-900">Time: </span>
+                <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
+              </div>
 
               {selectedEvent.location && (
                 <div>

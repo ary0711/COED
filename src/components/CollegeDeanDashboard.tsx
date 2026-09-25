@@ -1634,6 +1634,8 @@ interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
+  start_time?: string | null; // Added for start time support
+  end_time?: string | null; // Added for end time support
   end_date?: string | null;
   location: string | null;
   department_ids: string[] | null;
@@ -1644,7 +1646,7 @@ interface CalendarEvent {
   organizer_id?: string | null;
   created_at: string;
   updated_at: string;
-  color?: string | null; // Added for custom colors
+  color?: string | null;
 }
 
 interface DeptOption {
@@ -1702,6 +1704,43 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
+// Formats "HH:MM:SS" or "HH:MM" into readable 12-hour format (e.g., "9:00 AM")
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+// Combines start and end times into a clean range (e.g., "8:00 AM – 10:30 AM")
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+// Helper to sort events chronologically by start_time (events without time sort last)
+function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+
+  return (timeA ?? '').localeCompare(timeB ?? '');
+}
+
 function formatTimeFromDate(isoLike: string): string | null {
   if (!isoLike || !isoLike.includes('T')) return null;
   const timePart = isoLike.split('T')[1];
@@ -1736,10 +1775,12 @@ export default function CalendarActivities() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Form State
+  // Form State with Start & End Time
   const emptyForm = {
     title: '',
     date: '',
+    start_time: '',
+    end_time: '',
     location: '',
     description: '',
     event_type: 'activity',
@@ -1829,7 +1870,8 @@ export default function CalendarActivities() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnlyStr(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -1847,13 +1889,13 @@ export default function CalendarActivities() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const pastEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyStr(e.event_date) < todayStr)
-      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+      .sort((a, b) => sortEventsChronologically(b, a));
   }, [events, todayStr]);
 
   const availableYears = useMemo(() => {
@@ -1916,7 +1958,6 @@ export default function CalendarActivities() {
     setEditingEventId(null);
   };
 
-  // Open modal pre-populated with existing event values
   const handleStartEdit = (ev: CalendarEvent) => {
     const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.id === ev.event_type);
     const existingDept = ev.department_ids && ev.department_ids.length > 0 ? ev.department_ids[0] : '';
@@ -1924,6 +1965,8 @@ export default function CalendarActivities() {
     setForm({
       title: ev.title || '',
       date: dateOnlyStr(ev.event_date) || '',
+      start_time: ev.start_time ? ev.start_time.slice(0, 5) : '',
+      end_time: ev.end_time ? ev.end_time.slice(0, 5) : '',
       location: ev.location || '',
       description: ev.description || '',
       event_type: isStandardType ? (ev.event_type as string) : 'other',
@@ -1940,13 +1983,16 @@ export default function CalendarActivities() {
     }
   };
 
-  // Shared submit handler (POST for new, PUT for edit)
   const handleSaveEvent = async () => {
     setFormError('');
     
-    // ERROR HANDLING: Check all required fields (Description is optional)
     if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
       setFormError('Please complete all required fields. Only the description is optional.');
+      return;
+    }
+
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setFormError('End time must be later than start time.');
       return;
     }
 
@@ -1976,6 +2022,8 @@ export default function CalendarActivities() {
           description: form.description.trim() || null,
           location: form.location.trim() || null,
           event_date: `${form.date}T08:00:00.000Z`,
+          start_time: form.start_time ? form.start_time : null,
+          end_time: form.end_time ? form.end_time : null,
           event_type: finalEventType,
           color: form.event_color,
           audience: form.audience,
@@ -2059,7 +2107,6 @@ export default function CalendarActivities() {
         </div>
 
         <div className="flex items-center gap-3 self-start md:self-auto">
-          {/* Calendar vs Event History Switcher */}
           <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 shadow-2xs">
             <button
               onClick={() => setViewMode('calendar')}
@@ -2069,7 +2116,7 @@ export default function CalendarActivities() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <CalendarIcon className="w-4 h-4" />
+              <Calendar className="w-4 h-4" />
               <span>Calendar</span>
             </button>
             <button
@@ -2114,7 +2161,6 @@ export default function CalendarActivities() {
       {viewMode === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-            {/* Toolbar */}
             <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
               <div className="flex items-center gap-2">
                 <select
@@ -2173,7 +2219,6 @@ export default function CalendarActivities() {
               </div>
             </div>
 
-            {/* Days Header */}
             <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
               {DAYS.map((d, i) => (
                 <div
@@ -2188,7 +2233,7 @@ export default function CalendarActivities() {
 
             {loading ? (
               <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
-                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
                 <span className="text-sm font-medium">Loading events…</span>
               </div>
             ) : (
@@ -2252,7 +2297,7 @@ export default function CalendarActivities() {
                         )}
                       </div>
 
-                      {/* Event pills on desktop */}
+                      {/* Desktop Event Pills */}
                       <div className="hidden sm:flex flex-col gap-1">
                         {dayEvents.slice(0, 2).map((ev) => (
                           <button
@@ -2275,7 +2320,7 @@ export default function CalendarActivities() {
                         )}
                       </div>
 
-                      {/* Indicators on mobile */}
+                      {/* Mobile Event Dots */}
                       {hasEvents && (
                         <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                           {dayEvents.slice(0, 3).map((ev) => (
@@ -2291,7 +2336,7 @@ export default function CalendarActivities() {
                         </div>
                       )}
 
-                      {/* Tooltip Preview */}
+                      {/* Tooltip Hover Preview with Time Range */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -2311,7 +2356,7 @@ export default function CalendarActivities() {
 
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
-                              const timeStr = formatTimeFromDate(ev.event_date);
+                              const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                               return (
                                 <div
                                   key={ev.id}
@@ -2323,12 +2368,10 @@ export default function CalendarActivities() {
                                     {ev.title}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                    {timeStr && (
-                                      <span className="flex items-center gap-1 font-medium text-gray-700">
-                                        <Clock className="w-3 h-3 text-gray-400" />
-                                        {timeStr}
-                                      </span>
-                                    )}
+                                    <span className="flex items-center gap-1 font-medium text-gray-700">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      {timeRangeStr}
+                                    </span>
                                     {ev.event_type && (
                                       <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
                                         <Tag className="w-2.5 h-2.5 text-gray-400" />
@@ -2369,7 +2412,7 @@ export default function CalendarActivities() {
 
             {upcomingEvents.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs font-medium">No upcoming events scheduled</p>
               </div>
             ) : (
@@ -2377,7 +2420,7 @@ export default function CalendarActivities() {
                 {upcomingEvents.map((ev) => {
                   const evDate = dateOnlyStr(ev.event_date);
                   const isDueToday = evDate === todayStr;
-                  const timeStr = formatTimeFromDate(ev.event_date);
+                  const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
 
                   return (
                     <div
@@ -2401,12 +2444,10 @@ export default function CalendarActivities() {
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                        {timeStr && (
-                          <span className="flex items-center gap-1 font-medium text-gray-700">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            {timeStr}
-                          </span>
-                        )}
+                        <span className="flex items-center gap-1 font-medium text-gray-700">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {timeRangeStr}
+                        </span>
                         <span
                           className="w-2 h-2 rounded-full"
                           style={{ backgroundColor: colorForCalendarEvent(ev) }}
@@ -2547,7 +2588,7 @@ export default function CalendarActivities() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupedArchiveEvents[groupMonth].map((ev) => {
-                      const timeStr = formatTimeFromDate(ev.event_date);
+                      const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                       return (
                         <div
                           key={ev.id}
@@ -2570,15 +2611,11 @@ export default function CalendarActivities() {
                               <span className="font-medium text-gray-700">
                                 {formatDate(dateOnlyStr(ev.event_date))}
                               </span>
-                              {timeStr && (
-                                <>
-                                  <span>·</span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-gray-400" />
-                                    {timeStr}
-                                  </span>
-                                </>
-                              )}
+                              <span>·</span>
+                              <span className="flex items-center gap-1 font-medium text-gray-700">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                {timeRangeStr}
+                              </span>
                               <span>·</span>
                               <span className="truncate">{departmentLabel(ev)}</span>
                             </div>
@@ -2625,7 +2662,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Event Details Modal (With Edit & Delete Options) ── */}
+      {/* ── Event Details Modal ── */}
       {inspectingEvent && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
@@ -2653,18 +2690,16 @@ export default function CalendarActivities() {
 
             <div className="space-y-3 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
               <div className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="font-semibold text-gray-900">Date:</span>
                 <span>{formatLongDate(dateOnlyStr(inspectingEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(inspectingEvent.event_date) && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="font-semibold text-gray-900">Time:</span>
-                  <span>{formatTimeFromDate(inspectingEvent.event_date)}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Time:</span>
+                <span>{formatEventTimeRange(inspectingEvent.start_time, inspectingEvent.end_time)}</span>
+              </div>
 
               {inspectingEvent.location && (
                 <div className="flex items-center gap-2">
@@ -2722,7 +2757,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Unified Add / Edit Event Modal ── */}
+      {/* ── Unified Add / Edit Event Modal with Start & End Time ── */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div
@@ -2732,10 +2767,7 @@ export default function CalendarActivities() {
               setShowModal(false);
             }}
           />
-          {/* Inayos na Modal Layout: Hidden overflow sa main parent, overflow-y-auto lang sa body para malinis ang scrollbar */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md z-[10000] max-h-[90vh] flex flex-col overflow-hidden">
-            
-            {/* Header - Non-scrolling */}
             <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-white shrink-0 z-10">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">
                 {editingEventId ? 'Edit Event' : 'Add New Event'}
@@ -2751,7 +2783,6 @@ export default function CalendarActivities() {
               </button>
             </div>
 
-            {/* Body - Scrollable */}
             <div className="p-5 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
               {formError && (
                 <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
@@ -2759,7 +2790,6 @@ export default function CalendarActivities() {
                 </div>
               )}
 
-              {/* 1. Event Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Title *</label>
                 <input
@@ -2771,7 +2801,6 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 2. Date */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
@@ -2782,7 +2811,27 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 3. Location */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Start Time *</label>
+                  <input
+                    type="time"
+                    value={form.start_time}
+                    onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">End Time *</label>
+                  <input
+                    type="time"
+                    value={form.end_time}
+                    onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location *</label>
                 <input
@@ -2794,7 +2843,6 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 4. Description (Optional) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea
@@ -2806,10 +2854,8 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 5. Target Department */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department *</label>
-                {/* Standard Select Tag gaya ng nasa instruction para sa malinis na pagpili */}
                 <select
                   value={form.target_department_id}
                   onChange={(e) => setForm({ ...form, target_department_id: e.target.value })}
@@ -2822,10 +2868,8 @@ export default function CalendarActivities() {
                 </select>
               </div>
 
-              {/* 6. Type of Activity */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-2">Type of Activity *</label>
-                {/* Pilil / Buttons Layout para sa Event Type */}
                 <div className="flex flex-wrap gap-2">
                   {STANDARD_EVENT_TYPES.map((type) => (
                     <button
@@ -2848,7 +2892,6 @@ export default function CalendarActivities() {
                     </button>
                   ))}
                   
-                  {/* Custom Option */}
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, event_type: 'other', event_color: '#64748B' })}
@@ -2885,7 +2928,6 @@ export default function CalendarActivities() {
                 )}
               </div>
 
-              {/* 7. Target Audience (Optional/Default to All) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Audience *</label>
                 <select
@@ -2898,13 +2940,9 @@ export default function CalendarActivities() {
                   <option value="students">Students Only (Academic, Enrollment, Exams)</option>
                   <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
                 </select>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Selecting &quot;Alumni Only&quot; guarantees only verified alumni see this activity on their calendar.
-                </p>
               </div>
             </div>
 
-            {/* Footer - Non-scrolling */}
             <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3 shrink-0">
               <button
                 onClick={() => {
@@ -2934,7 +2972,6 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* Basic global styles para hindi makapal ang scrollbar sa loob ng modal */}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
