@@ -998,6 +998,13 @@ const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
   alumni:  { length: 5, label: '5 digits' },
 };
 
+const PROGRAM_LABELS: Record<string, string> = {
+  'BEED': 'Bachelor of Elementary Education',
+  'BTLED': 'Bachelor of Technology and Livelihood Education',
+  'BSED-MATH': 'Bachelor of Secondary Education - Major in Mathematics',
+  'BSED-ENGLISH': 'Bachelor of Secondary Education - Major in English',
+};
+
 function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
   const [users, setUsers]               = useState<any[]>([]);
@@ -1018,7 +1025,7 @@ function UserManagement() {
 
   const [form, setForm] = useState({
     username: '', full_name: '', email: '', role: 'student',
-    id_number: '', department: '', status: 'active', password: '',
+    id_number: '', program: '', status: 'active', password: '',
   });
 
   const fetchUsers = useCallback(async () => {
@@ -1045,7 +1052,9 @@ function UserManagement() {
     }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => { 
+    fetchUsers(); 
+  }, [fetchUsers]);
 
   useEffect(() => {
     let result = [...users];
@@ -1056,7 +1065,8 @@ function UserManagement() {
         u.full_name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         u.id_number.toLowerCase().includes(q) ||
-        (u.department ?? '').toLowerCase().includes(q)
+        (u.department ?? '').toLowerCase().includes(q) ||
+        (u.program ?? '').toLowerCase().includes(q)
       );
     }
     if (roleFilter !== 'all')   result = result.filter(u => u.role === roleFilter);
@@ -1071,23 +1081,26 @@ function UserManagement() {
   const pendingCount = users.filter(u => u.status === 'pending').length;
 
   const openAdd = () => {
-    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
     setShowPassword(false);
     setFormError('');
     setModal('add');
   };
+  
   const openEdit = (user: any) => {
     setSelected(user);
     setForm({
       username: user.username || '',
       full_name: user.full_name, email: user.email, role: user.role,
-      id_number: user.id_number, department: user.department ?? '',
+      id_number: user.id_number, 
+      program: user.program || user.department || '',
       status: user.status, password: '',
     });
     setShowPassword(false);
     setFormError('');
     setModal('edit');
   };
+  
   const openDelete = (user: any) => { setSelected(user); setModal('delete'); };
 
   const handleAdd = async () => {
@@ -1107,6 +1120,12 @@ function UserManagement() {
         return;
       }
     }
+    
+    // Require program for students
+    if (form.role === 'student' && !form.program) {
+      setFormError('Please select a program for this student.');
+      return;
+    }
 
     if (!form.password) { setFormError('Password is required.'); return; }
     if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
@@ -1114,6 +1133,10 @@ function UserManagement() {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+      
+      // If program is empty/not assigned or role is alumni, send strictly null to backend
+      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
+
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 
@@ -1127,7 +1150,8 @@ function UserManagement() {
           role: form.role,
           full_name: form.full_name.trim(),
           id_number: form.id_number.trim(),
-          department: form.department.trim() || null,
+          program: payloadProgram,
+          department: payloadProgram, // Sent as department for strict backend validation
           status: form.status,
         }),
       });
@@ -1158,7 +1182,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       setShowPassword(false);
       setFormError('');
       await fetchUsers();
@@ -1187,12 +1211,21 @@ function UserManagement() {
         return;
       }
     }
+    
+    // Require program for students
+    if (form.role === 'student' && !form.program) {
+      setFormError('Please select a program for this student.');
+      return;
+    }
 
     if (!selected) return;
 
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+      
+      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
+
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'PUT',
         headers: {
@@ -1204,7 +1237,8 @@ function UserManagement() {
           full_name: form.full_name.trim(),
           role: form.role,
           id_number: form.id_number.trim(),
-          department: form.department.trim() || null,
+          program: payloadProgram,
+          department: payloadProgram, // Sent as department for strict backend validation
           status: form.status,
           ...(form.password.trim() ? { password: form.password.trim() } : {}),
         }),
@@ -1218,7 +1252,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error.message || 'Unable to connect to the backend.');
@@ -1257,7 +1291,7 @@ function UserManagement() {
       setModal(null);
       setSelected(null);
       setFormError('');
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error?.message || 'Unable to connect to the backend server.');
@@ -1363,7 +1397,7 @@ function UserManagement() {
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Search username, name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" placeholder="Search username, name, email, ID, or program..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -1374,7 +1408,9 @@ function UserManagement() {
           <div className="flex gap-2">
             <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
               <option value="all">All Roles</option>
-              {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {Object.entries(ROLE_CONFIG)
+                .filter(([k]) => k !== 'admin')
+                .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
               <option value="all">All Status</option>
@@ -1403,7 +1439,7 @@ function UserManagement() {
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Dept.</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Program</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -1414,6 +1450,9 @@ function UserManagement() {
                   const status       = STATUS_CONFIG[user.status] ?? { label: user.status, color: '#374151', bg: '#F3F4F6', dot: '#6B7280' };
                   const isPending    = user.status === 'pending';
                   const isActivating = activating === user.id;
+                  
+                  const affiliation = user.program || user.department;
+
                   return (
                     <tr key={user.id} className={`transition-colors ${isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/30'}`}>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
@@ -1439,7 +1478,7 @@ function UserManagement() {
                         </span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 hidden md:table-cell">
-                        <span className="text-sm text-gray-600">{user.department ?? '—'}</span>
+                        <span className="text-sm text-gray-600 line-clamp-2" title={affiliation}>{affiliation ?? '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
                         <button onClick={() => toggleStatus(user)}
@@ -1519,7 +1558,7 @@ function UserManagement() {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div className={form.role === 'alumni' ? "col-span-2" : ""}>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">
                     ID Number * ({ID_LENGTH_CONFIG[form.role]?.label || 'Digits only'})
                   </label>
@@ -1541,11 +1580,36 @@ function UserManagement() {
                     className="w-full px-3 py-2 border rounded-xl text-sm" 
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
-                  <input type="text" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
-                </div>
+                
+                {form.role !== 'alumni' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Program</label>
+                    {form.role === 'student' ? (
+                      <select 
+                        value={form.program} 
+                        onChange={e => setForm({ ...form, program: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl text-sm"
+                      >
+                        <option value="">-- Select Program --</option>
+                        <option value="BEEd">Bachelor of Elementary Education</option>
+                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
+                        <option value="BSEd-Math">Bachelor of Secondary Education - Major in Mathematics</option>
+                        <option value="BSEd-English">Bachelor of Secondary Education - Major in English</option>
+                      </select>
+                    ) : (
+                      <select 
+                        value={form.program} 
+                        onChange={e => setForm({ ...form, program: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl text-sm"
+                      >
+                        <option value="">-- Not Assigned --</option>
+                        <option value="BEEd">Bachelor of Elementary Education</option>
+                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
+                        <option value="BSEd">Bachelor of Secondary Education</option>
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1559,11 +1623,14 @@ function UserManagement() {
                         ...prev,
                         role: nextRole,
                         id_number: maxLen ? prev.id_number.slice(0, maxLen) : prev.id_number,
+                        program: '', 
                       }));
                     }}
                     className="w-full px-3 py-2 border rounded-xl text-sm"
                   >
-                    {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    {Object.entries(ROLE_CONFIG)
+                      .filter(([k]) => k !== 'admin')
+                      .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1627,6 +1694,7 @@ function UserManagement() {
     </div>
   );
 }
+
 // ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
