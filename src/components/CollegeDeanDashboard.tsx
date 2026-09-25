@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { renderAsync } from 'docx-preview';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -97,6 +98,8 @@ import {
   Filter,
   CalendarDays,
   Pencil,
+  Save,
+  AlertCircle,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -4039,6 +4042,7 @@ function FacultyStaffManagement() {
 interface FileAttachment {
   name: string;
   url: string;
+  path?: string;
   size?: number;
   type?: string;
 }
@@ -4060,6 +4064,7 @@ interface ResearchSubmissionRow {
   sdg_alignment?: string[] | string | null;
   file_name: string | null;
   file_url: string | null;
+  file_path?: string | null;
   files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
   dean_remarks: string | null;
@@ -4070,9 +4075,9 @@ interface ResearchSubmissionRow {
 
 const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
 const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  pending:  { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
-  approved: { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
-  rejected: { label: 'Rejected',       color: '#991B1B', bg: '#FEE2E2' },
+  pending: { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
+  approved: { label: 'Approved', color: '#065F46', bg: '#D1FAE5' },
+  rejected: { label: 'Rejected', color: '#991B1B', bg: '#FEE2E2' },
 };
 
 function getResearchTokenDean() {
@@ -4086,12 +4091,15 @@ export function ResearchAchievements() {
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  
+
   // Action & Modal States
   const [actionId, setActionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<ResearchSubmissionRow | null>(null);
   const [remarksInput, setRemarksInput] = useState('');
   const [viewingItem, setViewingItem] = useState<ResearchSubmissionRow | null>(null);
+
+  // In-Page Document Preview State
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -4132,12 +4140,14 @@ export function ResearchAchievements() {
         setLoadError(err.error || 'Failed to update submission status.');
         return;
       }
-      
-      setSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s));
+
+      setSubmissions(prev =>
+        prev.map(s => (s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s))
+      );
       if (statusFilter !== 'all') {
         setSubmissions(prev => prev.filter(s => s.id !== submission.id));
       }
-      
+
       setRejectFor(null);
       setRemarksInput('');
       if (viewingItem && viewingItem.id === submission.id) {
@@ -4165,21 +4175,29 @@ export function ResearchAchievements() {
       return item.files;
     }
     if (item.file_url) {
-      return [{ name: item.file_name || 'Attached Document', url: item.file_url }];
+      return [{ name: item.file_name || 'Attached Document', url: item.file_url, path: item.file_path || undefined }];
     }
     return [];
   };
 
-  const handleViewFile = (file: FileAttachment) => {
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
-
-    if (isImageOrPdf) {
-      window.open(file.url, '_blank', 'noopener,noreferrer');
-    } else {
-      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file.url)}`;
-      window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+  // Resolves signed URLs through Supabase backend and opens in-modal viewer
+  const handleViewFile = async (file: FileAttachment) => {
+    if (file.path) {
+      try {
+        const res = await fetch(
+          `${RESEARCH_API_URL_DEAN}/preview-url?path=${encodeURIComponent(file.path)}`,
+          { headers: { Authorization: `Bearer ${getResearchTokenDean()}` } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setPreviewFile({ url: data.url, name: file.name });
+          return;
+        }
+      } catch {
+        // Fall back to original file.url
+      }
     }
+    setPreviewFile({ url: file.url, name: file.name });
   };
 
   const formatDate = (iso?: string | null) =>
@@ -4256,7 +4274,7 @@ export function ResearchAchievements() {
         </div>
       )}
 
-      {/* Main List */}
+      {/* Main Submissions List */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base sm:text-lg font-bold text-gray-900">
@@ -4275,7 +4293,7 @@ export function ResearchAchievements() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
-            <Loader2 className="w-7 h-7 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
             <span className="text-sm font-medium">Retrieving submissions...</span>
           </div>
         ) : filtered.length === 0 ? (
@@ -4303,7 +4321,7 @@ export function ResearchAchievements() {
                         <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
                       </div>
 
-                      {/* Submitter info */}
+                      {/* Submitter Info */}
                       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="font-semibold text-gray-800 flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-gray-400" />
@@ -4315,7 +4333,7 @@ export function ResearchAchievements() {
                         <span>Submitted on {formatDate(item.created_at)}</span>
                       </div>
 
-                      {/* Fields Preview */}
+                      {/* Dynamic Field Summaries */}
                       <div className="flex flex-wrap gap-2 pt-1 text-xs">
                         {item.type === 'research' && (
                           <>
@@ -4379,7 +4397,7 @@ export function ResearchAchievements() {
                         <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
                       )}
 
-                      {/* Attachments & Link */}
+                      {/* Attachments (In-Page Modal Previews) */}
                       <div className="flex flex-wrap items-center gap-2 pt-2">
                         {item.publication_link && (
                           <a
@@ -4414,7 +4432,7 @@ export function ResearchAchievements() {
                       )}
                     </div>
 
-                    {/* Actions & Status Column */}
+                    {/* Actions & Status Column (View-Only; No Edit action) */}
                     <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
                       <span
                         className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
@@ -4463,7 +4481,7 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {/* Complete Inspection Modal */}
+      {/* Review & Inspect Modal (View-Only; No editing allowed) */}
       {viewingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
@@ -4678,6 +4696,167 @@ export function ResearchAchievements() {
           </div>
         </div>
       )}
+
+      {/* In-Page Document Preview Modal */}
+      {previewFile && (
+        <DocxPreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DocxPreviewModal({
+  file,
+  onClose,
+}: {
+  file: { url: string; name: string };
+  onClose: () => void;
+}) {
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+  const [renderingDocx, setRenderingDocx] = useState(false);
+  const [renderError, setRenderError] = useState(false);
+
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const isPdf = ext === 'pdf';
+  const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
+  const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
+  const isDocx = ext === 'docx';
+  const isOfficeDoc = ['doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
+
+  useEffect(() => {
+    if (isDocx && docxContainerRef.current) {
+      setRenderingDocx(true);
+      setRenderError(false);
+      docxContainerRef.current.innerHTML = '';
+
+      fetch(file.url)
+        .then(res => res.blob())
+        .then(blob => {
+          if (docxContainerRef.current) {
+            return renderAsync(blob, docxContainerRef.current, undefined, {
+              className: 'docx-preview-content',
+              inWrapper: false,
+            });
+          }
+        })
+        .catch(err => {
+          console.error('Docx render error:', err);
+          setRenderError(true);
+        })
+        .finally(() => {
+          setRenderingDocx(false);
+        });
+    }
+  }, [file.url, isDocx]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <FileText className="w-4 h-4 text-blue-700 shrink-0" />
+            <h3 className="font-semibold text-gray-900 text-sm truncate">{file.name}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200/50"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-gray-100/50 p-4 flex items-center justify-center min-h-[400px]">
+          {isPdf && (
+            <iframe
+              src={`${file.url}#toolbar=0`}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
+              title={file.name}
+            />
+          )}
+
+          {isImg && (
+            <div className="flex items-center justify-center w-full h-[68vh] bg-white rounded-xl border border-gray-200 p-2">
+              <img
+                src={file.url}
+                alt={file.name}
+                className="max-w-full max-h-full object-contain rounded-lg"
+              />
+            </div>
+          )}
+
+          {isText && (
+            <iframe
+              src={file.url}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white p-4 font-mono text-xs"
+              title={file.name}
+            />
+          )}
+
+          {isDocx && (
+            <div className="w-full h-[68vh] bg-white rounded-xl border border-gray-200 overflow-y-auto p-6 sm:p-10 shadow-inner">
+              {renderingDocx && (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                  <span className="text-xs">Rendering Word document...</span>
+                </div>
+              )}
+              {renderError && (
+                <div className="text-center py-12 text-gray-500 text-xs">
+                  <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  Could not parse this Word file preview. Use "Save a Copy" below to inspect.
+                </div>
+              )}
+              <div ref={docxContainerRef} className="max-w-3xl mx-auto" />
+            </div>
+          )}
+
+          {isOfficeDoc && (
+            <iframe
+              src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
+              title={file.name}
+            />
+          )}
+
+          {!isPdf && !isImg && !isText && !isDocx && !isOfficeDoc && (
+            <div className="text-center py-12 px-4 max-w-md">
+              <FileText className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">{file.name}</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                This file format cannot be rendered directly inside the browser.
+              </p>
+              <a
+                href={file.url}
+                download={file.name}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download File</span>
+              </a>
+            </div>
+          )}
+        </div>
+
+        <div className="p-3 border-t border-gray-100 flex justify-end gap-2 bg-white">
+          <a
+            href={file.url}
+            download={file.name}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Save a Copy</span>
+          </a>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-semibold hover:bg-gray-900 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

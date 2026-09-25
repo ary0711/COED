@@ -33,6 +33,30 @@ const ALLOWED_SDGS = [
   'SDG 16: Peace, Justice, & Strong Institutions',
 ];
 
+// GET /api/research-submissions/preview-url
+// Generates a temporary signed URL from Supabase Storage for in-modal preview
+router.get('/preview-url', authenticate, async (req, res) => {
+  try {
+    const { path } = req.query;
+    if (!path) {
+      return res.status(400).json({ error: 'File path parameter is required.' });
+    }
+
+    // Creates a signed link valid for 1 hour (3600 seconds)
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(path, 3600);
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    return res.json({ url: data.signedUrl });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to generate preview URL.' });
+  }
+});
+
 // GET /api/research-submissions/mine
 router.get('/mine', authenticate, async (req, res) => {
   const { data, error } = await supabase
@@ -151,7 +175,7 @@ router.patch('/:id/status', authenticate, requireDean, async (req, res) => {
   return res.json(data);
 });
 
-// POST /api/research-submissions (Create New Submission)
+// POST /api/research-submissions (Create New Submission by Faculty)
 router.post('/', authenticate, upload.any(), async (req, res) => {
   const {
     title,
@@ -286,11 +310,12 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
   return res.status(201).json(data);
 });
 
-// PUT /api/research-submissions/:id (Edit & Resubmit)
+// PUT /api/research-submissions/:id (Strictly UPDATE existing record on submitter edit)
 router.put('/:id', authenticate, upload.any(), async (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
 
+  // 1. Locate the existing record by primary key ID and submitter
   const { data: existing, error: fetchErr } = await supabase
     .from('research_submissions')
     .select('*')
@@ -302,12 +327,14 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
     return res.status(404).json({ error: 'Submission not found or access denied.' });
   }
 
+  // Locked records cannot be edited
   if (existing.status === 'approved') {
     return res.status(400).json({ error: 'Approved submissions cannot be modified.' });
   }
 
   const {
     title,
+    category,
     description,
     start_date,
     end_date,
@@ -324,9 +351,11 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
     return res.status(400).json({ error: 'End Date cannot be earlier than Start Date.' });
   }
 
+  // Preserve existing files without duplicate re-uploads
   let updatedFiles = Array.isArray(existing.files) ? [...existing.files] : [];
   const uploadedFiles = req.files ?? [];
 
+  // Upload only newly attached files
   for (const file of uploadedFiles) {
     const ext = file.originalname.split('.').pop();
     const filePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -365,20 +394,25 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
     }
   }
 
+  // Strict UPDATE: Re-enters 'pending' review under the exact same submission ID
   const updatePayload = {
     title: title ? String(title).trim() : existing.title,
-    description: description !== undefined ? description.trim() : existing.description,
+    category: category !== undefined ? category : existing.category,
+    description: description !== undefined ? (description ? description.trim() : null) : existing.description,
     start_date: start_date || null,
     end_date: end_date || null,
-    publication_link: publication_link !== undefined ? publication_link.trim() : existing.publication_link,
-    funding_source: funding_source !== undefined ? funding_source.trim() : existing.funding_source,
-    authors: authors !== undefined ? authors.trim() : existing.authors,
+    publication_link: publication_link !== undefined ? (publication_link ? publication_link.trim() : null) : existing.publication_link,
+    funding_source: funding_source !== undefined ? (funding_source ? funding_source.trim() : null) : existing.funding_source,
+    authors: authors !== undefined ? (authors ? authors.trim() : null) : existing.authors,
     budget: parsedBudget,
-    partner_organization: partner_organization !== undefined ? partner_organization.trim() : existing.partner_organization,
+    partner_organization: partner_organization !== undefined ? (partner_organization ? partner_organization.trim() : null) : existing.partner_organization,
     beneficiaries: parsedBeneficiaries,
     sdg_alignment: parsedSdgs,
     files: updatedFiles,
-    status: 'pending', // Resubmissions re-enter the pending review queue
+    file_path: updatedFiles.length > 0 ? updatedFiles[0].path : existing.file_path,
+    file_url: updatedFiles.length > 0 ? updatedFiles[0].url : existing.file_url,
+    file_name: updatedFiles.length > 0 ? updatedFiles[0].name : existing.file_name,
+    status: 'pending', // Re-routed for Dean evaluation
     updated_at: new Date().toISOString(),
   };
 
