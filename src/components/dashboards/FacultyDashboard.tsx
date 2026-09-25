@@ -48,15 +48,15 @@ import { ReportTrackerPanel } from '../ReportTrackerPanel';
 import { ResearchExtension } from '../ResearchExtension'; 
 
 const facultyMenuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard',          id: 'dashboard' },
-  { icon: BookOpen,        label: 'Teaching Load',       id: 'teaching-load' },
-  { icon: FileText,        label: 'Research & Extension',id: 'research' },
-  { icon: Award,           label: 'Achievements',        id: 'achievements' },
-  { icon: GraduationCap,   label: "Dean's List",         id: 'deans-list' },
-  { icon: FolderOpen,      label: 'Academic Resources',  id: 'academic-resources' },
-  { icon: FileText,        label: 'Reports',             id: 'reports' },
-  { icon: Calendar,        label: 'Calendar',            id: 'calendar' },
-  { icon: Settings,        label: 'Settings',            id: 'settings' },
+  { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
+  { icon: BookOpen,        label: 'Teaching Load',        id: 'teaching-load' },
+  { icon: FileText,        label: 'Research & Extension', id: 'research' },
+  { icon: Award,           label: 'Achievements',         id: 'achievements' },
+  { icon: GraduationCap,   label: "Dean's List",          id: 'deans-list' },
+  { icon: FolderOpen,      label: 'Academic Resources',   id: 'academic-resources' },
+  { icon: FileText,        label: 'Reports',              id: 'reports' },
+  { icon: Calendar,        label: 'Calendar',             id: 'calendar' },
+  { icon: Settings,        label: 'Settings',             id: 'settings' },
 ];
 
 interface FacultyDashboardProps {
@@ -120,7 +120,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-transparent">
+    <div className="flex min-h-screen bg-[#F8FAFC]">
       {/* ── Sidebar ── */}
       <Sidebar
         menuItems={facultyMenuItems}
@@ -135,7 +135,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
       <div className="hidden lg:block w-64 shrink-0" />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-xs">
           <div className="flex items-center gap-2 px-4 lg:px-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -150,8 +150,9 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           </div>
         </div>
 
-        <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard'          && <FacultyDashboardView />}
+        {/* Removed max-w-7xl and mx-auto to utilize all side space */}
+        <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500 w-full flex-1 flex flex-col">
+          {activeMenuItem === 'dashboard'          && <FacultyDashboardView setActiveMenuItem={setActiveMenuItem} userId={userId} />}
           {activeMenuItem === 'teaching-load'      && <TeachingLoad />}
           {activeMenuItem === 'research'           && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
@@ -169,6 +170,314 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   );
 }
 
+// ====================== 5.0 DASHBOARD (FIXED HEIGHT CARDS & NO SCREEN SCROLL) ======================
+interface FacultyDashboardViewProps {
+  setActiveMenuItem: (id: string) => void;
+  userId: string;
+}
+
+function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardViewProps) {
+  const [teachingUnits, setTeachingUnits] = useState<number>(12);
+  const [pendingReportsCount, setPendingReportsCount] = useState<number>(0);
+  const [pendingReportsList, setPendingReportsList] = useState<any[]>([]);
+  const [nearestEvent, setNearestEvent] = useState<any>(null);
+  const [researchExtensionList, setResearchExtensionList] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      try {
+        // 1. Fetch Calendar Events
+        const calendarRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
+        if (calendarRes.ok) {
+          const events = await calendarRes.json();
+          const today = new Date().toISOString().split('T')[0];
+          const upcoming = (Array.isArray(events) ? events : [])
+            .filter((e: any) => {
+              const eventDate = e.event_date ? e.event_date.split('T')[0] : '';
+              const aud = (e.audience || 'all').toLowerCase();
+              return eventDate >= today && ['all', 'everyone', 'faculty'].includes(aud);
+            })
+            .sort((a: any, b: any) => a.event_date.localeCompare(b.event_date));
+
+          if (upcoming.length > 0) {
+            setNearestEvent(upcoming[0]);
+          }
+        }
+
+        // 2. Fetch Pending Reports
+        const [accRes, extRes, wfhRes] = await Promise.all([
+          fetch('http://localhost:5000/api/accomplishment-reports/my-draft', { headers }).catch(() => null),
+          fetch('http://localhost:5000/api/extension-reports/my-draft', { headers }).catch(() => null),
+          fetch('http://localhost:5000/api/wfh-reports/my-draft', { headers }).catch(() => null),
+        ]);
+
+        const reports: any[] = [];
+        if (accRes && accRes.ok) {
+          const accDraft = await accRes.json();
+          if (accDraft && accDraft.id) {
+            reports.push({
+              title: 'Accomplishment Report',
+              period: `${accDraft.quarter || 'Q1'} Quarter ${accDraft.year || '2026'}`,
+              status: 'Draft',
+              date: accDraft.updated_at,
+            });
+          }
+        }
+        if (extRes && extRes.ok) {
+          const extDraft = await extRes.json();
+          if (extDraft && extDraft.id) {
+            reports.push({
+              title: 'Extension Report',
+              period: `${extDraft.quarter || 'Q1'} Quarter ${extDraft.year || '2026'}`,
+              status: 'Draft',
+              date: extDraft.updated_at,
+            });
+          }
+        }
+        if (wfhRes && wfhRes.ok) {
+          const wfhDraft = await wfhRes.json();
+          if (wfhDraft && wfhDraft.id) {
+            reports.push({
+              title: 'WFH Report',
+              period: wfhDraft.reporting_period || 'Period Report',
+              status: 'Draft',
+              date: wfhDraft.updated_at,
+            });
+          }
+        }
+
+        setPendingReportsCount(reports.length);
+        setPendingReportsList(reports);
+
+        // 3. Fetch Research & Extension Submissions
+        const researchRes = await fetch('http://localhost:5000/api/research-submissions/mine', { headers });
+        if (researchRes.ok) {
+          const submissions = await researchRes.json();
+          setResearchExtensionList(Array.isArray(submissions) ? submissions : []);
+        }
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [userId]);
+
+  const formatDate = (iso: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso.includes('T') ? iso : `${iso}T00:00:00`);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  return (
+    <div className="flex flex-col h-full gap-4 sm:gap-5 animate-in fade-in duration-300">
+      {/* ── Top Metric Cards ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 shrink-0">
+        
+        {/* Card 1: Teaching Load */}
+        <div
+          onClick={() => setActiveMenuItem('teaching-load')}
+          className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-[#1E3A8A] group-hover:scale-105 transition-transform">
+              <BookOpen className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] font-semibold px-2.5 py-1 bg-blue-50 text-[#1E3A8A] rounded-full">
+              Current Load
+            </span>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-gray-900 tracking-tight">
+              {teachingUnits} <span className="text-base font-normal text-gray-400">Units</span>
+            </div>
+            <div className="text-sm font-medium text-gray-500 mt-0.5">Teaching Load</div>
+          </div>
+        </div>
+
+        {/* Card 2: Pending Reports */}
+        <div
+          onClick={() => setActiveMenuItem('reports')}
+          className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:scale-105 transition-transform">
+              <FileText className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] font-semibold px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full">
+              Action Required
+            </span>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-gray-900 tracking-tight">
+              {loading ? <Loader2 className="w-6 h-6 animate-spin text-gray-300" /> : pendingReportsCount}
+            </div>
+            <div className="text-sm font-medium text-gray-500 mt-0.5">Pending Reports</div>
+          </div>
+        </div>
+
+        {/* Card 3: Upcoming Activities */}
+        <div
+          onClick={() => setActiveMenuItem('calendar')}
+          className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition-transform">
+              <Calendar className="w-5 h-5" />
+            </div>
+            {nearestEvent && (
+              <span className="text-[10px] font-bold px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full uppercase tracking-wider">
+                Nearest Event
+              </span>
+            )}
+          </div>
+          <div>
+            <div className="text-lg font-bold text-gray-900 line-clamp-1 group-hover:text-[#1E3A8A] transition-colors">
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
+              ) : nearestEvent ? (
+                nearestEvent.title
+              ) : (
+                'No Upcoming Events'
+              )}
+            </div>
+            <div className="text-sm font-medium text-gray-500 mt-0.5">
+              {nearestEvent ? formatDate(nearestEvent.event_date) : 'Open calendar schedule'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom Big Cards (Fixed Height & Internal Scrolling) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+        
+        {/* Left Bottom Card: Reports */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-gray-900">Pending & Draft Reports</h2>
+              <p className="text-xs text-gray-500">Faculty quarterly submissions & records</p>
+            </div>
+            <button
+              onClick={() => setActiveMenuItem('reports')}
+              className="text-xs font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
+            >
+              Open Reports <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+            {loading ? (
+              <div className="h-full flex items-center justify-center text-gray-400">
+                <Loader2 className="w-6 h-6 animate-spin text-[#1E3A8A]" />
+              </div>
+            ) : pendingReportsList.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                <CheckCircle className="w-8 h-8 text-emerald-500/50 mb-2" />
+                <p className="text-sm font-semibold text-gray-700">No pending reports</p>
+                <p className="text-xs text-gray-400 mt-0.5">All your drafts and scheduled reports are submitted.</p>
+              </div>
+            ) : (
+              pendingReportsList.map((item, index) => (
+                <div
+                  key={index}
+                  onClick={() => setActiveMenuItem('reports')}
+                  className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-gray-100/60 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-white shadow-2xs border border-gray-200/60 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{item.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{item.period} · Saved {formatDate(item.date)}</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 shrink-0 uppercase tracking-wide">
+                    {item.status}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Bottom Card: Research & Extension Status */}
+<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
+          <div className="flex items-center justify-between mb-4 shrink-0">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-gray-900">Research & Extension Status</h2>
+              <p className="text-xs text-gray-500">Tracking status of submitted research projects</p>
+            </div>
+            <button
+              onClick={() => setActiveMenuItem('research')}
+              className="text-xs font-semibold text-[#1E3A8A] hover:underline flex items-center gap-1"
+            >
+              View All <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+            {loading ? (
+              <div className="h-full flex items-center justify-center text-gray-400">
+                <Loader2 className="w-6 h-6 animate-spin text-[#1E3A8A]" />
+              </div>
+            ) : researchExtensionList.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                <FolderOpen className="w-8 h-8 text-gray-300 mb-2" />
+                <p className="text-sm font-semibold text-gray-700">No submissions found</p>
+                <p className="text-xs text-gray-400 mt-0.5">Submit your research and community extension works to review status.</p>
+              </div>
+            ) : (
+              researchExtensionList.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setActiveMenuItem('research')}
+                  className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-gray-100/60 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-white shadow-2xs border border-gray-200/60 flex items-center justify-center shrink-0">
+                      {item.type === 'research' ? (
+                        <BookOpen className="w-4 h-4 text-purple-600" />
+                      ) : (
+                        <Building className="w-4 h-4 text-emerald-600" />
+                      )}
+                    </div>
+                    <div className="min-w-0 pr-2">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{item.title}</div>
+                      <div className="text-xs text-gray-400 capitalize mt-0.5">
+                        {item.type} · Submitted {formatDate(item.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${
+                      item.status === 'approved'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : item.status === 'rejected'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}
+                  >
+                    {item.status || 'Pending'}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  );
+}
 // ====================== ACADEMIC RESOURCES (FACULTY) ======================
 function AcademicResources() {
   interface AcademicDoc {
@@ -404,78 +713,6 @@ function AcademicResources() {
   );
 }
 
-// ====================== 5.0 DASHBOARD ======================
-function FacultyDashboardView() {
-  const announcements = [
-    { id: 1, title: 'Quarterly Report Deadline – February 20', date: '2 days ago', type: 'urgent' },
-    { id: 2, title: 'Faculty Development Seminar – March 5', date: '1 week ago', type: 'info' },
-    { id: 3, title: 'Research Grant Application Now Open', date: '2 weeks ago', type: 'info' },
-  ];
-
-  return (
-    <div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <BookOpen className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">12</div>
-          <div className="text-xs sm:text-sm text-gray-600">Teaching Units</div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <FileText className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">3</div>
-          <div className="text-xs sm:text-sm text-gray-600">Pending Reports</div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <Award className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">4.8/5.0</div>
-          <div className="text-xs sm:text-sm text-gray-600">Evaluation Rating</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Announcements</h2>
-          <div className="space-y-3">
-            {announcements.map((ann) => (
-              <div key={ann.id} className={`p-4 rounded-lg border-l-4 ${ann.type === 'urgent' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'}`}>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">{ann.title}</div>
-                <div className="text-xs sm:text-sm text-gray-600 mt-1">{ann.date}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Upcoming Deadlines</h2>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-4 bg-yellow-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Q4 Report Submission</div>
-                <div className="text-xs sm:text-sm text-gray-600">Due: February 20, 2026</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Grade Encoding Deadline</div>
-                <div className="text-xs sm:text-sm text-gray-600">Due: February 28, 2026</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Research Output Submission</div>
-                <div className="text-xs sm:text-sm text-gray-600">Due: March 15, 2026</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ====================== 5.1 TEACHING LOAD ======================
 interface ClassListFile {
   name: string;
@@ -501,11 +738,11 @@ function TeachingLoad() {
   ];
 
   const enrolledStudents = [
-    { id: '2024-001', name: 'Dela Cruz, Juan',        year: '1st Year', status: 'Regular'   },
-    { id: '2024-042', name: 'Santos, Maria Clara',    year: '1st Year', status: 'Regular'   },
-    { id: '2023-156', name: 'Garcia, Roberto',        year: '2nd Year', status: 'Irregular' },
+    { id: '2024-001', name: 'Dela Cruz, Juan',       year: '1st Year', status: 'Regular'   },
+    { id: '2024-042', name: 'Santos, Maria Clara',   year: '1st Year', status: 'Regular'   },
+    { id: '2023-156', name: 'Garcia, Roberto',       year: '2nd Year', status: 'Irregular' },
     { id: '2024-089', name: 'Lumbera, Bienvenido',   year: '1st Year', status: 'Regular'   },
-    { id: '2023-211', name: 'Reyes, Ana Liza',        year: '2nd Year', status: 'Irregular' },
+    { id: '2023-211', name: 'Reyes, Ana Liza',       year: '2nd Year', status: 'Irregular' },
   ];
 
   const formatFileSize = (bytes: number) => {
@@ -974,14 +1211,12 @@ export default function FacultyAchievements() {
 
   return (
     <div className="space-y-6">
-      {/* Header with Title & Tab Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Faculty Achievements</h1>
           <p className="text-sm text-gray-500 mt-1">Submit, monitor, and document your academic and professional recognitions.</p>
         </div>
         
-        {/* Navigation Tabs */}
         <div className="flex gap-1.5 p-1 bg-gray-100/80 rounded-xl w-fit border border-gray-200/60 self-start sm:self-auto">
           {[
             { id: 'submit', label: 'Submit Achievement', count: null },
@@ -993,7 +1228,7 @@ export default function FacultyAchievements() {
               onClick={() => setTab(t.id as any)}
               className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                 tab === t.id
-                  ? 'bg-white text-blue-900 shadow-sm'
+                  ? 'bg-white text-blue-900 shadow-xs'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
               }`}
             >
@@ -1011,7 +1246,6 @@ export default function FacultyAchievements() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left Column: Form / Lists */}
         <div className="lg:col-span-2">
           {tab === 'submit' && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
@@ -1023,7 +1257,6 @@ export default function FacultyAchievements() {
               </div>
 
               <div className="space-y-6">
-                {/* Group 1: General Details */}
                 <div>
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                     <span className="w-5 h-5 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
@@ -1068,7 +1301,6 @@ export default function FacultyAchievements() {
                   </div>
                 </div>
 
-                {/* Group 2: Supporting Documents */}
                 <div className="pt-2">
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                     <span className="w-5 h-5 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
@@ -1076,7 +1308,7 @@ export default function FacultyAchievements() {
                   </h3>
 
                   <label className="border-2 border-dashed border-gray-200 hover:border-blue-500 hover:bg-blue-50/20 rounded-2xl p-6 text-center transition-all cursor-pointer block bg-gray-50/40 group">
-                    <div className="w-10 h-10 bg-white shadow-xs border border-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2.5 group-hover:scale-105 transition-transform">
+                    <div className="w-10 h-10 bg-white shadow-2xs border border-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2.5 group-hover:scale-105 transition-transform">
                       <Upload className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
                     </div>
                     <p className="text-xs sm:text-sm font-semibold text-gray-700">
@@ -1092,7 +1324,6 @@ export default function FacultyAchievements() {
                     />
                   </label>
 
-                  {/* Selected files preview list */}
                   {selectedFiles.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs font-bold text-gray-500">
@@ -1128,12 +1359,11 @@ export default function FacultyAchievements() {
                   )}
                 </div>
 
-                {/* Submit Action Button */}
                 <div className="pt-4 border-t border-gray-100 flex justify-end">
                   <button
                     onClick={handleSubmit}
                     disabled={submitting}
-                    className="w-full sm:w-auto px-6 py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-all text-xs sm:text-sm disabled:opacity-60 shadow-xs flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto px-6 py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold transition-all text-xs sm:text-sm disabled:opacity-60 shadow-2xs flex items-center justify-center gap-2"
                   >
                     {submitting ? (
                       <>
@@ -1305,7 +1535,6 @@ export default function FacultyAchievements() {
           )}
         </div>
 
-        {/* Right Column: Summaries and Guidelines */}
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
             <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -1363,7 +1592,6 @@ export default function FacultyAchievements() {
         </div>
       </div>
 
-      {/* Modal Popup */}
       {modal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center border border-gray-100">
@@ -1387,7 +1615,7 @@ export default function FacultyAchievements() {
             <button
               type="button"
               onClick={closeModal}
-              className="w-full py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold text-xs transition-colors shadow-xs"
+              className="w-full py-2.5 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-xl font-semibold text-xs transition-colors shadow-2xs"
             >
               Dismiss
             </button>
@@ -1666,7 +1894,6 @@ function formatTimeFromDate(isoLike: string): string | null {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// Client-side defense-in-depth audience guard for Faculty
 function isFacultyAuthorizedEvent(ev: CalendarEvent): boolean {
   if (!ev.audience) return true;
   const aud = ev.audience.trim().toLowerCase();
@@ -1712,7 +1939,6 @@ function FacultyCalendar() {
         return;
       }
       const data = await res.json();
-      // Strict frontend sanitization ensuring no Student-only or Alumni-only events render for faculty
       const facultyOnly = (Array.isArray(data) ? data : []).filter(isFacultyAuthorizedEvent);
       setEvents(facultyOnly);
     } catch {
@@ -1773,7 +1999,6 @@ function FacultyCalendar() {
 
   return (
     <div className="space-y-6">
-      {/* ── Top Header ── */}
       <div>
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
           Faculty Calendar & Activities
@@ -1791,9 +2016,7 @@ function FacultyCalendar() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* ── Main Calendar Grid (2 Cols on lg) ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-          {/* Month & Year Selection Bar */}
           <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
             <div className="flex items-center gap-2">
               <select
@@ -1838,21 +2061,20 @@ function FacultyCalendar() {
               <button
                 onClick={prevMonth}
                 aria-label="Previous month"
-                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <button
                 onClick={nextMonth}
                 aria-label="Next month"
-                className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {/* Days Header */}
           <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
             {DAYS.map((d, i) => (
               <div
@@ -1915,7 +2137,7 @@ function FacultyCalendar() {
                       <span
                         className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
                           isTodayDate
-                            ? 'bg-[#1E3A8A] text-white shadow-xs'
+                            ? 'bg-[#1E3A8A] text-white shadow-2xs'
                             : isPast
                             ? 'text-gray-400'
                             : 'text-gray-700'
@@ -1931,7 +2153,6 @@ function FacultyCalendar() {
                       )}
                     </div>
 
-                    {/* Desktop Event Pills */}
                     <div className="hidden sm:flex flex-col gap-1">
                       {dayEvents.slice(0, 2).map((ev) => (
                         <button
@@ -1954,7 +2175,6 @@ function FacultyCalendar() {
                       )}
                     </div>
 
-                    {/* Mobile Event Dots */}
                     {hasEvents && (
                       <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                         {dayEvents.slice(0, 3).map((ev) => (
@@ -1970,7 +2190,6 @@ function FacultyCalendar() {
                       </div>
                     )}
 
-                    {/* Tooltip Hover Preview */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -2036,7 +2255,6 @@ function FacultyCalendar() {
             </div>
           )}
 
-          {/* Activity-Type Color Legend */}
           <div className="flex items-center gap-4 px-4 sm:px-6 py-3 border-t border-gray-100 bg-gray-50/30 flex-wrap">
             <span className="text-xs font-semibold text-gray-500">Activity Types:</span>
             {Object.entries(TYPE_TO_COLOR).map(([type, color]) => (
@@ -2048,7 +2266,6 @@ function FacultyCalendar() {
           </div>
         </div>
 
-        {/* Upcoming Agenda Panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <div className="flex items-center gap-2">
@@ -2116,7 +2333,6 @@ function FacultyCalendar() {
         </div>
       </div>
 
-      {/* ── Tabs for Upcoming / History List View ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
         <div className="flex border-b border-gray-100">
           <button
@@ -2193,7 +2409,6 @@ function FacultyCalendar() {
         </div>
       </div>
 
-      {/* ── Event Details Modal ── */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm space-y-4">
@@ -2250,12 +2465,12 @@ function FacultyCalendar() {
     </div>
   );
 }
+
 // ====================== 5.6 SETTINGS ======================
 type TabKey = 'profile' | 'security' | 'notifications' | 'account';
 
 function FacultySettings() {
   const [activeTab, setActiveTab] = useState<TabKey>('profile');
-
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
   const [departmentNotices, setDepartmentNotices] = useState(true);
 
