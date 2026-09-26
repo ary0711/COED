@@ -19,11 +19,16 @@ import {
   LogOut,
   GraduationCap,
   RefreshCw,
+  Download,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
+import { createPortal } from 'react-dom';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
+import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 const studentMenuItems = [
   { icon: Bell,         label: 'Dashboard',               id: 'dashboard'    },
@@ -571,243 +576,19 @@ function FacultyDepartments() {
   );
 }
 
+
+// ====================== ACADEMIC RESOURCES  ======================
 function AcademicResources() {
-  interface AcademicDoc {
-    id: string;
-    title: string;
-    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
-    file_size: number;
-    file_name?: string;
-  }
-
-  const DOC_TYPE_LABELS: Record<string, string> = {
-    handbook: 'Handbook',
-    policy: 'Policy',
-    memorandum: 'Memorandum',
-    form: 'Form',
-  };
-
-  const categoryColor: Record<string, string> = {
-    Handbook: 'bg-blue-100 text-blue-700',
-    Policy: 'bg-purple-100 text-purple-700',
-    Memorandum: 'bg-orange-100 text-orange-700',
-    Form: 'bg-green-100 text-green-700',
-  };
-
-  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-
-  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(DOCS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load documents.');
-        setDocuments([]);
-        return;
-      }
-      const data = await res.json();
-      setDocuments(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setDocuments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  const formatFileSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handlePreview = async (doc: AcademicDoc) => {
-    setPreviewingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to open preview.');
-        return;
-      }
-
-      const { url, file_type } = await res.json();
-
-      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } else {
-        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
-      }
-    } catch {
-      setLoadError('Could not connect to the server for preview.');
-    } finally {
-      setPreviewingId(null);
-    }
-  };
-
-  const handleDownload = async (doc: AcademicDoc) => {
-    setDownloadingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
-      }
-      const { url, file_name } = await res.json();
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file_name || doc.title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      setLoadError('Could not reach the server for download.');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const filtered = activeCategory === 'All'
-    ? documents
-    : documents.filter((d) => DOC_TYPE_LABELS[d.document_type] === activeCategory);
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Resources</h1>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map((c) => (
-          <button
-            key={c}
-            onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              activeCategory === c
-                ? 'bg-[#1E3A8A] text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-          {loadError}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading documents...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            No documents found.
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filtered.map((doc) => {
-              const label = DOC_TYPE_LABELS[doc.document_type] || doc.document_type;
-              const isPreviewing = previewingId === doc.id;
-              const isDownloading = downloadingId === doc.id;
-
-              return (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3"
-                >
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">
-                        {doc.title}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            categoryColor[label] || 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {label}
-                        </span>
-                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => handlePreview(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isPreviewing ? 'Opening…' : 'View'}
-                    </button>
-
-                    <button
-                      onClick={() => handleDownload(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isDownloading ? (
-                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        'Download'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return <AcademicDocumentsViewer />;
 }
-
 // ====================== ACHIEVEMENTS & ACTIVITIES ======================
 interface RealCalendarEvent {
   id: string;
   title: string;
   description: string | null;
   event_date: string;
+  start_time?: string | null; // Added for synchronized start time support
+  end_time?: string | null;   // Added for synchronized end time support
   department_ids: string[] | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
   audience?: string | null;
@@ -847,6 +628,37 @@ function colorForStudentEvent(ev: RealCalendarEvent): string {
 function dateOnlyStudent(isoLike: string): string {
   if (!isoLike) return '';
   return isoLike.split('T')[0];
+}
+
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+function sortEventsChronologically(a: RealCalendarEvent, b: RealCalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
 function formatTimeFromDate(isoLike: string): string | null {
@@ -892,7 +704,6 @@ function AchievementsActivities() {
         return;
       }
       const data = await res.json();
-      // Strict frontend validation ensures no Alumni or Faculty-only records render
       const studentOnlyData = ((data ?? []) as RealCalendarEvent[]).filter(isStudentAuthorizedEvent);
       setEvents(studentOnlyData);
     } catch {
@@ -919,7 +730,8 @@ function AchievementsActivities() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, RealCalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnlyStudent(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -937,7 +749,7 @@ function AchievementsActivities() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyStudent(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const formatDate = (dateStr: string) => {
@@ -1153,7 +965,7 @@ function AchievementsActivities() {
                       </div>
                     )}
 
-                    {/* Hover / Tap Popover */}
+                    {/* Hover / Tap Popover with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1173,7 +985,7 @@ function AchievementsActivities() {
 
                         <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                           {dayEvents.map((ev) => {
-                            const timeStr = formatTimeFromDate(ev.event_date);
+                            const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                             return (
                               <div
                                 key={ev.id}
@@ -1185,11 +997,9 @@ function AchievementsActivities() {
                                   {ev.title}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                  {timeStr && (
-                                    <span className="font-medium text-gray-700">
-                                      {timeStr}
-                                    </span>
-                                  )}
+                                  <span className="font-medium text-gray-700">
+                                    {timeRangeStr}
+                                  </span>
                                   {ev.event_type && (
                                     <span className="uppercase text-[9px] font-bold text-gray-600">
                                       {ev.event_type}
@@ -1228,7 +1038,7 @@ function AchievementsActivities() {
               {upcomingEvents.map((ev) => {
                 const evDate = dateOnlyStudent(ev.event_date);
                 const isDueToday = evDate === todayStr;
-                const timeStr = formatTimeFromDate(ev.event_date);
+                const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
 
                 return (
                   <div
@@ -1252,11 +1062,9 @@ function AchievementsActivities() {
                     </div>
 
                     <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                      {timeStr && (
-                        <span className="font-medium text-gray-700">
-                          {timeStr}
-                        </span>
-                      )}
+                      <span className="font-medium text-gray-700">
+                        {timeRangeStr}
+                      </span>
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ backgroundColor: colorForStudentEvent(ev) }}
@@ -1301,12 +1109,10 @@ function AchievementsActivities() {
                 <span>{formatLongDate(dateOnlyStudent(selectedEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(selectedEvent.event_date) && (
-                <div>
-                  <span className="font-semibold text-gray-900">Time: </span>
-                  <span>{formatTimeFromDate(selectedEvent.event_date)}</span>
-                </div>
-              )}
+              <div>
+                <span className="font-semibold text-gray-900">Time: </span>
+                <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
+              </div>
 
               <div>
                 <span className="font-semibold text-gray-900">Posted by: </span>

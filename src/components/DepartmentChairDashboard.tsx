@@ -76,23 +76,6 @@ interface DepartmentChairDashboardProps {
 export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
 export type CalendarAudience = 'all' | 'students' | 'faculty' | 'alumni';
 
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  event_date: string;
-  end_date: string | null;
-  location: string | null;
-  event_type: StandardEventType | string | null;
-  audience: CalendarAudience | string | null;
-  department_ids: string[] | null;
-  organizer_id: string | null;
-  department?: string | null;
-  status: string | null;
-  posted_by_role: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 type AccountRole = 'student' | 'faculty' | 'alumni';
 
@@ -322,8 +305,24 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
     </div>
   );
 }
-
 // ─── Calendar & Activities (DEPARTMENT CHAIR DASHBOARD) ──────────────────────
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  location?: string | null;
+  event_type: string | null;
+  audience?: string | null;
+  status: string | null;
+  posted_by_role: string | null;
+  organizer_id?: string | null;
+  department_ids?: string[] | null;
+  color?: string | null;
+}
 
 interface DepartmentCalendarProps {
   organizerId: string;
@@ -370,8 +369,39 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-// Resolves custom color if stored as "Type::#hex", else matches predefined colors
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
+}
+
 function colorForEvent(ev: CalendarEvent): string {
+  if (ev.color) return ev.color;
   if (!ev.event_type) return DEFAULT_EVENT_COLOR;
   if (ev.event_type.includes('::')) {
     const parts = ev.event_type.split('::');
@@ -383,7 +413,6 @@ function colorForEvent(ev: CalendarEvent): string {
   return PREDEFINED_TYPE_COLORS[normalized] || DEFAULT_EVENT_COLOR;
 }
 
-// Clean display label (removes embedded color tag if present)
 function displayEventType(ev: CalendarEvent): string {
   if (!ev.event_type) return 'Activity';
   if (ev.event_type.includes('::')) {
@@ -401,48 +430,36 @@ function toTimestamp(dateStr: string): string {
   return `${dateStr}T08:00:00.000Z`;
 }
 
-function formatTimeFromDate(isoLike: string): string | null {
-  if (!isoLike || !isoLike.includes('T')) return null;
-  const timePart = isoLike.split('T')[1];
-  if (!timePart || timePart.startsWith('00:00:00')) return null;
-  const d = new Date(isoLike);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
 function isChairOwnedEvent(ev: CalendarEvent, currentChairId: string): boolean {
   if (!ev.organizer_id || !currentChairId) return false;
   return ev.organizer_id === currentChairId;
 }
 
-function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendarProps) {
+export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendarProps) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  // Core Data States
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-
-  // Primary View Mode
   const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
 
-  // Calendar Controls
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
 
-  // Modals & Inspection
   const [showModal, setShowModal] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Chair Form State with custom color picker
   const emptyForm = {
     title: '',
     date: '',
+    start_time: '',
+    end_time: '',
+    location: '',
     description: '',
     type: 'meeting',
     customType: '',
@@ -453,7 +470,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
   const [isCustomType, setIsCustomType] = useState(false);
   const [formError, setFormError] = useState('');
 
-  // Archive Search & Filter State
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveYear, setArchiveYear] = useState<string>('all');
   const [archiveMonth, setArchiveMonth] = useState<string>('all');
@@ -500,7 +516,8 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnly(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -518,13 +535,13 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnly(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const pastEvents = useMemo(() => {
     return events
       .filter((e) => dateOnly(e.event_date) < todayStr)
-      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+      .sort((a, b) => sortEventsChronologically(b, a));
   }, [events, todayStr]);
 
   const availableYears = useMemo(() => {
@@ -602,6 +619,9 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
     setForm({
       title: ev.title || '',
       date: dateOnly(ev.event_date) || '',
+      start_time: ev.start_time ? ev.start_time.slice(0, 5) : '',
+      end_time: ev.end_time ? ev.end_time.slice(0, 5) : '',
+      location: ev.location || '',
       description: ev.description || '',
       type: isPredefined ? rawType.toLowerCase() : 'meeting',
       customType: isPredefined ? '' : rawType,
@@ -627,6 +647,10 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
       setFormError('Please select a date.');
       return;
     }
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setFormError('End time must be later than start time.');
+      return;
+    }
     if (isCustomType && !form.customType.trim()) {
       setFormError('Custom activity type is required.');
       return;
@@ -637,7 +661,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
     const url = isEditing ? `${CALENDAR_API_URL}/${editingEventId}` : CALENDAR_API_URL;
     const method = isEditing ? 'PUT' : 'POST';
 
-    // Store custom color inside event_type so the backend doesn't complain about a missing color column
     const finalEventType = isCustomType
       ? `${form.customType.trim()}::${form.customColor}`
       : form.type;
@@ -646,6 +669,9 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
       title: form.title.trim(),
       description: form.description.trim() || null,
       event_date: toTimestamp(form.date),
+      start_time: form.start_time ? form.start_time : null,
+      end_time: form.end_time ? form.end_time : null,
+      location: form.location.trim() || null,
       event_type: finalEventType,
       audience: form.audience,
       status: 'upcoming',
@@ -667,13 +693,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         return;
       }
 
-      const savedData = await res.json();
-      if (isEditing) {
-        setEvents((prev) => prev.map((e) => (e.id === editingEventId ? (savedData as CalendarEvent) : e)));
-      } else {
-        setEvents((prev) => [...prev, savedData as CalendarEvent]);
-      }
-
+      await fetchEvents();
       resetForm();
       setShowModal(false);
     } catch {
@@ -724,7 +744,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
 
   return (
     <div className="space-y-6">
-      {/* ── Top Bar ── */}
+      {/* Top Bar & View switcher */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
@@ -790,7 +810,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       )}
 
-      {/* ── Mode 1: Calendar View ── */}
+      {/* Calendar View Mode */}
       {viewMode === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
@@ -969,7 +989,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                         </div>
                       )}
 
-                      {/* Popover Preview */}
+                      {/* Hover Tooltip with Time Range */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -989,7 +1009,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
 
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
-                              const timeStr = formatTimeFromDate(ev.event_date);
+                              const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                               const evColor = colorForEvent(ev);
                               const evTypeName = displayEventType(ev);
 
@@ -1004,12 +1024,10 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                                     {ev.title}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                    {timeStr && (
-                                      <span className="flex items-center gap-1 font-medium text-gray-700">
-                                        <Clock className="w-3 h-3 text-gray-400" />
-                                        {timeStr}
-                                      </span>
-                                    )}
+                                    <span className="flex items-center gap-1 font-medium text-gray-700">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      {timeRangeStr}
+                                    </span>
                                     <span
                                       className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
                                       style={{ backgroundColor: evColor }}
@@ -1059,7 +1077,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 {upcomingEvents.map((ev) => {
                   const evDate = dateOnly(ev.event_date);
                   const isDueToday = evDate === todayStr;
-                  const timeStr = formatTimeFromDate(ev.event_date);
+                  const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                   const evColor = colorForEvent(ev);
 
                   return (
@@ -1085,12 +1103,10 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                        {timeStr && (
-                          <span className="flex items-center gap-1 font-medium text-gray-700">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            {timeStr}
-                          </span>
-                        )}
+                        <span className="flex items-center gap-1 font-medium text-gray-700">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {timeRangeStr}
+                        </span>
                         <span
                           className="w-2 h-2 rounded-full"
                           style={{ backgroundColor: evColor }}
@@ -1106,7 +1122,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       )}
 
-      {/* ── Mode 2: Event History / Archive ── */}
+      {/* Archive View Mode */}
       {viewMode === 'archive' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-6">
           <div className="space-y-3">
@@ -1216,7 +1232,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupedArchiveEvents[groupMonth].map((ev) => {
-                      const timeStr = formatTimeFromDate(ev.event_date);
+                      const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                       const isOwner = isChairOwnedEvent(ev, organizerId);
                       const eventColor = colorForEvent(ev);
                       const eventTypeName = displayEventType(ev);
@@ -1247,15 +1263,11 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                               <span className="font-medium text-gray-700">
                                 {formatDate(dateOnly(ev.event_date))}
                               </span>
-                              {timeStr && (
-                                <>
-                                  <span>·</span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-gray-400" />
-                                    {timeStr}
-                                  </span>
-                                </>
-                              )}
+                              <span>·</span>
+                              <span className="flex items-center gap-1 font-medium text-gray-700">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                {timeRangeStr}
+                              </span>
                               <span>·</span>
                               <span className="truncate">
                                 {departmentNames.join(', ') || 'Your department'}
@@ -1299,7 +1311,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       )}
 
-      {/* ── Event Details Modal (Deep Inspection) ── */}
+      {/* Event Details Modal */}
       {inspectingEvent && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
@@ -1332,13 +1344,11 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 <span>{formatLongDate(dateOnly(inspectingEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(inspectingEvent.event_date) && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="font-semibold text-gray-900">Time:</span>
-                  <span>{formatTimeFromDate(inspectingEvent.event_date)}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Time:</span>
+                <span>{formatEventTimeRange(inspectingEvent.start_time, inspectingEvent.end_time)}</span>
+              </div>
 
               <div className="flex items-center gap-2">
                 <Building className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -1398,7 +1408,7 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
         </div>
       )}
 
-      {/* ── Unified Add / Edit Event Modal (With Custom Color Picker) ── */}
+      {/* Add / Edit Event Modal with Start & End Time Inputs */}
       {showModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
@@ -1445,14 +1455,32 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time *</label>
+                  <input
+                    type="time"
+                    value={form.start_time}
+                    onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time *</label>
+                  <input
+                    type="time"
+                    value={form.end_time}
+                    onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Posting to Department</label>
                 <div className="w-full px-3 py-2 border border-gray-100 bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
                   {departmentNames.length > 0 ? departmentNames.join(', ') : 'Your Department'}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Events are automatically scoped to your department on the server.
-                </p>
               </div>
 
               <div>
@@ -1467,9 +1495,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                   <option value="faculty">Faculty & Staff Only</option>
                   <option value="alumni">Alumni Only</option>
                 </select>
-                <p className="text-xs text-gray-400 mt-1">
-                  Choosing &quot;Students Only&quot; or &quot;Faculty Only&quot; prevents this event from showing on the Alumni calendar.
-                </p>
               </div>
 
               <div>
@@ -1483,7 +1508,6 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                 />
               </div>
 
-              {/* Event Type & Custom Color Picker */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Type of Activity *</label>
                 <div className="flex flex-wrap gap-2.5 mb-3">
@@ -1519,13 +1543,12 @@ function DepartmentCalendar({ organizerId, departmentNames }: DepartmentCalendar
                   </button>
                 </div>
 
-                {/* Custom activity input with native color input picker */}
                 {isCustomType && (
                   <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
                     <div className="flex-1">
                       <input
                         type="text"
-                        placeholder="Enter custom activity (e.g. Sports, Seminar, Defense)..."
+                        placeholder="Enter custom activity (e.g. Sports, Seminar)..."
                         value={form.customType}
                         onChange={(e) => setForm({ ...form, customType: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
@@ -2445,7 +2468,6 @@ function ReportsMonitoring() {
     </div>
   );
 }
-
 /* ─────────────────────────────────────────────
    Academic Records
 ───────────────────────────────────────────── */

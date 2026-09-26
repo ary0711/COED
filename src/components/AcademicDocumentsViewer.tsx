@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, Download, Search, Eye } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { FileText, Download, Search, Eye, X, Loader2 } from 'lucide-react';
 
 interface AcademicDocument {
   id: string;
@@ -9,6 +10,16 @@ interface AcademicDocument {
   file_name: string;
   file_size: number;
   created_at: string;
+}
+
+interface ClassroomPreview {
+  url: string;
+  title: string;
+  isImage: boolean;
+}
+
+interface AcademicDocumentsViewerProps {
+  onOpenPreview?: (preview: ClassroomPreview) => void;
 }
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -26,7 +37,7 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AcademicDocumentsViewer() {
+export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsViewerProps) {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -34,6 +45,9 @@ export function AcademicDocumentsViewer() {
   const [search, setSearch] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // In-component modal state (used if parent doesn't handle preview)
+  const [internalPreview, setInternalPreview] = useState<ClassroomPreview | null>(null);
 
   const fetchDocuments = async () => {
     setLoading(true);
@@ -66,6 +80,25 @@ export function AcademicDocumentsViewer() {
     /* eslint-disable-next-line */
   }, [typeFilter]);
 
+  // Lock scrolling & handle ESC key when internal modal is open
+  useEffect(() => {
+    if (internalPreview) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInternalPreview(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [internalPreview]);
+
   const handlePreview = async (doc: AcademicDocument) => {
     setPreviewingId(doc.id);
     try {
@@ -81,12 +114,25 @@ export function AcademicDocumentsViewer() {
       }
 
       const { url, file_type } = await res.json();
+      const isImg = Boolean(file_type?.startsWith('image/'));
+      const isPdf = file_type === 'application/pdf';
 
-      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
-        window.open(url, '_blank', 'noopener,noreferrer');
+      let renderUrl = url;
+      // Convert Office documents to Google Docs embedded viewer inside iframe
+      if (!isPdf && !isImg) {
+        renderUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+      }
+
+      const previewData: ClassroomPreview = {
+        url: renderUrl,
+        title: doc.title,
+        isImage: isImg,
+      };
+
+      if (onOpenPreview) {
+        onOpenPreview(previewData);
       } else {
-        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+        setInternalPreview(previewData);
       }
     } catch {
       setLoadError('Could not reach the server to load preview.');
@@ -112,8 +158,6 @@ export function AcademicDocumentsViewer() {
       const link = document.createElement('a');
       link.href = url;
       link.download = file_name || doc.title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -209,16 +253,27 @@ export function AcademicDocumentsViewer() {
 
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
+                      type="button"
                       onClick={() => handlePreview(doc)}
                       disabled={isPreviewing || isDownloading}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
-                      title="View file without downloading"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                      title="View file"
                     >
-                      <Eye className="w-4 h-4" />
-                      <span>{isPreviewing ? 'Opening…' : 'View'}</span>
+                      {isPreviewing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Opening…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4" />
+                          <span>View</span>
+                        </>
+                      )}
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => handleDownload(doc)}
                       disabled={isPreviewing || isDownloading}
                       className="flex items-center gap-1 p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
@@ -237,6 +292,68 @@ export function AcademicDocumentsViewer() {
           </div>
         )}
       </div>
+
+      {/* Google Classroom Dark Modal Overlay */}
+      {internalPreview &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm"
+            onClick={() => setInternalPreview(null)}
+          >
+            {/* Top Bar */}
+            <div
+              className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 min-w-0 pr-4">
+                <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                <span className="font-medium text-sm sm:text-base text-gray-100 truncate">
+                  {internalPreview.title}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setInternalPreview(null)}
+                  className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                  title="Close (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Document Canvas */}
+            <div
+              className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
+              onClick={() => setInternalPreview(null)}
+            >
+              <div
+                className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {internalPreview.isImage ? (
+                  <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
+                    <img
+                      src={internalPreview.url}
+                      alt={internalPreview.title}
+                      className="max-h-full max-w-full object-contain select-none"
+                    />
+                  </div>
+                ) : (
+                  <iframe
+                    src={internalPreview.url}
+                    title={internalPreview.title}
+                    className="w-full h-full border-0 bg-white"
+                  />
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

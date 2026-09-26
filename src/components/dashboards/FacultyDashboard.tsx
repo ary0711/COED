@@ -36,8 +36,11 @@ import {
   User,
   CalendarDays,
   MapPin,
+  Filter,
+  Search,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
+import { createPortal } from 'react-dom';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { AccomplishmentReport } from './AccomplishmentReport';
@@ -46,6 +49,7 @@ import { DeansListGenerator } from './DeansListGenerator';
 import { WfhReport } from '../WfhReport'; 
 import { ReportTrackerPanel } from '../ReportTrackerPanel';
 import { ResearchExtension } from '../ResearchExtension'; 
+import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 const facultyMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
@@ -478,239 +482,10 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
     </div>
   );
 }
-// ====================== ACADEMIC RESOURCES (FACULTY) ======================
+
+// ====================== ACADE// ====================== ACADEMIC RESOURCES (FACULTY) ======================
 function AcademicResources() {
-  interface AcademicDoc {
-    id: string;
-    title: string;
-    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
-    file_size: number;
-    file_name?: string;
-  }
-
-  const DOC_TYPE_LABELS: Record<string, string> = {
-    handbook: 'Handbook',
-    policy: 'Policy',
-    memorandum: 'Memorandum',
-    form: 'Form',
-  };
-
-  const categoryColor: Record<string, string> = {
-    Handbook: 'bg-blue-100 text-blue-700',
-    Policy: 'bg-purple-100 text-purple-700',
-    Memorandum: 'bg-orange-100 text-orange-700',
-    Form: 'bg-green-100 text-green-700',
-  };
-
-  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-
-  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(DOCS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load documents.');
-        setDocuments([]);
-        return;
-      }
-      const data = await res.json();
-      setDocuments(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setDocuments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  const formatFileSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handlePreview = async (doc: AcademicDoc) => {
-    setPreviewingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to open preview.');
-        return;
-      }
-
-      const { url, file_type } = await res.json();
-
-      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } else {
-        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
-      }
-    } catch {
-      setLoadError('Could not connect to the server for preview.');
-    } finally {
-      setPreviewingId(null);
-    }
-  };
-
-  const handleDownload = async (doc: AcademicDoc) => {
-    setDownloadingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
-      }
-      const { url, file_name } = await res.json();
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file_name || doc.title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      setLoadError('Could not reach the server for download.');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const filtered = activeCategory === 'All'
-    ? documents
-    : documents.filter((d) => DOC_TYPE_LABELS[d.document_type] === activeCategory);
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Academic Resources</h1>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map((c) => (
-          <button
-            key={c}
-            onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              activeCategory === c
-                ? 'bg-[#1E3A8A] text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-          {loadError}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading documents...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            No documents found.
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filtered.map((doc) => {
-              const label = DOC_TYPE_LABELS[doc.document_type] || doc.document_type;
-              const isPreviewing = previewingId === doc.id;
-              const isDownloading = downloadingId === doc.id;
-
-              return (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3"
-                >
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">
-                        {doc.title}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            categoryColor[label] || 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {label}
-                        </span>
-                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => handlePreview(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="flex items-center gap-1 sm:gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
-                      title="View file without downloading"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>{isPreviewing ? 'Opening…' : 'View'}</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleDownload(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                      title="Download file"
-                    >
-                      {isDownloading ? (
-                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        'Download'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return <AcademicDocumentsViewer />;
 }
 
 // ====================== 5.1 TEACHING LOAD ======================
@@ -1823,7 +1598,9 @@ interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
-  end_date: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  end_date?: string | null;
   location: string | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
   audience?: string | null;
@@ -1885,6 +1662,37 @@ function dateOnly(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
+}
+
 function formatTimeFromDate(isoLike: string): string | null {
   if (!isoLike || !isoLike.includes('T')) return null;
   const timePart = isoLike.split('T')[1];
@@ -1908,11 +1716,19 @@ function FacultyCalendar() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
+  // Primary View Mode: Active Calendar vs Event History / Archive
+  const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
+
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+
+  // Archive Search & Filter State
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveYear, setArchiveYear] = useState<string>('all');
+  const [archiveMonth, setArchiveMonth] = useState<string>('all');
+  const [archiveType, setArchiveType] = useState<string>('all');
 
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
@@ -1955,7 +1771,8 @@ function FacultyCalendar() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnly(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -1973,14 +1790,64 @@ function FacultyCalendar() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnly(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
-  const historyEvents = useMemo(() => {
+  const pastEvents = useMemo(() => {
     return events
       .filter((e) => dateOnly(e.event_date) < todayStr)
-      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+      .sort((a, b) => sortEventsChronologically(b, a));
   }, [events, todayStr]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    pastEvents.forEach((ev) => {
+      const d = dateOnly(ev.event_date);
+      if (d) years.add(d.split('-')[0]);
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [pastEvents]);
+
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    pastEvents.forEach((ev) => {
+      if (ev.event_type) types.add(ev.event_type.toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [pastEvents]);
+
+  const filteredArchiveEvents = useMemo(() => {
+    const query = archiveSearch.toLowerCase().trim();
+    return pastEvents.filter((ev) => {
+      const date = dateOnly(ev.event_date);
+      const [year, month] = date.split('-');
+
+      if (archiveYear !== 'all' && year !== archiveYear) return false;
+      if (archiveMonth !== 'all' && parseInt(month, 10) !== parseInt(archiveMonth, 10)) return false;
+      if (archiveType !== 'all' && (ev.event_type || '').toLowerCase() !== archiveType) return false;
+
+      if (!query) return true;
+
+      const titleMatch = ev.title?.toLowerCase().includes(query);
+      const descMatch = ev.description?.toLowerCase().includes(query);
+      const locMatch = ev.location?.toLowerCase().includes(query);
+      const typeMatch = ev.event_type?.toLowerCase().includes(query);
+      return titleMatch || descMatch || locMatch || typeMatch;
+    });
+  }, [pastEvents, archiveSearch, archiveYear, archiveMonth, archiveType]);
+
+  const groupedArchiveEvents = useMemo(() => {
+    const groups: { [key: string]: CalendarEvent[] } = {};
+    filteredArchiveEvents.forEach((ev) => {
+      const d = dateOnly(ev.event_date);
+      if (!d) return;
+      const dateObj = new Date(d + 'T00:00:00');
+      const key = dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ev);
+    });
+    return groups;
+  }, [filteredArchiveEvents]);
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -1999,13 +1866,48 @@ function FacultyCalendar() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
-          Faculty Calendar & Activities
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          View academic schedules, departmental meetings, and faculty-wide deadlines.
-        </p>
+      {/* ── Top Header Bar & View Switcher ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+            Faculty Calendar & Activities
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            View academic schedules, departmental meetings, and faculty-wide deadlines.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 shadow-2xs">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'calendar'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Calendar</span>
+            </button>
+            <button
+              onClick={() => setViewMode('archive')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === 'archive'
+                  ? 'bg-white text-[#1E3A8A] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>Event History</span>
+              {pastEvents.length > 0 && (
+  <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">
+    {pastEvents.length}
+  </span>
+)}
+            </button>
+          </div>
+        </div>
       </div>
 
       {loadError && (
@@ -2015,400 +1917,486 @@ function FacultyCalendar() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-          <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
-            <div className="flex items-center gap-2">
-              <select
-                aria-label="Select month"
-                value={currentMonth.getMonth()}
-                onChange={(e) =>
-                  setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
-                }
-                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
-              >
-                {MONTH_NAMES.map((m, idx) => (
-                  <option key={m} value={idx}>
-                    {m}
-                  </option>
+      {/* ── Mode 1: Calendar & Upcoming Agenda Side-by-Side Grid ── */}
+      {viewMode === 'calendar' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+            <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Select month"
+                  value={currentMonth.getMonth()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                >
+                  {MONTH_NAMES.map((m, idx) => (
+                    <option key={m} value={idx}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  aria-label="Select year"
+                  value={currentMonth.getFullYear()}
+                  onChange={(e) =>
+                    setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
+                  }
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                >
+                  {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={jumpToToday}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={prevMonth}
+                  aria-label="Previous month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={nextMonth}
+                  aria-label="Next month"
+                  className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
+              {DAYS.map((d, i) => (
+                <div
+                  key={d}
+                  className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{DAYS_SHORT[i]}</span>
+                </div>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
+                <span className="text-sm font-medium">Loading events…</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-7">
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div
+                    key={`empty-${i}`}
+                    className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
+                  />
                 ))}
-              </select>
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                  const dayIndexInWeek = (firstDay + day - 1) % 7;
+                  const isRightmostCol = dayIndexInWeek >= 5;
+                  const dateStr = `${currentMonth.getFullYear()}-${String(
+                    currentMonth.getMonth() + 1
+                  ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                  const dayEvents = getEventsForDay(day);
+                  const hasEvents = dayEvents.length > 0;
+                  const isTodayDate = dateStr === todayStr;
+                  const isPast = dateStr < todayStr;
+                  const isSelected = selectedCalendarDate === dateStr;
+                  const isHovered = hoveredDate === dateStr;
+                  const showPopover = (isHovered || isSelected) && hasEvents;
+
+                  return (
+                    <div
+                      key={day}
+                      tabIndex={hasEvents ? 0 : -1}
+                      aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
+                      onMouseEnter={() => setHoveredDate(dateStr)}
+                      onMouseLeave={() => setHoveredDate(null)}
+                      onClick={() => {
+                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      }}
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                        isSelected
+                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                          : isPast
+                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
+                          : 'bg-white hover:bg-blue-50/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
+                            isTodayDate
+                              ? 'bg-[#1E3A8A] text-white shadow-2xs'
+                              : isPast
+                              ? 'text-gray-400'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {day}
+                        </span>
+
+                        {hasEvents && (
+                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                            {dayEvents.length}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="hidden sm:flex flex-col gap-1">
+                        {dayEvents.slice(0, 2).map((ev) => (
+                          <button
+                            key={ev.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(ev);
+                            }}
+                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                            style={{ backgroundColor: colorForEvent(ev) }}
+                            title={ev.title}
+                          >
+                            {ev.title}
+                          </button>
+                        ))}
+                        {dayEvents.length > 2 && (
+                          <span className="text-[10px] font-semibold text-gray-400 px-1">
+                            +{dayEvents.length - 2} more
+                          </span>
+                        )}
+                      </div>
+
+                      {hasEvents && (
+                        <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
+                          {dayEvents.slice(0, 3).map((ev) => (
+                            <span
+                              key={ev.id}
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: colorForEvent(ev) }}
+                            />
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                          )}
+                        </div>
+                      )}
+
+                      {showPopover && (
+                        <div
+                          role="tooltip"
+                          className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
+                            isRightmostCol ? 'right-0' : 'left-0'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                            <span className="text-xs font-bold text-gray-900">
+                              {formatLongDate(dateStr)}
+                            </span>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                              {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
+                            {dayEvents.map((ev) => {
+                              const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                              const evColor = colorForEvent(ev);
+                              const evTypeName = displayEventType(ev);
+
+                              return (
+                                <div
+                                  key={ev.id}
+                                  onClick={() => setSelectedEvent(ev)}
+                                  className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
+                                  style={{ borderLeftColor: evColor }}
+                                >
+                                  <div className="text-xs font-semibold text-gray-900 leading-snug">
+                                    {ev.title}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                                    <span className="flex items-center gap-1 font-medium text-gray-700">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      {timeRangeStr}
+                                    </span>
+                                    <span
+                                      className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                      style={{ backgroundColor: evColor }}
+                                    >
+                                      {evTypeName}
+                                    </span>
+                                  </div>
+                                  {ev.location && (
+                                    <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                      <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                      <span className="truncate">{ev.location}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming Agenda Sidebar Panel */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+                <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
+              </div>
+              <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
+                {upcomingEvents.length}
+              </span>
+            </div>
+
+            {upcomingEvents.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs font-medium">No upcoming faculty events</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+                {upcomingEvents.map((ev) => {
+                  const evDate = dateOnly(ev.event_date);
+                  const isDueToday = evDate === todayStr;
+                  const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                  const evColor = colorForEvent(ev);
+
+                  return (
+                    <div
+                      key={ev.id}
+                      onClick={() => setSelectedEvent(ev)}
+                      className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                      style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
+                          {ev.title}
+                        </span>
+                        {isDueToday ? (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
+                            Today
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                            {formatDate(evDate)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                        <span className="flex items-center gap-1 font-medium text-gray-700">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {timeRangeStr}
+                        </span>
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: evColor }}
+                        />
+                        <span className="truncate capitalize font-medium">{displayEventType(ev)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mode 2: Event History / Archive View ── */}
+      {viewMode === 'archive' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-6">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search past faculty activities by title, description, or type..."
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/40"
+                />
+                {archiveSearch && (
+                  <button
+                    onClick={() => setArchiveSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {(archiveSearch || archiveYear !== 'all' || archiveMonth !== 'all' || archiveType !== 'all') && (
+                <button
+                  onClick={() => {
+                    setArchiveSearch('');
+                    setArchiveYear('all');
+                    setArchiveMonth('all');
+                    setArchiveType('all');
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors whitespace-nowrap self-end sm:self-auto"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-semibold text-gray-500 flex items-center gap-1 mr-1">
+                <Filter className="w-3.5 h-3.5" /> Filters:
+              </span>
 
               <select
-                aria-label="Select year"
-                value={currentMonth.getFullYear()}
-                onChange={(e) =>
-                  setCurrentMonth(new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1))
-                }
-                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                aria-label="Filter by year"
+                value={archiveYear}
+                onChange={(e) => setArchiveYear(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((yr) => (
+                <option value="all">All Years</option>
+                {availableYears.map((yr) => (
                   <option key={yr} value={yr}>
                     {yr}
                   </option>
                 ))}
               </select>
 
-              <button
-                onClick={jumpToToday}
-                className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
+              <select
+                aria-label="Filter by month"
+                value={archiveMonth}
+                onChange={(e) => setArchiveMonth(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                Today
-              </button>
-            </div>
+                <option value="all">All Months</option>
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={String(idx + 1).padStart(2, '0')}>
+                    {m}
+                  </option>
+                ))}
+              </select>
 
-            <div className="flex items-center gap-1">
-              <button
-                onClick={prevMonth}
-                aria-label="Previous month"
-                className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
+              <select
+                aria-label="Filter by type"
+                value={archiveType}
+                onChange={(e) => setArchiveType(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
               >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={nextMonth}
-                aria-label="Next month"
-                className="p-2 rounded-xl hover:bg-white hover:shadow-2xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+                <option value="all">All Types</option>
+                {availableTypes.map((t) => (
+                  <option key={t} value={t} className="capitalize">
+                    {t}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
-            {DAYS.map((d, i) => (
-              <div
-                key={d}
-                className="py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider"
-              >
-                <span className="hidden sm:inline">{d}</span>
-                <span className="sm:hidden">{DAYS_SHORT[i]}</span>
-              </div>
-            ))}
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
-              <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
-              <span className="text-sm font-medium">Loading events…</span>
+          {filteredArchiveEvents.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">No past activities match your criteria</p>
+              <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or reset the active filters.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-7">
-              {Array.from({ length: firstDay }).map((_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-50 bg-gray-50/30"
-                />
-              ))}
-              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-                const dayIndexInWeek = (firstDay + day - 1) % 7;
-                const isRightmostCol = dayIndexInWeek >= 5;
-                const dateStr = `${currentMonth.getFullYear()}-${String(
-                  currentMonth.getMonth() + 1
-                ).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            <div className="space-y-6">
+              {Object.keys(groupedArchiveEvents).map((groupMonth) => (
+                <div key={groupMonth} className="space-y-3">
+                  <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      {groupMonth}
+                    </h3>
+                    <div className="h-px flex-1 bg-gray-100" />
+                    <span className="text-[11px] font-semibold text-gray-400">
+                      {groupedArchiveEvents[groupMonth].length} events
+                    </span>
+                  </div>
 
-                const dayEvents = getEventsForDay(day);
-                const hasEvents = dayEvents.length > 0;
-                const isTodayDate = dateStr === todayStr;
-                const isPast = dateStr < todayStr;
-                const isSelected = selectedCalendarDate === dateStr;
-                const isHovered = hoveredDate === dateStr;
-                const showPopover = (isHovered || isSelected) && hasEvents;
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {groupedArchiveEvents[groupMonth].map((ev) => {
+                      const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                      const eventColor = colorForEvent(ev);
+                      const eventTypeName = displayEventType(ev);
 
-                return (
-                  <div
-                    key={day}
-                    tabIndex={hasEvents ? 0 : -1}
-                    aria-label={`${formatDate(dateStr)}${hasEvents ? `, ${dayEvents.length} events` : ''}`}
-                    onMouseEnter={() => setHoveredDate(dateStr)}
-                    onMouseLeave={() => setHoveredDate(null)}
-                    onClick={() => {
-                      setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
-                    }}
-                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
-                      isSelected
-                        ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
-                        : isPast
-                        ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                        : 'bg-white hover:bg-blue-50/20'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
-                          isTodayDate
-                            ? 'bg-[#1E3A8A] text-white shadow-2xs'
-                            : isPast
-                            ? 'text-gray-400'
-                            : 'text-gray-700'
-                        }`}
-                      >
-                        {day}
-                      </span>
-
-                      {hasEvents && (
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
-                          {dayEvents.length}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="hidden sm:flex flex-col gap-1">
-                      {dayEvents.slice(0, 2).map((ev) => (
-                        <button
+                      return (
+                        <div
                           key={ev.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEvent(ev);
-                          }}
-                          className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
-                          style={{ backgroundColor: colorForEvent(ev) }}
-                          title={ev.title}
+                          onClick={() => setSelectedEvent(ev)}
+                          className="flex flex-col justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 bg-gray-50/40 hover:bg-white transition-all cursor-pointer group shadow-2xs space-y-3"
+                          style={{ borderLeftWidth: 4, borderLeftColor: eventColor }}
                         >
-                          {ev.title}
-                        </button>
-                      ))}
-                      {dayEvents.length > 2 && (
-                        <span className="text-[10px] font-semibold text-gray-400 px-1">
-                          +{dayEvents.length - 2} more
-                        </span>
-                      )}
-                    </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="text-sm font-semibold text-gray-900 group-hover:text-[#1E3A8A] transition-colors leading-snug">
+                                {ev.title}
+                              </h4>
+                              {ev.event_type && (
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white flex-shrink-0"
+                                  style={{ backgroundColor: eventColor }}
+                                >
+                                  {eventTypeName}
+                                </span>
+                              )}
+                            </div>
 
-                    {hasEvents && (
-                      <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
-                        {dayEvents.slice(0, 3).map((ev) => (
-                          <span
-                            key={ev.id}
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: colorForEvent(ev) }}
-                          />
-                        ))}
-                        {dayEvents.length > 3 && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                        )}
-                      </div>
-                    )}
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-500">
+                              <span className="font-medium text-gray-700">
+                                {formatDate(dateOnly(ev.event_date))}
+                              </span>
+                              <span>·</span>
+                              <span className="flex items-center gap-1 font-medium text-gray-700">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                {timeRangeStr}
+                              </span>
+                            </div>
 
-                    {showPopover && (
-                      <div
-                        role="tooltip"
-                        className={`absolute bottom-full mb-2 z-50 w-64 sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-3 text-left transition-all animate-in fade-in zoom-in-95 ${
-                          isRightmostCol ? 'right-0' : 'left-0'
-                        }`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                          <span className="text-xs font-bold text-gray-900">
-                            {formatLongDate(dateStr)}
-                          </span>
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                            {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
-                          </span>
+                            {ev.description && (
+                              <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed pt-0.5">
+                                {ev.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100/80 text-[11px] text-gray-400">
+                            <span>Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}</span>
+                            <span className="text-[#1E3A8A] font-semibold flex items-center gap-1">
+                              <Eye className="w-3.5 h-3.5" /> View
+                            </span>
+                          </div>
                         </div>
-
-                        <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
-                          {dayEvents.map((ev) => {
-                            const timeStr = formatTimeFromDate(ev.event_date);
-                            const evColor = colorForEvent(ev);
-                            const evTypeName = displayEventType(ev);
-
-                            return (
-                              <div
-                                key={ev.id}
-                                onClick={() => setSelectedEvent(ev)}
-                                className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                style={{ borderLeftColor: evColor }}
-                              >
-                                <div className="text-xs font-semibold text-gray-900 leading-snug">
-                                  {ev.title}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                  {timeStr && (
-                                    <span className="flex items-center gap-1 font-medium text-gray-700">
-                                      <Clock className="w-3 h-3 text-gray-400" />
-                                      {timeStr}
-                                    </span>
-                                  )}
-                                  <span
-                                    className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
-                                    style={{ backgroundColor: evColor }}
-                                  >
-                                    {evTypeName}
-                                  </span>
-                                </div>
-                                {ev.location && (
-                                  <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
-                                    <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                    <span className="truncate">{ev.location}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="flex items-center gap-4 px-4 sm:px-6 py-3 border-t border-gray-100 bg-gray-50/30 flex-wrap">
-            <span className="text-xs font-semibold text-gray-500">Activity Types:</span>
-            {Object.entries(TYPE_TO_COLOR).map(([type, color]) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                <span className="text-xs text-gray-600 font-medium capitalize">{type}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
-              <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
-            </div>
-            <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
-              {upcomingEvents.length}
-            </span>
-          </div>
-
-          {upcomingEvents.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-xs font-medium">No upcoming faculty events</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
-              {upcomingEvents.map((ev) => {
-                const evDate = dateOnly(ev.event_date);
-                const isDueToday = evDate === todayStr;
-                const timeStr = formatTimeFromDate(ev.event_date);
-                const evColor = colorForEvent(ev);
-
-                return (
-                  <div
-                    key={ev.id}
-                    onClick={() => setSelectedEvent(ev)}
-                    className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
-                    style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
-                        {ev.title}
-                      </span>
-                      {isDueToday ? (
-                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">
-                          Today
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
-                          {formatDate(evDate)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                      {timeStr && (
-                        <span className="flex items-center gap-1 font-medium text-gray-700">
-                          <Clock className="w-3 h-3 text-gray-400" />
-                          {timeStr}
-                        </span>
-                      )}
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: evColor }}
-                      />
-                      <span className="truncate capitalize font-medium">{displayEventType(ev)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'upcoming' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="hidden sm:inline">Upcoming Activities</span>
-            <span className="sm:hidden">Upcoming</span>
-            {upcomingEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{upcomingEvents.length}</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'history' ? 'text-[#1E3A8A] border-b-2 border-[#1E3A8A]' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <History className="w-4 h-4" />
-            <span className="hidden sm:inline">Activity History</span>
-            <span className="sm:hidden">History</span>
-            {historyEvents.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{historyEvents.length}</span>}
-          </button>
-        </div>
-
-        <div className="p-4 sm:p-6">
-          {loading ? (
-            <p className="text-center text-gray-400 text-sm py-6">Loading…</p>
-          ) : activeTab === 'upcoming' ? (
-            <div className="space-y-3">
-              {upcomingEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No upcoming activities</p>
                 </div>
-              ) : upcomingEvents.map(ev => {
-                const evColor = colorForEvent(ev);
-                return (
-                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: evColor }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
-                      </div>
-                      {ev.description && <div className="text-xs text-gray-400 mt-1">{ev.description}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {historyEvents.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No past activities</p>
-                </div>
-              ) : historyEvents.map(ev => {
-                const evColor = colorForEvent(ev);
-                return (
-                  <div key={ev.id} className="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors" onClick={() => setSelectedEvent(ev)}>
-                    <div className="w-2 mt-1.5 h-10 rounded-full flex-shrink-0 opacity-50" style={{ backgroundColor: evColor }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-600 text-sm">{ev.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {formatDate(dateOnly(ev.event_date))} · Posted by {ROLE_DISPLAY_LABEL[ev.posted_by_role ?? ''] ?? 'Unknown'}
-                      </div>
-                      {ev.description && <div className="text-xs text-gray-300 mt-1">{ev.description}</div>}
-                    </div>
-                    <span className="text-xs text-gray-400 italic flex-shrink-0 mt-1">Past</span>
-                  </div>
-                );
-              })}
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
 
+      {/* ── Event Details Modal ── */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm space-y-4">
@@ -2432,6 +2420,11 @@ function FacultyCalendar() {
             </div>
 
             <div className="space-y-4">
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1">Time</p>
+                <p className="text-sm font-semibold text-gray-900">{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</p>
+              </div>
+
               {selectedEvent.description && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-1">Description</p>

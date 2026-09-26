@@ -21,21 +21,28 @@ import {
   Lock,
   LogOut,
   Check,
+  Calendar,
+  Upload,
+  Eye,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
+import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 // ====================== TRACER SURVEY API HELPERS ======================
 interface TracerSurveyData {
   alumni_id: string;
+  first_name: string;
+  last_name: string;
   employment_status: string;
   job_title: string;
   employer: string;
   years_employed: number;
   monthly_salary: string;
   relevance: string;
+  post_graduate_degree: string;
   updated_at?: string;
 }
 
@@ -86,10 +93,11 @@ async function updateTracerSurvey(_alumniId: string, data: Partial<TracerSurveyD
 
 function validateTracerSurvey(data: Partial<TracerSurveyData>): string[] {
   const errors: string[] = [];
+  if (!data.first_name) errors.push('First Name is required.');
+  if (!data.last_name) errors.push('Last Name is required.');
   if (!data.employment_status) errors.push('Employment status is required.');
-  if (data.employment_status === 'employed' || data.employment_status === 'self-employed') {
-    if (!data.job_title) errors.push('Job title is required.');
-    if (!data.employer) errors.push('Employer/company is required.');
+  if (data.employment_status === 'employed') {
+    if (!data.employer) errors.push('Name of Company / Type of Business is required.');
   }
   return errors;
 }
@@ -146,7 +154,7 @@ export function AlumniDashboard({
     }
   };
 
-      const fetchProfile = async () => {
+  const fetchProfile = async () => {
     setProfileLoading(true);
     try {
       const userId = localStorage.getItem('userId');
@@ -212,10 +220,10 @@ export function AlumniDashboard({
       <div className="hidden lg:block w-64 shrink-0" />
 
       {/* ── Main column ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
 
         {/* ── Top bar ── */}
-        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
           <div className="flex items-center gap-2 px-4 lg:px-0">
             {/* Hamburger — mobile only */}
             <button
@@ -235,24 +243,27 @@ export function AlumniDashboard({
           </div>
         </div>
 
-        <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
+        <main className="flex-1 overflow-hidden p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500 flex flex-col min-h-0">
           {activeMenuItem === 'dashboard'    && <AlumniDashboardView setActiveMenuItem={setActiveMenuItem} alumniId={idNumber || 'ALU-2020-0458'} />}
-          {activeMenuItem === 'tracer'       && <TracerSurvey alumniId={idNumber || 'ALU-2020-0458'} />}
-          {activeMenuItem === 'calendar'     && <AlumniCalendar />}
-          {activeMenuItem === 'college-info' && <CollegeInformation />}
-          {activeMenuItem === 'achievements' && <AlumniAchievements />}
-          {activeMenuItem === 'documents'    && <DocumentsResources />}
-          {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
-          {activeMenuItem === 'settings'     && (
-            <AlumniSettings
-              profile={profile}
-              userEmail={userEmail}
-              loading={profileLoading}
-              onProfileUpdated={fetchProfile}
-              idNumber={idNumber || ''}
-              onLogout={handleInternalLogout}
-            />
-          )}
+          {/* Scroll wrapper for non-dashboard views */}
+          <div className={activeMenuItem !== 'dashboard' ? 'overflow-y-auto h-full pr-2' : 'h-full flex flex-col'}>
+            {activeMenuItem === 'tracer'       && <TracerSurvey alumniId={idNumber || 'ALU-2020-0458'} />}
+            {activeMenuItem === 'calendar'     && <AlumniCalendar />}
+            {activeMenuItem === 'college-info' && <CollegeInformation />}
+            {activeMenuItem === 'achievements' && <AlumniAchievements />}
+            {activeMenuItem === 'documents'    && <DocumentsResources />}
+            {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
+            {activeMenuItem === 'settings'     && (
+              <AlumniSettings
+                profile={profile}
+                userEmail={userEmail}
+                loading={profileLoading}
+                onProfileUpdated={fetchProfile}
+                idNumber={idNumber || ''}
+                onLogout={handleInternalLogout}
+              />
+            )}
+          </div>
         </main>
       </div>
     </div>
@@ -400,98 +411,245 @@ function AlumniDashboardView({
   setActiveMenuItem: (id: string) => void;
   alumniId: string;
 }) {
-  const [stats, setStats] = useState({
-    surveyStatus: 'Not Started',
-    employmentStatus: 'Not Set',
-    lastUpdated: null as string | null,
-    membershipStatus: 'Active',
-  });
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [tracerData, setTracerData] = useState<any>(null);
+  const [memberSince, setMemberSince] = useState<string>('2020');
+  const [events, setEvents] = useState<any[]>([]);
+  const [inquiries, setInquiries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    let isMounted = true;
+
+    async function fetchDashboardData() {
+      setLoading(true);
       try {
-        const data = await getDashboardStats(alumniId);
-        setStats(data);
+        // 1. Fetch Tracer Survey Data
+        const tr = await getTracerSurvey(alumniId).catch(() => null);
+        if (isMounted) setTracerData(tr);
+
+        // 2. Profile & Inquiries
+        const userId = localStorage.getItem('userId');
+        if (userId) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('created_at')
+            .eq('id', userId)
+            .single();
+            
+          if (isMounted && prof?.created_at) {
+            setMemberSince(new Date(prof.created_at).getFullYear().toString());
+          }
+
+          const { data: inqs } = await supabase
+            .from('inquiries')
+            .select('*')
+            .eq('sender_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(10);
+            
+          if (isMounted && inqs) setInquiries(inqs);
+        }
+
+        // 3. Calendar Events
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/calendar-events', {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => null);
+        
+        if (res && res.ok && isMounted) {
+          const evs = await res.json();
+          const todayStr = new Date().toISOString().split('T')[0];
+          const upcoming = (Array.isArray(evs) ? evs : []).filter((e: any) => 
+            (!e.audience || ['all', 'everyone', 'alumni'].includes(e.audience.toLowerCase())) &&
+            (e.event_date.split('T')[0] >= todayStr)
+          ).sort((a: any, b: any) => a.event_date.localeCompare(b.event_date));
+          
+          setEvents(upcoming);
+        }
+
       } catch (err) {
-        console.error('Failed to load dashboard stats:', err);
+        console.error('Failed to load dashboard data:', err);
       } finally {
-        setLoadingStats(false);
+        if (isMounted) setLoading(false);
       }
-    })();
+    }
+
+    fetchDashboardData();
+    return () => { isMounted = false; };
   }, [alumniId]);
 
   return (
-    <div>
-      {/* Tracer Status */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-6 mb-6">
-        <div className="bg-white rounded-xl shadow-md p-3 sm:p-6">
-          <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 mb-2" />
-          <div className="text-sm sm:text-2xl font-bold text-gray-900">
-            {loadingStats ? '...' : stats.surveyStatus}
+    <div className="flex flex-col h-full w-full">
+      {/* ── Top 3 Info Cards (Connected to Tracer Survey) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 flex-shrink-0">
+        
+        {/* Card 1: Completed Tracer Survey */}
+        <button 
+          onClick={() => setActiveMenuItem('tracer')}
+          className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
+              <BookOpen className="w-5 h-5" />
+            </div>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${tracerData ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+              {tracerData ? 'Current Record' : 'Action Required'}
+            </span>
           </div>
-          <div className="text-xs text-gray-600">Tracer Survey</div>
-          <div className="hidden sm:block text-xs text-gray-500 mt-2">
-            {stats.lastUpdated
-              ? `Last updated: ${new Date(stats.lastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-              : 'No data yet'}
+          <div className="mt-4">
+            <div className="text-2xl font-bold text-gray-900 mb-1">
+              {loading ? '...' : (tracerData ? 'Completed' : 'Pending')}
+            </div>
+            <div className="text-sm font-medium text-gray-600">Tracer Survey</div>
+            <div className="text-xs text-gray-400 mt-2">
+              {tracerData?.updated_at ? `Last updated: ${new Date(tracerData.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})}` : 'Update your current status'}
+            </div>
           </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-3 sm:p-6">
-          <User className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mb-2" />
-          <div className="text-sm sm:text-2xl font-bold text-gray-900">
-            {loadingStats ? '...' : stats.employmentStatus}
+        </button>
+
+        {/* Card 2: Employment Work */}
+        <button 
+          onClick={() => setActiveMenuItem('tracer')}
+          className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-amber-500"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
+              <FileText className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 uppercase tracking-wider">
+              {loading ? '...' : (tracerData?.employment_status || 'UNSET')}
+            </span>
           </div>
-          <div className="text-xs text-gray-600">Employment</div>
-          <div className="hidden sm:block text-xs text-gray-500 mt-2">Full-time Teacher</div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-3 sm:p-6">
-          <Award className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600 mb-2" />
-          <div className="text-sm sm:text-2xl font-bold text-gray-900">
-            {loadingStats ? '...' : stats.membershipStatus}
+          <div className="mt-4">
+            <div className="text-2xl font-bold text-gray-900 mb-1 truncate" title={tracerData?.job_title}>
+              {loading ? '...' : (tracerData?.job_title || 'Not Specified')}
+            </div>
+            <div className="text-sm font-medium text-gray-600">Employment</div>
+            <div className="text-xs text-gray-400 mt-2 truncate" title={tracerData?.employer}>
+              {tracerData?.employer || 'Click to set employment details'}
+            </div>
           </div>
-          <div className="text-xs text-gray-600">Alumni Status</div>
-          <div className="hidden sm:block text-xs text-gray-500 mt-2">Member since 2020</div>
-        </div>
+        </button>
+
+        {/* Card 3: Active Status */}
+        <button 
+          onClick={() => setActiveMenuItem('tracer')}
+          className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 uppercase tracking-wider">
+              ACTIVE
+            </span>
+          </div>
+          <div className="mt-4">
+            <div className="text-2xl font-bold text-gray-900 mb-1">
+              Active Status
+            </div>
+            <div className="text-sm font-medium text-gray-600">Alumni Record</div>
+            <div className="text-xs text-gray-400 mt-2">
+              Member since {loading ? '...' : memberSince}
+            </div>
+          </div>
+        </button>
+
       </div>
 
-      {/* Announcements & Achievements */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Bell className="w-5 h-5" /> Announcements
-          </h2>
-          <div className="space-y-3">
-            <div className="p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Alumni Homecoming 2026</div>
-              <div className="text-xs sm:text-sm text-gray-600 mt-1">March 30, 2026 • College Grounds</div>
+      {/* ── Bottom Section (Scrollable Cards inside Fixed Dashboard) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-[470px]">
+        
+        {/* Alumni Calendar Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+          <div className="flex justify-between items-center p-5 border-b border-gray-50 flex-shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Alumni Calendar</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Upcoming events & schedules</p>
             </div>
-            <div className="p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Career Mentorship Program</div>
-              <div className="text-xs sm:text-sm text-gray-600 mt-1">Now accepting applications</div>
-            </div>
+            <button 
+              onClick={() => setActiveMenuItem('calendar')}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+            >
+              View Calendar <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            {loading ? (
+              <div className="text-center text-gray-400 py-8 text-sm">Loading events...</div>
+            ) : events.length === 0 ? (
+              <div className="text-center text-gray-400 py-8 text-sm">No upcoming events.</div>
+            ) : (
+              events.map((ev) => (
+                <button
+                  key={ev.id}
+                  onClick={() => setActiveMenuItem('calendar')}
+                  className="w-full flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-blue-100 transition-colors text-left group"
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100 transition-colors">
+                      <CalendarIcon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm mb-0.5">{ev.title}</div>
+                      <div className="text-xs text-gray-500 capitalize">{ev.event_type || 'Event'} • {new Date(ev.event_date.split('T')[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})}</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 uppercase tracking-wider flex-shrink-0">
+                    Nearest Event
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Achievements</h2>
-          <div className="space-y-3">
-            <button
-              onClick={() => setActiveMenuItem('achievements')}
-              className="w-full p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-left"
+        {/* Inquiries Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
+          <div className="flex justify-between items-center p-5 border-b border-gray-50 flex-shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">My Inquiries</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Tracking status of submitted concerns</p>
+            </div>
+            <button 
+              onClick={() => setActiveMenuItem('inquiry')}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
             >
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Recent Awards</div>
-              <div className="text-xs sm:text-sm text-gray-600">See the college's latest honors and recognitions</div>
-            </button>
-            <button
-              onClick={() => setActiveMenuItem('achievements')}
-              className="w-full p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors text-left"
-            >
-              <div className="font-medium text-gray-900 text-sm sm:text-base">Research Highlights</div>
-              <div className="text-xs sm:text-sm text-gray-600">Explore recent publications and partnerships</div>
+              View All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+          
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            {loading ? (
+              <div className="text-center text-gray-400 py-8 text-sm">Loading inquiries...</div>
+            ) : inquiries.length === 0 ? (
+              <div className="text-center text-gray-400 py-8 text-sm">No recent inquiries submitted.</div>
+            ) : (
+              inquiries.map((inq) => (
+                <button
+                  key={inq.id}
+                  onClick={() => setActiveMenuItem('inquiry')}
+                  className="w-full flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-purple-100 transition-colors text-left group"
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-2.5 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-100 transition-colors">
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 pr-4">
+                      <div className="font-bold text-gray-900 text-sm mb-0.5 truncate">{inq.subject}</div>
+                      <div className="text-xs text-gray-500 truncate">{inq.category || 'General'} • {new Date(inq.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})}</div>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex-shrink-0 ${inq.status === 'answered' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {inq.status === 'answered' ? 'Answered' : 'Pending'}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
+
       </div>
     </div>
   );
@@ -505,6 +663,12 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   const [errors, setErrors] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // File Upload State
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Modal State
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -521,12 +685,15 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   });
 
   const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
     employmentStatus: 'employed',
     jobTitle: '',
     employer: '',
     yearsEmployed: '',
     monthlySalary: '25000-30000',
     relevance: 'very-relevant',
+    postGraduateDegree: '',
   });
 
   // Load existing survey through your existing Express route: GET /api/tracer-survey/mine
@@ -537,12 +704,15 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         const existing = await getTracerSurvey(alumniId);
         if (existing) {
           setFormData({
+            firstName: existing.first_name || '',
+            lastName: existing.last_name || '',
             employmentStatus: existing.employment_status || 'employed',
             jobTitle: existing.job_title || '',
             employer: existing.employer || '',
             yearsEmployed: String(existing.years_employed ?? ''),
             monthlySalary: existing.monthly_salary || '25000-30000',
             relevance: existing.relevance || 'very-relevant',
+            postGraduateDegree: existing.post_graduate_degree || '',
           });
           setLastUpdated(existing.updated_at);
           setIsNew(false);
@@ -559,16 +729,47 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     })();
   }, [alumniId]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected && selected.type.startsWith('image/')) {
+      setFile(selected);
+      setPreviewUrl(URL.createObjectURL(selected));
+      setUploadProgress(0);
+      
+      // Simulate file upload progress UX
+      const interval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            return 100;
+          }
+          return prev + 15;
+        });
+      }, 100);
+    } else if (selected) {
+      alert('Please select an image file (JPG, PNG).');
+    }
+  };
+
+  const removeFile = () => {
+    setFile(null);
+    setPreviewUrl(null);
+    setUploadProgress(0);
+  };
+
   // Trigger modal validation
   const initiateSubmit = () => {
     const payload = {
       alumni_id: alumniId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
       employment_status: formData.employmentStatus,
       job_title: formData.jobTitle,
       employer: formData.employer,
       years_employed: Number(formData.yearsEmployed) || 0,
       monthly_salary: formData.monthlySalary,
       relevance: formData.relevance,
+      post_graduate_degree: formData.postGraduateDegree,
     };
 
     const validationErrors = validateTracerSurvey(payload);
@@ -587,12 +788,15 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     setSaving(true);
     const payload = {
       alumni_id: alumniId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
       employment_status: formData.employmentStatus,
       job_title: formData.jobTitle,
       employer: formData.employer,
       years_employed: Number(formData.yearsEmployed) || 0,
       monthly_salary: formData.monthlySalary,
       relevance: formData.relevance,
+      post_graduate_degree: formData.postGraduateDegree,
     };
 
     try {
@@ -636,8 +840,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     );
   }
 
-  const isEmployedType =
-    formData.employmentStatus === 'employed' || formData.employmentStatus === 'self-employed';
+  const isEmployedType = formData.employmentStatus === 'employed';
 
   return (
     <div className="space-y-6">
@@ -732,10 +935,41 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
 
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            
+            {/* First Name */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                First Name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="First Name"
+                value={formData.firstName}
+                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
+            </div>
+
+            {/* Last Name */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Last Name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Last Name"
+                value={formData.lastName}
+                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
+            </div>
+
             {/* Employment Status */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Current Employment Status <span className="text-rose-500">*</span>
+                STATUS <span className="text-rose-500">*</span>
               </label>
               <select
                 value={formData.employmentStatus}
@@ -743,14 +977,63 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                 disabled={!isEditing}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
               >
-                <option value="employed">Employed (Government / Private / NGO)</option>
-                <option value="self-employed">Self-Employed / Entrepreneur / Freelancer</option>
-                <option value="unemployed">Unemployed (Actively Seeking Employment)</option>
-                <option value="further-study">Pursuing Advanced Degree / Graduate Studies</option>
+                <option value="employed">Employed</option>
+                <option value="unemployed">Unemployed</option>
+                <option value="not-tracked">Not tracked</option>
               </select>
             </div>
 
-            {/* Relevance to Degree */}
+            {/* Post Graduate Degree */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                POST GRADUATE DEGREE
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Master's in Education, PhD, None"
+                value={formData.postGraduateDegree}
+                onChange={(e) => setFormData({ ...formData, postGraduateDegree: e.target.value })}
+                disabled={!isEditing}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
+            </div>
+
+            {/* Name of Company / Type of Business */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                NAME OF COMPANY / TYPE OF BUSINESS {isEmployedType && <span className="text-rose-500">*</span>}
+              </label>
+              <input
+                type="text"
+                placeholder="Company / Institution Name"
+                value={formData.employer}
+                onChange={(e) => setFormData({ ...formData, employer: e.target.value })}
+                disabled={!isEditing || !isEmployedType}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              />
+            </div>
+
+            {/* Monthly Salary Bracket */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                MEDIAN/AVERAGE SALARY (Monthly)
+              </label>
+              <select
+                value={formData.monthlySalary}
+                onChange={(e) => setFormData({ ...formData, monthlySalary: e.target.value })}
+                disabled={!isEditing || !isEmployedType}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+              >
+                <option value="prefer-not-to-say">Prefer not to say</option>
+                <option value="below-20000">Below ₱20,000</option>
+                <option value="20000-25000">₱20,000 – ₱25,000</option>
+                <option value="25000-30000">₱25,000 – ₱30,000</option>
+                <option value="30000-40000">₱30,000 – ₱40,000</option>
+                <option value="above-40000">Above ₱40,000</option>
+              </select>
+            </div>
+
+            {/* Relevance to Degree (Retained contextually) */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Degree Alignment & Relevance
@@ -768,7 +1051,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Position / Job Title */}
+            {/* Job Title (Retained contextually) */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Designation / Position Title {isEmployedType && <span className="text-rose-500">*</span>}
@@ -778,66 +1061,106 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                 placeholder="e.g. Master Teacher I, Secondary Math Teacher"
                 value={formData.jobTitle}
                 onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                disabled={!isEditing}
+                disabled={!isEditing || !isEmployedType}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
               />
             </div>
+            
+          </div>
 
-            {/* Employer / Institution */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Employer / Institution Name {isEmployedType && <span className="text-rose-500">*</span>}
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Department of Education / St. Theresa Academy"
-                value={formData.employer}
-                onChange={(e) => setFormData({ ...formData, employer: e.target.value })}
-                disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+          {/* ── File Upload Area ── */}
+          <div className="mt-8">
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold shadow-sm">
+                5
+              </span> 
+              EVIDENCES & SUPPORTING DOCUMENTS
+            </h3>
+            
+            <div className="border border-dashed border-gray-300 rounded-xl p-8 text-center bg-white hover:bg-gray-50 transition-colors cursor-pointer relative mb-4">
+              <input 
+                type="file" 
+                accept="image/jpeg, image/png" 
+                onChange={handleFileChange} 
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                disabled={!isEditing} 
               />
+              <Upload className="mx-auto h-8 w-8 text-gray-400 mb-3" />
+              <p className="text-sm text-gray-700 font-medium">Click to attach files or drag and drop</p>
+              <p className="text-xs text-gray-400 mt-1">Image only (Company ID or COE, JPG, PNG) up to 15MB each</p>
             </div>
 
-            {/* Years in Position */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Tenure in Role (Years)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                placeholder="0"
-                value={formData.yearsEmployed}
-                onChange={(e) => setFormData({ ...formData, yearsEmployed: e.target.value })}
-                disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              />
-            </div>
-
-            {/* Monthly Salary Bracket */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Monthly Compensation Bracket
-              </label>
-              <select
-                value={formData.monthlySalary}
-                onChange={(e) => setFormData({ ...formData, monthlySalary: e.target.value })}
-                disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              >
-                <option value="below-20000">Below ₱20,000</option>
-                <option value="20000-25000">₱20,000 – ₱25,000</option>
-                <option value="25000-30000">₱25,000 – ₱30,000</option>
-                <option value="30000-40000">₱30,000 – ₱40,000</option>
-                <option value="above-40000">Above ₱40,000</option>
-              </select>
-            </div>
+            {/* Uploaded File Item with Circular Progress */}
+            {file && (
+              <div className="flex items-center justify-between bg-white border border-gray-200 shadow-sm rounded-xl p-4 transition-all">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-700 truncate">{file.name}</div>
+                    <div className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4 flex-shrink-0 ml-4">
+                  {uploadProgress < 100 ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500 font-medium animate-pulse">Uploading...</span>
+                      {/* Circular Progress Bar */}
+                      <div className="relative w-8 h-8 flex items-center justify-center">
+                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                          {/* Background Circle */}
+                          <path
+                            className="text-gray-100"
+                            strokeWidth="3"
+                            stroke="currentColor"
+                            fill="none"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                          {/* Progress Circle */}
+                          <path
+                            className="text-blue-600 transition-all duration-300 ease-out"
+                            strokeDasharray={`${uploadProgress}, 100`}
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            stroke="currentColor"
+                            fill="none"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                        </svg>
+                        <span className="absolute text-[9px] font-bold text-gray-700">{uploadProgress}%</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPreview(true)} 
+                        className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
+                      >
+                        <Eye className="w-4 h-4" /> Preview
+                      </button>
+                      {isEditing && (
+                        <button 
+                          type="button" 
+                          onClick={removeFile} 
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remove file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Submission Buttons */}
           {isEditing && (
-            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-5 border-t border-gray-100">
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-5 border-t border-gray-100 mt-6">
               {!isNew && (
                 <button
                   type="button"
@@ -860,10 +1183,30 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       </div>
 
+      {/* ── Document Preview Modal ── */}
+      {showPreview && previewUrl && (
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-2 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100">
+              <h3 className="font-bold text-gray-800">Document Preview</h3>
+              <button 
+                onClick={() => setShowPreview(false)} 
+                className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex justify-center bg-gray-50/50 rounded-b-xl overflow-auto max-h-[75vh]">
+              <img src={previewUrl} alt="Preview" className="max-w-full h-auto object-contain rounded shadow-sm" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Submission Confirmation Modal ── */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
             <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E3A8A] flex items-center justify-center mx-auto mb-3.5">
               <FileText className="w-6 h-6" />
             </div>
@@ -894,7 +1237,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                 type="button"
                 onClick={handleConfirmedSave}
                 disabled={saving}
-                className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-all shadow-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-all shadow-md inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {saving ? (
                   <>
@@ -910,10 +1253,10 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       )}
 
-      {/* ── Status Feedback Modal ── */}
+      {/* ── Status Feedback Modal (Success/Error) ── */}
       {feedbackModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
                 feedbackModal.type === 'success'
@@ -934,7 +1277,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
             <button
               type="button"
               onClick={() => setFeedbackModal((prev) => ({ ...prev, open: false }))}
-              className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-colors shadow-sm"
+              className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-colors shadow-md"
             >
               Done
             </button>
@@ -944,6 +1287,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     </div>
   );
 }
+
 // ====================== ALUMNI CALENDAR ======================
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
 
@@ -952,6 +1296,8 @@ interface BackendCalendarEvent {
   title: string;
   description?: string | null;
   event_date: string;
+  start_time?: string | null; // Added for synchronized start time support
+  end_time?: string | null;   // Added for synchronized end time support
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string;
   audience?: string;
   location?: string | null;
@@ -989,6 +1335,37 @@ function colorForAlumniEvent(ev: BackendCalendarEvent): string {
 function dateOnlyAlumni(isoLike: string): string {
   if (!isoLike) return '';
   return isoLike.split('T')[0];
+}
+
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+function sortEventsChronologically(a: BackendCalendarEvent, b: BackendCalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
 function formatTimeFromDate(isoLike: string): string | null {
@@ -1079,7 +1456,8 @@ function AlumniCalendar() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, BackendCalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnlyAlumni(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -1097,7 +1475,7 @@ function AlumniCalendar() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyAlumni(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const formatDate = (dateStr: string) => {
@@ -1313,7 +1691,7 @@ function AlumniCalendar() {
                       </div>
                     )}
 
-                    {/* Tooltip Hover Preview */}
+                    {/* Tooltip Hover Preview with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1333,7 +1711,7 @@ function AlumniCalendar() {
 
                         <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                           {dayEvents.map((ev) => {
-                            const timeStr = formatTimeFromDate(ev.event_date);
+                            const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                             return (
                               <div
                                 key={ev.id}
@@ -1345,11 +1723,9 @@ function AlumniCalendar() {
                                   {ev.title}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                  {timeStr && (
-                                    <span className="font-medium text-gray-700">
-                                      {timeStr}
-                                    </span>
-                                  )}
+                                  <span className="font-medium text-gray-700">
+                                    {timeRangeStr}
+                                  </span>
                                   {ev.event_type && (
                                     <span className="uppercase text-[9px] font-bold text-gray-600">
                                       {ev.event_type}
@@ -1385,7 +1761,7 @@ function AlumniCalendar() {
 
           {upcomingEvents.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
-              <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
               <p className="text-xs font-medium">No upcoming events scheduled</p>
             </div>
           ) : (
@@ -1393,7 +1769,7 @@ function AlumniCalendar() {
               {upcomingEvents.map((ev) => {
                 const evDate = dateOnlyAlumni(ev.event_date);
                 const isDueToday = evDate === todayStr;
-                const timeStr = formatTimeFromDate(ev.event_date);
+                const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
 
                 return (
                   <div
@@ -1417,11 +1793,9 @@ function AlumniCalendar() {
                     </div>
 
                     <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                      {timeStr && (
-                        <span className="font-medium text-gray-700">
-                          {timeStr}
-                        </span>
-                      )}
+                      <span className="font-medium text-gray-700">
+                        {timeRangeStr}
+                      </span>
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ backgroundColor: colorForAlumniEvent(ev) }}
@@ -1438,8 +1812,8 @@ function AlumniCalendar() {
 
       {/* ── Event Details Modal ── */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <span
@@ -1466,12 +1840,10 @@ function AlumniCalendar() {
                 <span>{formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(selectedEvent.event_date) && (
-                <div>
-                  <span className="font-semibold text-gray-900">Time: </span>
-                  <span>{formatTimeFromDate(selectedEvent.event_date)}</span>
-                </div>
-              )}
+              <div>
+                <span className="font-semibold text-gray-900">Time: </span>
+                <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
+              </div>
 
               {selectedEvent.location && (
                 <div>
@@ -1505,236 +1877,11 @@ function AlumniCalendar() {
   );
 }
 
+// ====================== DOCUMENTS & RESOURCES (ALUMNI) ======================
 function DocumentsResources() {
-  interface AcademicDoc {
-    id: string;
-    title: string;
-    document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
-    file_size: number;
-    file_name?: string;
-  }
-
-  const DOC_TYPE_LABELS: Record<string, string> = {
-    handbook: 'Handbook',
-    policy: 'Policy',
-    memorandum: 'Memorandum',
-    form: 'Form',
-  };
-
-  const categoryColor: Record<string, string> = {
-    Handbook: 'bg-blue-100 text-blue-700',
-    Policy: 'bg-purple-100 text-purple-700',
-    Memorandum: 'bg-orange-100 text-orange-700',
-    Form: 'bg-green-100 text-green-700',
-  };
-
-  const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-
-  const [documents, setDocuments] = useState<AcademicDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  const categories = ['All', 'Handbook', 'Policy', 'Form', 'Memorandum'];
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(DOCS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load documents.');
-        setDocuments([]);
-        return;
-      }
-      const data = await res.json();
-      setDocuments(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setDocuments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  const formatFileSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handlePreview = async (doc: AcademicDoc) => {
-    setPreviewingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to open preview.');
-        return;
-      }
-
-      const { url, file_type } = await res.json();
-
-      if (file_type === 'application/pdf' || file_type?.startsWith('image/')) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } else {
-        const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
-        window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
-      }
-    } catch {
-      setLoadError('Could not connect to the server for preview.');
-    } finally {
-      setPreviewingId(null);
-    }
-  };
-
-  const handleDownload = async (doc: AcademicDoc) => {
-    setDownloadingId(doc.id);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${DOCS_API_URL}/${doc.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to generate download link.');
-        return;
-      }
-      const { url, file_name } = await res.json();
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file_name || doc.title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      setLoadError('Could not reach the server for download.');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const filtered = activeCategory === 'All'
-    ? documents
-    : documents.filter((d) => DOC_TYPE_LABELS[d.document_type] === activeCategory);
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Documents & Resources</h1>
-
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {categories.map((c) => (
-          <button
-            key={c}
-            onClick={() => setActiveCategory(c)}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              activeCategory === c
-                ? 'bg-[#1E3A8A] text-white'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-          {loadError}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading documents...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            No documents found.
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filtered.map((doc) => {
-              const label = DOC_TYPE_LABELS[doc.document_type] || doc.document_type;
-              const isPreviewing = previewingId === doc.id;
-              const isDownloading = downloadingId === doc.id;
-
-              return (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 sm:p-5 hover:bg-gray-50 transition-colors gap-3"
-                >
-                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-900 text-sm sm:text-base truncate">
-                        {doc.title}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            categoryColor[label] || 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {label}
-                        </span>
-                        <span className="text-xs text-gray-400">{formatFileSize(doc.file_size)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => handlePreview(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isPreviewing ? 'Opening…' : 'View'}
-                    </button>
-
-                    <button
-                      onClick={() => handleDownload(doc)}
-                      disabled={isPreviewing || isDownloading}
-                      className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isDownloading ? (
-                        <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        'Download'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return <AcademicDocumentsViewer />;
 }
+
 // ====================== INQUIRY / CONTACT ======================
 const INQUIRY_CATEGORIES = [
   'Documents',
@@ -1979,8 +2126,8 @@ function AlumniInquiry() {
 
       {/* ── Detail modal (shows the dean's reply, if any) ── */}
       {selectedInquiry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div className="min-w-0">
                 {selectedInquiry.category && (

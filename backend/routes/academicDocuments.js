@@ -216,9 +216,10 @@ router.get('/:id/preview', authenticate, async (req, res) => {
     }
   }
 
+  // download: false ensures Content-Disposition is set to inline for embedding
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(doc.file_path, 300); // 5-minute validity
+    .createSignedUrl(doc.file_path, 300, { download: false });
 
   if (signError) {
     return res.status(500).json({ error: 'Failed to generate preview link: ' + signError.message });
@@ -228,7 +229,6 @@ router.get('/:id/preview', authenticate, async (req, res) => {
 });
 
 // ── GET /api/academic-records/documents/:id/download — signed URL for downloading ──
-// Gi-add ni para sa Download Button sa frontend
 router.get('/:id/download', authenticate, async (req, res) => {
   const { id } = req.params;
   const userRole = req.user.role;
@@ -253,9 +253,10 @@ router.get('/:id/download', authenticate, async (req, res) => {
     }
   }
 
+  // download: true sets Content-Disposition: attachment
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(doc.file_path, 300, { download: true }); // Gi-butangan og download: true
+    .createSignedUrl(doc.file_path, 300, { download: true });
 
   if (signError) {
     return res.status(500).json({ error: 'Failed to generate download link: ' + signError.message });
@@ -263,7 +264,6 @@ router.get('/:id/download', authenticate, async (req, res) => {
 
   return res.json({ url: signed.signedUrl });
 });
-
 
 // ── PUT /api/academic-records/documents/:id — update metadata and/or replace file (Dean/Admin only) ──
 router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {

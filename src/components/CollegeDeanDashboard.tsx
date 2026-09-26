@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { renderAsync } from 'docx-preview';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -97,6 +98,8 @@ import {
   Filter,
   CalendarDays,
   Pencil,
+  Save,
+  AlertCircle,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -998,6 +1001,13 @@ const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
   alumni:  { length: 5, label: '5 digits' },
 };
 
+const PROGRAM_LABELS: Record<string, string> = {
+  'BEED': 'Bachelor of Elementary Education',
+  'BTLED': 'Bachelor of Technology and Livelihood Education',
+  'BSED-MATH': 'Bachelor of Secondary Education - Major in Mathematics',
+  'BSED-ENGLISH': 'Bachelor of Secondary Education - Major in English',
+};
+
 function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
   const [users, setUsers]               = useState<any[]>([]);
@@ -1018,7 +1028,7 @@ function UserManagement() {
 
   const [form, setForm] = useState({
     username: '', full_name: '', email: '', role: 'student',
-    id_number: '', department: '', status: 'active', password: '',
+    id_number: '', program: '', status: 'active', password: '',
   });
 
   const fetchUsers = useCallback(async () => {
@@ -1045,7 +1055,9 @@ function UserManagement() {
     }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => { 
+    fetchUsers(); 
+  }, [fetchUsers]);
 
   useEffect(() => {
     let result = [...users];
@@ -1056,7 +1068,8 @@ function UserManagement() {
         u.full_name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         u.id_number.toLowerCase().includes(q) ||
-        (u.department ?? '').toLowerCase().includes(q)
+        (u.department ?? '').toLowerCase().includes(q) ||
+        (u.program ?? '').toLowerCase().includes(q)
       );
     }
     if (roleFilter !== 'all')   result = result.filter(u => u.role === roleFilter);
@@ -1071,23 +1084,26 @@ function UserManagement() {
   const pendingCount = users.filter(u => u.status === 'pending').length;
 
   const openAdd = () => {
-    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
     setShowPassword(false);
     setFormError('');
     setModal('add');
   };
+  
   const openEdit = (user: any) => {
     setSelected(user);
     setForm({
       username: user.username || '',
       full_name: user.full_name, email: user.email, role: user.role,
-      id_number: user.id_number, department: user.department ?? '',
+      id_number: user.id_number, 
+      program: user.program || user.department || '',
       status: user.status, password: '',
     });
     setShowPassword(false);
     setFormError('');
     setModal('edit');
   };
+  
   const openDelete = (user: any) => { setSelected(user); setModal('delete'); };
 
   const handleAdd = async () => {
@@ -1107,6 +1123,12 @@ function UserManagement() {
         return;
       }
     }
+    
+    // Require program for students
+    if (form.role === 'student' && !form.program) {
+      setFormError('Please select a program for this student.');
+      return;
+    }
 
     if (!form.password) { setFormError('Password is required.'); return; }
     if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
@@ -1114,6 +1136,10 @@ function UserManagement() {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+      
+      // If program is empty/not assigned or role is alumni, send strictly null to backend
+      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
+
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
         headers: { 
@@ -1127,7 +1153,8 @@ function UserManagement() {
           role: form.role,
           full_name: form.full_name.trim(),
           id_number: form.id_number.trim(),
-          department: form.department.trim() || null,
+          program: payloadProgram,
+          department: payloadProgram, // Sent as department for strict backend validation
           status: form.status,
         }),
       });
@@ -1158,7 +1185,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       setShowPassword(false);
       setFormError('');
       await fetchUsers();
@@ -1187,12 +1214,21 @@ function UserManagement() {
         return;
       }
     }
+    
+    // Require program for students
+    if (form.role === 'student' && !form.program) {
+      setFormError('Please select a program for this student.');
+      return;
+    }
 
     if (!selected) return;
 
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+      
+      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
+
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'PUT',
         headers: {
@@ -1204,7 +1240,8 @@ function UserManagement() {
           full_name: form.full_name.trim(),
           role: form.role,
           id_number: form.id_number.trim(),
-          department: form.department.trim() || null,
+          program: payloadProgram,
+          department: payloadProgram, // Sent as department for strict backend validation
           status: form.status,
           ...(form.password.trim() ? { password: form.password.trim() } : {}),
         }),
@@ -1218,7 +1255,7 @@ function UserManagement() {
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error.message || 'Unable to connect to the backend.');
@@ -1257,7 +1294,7 @@ function UserManagement() {
       setModal(null);
       setSelected(null);
       setFormError('');
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', department: '', status: 'active', password: '' });
+      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
       await fetchUsers();
     } catch (error: any) {
       setFormError(error?.message || 'Unable to connect to the backend server.');
@@ -1363,7 +1400,7 @@ function UserManagement() {
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Search username, name, email, ID..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" placeholder="Search username, name, email, ID, or program..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -1374,7 +1411,9 @@ function UserManagement() {
           <div className="flex gap-2">
             <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
               <option value="all">All Roles</option>
-              {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {Object.entries(ROLE_CONFIG)
+                .filter(([k]) => k !== 'admin')
+                .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
               <option value="all">All Status</option>
@@ -1403,7 +1442,7 @@ function UserManagement() {
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Dept.</th>
+                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Program</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -1414,6 +1453,9 @@ function UserManagement() {
                   const status       = STATUS_CONFIG[user.status] ?? { label: user.status, color: '#374151', bg: '#F3F4F6', dot: '#6B7280' };
                   const isPending    = user.status === 'pending';
                   const isActivating = activating === user.id;
+                  
+                  const affiliation = user.program || user.department;
+
                   return (
                     <tr key={user.id} className={`transition-colors ${isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/30'}`}>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
@@ -1439,7 +1481,7 @@ function UserManagement() {
                         </span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 hidden md:table-cell">
-                        <span className="text-sm text-gray-600">{user.department ?? '—'}</span>
+                        <span className="text-sm text-gray-600 line-clamp-2" title={affiliation}>{affiliation ?? '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
                         <button onClick={() => toggleStatus(user)}
@@ -1519,7 +1561,7 @@ function UserManagement() {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div className={form.role === 'alumni' ? "col-span-2" : ""}>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">
                     ID Number * ({ID_LENGTH_CONFIG[form.role]?.label || 'Digits only'})
                   </label>
@@ -1541,11 +1583,36 @@ function UserManagement() {
                     className="w-full px-3 py-2 border rounded-xl text-sm" 
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
-                  <input type="text" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
-                </div>
+                
+                {form.role !== 'alumni' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Program</label>
+                    {form.role === 'student' ? (
+                      <select 
+                        value={form.program} 
+                        onChange={e => setForm({ ...form, program: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl text-sm"
+                      >
+                        <option value="">-- Select Program --</option>
+                        <option value="BEEd">Bachelor of Elementary Education</option>
+                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
+                        <option value="BSEd-Math">Bachelor of Secondary Education - Major in Mathematics</option>
+                        <option value="BSEd-English">Bachelor of Secondary Education - Major in English</option>
+                      </select>
+                    ) : (
+                      <select 
+                        value={form.program} 
+                        onChange={e => setForm({ ...form, program: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-xl text-sm"
+                      >
+                        <option value="">-- Not Assigned --</option>
+                        <option value="BEEd">Bachelor of Elementary Education</option>
+                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
+                        <option value="BSEd">Bachelor of Secondary Education</option>
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1559,11 +1626,14 @@ function UserManagement() {
                         ...prev,
                         role: nextRole,
                         id_number: maxLen ? prev.id_number.slice(0, maxLen) : prev.id_number,
+                        program: '', 
                       }));
                     }}
                     className="w-full px-3 py-2 border rounded-xl text-sm"
                   >
-                    {Object.entries(ROLE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    {Object.entries(ROLE_CONFIG)
+                      .filter(([k]) => k !== 'admin')
+                      .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1627,6 +1697,7 @@ function UserManagement() {
     </div>
   );
 }
+
 // ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
@@ -1634,6 +1705,8 @@ interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
+  start_time?: string | null; // Added for start time support
+  end_time?: string | null; // Added for end time support
   end_date?: string | null;
   location: string | null;
   department_ids: string[] | null;
@@ -1644,7 +1717,7 @@ interface CalendarEvent {
   organizer_id?: string | null;
   created_at: string;
   updated_at: string;
-  color?: string | null; // Added for custom colors
+  color?: string | null;
 }
 
 interface DeptOption {
@@ -1702,6 +1775,43 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
+// Formats "HH:MM:SS" or "HH:MM" into readable 12-hour format (e.g., "9:00 AM")
+function formatSingleTime(timeStr?: string | null): string | null {
+  if (!timeStr) return null;
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  const hoursNum = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  if (isNaN(hoursNum)) return timeStr;
+  const period = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  return `${hours12}:${minutes} ${period}`;
+}
+
+// Combines start and end times into a clean range (e.g., "8:00 AM – 10:30 AM")
+function formatEventTimeRange(start?: string | null, end?: string | null): string {
+  const s = formatSingleTime(start);
+  const e = formatSingleTime(end);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return s;
+  return 'Time not specified';
+}
+
+// Helper to sort events chronologically by start_time (events without time sort last)
+function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+
+  return (timeA ?? '').localeCompare(timeB ?? '');
+}
+
 function formatTimeFromDate(isoLike: string): string | null {
   if (!isoLike || !isoLike.includes('T')) return null;
   const timePart = isoLike.split('T')[1];
@@ -1736,10 +1846,12 @@ export default function CalendarActivities() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Form State
+  // Form State with Start & End Time
   const emptyForm = {
     title: '',
     date: '',
+    start_time: '',
+    end_time: '',
     location: '',
     description: '',
     event_type: 'activity',
@@ -1829,7 +1941,8 @@ export default function CalendarActivities() {
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    events.forEach((ev) => {
+    const sorted = [...events].sort(sortEventsChronologically);
+    sorted.forEach((ev) => {
       const d = dateOnlyStr(ev.event_date);
       if (!d) return;
       const current = map.get(d) || [];
@@ -1847,13 +1960,13 @@ export default function CalendarActivities() {
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyStr(e.event_date) >= todayStr)
-      .sort((a, b) => a.event_date.localeCompare(b.event_date));
+      .sort(sortEventsChronologically);
   }, [events, todayStr]);
 
   const pastEvents = useMemo(() => {
     return events
       .filter((e) => dateOnlyStr(e.event_date) < todayStr)
-      .sort((a, b) => b.event_date.localeCompare(a.event_date));
+      .sort((a, b) => sortEventsChronologically(b, a));
   }, [events, todayStr]);
 
   const availableYears = useMemo(() => {
@@ -1916,7 +2029,6 @@ export default function CalendarActivities() {
     setEditingEventId(null);
   };
 
-  // Open modal pre-populated with existing event values
   const handleStartEdit = (ev: CalendarEvent) => {
     const isStandardType = STANDARD_EVENT_TYPES.some((t) => t.id === ev.event_type);
     const existingDept = ev.department_ids && ev.department_ids.length > 0 ? ev.department_ids[0] : '';
@@ -1924,6 +2036,8 @@ export default function CalendarActivities() {
     setForm({
       title: ev.title || '',
       date: dateOnlyStr(ev.event_date) || '',
+      start_time: ev.start_time ? ev.start_time.slice(0, 5) : '',
+      end_time: ev.end_time ? ev.end_time.slice(0, 5) : '',
       location: ev.location || '',
       description: ev.description || '',
       event_type: isStandardType ? (ev.event_type as string) : 'other',
@@ -1940,13 +2054,16 @@ export default function CalendarActivities() {
     }
   };
 
-  // Shared submit handler (POST for new, PUT for edit)
   const handleSaveEvent = async () => {
     setFormError('');
     
-    // ERROR HANDLING: Check all required fields (Description is optional)
     if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
       setFormError('Please complete all required fields. Only the description is optional.');
+      return;
+    }
+
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setFormError('End time must be later than start time.');
       return;
     }
 
@@ -1976,6 +2093,8 @@ export default function CalendarActivities() {
           description: form.description.trim() || null,
           location: form.location.trim() || null,
           event_date: `${form.date}T08:00:00.000Z`,
+          start_time: form.start_time ? form.start_time : null,
+          end_time: form.end_time ? form.end_time : null,
           event_type: finalEventType,
           color: form.event_color,
           audience: form.audience,
@@ -2059,7 +2178,6 @@ export default function CalendarActivities() {
         </div>
 
         <div className="flex items-center gap-3 self-start md:self-auto">
-          {/* Calendar vs Event History Switcher */}
           <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 shadow-2xs">
             <button
               onClick={() => setViewMode('calendar')}
@@ -2069,7 +2187,7 @@ export default function CalendarActivities() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <CalendarIcon className="w-4 h-4" />
+              <Calendar className="w-4 h-4" />
               <span>Calendar</span>
             </button>
             <button
@@ -2114,7 +2232,6 @@ export default function CalendarActivities() {
       {viewMode === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-            {/* Toolbar */}
             <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
               <div className="flex items-center gap-2">
                 <select
@@ -2173,7 +2290,6 @@ export default function CalendarActivities() {
               </div>
             </div>
 
-            {/* Days Header */}
             <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
               {DAYS.map((d, i) => (
                 <div
@@ -2188,7 +2304,7 @@ export default function CalendarActivities() {
 
             {loading ? (
               <div className="flex items-center justify-center py-24 text-gray-400 gap-3">
-                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
                 <span className="text-sm font-medium">Loading events…</span>
               </div>
             ) : (
@@ -2252,7 +2368,7 @@ export default function CalendarActivities() {
                         )}
                       </div>
 
-                      {/* Event pills on desktop */}
+                      {/* Desktop Event Pills */}
                       <div className="hidden sm:flex flex-col gap-1">
                         {dayEvents.slice(0, 2).map((ev) => (
                           <button
@@ -2275,7 +2391,7 @@ export default function CalendarActivities() {
                         )}
                       </div>
 
-                      {/* Indicators on mobile */}
+                      {/* Mobile Event Dots */}
                       {hasEvents && (
                         <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                           {dayEvents.slice(0, 3).map((ev) => (
@@ -2291,7 +2407,7 @@ export default function CalendarActivities() {
                         </div>
                       )}
 
-                      {/* Tooltip Preview */}
+                      {/* Tooltip Hover Preview with Time Range */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -2311,7 +2427,7 @@ export default function CalendarActivities() {
 
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
-                              const timeStr = formatTimeFromDate(ev.event_date);
+                              const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                               return (
                                 <div
                                   key={ev.id}
@@ -2323,12 +2439,10 @@ export default function CalendarActivities() {
                                     {ev.title}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                    {timeStr && (
-                                      <span className="flex items-center gap-1 font-medium text-gray-700">
-                                        <Clock className="w-3 h-3 text-gray-400" />
-                                        {timeStr}
-                                      </span>
-                                    )}
+                                    <span className="flex items-center gap-1 font-medium text-gray-700">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      {timeRangeStr}
+                                    </span>
                                     {ev.event_type && (
                                       <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
                                         <Tag className="w-2.5 h-2.5 text-gray-400" />
@@ -2369,7 +2483,7 @@ export default function CalendarActivities() {
 
             {upcomingEvents.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <CalendarIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs font-medium">No upcoming events scheduled</p>
               </div>
             ) : (
@@ -2377,7 +2491,7 @@ export default function CalendarActivities() {
                 {upcomingEvents.map((ev) => {
                   const evDate = dateOnlyStr(ev.event_date);
                   const isDueToday = evDate === todayStr;
-                  const timeStr = formatTimeFromDate(ev.event_date);
+                  const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
 
                   return (
                     <div
@@ -2401,12 +2515,10 @@ export default function CalendarActivities() {
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                        {timeStr && (
-                          <span className="flex items-center gap-1 font-medium text-gray-700">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            {timeStr}
-                          </span>
-                        )}
+                        <span className="flex items-center gap-1 font-medium text-gray-700">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          {timeRangeStr}
+                        </span>
                         <span
                           className="w-2 h-2 rounded-full"
                           style={{ backgroundColor: colorForCalendarEvent(ev) }}
@@ -2547,7 +2659,7 @@ export default function CalendarActivities() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupedArchiveEvents[groupMonth].map((ev) => {
-                      const timeStr = formatTimeFromDate(ev.event_date);
+                      const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
                       return (
                         <div
                           key={ev.id}
@@ -2570,15 +2682,11 @@ export default function CalendarActivities() {
                               <span className="font-medium text-gray-700">
                                 {formatDate(dateOnlyStr(ev.event_date))}
                               </span>
-                              {timeStr && (
-                                <>
-                                  <span>·</span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-gray-400" />
-                                    {timeStr}
-                                  </span>
-                                </>
-                              )}
+                              <span>·</span>
+                              <span className="flex items-center gap-1 font-medium text-gray-700">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                {timeRangeStr}
+                              </span>
                               <span>·</span>
                               <span className="truncate">{departmentLabel(ev)}</span>
                             </div>
@@ -2625,7 +2733,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Event Details Modal (With Edit & Delete Options) ── */}
+      {/* ── Event Details Modal ── */}
       {inspectingEvent && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
@@ -2653,18 +2761,16 @@ export default function CalendarActivities() {
 
             <div className="space-y-3 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
               <div className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="font-semibold text-gray-900">Date:</span>
                 <span>{formatLongDate(dateOnlyStr(inspectingEvent.event_date))}</span>
               </div>
 
-              {formatTimeFromDate(inspectingEvent.event_date) && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="font-semibold text-gray-900">Time:</span>
-                  <span>{formatTimeFromDate(inspectingEvent.event_date)}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Time:</span>
+                <span>{formatEventTimeRange(inspectingEvent.start_time, inspectingEvent.end_time)}</span>
+              </div>
 
               {inspectingEvent.location && (
                 <div className="flex items-center gap-2">
@@ -2722,7 +2828,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Unified Add / Edit Event Modal ── */}
+      {/* ── Unified Add / Edit Event Modal with Start & End Time ── */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div
@@ -2732,10 +2838,7 @@ export default function CalendarActivities() {
               setShowModal(false);
             }}
           />
-          {/* Inayos na Modal Layout: Hidden overflow sa main parent, overflow-y-auto lang sa body para malinis ang scrollbar */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md z-[10000] max-h-[90vh] flex flex-col overflow-hidden">
-            
-            {/* Header - Non-scrolling */}
             <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-white shrink-0 z-10">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900">
                 {editingEventId ? 'Edit Event' : 'Add New Event'}
@@ -2751,7 +2854,6 @@ export default function CalendarActivities() {
               </button>
             </div>
 
-            {/* Body - Scrollable */}
             <div className="p-5 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
               {formError && (
                 <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
@@ -2759,7 +2861,6 @@ export default function CalendarActivities() {
                 </div>
               )}
 
-              {/* 1. Event Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Event Title *</label>
                 <input
@@ -2771,7 +2872,6 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 2. Date */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
@@ -2782,7 +2882,27 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 3. Location */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Start Time *</label>
+                  <input
+                    type="time"
+                    value={form.start_time}
+                    onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">End Time *</label>
+                  <input
+                    type="time"
+                    value={form.end_time}
+                    onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Location *</label>
                 <input
@@ -2794,7 +2914,6 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 4. Description (Optional) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
                 <textarea
@@ -2806,10 +2925,8 @@ export default function CalendarActivities() {
                 />
               </div>
 
-              {/* 5. Target Department */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Department *</label>
-                {/* Standard Select Tag gaya ng nasa instruction para sa malinis na pagpili */}
                 <select
                   value={form.target_department_id}
                   onChange={(e) => setForm({ ...form, target_department_id: e.target.value })}
@@ -2822,10 +2939,8 @@ export default function CalendarActivities() {
                 </select>
               </div>
 
-              {/* 6. Type of Activity */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-2">Type of Activity *</label>
-                {/* Pilil / Buttons Layout para sa Event Type */}
                 <div className="flex flex-wrap gap-2">
                   {STANDARD_EVENT_TYPES.map((type) => (
                     <button
@@ -2848,7 +2963,6 @@ export default function CalendarActivities() {
                     </button>
                   ))}
                   
-                  {/* Custom Option */}
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, event_type: 'other', event_color: '#64748B' })}
@@ -2885,7 +2999,6 @@ export default function CalendarActivities() {
                 )}
               </div>
 
-              {/* 7. Target Audience (Optional/Default to All) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Audience *</label>
                 <select
@@ -2898,13 +3011,9 @@ export default function CalendarActivities() {
                   <option value="students">Students Only (Academic, Enrollment, Exams)</option>
                   <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
                 </select>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Selecting &quot;Alumni Only&quot; guarantees only verified alumni see this activity on their calendar.
-                </p>
               </div>
             </div>
 
-            {/* Footer - Non-scrolling */}
             <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3 shrink-0">
               <button
                 onClick={() => {
@@ -2934,7 +3043,6 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* Basic global styles para hindi makapal ang scrollbar sa loob ng modal */}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
@@ -4002,6 +4110,7 @@ function FacultyStaffManagement() {
 interface FileAttachment {
   name: string;
   url: string;
+  path?: string;
   size?: number;
   type?: string;
 }
@@ -4023,6 +4132,7 @@ interface ResearchSubmissionRow {
   sdg_alignment?: string[] | string | null;
   file_name: string | null;
   file_url: string | null;
+  file_path?: string | null;
   files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
   dean_remarks: string | null;
@@ -4033,9 +4143,9 @@ interface ResearchSubmissionRow {
 
 const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
 const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  pending:  { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
-  approved: { label: 'Approved',       color: '#065F46', bg: '#D1FAE5' },
-  rejected: { label: 'Rejected',       color: '#991B1B', bg: '#FEE2E2' },
+  pending: { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
+  approved: { label: 'Approved', color: '#065F46', bg: '#D1FAE5' },
+  rejected: { label: 'Rejected', color: '#991B1B', bg: '#FEE2E2' },
 };
 
 function getResearchTokenDean() {
@@ -4049,12 +4159,15 @@ export function ResearchAchievements() {
   const [submissions, setSubmissions] = useState<ResearchSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  
+
   // Action & Modal States
   const [actionId, setActionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<ResearchSubmissionRow | null>(null);
   const [remarksInput, setRemarksInput] = useState('');
   const [viewingItem, setViewingItem] = useState<ResearchSubmissionRow | null>(null);
+
+  // In-Page Document Preview State
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -4095,12 +4208,14 @@ export function ResearchAchievements() {
         setLoadError(err.error || 'Failed to update submission status.');
         return;
       }
-      
-      setSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s));
+
+      setSubmissions(prev =>
+        prev.map(s => (s.id === submission.id ? { ...s, status, dean_remarks: dean_remarks || null } : s))
+      );
       if (statusFilter !== 'all') {
         setSubmissions(prev => prev.filter(s => s.id !== submission.id));
       }
-      
+
       setRejectFor(null);
       setRemarksInput('');
       if (viewingItem && viewingItem.id === submission.id) {
@@ -4128,21 +4243,29 @@ export function ResearchAchievements() {
       return item.files;
     }
     if (item.file_url) {
-      return [{ name: item.file_name || 'Attached Document', url: item.file_url }];
+      return [{ name: item.file_name || 'Attached Document', url: item.file_url, path: item.file_path || undefined }];
     }
     return [];
   };
 
-  const handleViewFile = (file: FileAttachment) => {
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    const isImageOrPdf = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
-
-    if (isImageOrPdf) {
-      window.open(file.url, '_blank', 'noopener,noreferrer');
-    } else {
-      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(file.url)}`;
-      window.open(officeViewerUrl, '_blank', 'noopener,noreferrer');
+  // Resolves signed URLs through Supabase backend and opens in-modal viewer
+  const handleViewFile = async (file: FileAttachment) => {
+    if (file.path) {
+      try {
+        const res = await fetch(
+          `${RESEARCH_API_URL_DEAN}/preview-url?path=${encodeURIComponent(file.path)}`,
+          { headers: { Authorization: `Bearer ${getResearchTokenDean()}` } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setPreviewFile({ url: data.url, name: file.name });
+          return;
+        }
+      } catch {
+        // Fall back to original file.url
+      }
     }
+    setPreviewFile({ url: file.url, name: file.name });
   };
 
   const formatDate = (iso?: string | null) =>
@@ -4219,7 +4342,7 @@ export function ResearchAchievements() {
         </div>
       )}
 
-      {/* Main List */}
+      {/* Main Submissions List */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base sm:text-lg font-bold text-gray-900">
@@ -4238,7 +4361,7 @@ export function ResearchAchievements() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
-            <Loader2 className="w-7 h-7 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
             <span className="text-sm font-medium">Retrieving submissions...</span>
           </div>
         ) : filtered.length === 0 ? (
@@ -4266,7 +4389,7 @@ export function ResearchAchievements() {
                         <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
                       </div>
 
-                      {/* Submitter info */}
+                      {/* Submitter Info */}
                       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span className="font-semibold text-gray-800 flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-gray-400" />
@@ -4278,7 +4401,7 @@ export function ResearchAchievements() {
                         <span>Submitted on {formatDate(item.created_at)}</span>
                       </div>
 
-                      {/* Fields Preview */}
+                      {/* Dynamic Field Summaries */}
                       <div className="flex flex-wrap gap-2 pt-1 text-xs">
                         {item.type === 'research' && (
                           <>
@@ -4342,7 +4465,7 @@ export function ResearchAchievements() {
                         <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
                       )}
 
-                      {/* Attachments & Link */}
+                      {/* Attachments (In-Page Modal Previews) */}
                       <div className="flex flex-wrap items-center gap-2 pt-2">
                         {item.publication_link && (
                           <a
@@ -4377,7 +4500,7 @@ export function ResearchAchievements() {
                       )}
                     </div>
 
-                    {/* Actions & Status Column */}
+                    {/* Actions & Status Column (View-Only; No Edit action) */}
                     <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
                       <span
                         className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
@@ -4426,7 +4549,7 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {/* Complete Inspection Modal */}
+      {/* Review & Inspect Modal (View-Only; No editing allowed) */}
       {viewingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
@@ -4641,6 +4764,167 @@ export function ResearchAchievements() {
           </div>
         </div>
       )}
+
+      {/* In-Page Document Preview Modal */}
+      {previewFile && (
+        <DocxPreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DocxPreviewModal({
+  file,
+  onClose,
+}: {
+  file: { url: string; name: string };
+  onClose: () => void;
+}) {
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+  const [renderingDocx, setRenderingDocx] = useState(false);
+  const [renderError, setRenderError] = useState(false);
+
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const isPdf = ext === 'pdf';
+  const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
+  const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
+  const isDocx = ext === 'docx';
+  const isOfficeDoc = ['doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
+
+  useEffect(() => {
+    if (isDocx && docxContainerRef.current) {
+      setRenderingDocx(true);
+      setRenderError(false);
+      docxContainerRef.current.innerHTML = '';
+
+      fetch(file.url)
+        .then(res => res.blob())
+        .then(blob => {
+          if (docxContainerRef.current) {
+            return renderAsync(blob, docxContainerRef.current, undefined, {
+              className: 'docx-preview-content',
+              inWrapper: false,
+            });
+          }
+        })
+        .catch(err => {
+          console.error('Docx render error:', err);
+          setRenderError(true);
+        })
+        .finally(() => {
+          setRenderingDocx(false);
+        });
+    }
+  }, [file.url, isDocx]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <FileText className="w-4 h-4 text-blue-700 shrink-0" />
+            <h3 className="font-semibold text-gray-900 text-sm truncate">{file.name}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200/50"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-gray-100/50 p-4 flex items-center justify-center min-h-[400px]">
+          {isPdf && (
+            <iframe
+              src={`${file.url}#toolbar=0`}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
+              title={file.name}
+            />
+          )}
+
+          {isImg && (
+            <div className="flex items-center justify-center w-full h-[68vh] bg-white rounded-xl border border-gray-200 p-2">
+              <img
+                src={file.url}
+                alt={file.name}
+                className="max-w-full max-h-full object-contain rounded-lg"
+              />
+            </div>
+          )}
+
+          {isText && (
+            <iframe
+              src={file.url}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white p-4 font-mono text-xs"
+              title={file.name}
+            />
+          )}
+
+          {isDocx && (
+            <div className="w-full h-[68vh] bg-white rounded-xl border border-gray-200 overflow-y-auto p-6 sm:p-10 shadow-inner">
+              {renderingDocx && (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                  <span className="text-xs">Rendering Word document...</span>
+                </div>
+              )}
+              {renderError && (
+                <div className="text-center py-12 text-gray-500 text-xs">
+                  <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  Could not parse this Word file preview. Use "Save a Copy" below to inspect.
+                </div>
+              )}
+              <div ref={docxContainerRef} className="max-w-3xl mx-auto" />
+            </div>
+          )}
+
+          {isOfficeDoc && (
+            <iframe
+              src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`}
+              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
+              title={file.name}
+            />
+          )}
+
+          {!isPdf && !isImg && !isText && !isDocx && !isOfficeDoc && (
+            <div className="text-center py-12 px-4 max-w-md">
+              <FileText className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">{file.name}</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                This file format cannot be rendered directly inside the browser.
+              </p>
+              <a
+                href={file.url}
+                download={file.name}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download File</span>
+              </a>
+            </div>
+          )}
+        </div>
+
+        <div className="p-3 border-t border-gray-100 flex justify-end gap-2 bg-white">
+          <a
+            href={file.url}
+            download={file.name}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Save a Copy</span>
+          </a>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-semibold hover:bg-gray-900 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
