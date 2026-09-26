@@ -187,11 +187,25 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       const { profileId, fullName, idNumber, email, role } = data.user ?? {};
 
-      if (profileId) {
-        localStorage.setItem('userId', profileId);
-      } else {
-        localStorage.removeItem('userId');
-      }
+      let resolvedProfileId = profileId;
+
+if (!resolvedProfileId && email) {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (!profileError && profile?.id) {
+    resolvedProfileId = profile.id;
+  }
+}
+
+if (resolvedProfileId) {
+  localStorage.setItem('userId', resolvedProfileId);
+} else {
+  localStorage.removeItem('userId');
+}
       localStorage.setItem('userFullName', fullName ?? loginUsername.trim());
       localStorage.setItem('userIdNumber', idNumber ?? '');
       localStorage.setItem('userEmail', email ?? '');

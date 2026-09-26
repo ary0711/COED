@@ -254,6 +254,7 @@ export default function App() {
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
           onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Dean'}
         />
       )}
 
@@ -264,6 +265,7 @@ export default function App() {
           activeMenuItem={activeMenuItem}
           setActiveMenuItem={setActiveMenuItem}
           onLogout={handleLogout}
+          userName={currentUser?.username ?? 'Chair'}
         />
       )}
 

@@ -6,6 +6,8 @@ const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
+console.log('✅ AUTH.JS LOADED:', __filename);
+
 // Exact mapping from frontend program codes to database UUIDs & names
 const PROGRAM_TO_DEPARTMENT = {
   'BEEd': {
@@ -343,12 +345,22 @@ router.post('/register', async (req, res) => {
 // =========================================================
 // LOGIN
 // =========================================================
+// =========================================================
+// LOGIN
+// =========================================================
+
+// =========================================================
+// LOGIN
+// =========================================================
+
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password are required.' });
+      return res.status(400).json({
+        error: 'Username and password are required.'
+      });
     }
 
     const normalizedUsername = username.trim().toLowerCase();
@@ -360,12 +372,20 @@ router.post('/login', async (req, res) => {
       .maybeSingle();
 
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid username or password.' });
+      return res.status(401).json({
+        error: 'Invalid username or password.'
+      });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const isMatch = await bcrypt.compare(
+      password,
+      user.password_hash
+    );
+
     if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid username or password.' });
+      return res.status(401).json({
+        error: 'Invalid username or password.'
+      });
     }
 
     let fullName = normalizedUsername;
@@ -373,34 +393,81 @@ router.post('/login', async (req, res) => {
     let profileId = null;
     let profileStatus = null;
     let department = null;
+    let profileEmail = user.email || '';
+
+    // =====================================================
+    // FIND PROFILE USING EMAIL
+    // THIS IS YOUR ORIGINAL WORKING METHOD
+    // =====================================================
 
     if (user.email) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, full_name, id_number, status, department, role')
-        .eq('email', user.email)
-        .maybeSingle();
+      const { data: profile, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select(
+            'id, full_name, email, id_number, status, department, role'
+          )
+          .eq('email', user.email.trim().toLowerCase())
+          .maybeSingle();
+
+      if (profileError) {
+        console.error(
+          'Profile lookup error:',
+          profileError
+        );
+
+        return res.status(500).json({
+          error: 'Unable to load your profile.'
+        });
+      }
 
       if (profile) {
         profileId = profile.id;
-        fullName = profile.full_name || normalizedUsername;
-        idNumber = profile.id_number || '';
-        profileStatus = profile.status;
-        department = profile.department || null;
+        fullName =
+          profile.full_name || normalizedUsername;
+        idNumber =
+          profile.id_number || '';
+        profileStatus =
+          profile.status;
+        department =
+          profile.department || null;
+        profileEmail =
+          profile.email || user.email || '';
       }
     }
 
+    // =====================================================
+    // ACCOUNT STATUS
+    // =====================================================
+
     if (profileStatus === 'pending') {
-      return res.status(403).json({ error: 'Your account is pending approval from your department chair.' });
-    }
-    if (profileStatus === 'rejected') {
-      return res.status(403).json({ error: 'Your registration was not approved. Please contact your department chair.' });
-    }
-    if (profileStatus === 'inactive') {
-      return res.status(403).json({ error: 'Your account is currently inactive.' });
+      return res.status(403).json({
+        error:
+          'Your account is pending approval from your department chair.'
+      });
     }
 
-    const departmentIds = user.department_ids ?? [];
+    if (profileStatus === 'rejected') {
+      return res.status(403).json({
+        error:
+          'Your registration was not approved. Please contact your department chair.'
+      });
+    }
+
+    if (profileStatus === 'inactive') {
+      return res.status(403).json({
+        error:
+          'Your account is currently inactive.'
+      });
+    }
+
+    // =====================================================
+    // DEPARTMENT INFORMATION
+    // =====================================================
+
+    const departmentIds =
+      user.department_ids ?? [];
+
     let departmentNames = [];
 
     if (departmentIds.length > 0) {
@@ -409,30 +476,47 @@ router.post('/login', async (req, res) => {
         .select('id, name')
         .in('id', departmentIds);
 
-      departmentNames = (depRows ?? []).map((d) => d.name);
+      departmentNames = (depRows ?? []).map(
+        (d) => d.name
+      );
     }
 
-    // Extended expiration to 7 days to prevent session expiration issues during development
+    // =====================================================
+    // CREATE JWT
+    // =====================================================
+
     const token = jwt.sign(
       {
         userId: user.id,
+
+        // IMPORTANT:
+        // This is the actual profiles.id
         profileId,
+
         username: user.username,
         role: user.role,
         fullName,
         idNumber,
+        email: profileEmail,
         department,
         alumniId: user.alumni_id ?? null,
         departmentIds,
-        departmentNames,
+        departmentNames
       },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      {
+        expiresIn: '7d'
+      }
     );
+
+    // =====================================================
+    // LOGIN RESPONSE
+    // =====================================================
 
     return res.json({
       message: 'Login successful!',
       token,
+
       user: {
         id: user.id,
         profileId,
@@ -440,40 +524,613 @@ router.post('/login', async (req, res) => {
         role: user.role,
         fullName,
         idNumber,
-        email: user.email,
-        department,
-      },
+        email: profileEmail,
+        department
+      }
     });
+
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
+
+    return res.status(500).json({
+      error: 'Internal server error.'
+    });
   }
 });
+// =========================================================
+// GET CURRENT AUTHENTICATED USER / PROFILE
+// =========================================================
 
 // =========================================================
 // GET CURRENT AUTHENTICATED USER / PROFILE
 // =========================================================
+
+// =========================================================
+// GET CURRENT AUTHENTICATED USER / PROFILE
+// =========================================================
+
+// =========================================================
+// GET CURRENT AUTHENTICATED USER / PROFILE
+// =========================================================
+
 router.get('/me', authenticate, async (req, res) => {
   try {
-    const { data: profile, error } = await supabase
+    const jwtUsername = req.user?.username;
+    const jwtEmail = req.user?.email;
+    const jwtUserId = req.user?.userId;
+
+    let currentUser = null;
+
+    // 1. Username
+    if (jwtUsername) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq(
+          'username',
+          jwtUsername.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    // 2. User ID
+    if (!currentUser && jwtUserId) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', jwtUserId)
+        .maybeSingle();
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    // 3. Email
+    if (!currentUser && jwtEmail) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq(
+          'email',
+          jwtEmail.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Your user account could not be found.'
+      });
+    }
+
+    // Find matching profile
+    let profile = null;
+
+    const { data: profileById } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', req.user.userId)
+      .eq('id', currentUser.id)
       .maybeSingle();
 
-    if (error) {
-      return res.status(500).json({ error: error.message });
+    if (profileById) {
+      profile = profileById;
+    }
+
+    if (!profile && currentUser.email) {
+      const { data: profileByEmail } =
+        await supabase
+          .from('profiles')
+          .select('*')
+          .eq(
+            'email',
+            currentUser.email.trim().toLowerCase()
+          )
+          .maybeSingle();
+
+      if (profileByEmail) {
+        profile = profileByEmail;
+      }
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Your profile record could not be found.'
+      });
     }
 
     return res.json({
-      user: req.user,
-      profile: profile || null,
+      success: true,
+      user: currentUser,
+      profile
     });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+
+  } catch (error) {
+    console.error(
+      'GET /me ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        error.message ||
+        'Unable to load your profile.'
+    });
   }
 });
 
+// =========================================================
+// UPDATE CURRENT USER'S PERSONAL INFORMATION
+// CUSTOM USERS + PROFILES SYSTEM
+// =========================================================
+
+router.put('/profile', authenticate, async (req, res) => {
+  try {
+    // =====================================================
+    // 1. GET IDENTIFIERS FROM THE JWT
+    // =====================================================
+
+    const jwtUserId = req.user?.userId;
+    const jwtUsername = req.user?.username;
+    const jwtEmail = req.user?.email;
+
+    console.log('================ PROFILE UPDATE ================');
+    console.log('JWT userId:', jwtUserId);
+    console.log('JWT username:', jwtUsername);
+    console.log('JWT email:', jwtEmail);
+
+    // =====================================================
+    // 2. VALIDATE REQUEST
+    // =====================================================
+
+    const { full_name, email } = req.body;
+
+    const trimmedName =
+      String(full_name || '').trim();
+
+    const trimmedEmail =
+      String(email || '').trim().toLowerCase();
+
+    if (!trimmedName || !trimmedEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Full Name and Email are required.'
+      });
+    }
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a valid email address.'
+      });
+    }
+
+    // =====================================================
+    // 3. FIND THE CURRENT USER IN public.users
+    //
+    // Username is preferred because your custom login
+    // uses username.
+    // =====================================================
+
+    let currentUser = null;
+
+    // Try username first
+    if (jwtUsername) {
+      const { data, error } = await supabase
+        .from('users')
+        .select(
+          'id, username, email, role, department_ids, alumni_id'
+        )
+        .eq(
+          'username',
+          jwtUsername.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          'User lookup by username error:',
+          error
+        );
+      }
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    // Try user ID second
+    if (!currentUser && jwtUserId) {
+      const { data, error } = await supabase
+        .from('users')
+        .select(
+          'id, username, email, role, department_ids, alumni_id'
+        )
+        .eq('id', jwtUserId)
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          'User lookup by ID error:',
+          error
+        );
+      }
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    // Try email third
+    if (!currentUser && jwtEmail) {
+      const { data, error } = await supabase
+        .from('users')
+        .select(
+          'id, username, email, role, department_ids, alumni_id'
+        )
+        .eq(
+          'email',
+          jwtEmail.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          'User lookup by email error:',
+          error
+        );
+      }
+
+      if (data) {
+        currentUser = data;
+      }
+    }
+
+    if (!currentUser) {
+      console.error(
+        'CURRENT USER NOT FOUND',
+        {
+          jwtUserId,
+          jwtUsername,
+          jwtEmail
+        }
+      );
+
+      return res.status(404).json({
+        success: false,
+        error:
+          'Your account could not be found in the system.'
+      });
+    }
+
+    console.log(
+      'Current public.users record:',
+      currentUser
+    );
+
+    // =====================================================
+    // 4. FIND THE PROFILE
+    // =====================================================
+
+    let profile = null;
+
+    // ---------------------------------------------
+    // Try profile ID
+    // ---------------------------------------------
+
+    const { data: profileById, error: profileIdError } =
+      await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+    if (profileIdError) {
+      console.error(
+        'Profile lookup by ID error:',
+        profileIdError
+      );
+    }
+
+    if (profileById) {
+      profile = profileById;
+    }
+
+    // ---------------------------------------------
+    // Try email
+    // ---------------------------------------------
+
+    if (!profile && currentUser.email) {
+      const {
+        data: profileByEmail,
+        error: profileEmailError
+      } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq(
+          'email',
+          currentUser.email.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (profileEmailError) {
+        console.error(
+          'Profile lookup by email error:',
+          profileEmailError
+        );
+      }
+
+      if (profileByEmail) {
+        profile = profileByEmail;
+      }
+    }
+
+    // ---------------------------------------------
+    // Try JWT email as final fallback
+    // ---------------------------------------------
+
+    if (!profile && jwtEmail) {
+      const {
+        data: profileByJwtEmail,
+        error: profileJwtEmailError
+      } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq(
+          'email',
+          jwtEmail.trim().toLowerCase()
+        )
+        .maybeSingle();
+
+      if (profileJwtEmailError) {
+        console.error(
+          'Profile JWT email lookup error:',
+          profileJwtEmailError
+        );
+      }
+
+      if (profileByJwtEmail) {
+        profile = profileByJwtEmail;
+      }
+    }
+
+    if (!profile) {
+      console.error(
+        'PROFILE NOT FOUND',
+        {
+          userId: currentUser.id,
+          username: currentUser.username,
+          email: currentUser.email
+        }
+      );
+
+      return res.status(404).json({
+        success: false,
+        error:
+          'Your profile record could not be found.'
+      });
+    }
+
+    console.log(
+      'Current profile record:',
+      profile
+    );
+
+    // =====================================================
+    // 5. CHECK DUPLICATE EMAIL
+    // =====================================================
+
+    const {
+      data: duplicateUser,
+      error: duplicateUserError
+    } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', trimmedEmail)
+      .neq('id', currentUser.id)
+      .maybeSingle();
+
+    if (duplicateUserError) {
+      return res.status(500).json({
+        success: false,
+        error: duplicateUserError.message
+      });
+    }
+
+    if (duplicateUser) {
+      return res.status(409).json({
+        success: false,
+        error:
+          'This email address is already being used by another account.'
+      });
+    }
+
+    const {
+      data: duplicateProfile,
+      error: duplicateProfileError
+    } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', trimmedEmail)
+      .neq('id', profile.id)
+      .maybeSingle();
+
+    if (duplicateProfileError) {
+      return res.status(500).json({
+        success: false,
+        error: duplicateProfileError.message
+      });
+    }
+
+    if (duplicateProfile) {
+      return res.status(409).json({
+        success: false,
+        error:
+          'This email address is already being used by another account.'
+      });
+    }
+
+    // =====================================================
+    // 6. UPDATE public.profiles
+    // =====================================================
+
+    const {
+      data: updatedProfile,
+      error: profileUpdateError
+    } = await supabase
+      .from('profiles')
+      .update({
+        full_name: trimmedName,
+        email: trimmedEmail,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', profile.id)
+      .select(
+        'id, full_name, email, role, id_number, department, status, username'
+      )
+      .single();
+
+    if (profileUpdateError) {
+      console.error(
+        'Profiles update error:',
+        profileUpdateError
+      );
+
+      return res.status(400).json({
+        success: false,
+        error: profileUpdateError.message
+      });
+    }
+
+    // =====================================================
+    // 7. UPDATE public.users
+    // =====================================================
+
+    const {
+      error: usersUpdateError
+    } = await supabase
+      .from('users')
+      .update({
+        email: trimmedEmail
+      })
+      .eq('id', currentUser.id);
+
+    if (usersUpdateError) {
+      console.error(
+        'Users update error:',
+        usersUpdateError
+      );
+
+      // Restore profile
+      await supabase
+        .from('profiles')
+        .update({
+          full_name: profile.full_name,
+          email: profile.email,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profile.id);
+
+      return res.status(400).json({
+        success: false,
+        error: usersUpdateError.message
+      });
+    }
+
+    // =====================================================
+    // 8. UPDATE ROLE-SPECIFIC TABLES
+    // =====================================================
+
+    if (currentUser.role === 'faculty') {
+      await supabase
+        .from('faculty_profiles')
+        .update({
+          full_name: trimmedName,
+          contact_email: trimmedEmail
+        })
+        .eq('user_id', currentUser.id);
+    }
+
+    if (currentUser.role === 'student') {
+      await supabase
+        .from('student_profiles')
+        .update({
+          full_name: trimmedName
+        })
+        .eq('user_id', currentUser.id);
+    }
+
+    if (currentUser.role === 'alumni') {
+      await supabase
+        .from('alumni_profiles')
+        .update({
+          full_name: trimmedName,
+          contact_email: trimmedEmail
+        })
+        .eq('user_id', currentUser.id);
+    }
+
+    // =====================================================
+    // 9. RETURN UPDATED DATA
+    // =====================================================
+
+    console.log(
+      'PROFILE UPDATE SUCCESS:',
+      updatedProfile
+    );
+
+    return res.json({
+      success: true,
+
+      message:
+        'Profile updated successfully.',
+
+      profile: updatedProfile,
+
+      user: {
+        id: currentUser.id,
+        profileId: updatedProfile.id,
+        username: currentUser.username,
+        role: currentUser.role,
+        fullName: updatedProfile.full_name,
+        email: updatedProfile.email,
+        idNumber:
+          updatedProfile.id_number || '',
+        department:
+          updatedProfile.department || null
+      }
+    });
+
+  } catch (error) {
+    console.error(
+      'UPDATE PROFILE ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        error.message ||
+        'Failed to update profile.'
+    });
+  }
+});
 // =========================================================
 // FORGOT PASSWORD
 // =========================================================
@@ -777,5 +1434,220 @@ router.get('/users', authenticate, async (req, res) => {
   }
   return res.json(data ?? []);
 });
+router.get('/profile-test', (req, res) => {
+  console.log('✅ /profile-test was reached');
 
+  res.json({
+    success: true,
+    message: 'Profile route is loaded.'
+  });
+});
+
+// =========================================================
+// UPDATE CURRENT USER PASSWORD
+// =========================================================
+
+router.put('/password', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Your login session is invalid. Please sign in again.'
+      });
+    }
+
+    const {
+      current_password,
+      new_password,
+      confirm_password
+    } = req.body;
+
+    // -----------------------------------------------------
+    // VALIDATION
+    // -----------------------------------------------------
+
+    if (!current_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current password is required.'
+      });
+    }
+
+    if (!new_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password is required.'
+      });
+    }
+
+    if (!confirm_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please confirm your new password.'
+      });
+    }
+
+    if (new_password !== confirm_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'New passwords do not match.'
+      });
+    }
+
+    // Same password policy used by registration
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+    if (!passwordRegex.test(new_password)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+      });
+    }
+
+    if (current_password === new_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be different from your current password.'
+      });
+    }
+
+    // -----------------------------------------------------
+    // GET CURRENT USER FROM public.users
+    // -----------------------------------------------------
+
+    const {
+      data: currentUser,
+      error: userLookupError
+    } = await supabase
+      .from('users')
+      .select('id, username, password_hash, email, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userLookupError) {
+      console.error(
+        'Password user lookup error:',
+        userLookupError
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: userLookupError.message
+      });
+    }
+
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'Your user account could not be found.'
+      });
+    }
+
+    // -----------------------------------------------------
+    // VERIFY CURRENT PASSWORD
+    // -----------------------------------------------------
+
+    const currentPasswordMatches =
+      await bcrypt.compare(
+        current_password,
+        currentUser.password_hash
+      );
+
+    if (!currentPasswordMatches) {
+      return res.status(401).json({
+        success: false,
+        error: 'Current password is incorrect.'
+      });
+    }
+
+    // -----------------------------------------------------
+    // HASH NEW PASSWORD
+    // -----------------------------------------------------
+
+    const newPasswordHash =
+      await bcrypt.hash(new_password, 10);
+
+    // -----------------------------------------------------
+    // UPDATE public.users
+    // This is the password your custom login uses.
+    // -----------------------------------------------------
+
+    const {
+      error: passwordUpdateError
+    } = await supabase
+      .from('users')
+      .update({
+        password_hash: newPasswordHash
+      })
+      .eq('id', currentUser.id);
+
+    if (passwordUpdateError) {
+      console.error(
+        'Password update error:',
+        passwordUpdateError
+      );
+
+      return res.status(400).json({
+        success: false,
+        error: passwordUpdateError.message
+      });
+    }
+
+    // -----------------------------------------------------
+    // OPTIONAL: sync Supabase Auth if an Auth account exists
+    //
+    // Your Admin may not have an auth.users record, so
+    // failure here must NOT make the custom password update fail.
+    // -----------------------------------------------------
+
+    try {
+      const {
+        error: authUpdateError
+      } = await supabase.auth.admin.updateUserById(
+        currentUser.id,
+        {
+          password: new_password
+        }
+      );
+
+      if (authUpdateError) {
+        console.warn(
+          'Supabase Auth password sync warning:',
+          authUpdateError.message
+        );
+      }
+    } catch (authError) {
+      console.warn(
+        'Supabase Auth password sync warning:',
+        authError
+      );
+    }
+
+    console.log(
+      `Password updated for username: ${currentUser.username}`
+    );
+
+    return res.json({
+      success: true,
+      message: 'Password updated successfully.'
+    });
+
+  } catch (error) {
+    console.error(
+      'UPDATE PASSWORD ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        error.message ||
+        'Failed to update password.'
+    });
+  }
+});
 module.exports = router;

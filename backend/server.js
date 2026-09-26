@@ -31,7 +31,20 @@ require('./cron');
 // ROUTES
 // ============================================================
 
-app.use('/api/auth', require('./routes/auth'));
+const authRoutes = require('./routes/auth');
+
+app.use('/api/auth', authRoutes);
+
+console.log('✅ Auth routes loaded');
+
+app.get('/api/auth/profile-test', (req, res) => {
+  console.log('✅ /api/auth/profile-test reached');
+
+  res.json({
+    success: true,
+    message: 'Auth route is working.'
+  });
+});
 
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
