@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { renderAsync } from 'docx-preview';
 import {
   Upload,
@@ -26,6 +27,11 @@ import {
   Send,
   SlidersHorizontal,
   Download,
+  FileImage,
+  FileCode,
+  File as FileGenericIcon,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 
 const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
@@ -34,13 +40,25 @@ function getResearchToken() {
   return localStorage.getItem('token');
 }
 
+// Complete list of all 17 Sustainable Development Goals
 const SDG_OPTIONS = [
-  'SDG 1: No Poverty',
-  'SDG 3: Good Health & Well-being',
-  'SDG 4: Quality Education',
-  'SDG 5: Gender Equality',
-  'SDG 9: Industry, Innovation, & Infrastructure',
-  'SDG 16: Peace, Justice, & Strong Institutions',
+  'SDG 1 – No Poverty',
+  'SDG 2 – Zero Hunger',
+  'SDG 3 – Good Health and Well-Being',
+  'SDG 4 – Quality Education',
+  'SDG 5 – Gender Equality',
+  'SDG 6 – Clean Water and Sanitation',
+  'SDG 7 – Affordable and Clean Energy',
+  'SDG 8 – Decent Work and Economic Growth',
+  'SDG 9 – Industry, Innovation and Infrastructure',
+  'SDG 10 – Reduced Inequalities',
+  'SDG 11 – Sustainable Cities and Communities',
+  'SDG 12 – Responsible Consumption and Production',
+  'SDG 13 – Climate Action',
+  'SDG 14 – Life Below Water',
+  'SDG 15 – Life on Land',
+  'SDG 16 – Peace, Justice and Strong Institutions',
+  'SDG 17 – Partnerships for the Goals',
 ];
 
 interface FileAttachment {
@@ -90,6 +108,31 @@ interface ModalState {
   message: string;
 }
 
+function formatFileSize(bytes?: number): string {
+  if (!bytes || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileExtension(name: string): string {
+  return (name.split('.').pop() || '').toLowerCase();
+}
+
+function getFileIcon(filename: string, className = 'w-4 h-4') {
+  const ext = getFileExtension(filename);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className={className} />;
+  }
+  if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+  if (['pdf', 'docx', 'doc'].includes(ext)) {
+    return <FileText className={className} />;
+  }
+  return <FileGenericIcon className={className} />;
+}
+
 export function ResearchExtension({ userId }: { userId: string }) {
   // Navigation State
   const [view, setView] = useState<'overview' | 'create' | 'track'>('overview');
@@ -102,9 +145,9 @@ export function ResearchExtension({ userId }: { userId: string }) {
   const [detailsModalSubmission, setDetailsModalSubmission] = useState<ResearchSubmission | null>(null);
   const [editingSubmission, setEditingSubmission] = useState<ResearchSubmission | null>(null);
 
-  // In-Modal File Preview State
-  const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
-  const localBlobUrlRef = useRef<string | null>(null);
+  // In-Modal Preview State
+  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+  const localBlobUrlMapRef = useRef<Map<string, string>>(new Map());
 
   // Form State
   const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
@@ -147,13 +190,13 @@ export function ResearchExtension({ userId }: { userId: string }) {
 
   const closeModal = () => setModal((prev) => ({ ...prev, isOpen: false }));
 
-  const handleClosePreview = () => {
-    if (localBlobUrlRef.current) {
-      URL.revokeObjectURL(localBlobUrlRef.current);
-      localBlobUrlRef.current = null;
-    }
+  const handleClosePreview = useCallback(() => {
+    localBlobUrlMapRef.current.forEach((blobUrl) => {
+      URL.revokeObjectURL(blobUrl);
+    });
+    localBlobUrlMapRef.current.clear();
     setPreviewFile(null);
-  };
+  }, []);
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -200,42 +243,6 @@ export function ResearchExtension({ userId }: { userId: string }) {
     return [];
   };
 
-  // Preview for already-saved remote files
-  const handleOpenPreview = async (file: FileAttachment) => {
-    if (localBlobUrlRef.current) {
-      URL.revokeObjectURL(localBlobUrlRef.current);
-      localBlobUrlRef.current = null;
-    }
-
-    if (file.path) {
-      try {
-        const res = await fetch(
-          `${RESEARCH_API_URL}/preview-url?path=${encodeURIComponent(file.path)}`,
-          { headers: { Authorization: `Bearer ${getResearchToken()}` } }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setPreviewFile({ url: data.url, name: file.name });
-          return;
-        }
-      } catch {
-        // Fall back to stored public URL
-      }
-    }
-    setPreviewFile({ url: file.url, name: file.name });
-  };
-
-  // Preview local unsubmitted files directly from browser memory
-  const handlePreviewLocalFile = (file: File) => {
-    if (localBlobUrlRef.current) {
-      URL.revokeObjectURL(localBlobUrlRef.current);
-      localBlobUrlRef.current = null;
-    }
-    const blobUrl = URL.createObjectURL(file);
-    localBlobUrlRef.current = blobUrl;
-    setPreviewFile({ url: blobUrl, name: file.name });
-  };
-
   // Co-Author List Handlers
   const handleAddCoAuthor = () => {
     setCoAuthors((prev) => [...prev, '']);
@@ -271,6 +278,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
     setBeneficiaries('');
     setSelectedSdgs([]);
     setEditingSubmission(null);
+    setIsSdgDropdownOpen(false);
   };
 
   const handleStartCreate = (type: 'research' | 'extension') => {
@@ -289,6 +297,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
     setEndDate(submission.end_date || '');
     setExistingFiles(getSubmissionFiles(submission));
     setUploadQueue([]);
+    setSelectedSdgs(parseSdgs(submission.sdg_alignment));
 
     if (submission.type === 'research') {
       setPublicationLink(submission.publication_link || '');
@@ -315,7 +324,6 @@ export function ResearchExtension({ userId }: { userId: string }) {
           ? String(submission.beneficiaries)
           : ''
       );
-      setSelectedSdgs(parseSdgs(submission.sdg_alignment));
     }
     setView('create');
   };
@@ -358,6 +366,21 @@ export function ResearchExtension({ userId }: { userId: string }) {
     setSelectedSdgs((prev) =>
       prev.includes(sdg) ? prev.filter((item) => item !== sdg) : [...prev, sdg]
     );
+  };
+
+  // Preview local unsubmitted files
+  const handlePreviewQueuedTask = (task: FileUploadTask) => {
+    let blobUrl = localBlobUrlMapRef.current.get(task.id);
+    if (!blobUrl) {
+      blobUrl = URL.createObjectURL(task.file);
+      localBlobUrlMapRef.current.set(task.id, blobUrl);
+    }
+    setPreviewFile({
+      name: task.file.name,
+      url: blobUrl,
+      size: task.file.size,
+      type: task.file.type,
+    });
   };
 
   // Upload Progress calculations
@@ -422,6 +445,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
       if (description.trim()) formData.append('description', description.trim());
       if (startDate) formData.append('start_date', startDate);
       if (endDate) formData.append('end_date', endDate);
+      formData.append('sdg_alignment', JSON.stringify(selectedSdgs));
 
       if (researchType === 'research') {
         if (publicationLink.trim()) formData.append('publication_link', publicationLink.trim());
@@ -431,7 +455,6 @@ export function ResearchExtension({ userId }: { userId: string }) {
       } else {
         if (partnerOrg.trim()) formData.append('partner_organization', partnerOrg.trim());
         if (beneficiaries) formData.append('beneficiaries', beneficiaries);
-        formData.append('sdg_alignment', JSON.stringify(selectedSdgs));
       }
 
       const isEdit = Boolean(editingSubmission);
@@ -837,7 +860,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
                             Partner: {item.partner_organization}
                           </span>
                         )}
-                        {item.type === 'extension' && sdgs.length > 0 && (
+                        {sdgs.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg">
                             <Target className="w-3 h-3 text-blue-500" />
                             {sdgs.length} SDG(s) Aligned
@@ -962,7 +985,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
               </div>
             </div>
 
-            {/* 2. Authors / Collaborators (ONE PER TEXTBOX) */}
+            {/* 2. Authors / Collaborators */}
             <div>
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs">
@@ -1050,69 +1073,73 @@ export function ResearchExtension({ userId }: { userId: string }) {
               )}
             </div>
 
-            {/* 3. Financials & SDGs */}
+            {/* 3. Financials & SDG Alignment */}
             <div>
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs">
                   3
                 </span>
-                {researchType === 'research' ? 'Funding & Budget' : 'SDG Alignment'}
+                {researchType === 'research' ? 'Funding & SDG Alignment' : 'SDG Alignment'}
               </h3>
-              {researchType === 'research' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Funding Source</label>
-                    <input
-                      type="text"
-                      value={fundingSource}
-                      onChange={(e) => setFundingSource(e.target.value)}
-                      placeholder="e.g., Institutional Grant, DOST, Self-Funded"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
+
+              <div className="space-y-4">
+                {researchType === 'research' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Funding Source</label>
+                      <input
+                        type="text"
+                        value={fundingSource}
+                        onChange={(e) => setFundingSource(e.target.value)}
+                        placeholder="e.g., Institutional Grant, DOST, Self-Funded"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Allocated Budget (₱)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={budget}
+                        onChange={(e) => setBudget(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Allocated Budget (₱)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={budget}
-                      onChange={(e) => setBudget(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              ) : (
+                )}
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    SDG Alignment <span className="text-gray-400 font-normal">(Select all that apply)</span>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Sustainable Development Goals (SDG) Alignment{' '}
+                    <span className="text-gray-400 font-normal">(Select all that apply)</span>
                   </label>
 
                   <div className="relative">
-                    {/* Textbox / Trigger container */}
                     <div
                       onClick={() => setIsSdgDropdownOpen((prev) => !prev)}
-                      className="min-h-[46px] w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer flex flex-wrap items-center gap-1.5 transition-all shadow-xs"
+                      className="min-h-[50px] w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white hover:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer flex flex-wrap items-center gap-2 transition-all shadow-xs"
                     >
                       {selectedSdgs.length === 0 ? (
-                        <span className="text-gray-400 text-sm select-none">
-                          Click to choose Sustainable Development Goals (SDGs)...
+                        <span className="text-gray-400 text-sm select-none py-1">
+                          Click to select Sustainable Development Goals...
                         </span>
                       ) : (
                         selectedSdgs.map((sdg) => (
                           <span
                             key={sdg}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg text-xs font-semibold border border-blue-200/70"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/90 text-blue-900 rounded-lg text-xs font-medium border border-blue-200 shadow-2xs hover:bg-blue-100 transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span>{sdg}</span>
+                            <span className="max-w-[280px] sm:max-w-none truncate">{sdg}</span>
                             <button
                               type="button"
                               onClick={() => toggleSdg(sdg)}
-                              className="text-blue-500 hover:text-rose-600 rounded p-0.5 transition-colors"
+                              className="text-blue-500 hover:text-rose-600 rounded p-0.5 ml-1 transition-colors"
+                              title={`Remove ${sdg}`}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1129,7 +1156,6 @@ export function ResearchExtension({ userId }: { userId: string }) {
                       </div>
                     </div>
 
-                    {/* Dropdown Menu */}
                     {isSdgDropdownOpen && (
                       <>
                         <div
@@ -1137,24 +1163,43 @@ export function ResearchExtension({ userId }: { userId: string }) {
                           onClick={() => setIsSdgDropdownOpen(false)}
                         />
 
-                        <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden divide-y divide-gray-100 max-h-60 overflow-y-auto">
+                        <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                          <div className="p-2.5 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between text-xs font-semibold text-gray-600">
+                            <span>UN Sustainable Development Goals ({selectedSdgs.length} selected)</span>
+                            {selectedSdgs.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedSdgs([]);
+                                }}
+                                className="text-rose-600 hover:underline"
+                              >
+                                Clear all
+                              </button>
+                            )}
+                          </div>
                           {SDG_OPTIONS.map((sdg) => {
                             const isSelected = selectedSdgs.includes(sdg);
                             return (
                               <div
                                 key={sdg}
                                 onClick={() => toggleSdg(sdg)}
-                                className={`px-4 py-2.5 flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                                className={`px-4 py-3 flex items-center justify-between text-xs sm:text-sm cursor-pointer transition-colors ${
                                   isSelected
                                     ? 'bg-blue-50/70 text-blue-900 font-semibold'
                                     : 'hover:bg-gray-50 text-gray-700'
                                 }`}
                               >
-                                <span>{sdg}</span>
+                                <span className="leading-snug pr-4">{sdg}</span>
                                 {isSelected ? (
-                                  <span className="text-blue-600 font-bold text-xs">✓ Selected</span>
+                                  <span className="text-blue-600 font-bold text-xs shrink-0 flex items-center gap-1">
+                                    <CheckCircle className="w-3.5 h-3.5" /> Selected
+                                  </span>
                                 ) : (
-                                  <span className="text-gray-300 text-xs">+ Add</span>
+                                  <span className="text-gray-400 text-xs shrink-0 hover:text-gray-700">
+                                    + Add
+                                  </span>
                                 )}
                               </div>
                             );
@@ -1164,7 +1209,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
                     )}
                   </div>
                 </div>
-              )}
+              </div>
             </div>
 
             {/* 4. Implementation Schedule */}
@@ -1198,7 +1243,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
               </div>
             </div>
 
-            {/* 5. Document Attachments & Progress */}
+            {/* 5. Document Attachments & Google Classroom File Cards */}
             <div>
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs">
@@ -1208,22 +1253,34 @@ export function ResearchExtension({ userId }: { userId: string }) {
               </h3>
 
               {existingFiles.length > 0 && (
-                <div className="mb-3">
-                  <span className="text-xs font-semibold text-gray-500 mb-2 block">
-                    Previously Uploaded:
+                <div className="mb-4">
+                  <span className="text-xs font-semibold text-gray-500 mb-2.5 block">
+                    Current Attached Documents:
                   </span>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {existingFiles.map((file, idx) => (
                       <div
                         key={idx}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded-lg border border-gray-200"
+                        className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-xl shadow-xs hover:border-blue-400 transition-colors"
                       >
-                        <FileText className="w-3.5 h-3.5 text-gray-500" />
-                        <span className="max-w-[200px] truncate">{file.name}</span>
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div className="p-2 bg-blue-50 text-blue-700 rounded-lg shrink-0">
+                            {getFileIcon(file.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-900 truncate" title={file.name}>
+                              {file.name}
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              {getFileExtension(file.name).toUpperCase()}
+                              {file.size ? ` • ${formatFileSize(file.size)}` : ''}
+                            </p>
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => handleOpenPreview(file)}
-                          className="text-blue-700 hover:text-blue-900 font-semibold"
+                          onClick={() => setPreviewFile(file)}
+                          className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
                         >
                           View
                         </button>
@@ -1238,7 +1295,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
                 <p className="text-xs sm:text-sm text-gray-700 font-medium">
                   Click to attach files or drag and drop
                 </p>
-                <p className="text-[11px] text-gray-400 mt-1">PDF, DOCX, JPG, PNG up to 15MB each</p>
+                <p className="text-[11px] text-gray-400 mt-1">PDF, DOCX, JPG, PNG, XLSX up to 15MB each</p>
                 <input
                   type="file"
                   multiple
@@ -1271,19 +1328,26 @@ export function ResearchExtension({ userId }: { userId: string }) {
                     {uploadQueue.map((task) => (
                       <div
                         key={task.id}
-                        className="p-2.5 bg-white border border-gray-200/80 rounded-xl text-xs space-y-1.5 shadow-xs"
+                        className="p-3 bg-white border border-gray-200/80 rounded-xl text-xs space-y-2 shadow-xs"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-gray-900 truncate max-w-sm">
-                            {task.file.name}
-                          </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            {getFileIcon(task.file.name, 'w-4 h-4 text-blue-600 shrink-0')}
+                            <span className="font-semibold text-gray-900 truncate" title={task.file.name}>
+                              {task.file.name}
+                            </span>
+                            <span className="text-[10px] text-gray-400 shrink-0">
+                              ({formatFileSize(task.file.size)})
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
                             {/* In-Modal Preview for Staged Unsubmitted Local Files */}
                             <button
                               type="button"
-                              onClick={() => handlePreviewLocalFile(task.file)}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 hover:underline bg-blue-50/60 px-2 py-0.5 rounded transition-colors"
-                              title="Preview file content before submitting"
+                              onClick={() => handlePreviewQueuedTask(task)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors"
+                              title="Preview file"
                             >
                               <Eye className="w-3 h-3" />
                               <span>Preview</span>
@@ -1291,7 +1355,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
 
                             <span className="text-[11px] font-semibold text-gray-500">
                               {task.status === 'completed'
-                                ? 'Uploaded 100%'
+                                ? '100%'
                                 : task.status === 'error'
                                 ? 'Upload failed'
                                 : `${task.progress}%`}
@@ -1300,7 +1364,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
                               <button
                                 type="button"
                                 onClick={() => removeQueueItem(task.id)}
-                                className="text-gray-400 hover:text-rose-600"
+                                className="text-gray-400 hover:text-rose-600 p-0.5"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -1449,7 +1513,7 @@ export function ResearchExtension({ userId }: { userId: string }) {
                     </p>
 
                     {activeSubmission.dean_remarks && (
-                      <div className="mt-3 p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-800">
+                      <div className="mt-3 p-3.5 bg-rose-50 border border-rose-100 text-rose-800">
                         <span className="font-semibold block mb-0.5">Reviewer Remarks:</span>
                         {activeSubmission.dean_remarks}
                       </div>
@@ -1594,6 +1658,24 @@ export function ResearchExtension({ userId }: { userId: string }) {
                 )}
               </div>
 
+              {parseSdgs(detailsModalSubmission.sdg_alignment).length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-500 block mb-1.5">
+                    Sustainable Development Goals (SDG) Alignment
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parseSdgs(detailsModalSubmission.sdg_alignment).map((sdg, i) => (
+                      <span
+                        key={i}
+                        className="px-2.5 py-1 bg-blue-50 text-blue-800 text-xs rounded-lg font-medium border border-blue-100"
+                      >
+                        {sdg}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {detailsModalSubmission.type === 'research' &&
                 detailsModalSubmission.publication_link && (
                   <div>
@@ -1612,35 +1694,38 @@ export function ResearchExtension({ userId }: { userId: string }) {
                   </div>
                 )}
 
-              {detailsModalSubmission.type === 'extension' && (
-                <div>
-                  <span className="font-semibold text-gray-500 block mb-1.5">SDG Alignment</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {parseSdgs(detailsModalSubmission.sdg_alignment).map((sdg, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 bg-blue-50 text-blue-800 text-xs rounded-lg font-medium"
-                      >
-                        {sdg}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
+              {/* Google Classroom-Style File Cards */}
               {getSubmissionFiles(detailsModalSubmission).length > 0 && (
                 <div>
                   <span className="font-semibold text-gray-500 block mb-2">Attached Documents</span>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {getSubmissionFiles(detailsModalSubmission).map((file, idx) => (
-                      <button
+                      <div
                         key={idx}
-                        onClick={() => handleOpenPreview(file)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
+                        className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100/70 transition-colors"
                       >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span className="max-w-[180px] truncate">{file.name}</span>
-                      </button>
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div className="p-2 bg-blue-50 text-blue-700 rounded-lg shrink-0">
+                            {getFileIcon(file.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-900 truncate" title={file.name}>
+                              {file.name}
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              {getFileExtension(file.name).toUpperCase()}
+                              {file.size ? ` • ${formatFileSize(file.size)}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFile(file)}
+                          className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 rounded-lg transition-colors shrink-0 shadow-2xs"
+                        >
+                          View
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1663,9 +1748,9 @@ export function ResearchExtension({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* UNIVERSAL DOCUMENT PREVIEW MODAL */}
+      {/* GOOGLE CLASSROOM DARK MODAL OVERLAY */}
       {previewFile && (
-        <DocxPreviewModal
+        <ClassroomDocumentViewer
           file={previewFile}
           onClose={handleClosePreview}
         />
@@ -1706,34 +1791,92 @@ export function ResearchExtension({ userId }: { userId: string }) {
   );
 }
 
-function DocxPreviewModal({
+// ─── Google Classroom-Style Document Viewer Component ────────────────────────
+
+function ClassroomDocumentViewer({
   file,
   onClose,
 }: {
-  file: { url: string; name: string };
+  file: FileAttachment;
   onClose: () => void;
 }) {
   const docxContainerRef = useRef<HTMLDivElement>(null);
-  const [renderingDocx, setRenderingDocx] = useState(false);
-  const [renderError, setRenderError] = useState(false);
+  const [activeUrl, setActiveUrl] = useState<string>('');
+  const [loadingFile, setLoadingFile] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<boolean>(false);
+  const [textContent, setTextContent] = useState<string | null>(null);
 
-  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const ext = useMemo(() => getFileExtension(file?.name || ''), [file]);
   const isPdf = ext === 'pdf';
   const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
   const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
   const isDocx = ext === 'docx';
-  const isOfficeDoc = ['doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
-  const isLocalBlob = file.url.startsWith('blob:');
 
+  // Lock scrolling & handle ESC key when open
   useEffect(() => {
-    // Client-side rendering for DOCX (works for both local files and Supabase files)
-    if (isDocx && docxContainerRef.current) {
-      setRenderingDocx(true);
-      setRenderError(false);
-      docxContainerRef.current.innerHTML = '';
+    document.body.style.overflow = 'hidden';
 
-      fetch(file.url)
-        .then((res) => res.blob())
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  // Securely resolve signed URL or local blob URL
+  useEffect(() => {
+    let isCancelled = false;
+    setLoadingFile(true);
+    setLoadError(false);
+    setTextContent(null);
+
+    const resolveUrl = async () => {
+      try {
+        if (file.path) {
+          const res = await fetch(
+            `${RESEARCH_API_URL}/preview-url?path=${encodeURIComponent(file.path)}`,
+            { headers: { Authorization: `Bearer ${getResearchToken()}` } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (!isCancelled) {
+              setActiveUrl(data.url);
+              return;
+            }
+          }
+        }
+        if (!isCancelled) {
+          setActiveUrl(file.url);
+        }
+      } catch {
+        if (!isCancelled) {
+          setActiveUrl(file.url);
+        }
+      }
+    };
+
+    resolveUrl();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [file]);
+
+  // Handle client-side rendering for DOCX and text formats
+  useEffect(() => {
+    if (!activeUrl) return;
+
+    if (isDocx && docxContainerRef.current) {
+      docxContainerRef.current.innerHTML = '';
+      fetch(activeUrl)
+        .then((res) => {
+          if (!res.ok) throw new Error('Network error');
+          return res.blob();
+        })
         .then((blob) => {
           if (docxContainerRef.current) {
             return renderAsync(blob, docxContainerRef.current, undefined, {
@@ -1742,130 +1885,151 @@ function DocxPreviewModal({
             });
           }
         })
-        .catch((err) => {
-          console.error('Docx preview error:', err);
-          setRenderError(true);
+        .catch(() => setLoadError(true))
+        .finally(() => setLoadingFile(false));
+    } else if (isText) {
+      fetch(activeUrl)
+        .then((res) => res.text())
+        .then((txt) => {
+          setTextContent(txt);
+          setLoadingFile(false);
         })
-        .finally(() => {
-          setRenderingDocx(false);
+        .catch(() => {
+          setLoadError(true);
+          setLoadingFile(false);
         });
+    } else {
+      setLoadingFile(false);
     }
-  }, [file.url, isDocx]);
+  }, [activeUrl, isDocx, isText]);
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
-          <div className="flex items-center gap-2 min-w-0 pr-2">
-            <FileText className="w-4 h-4 text-blue-700 shrink-0" />
-            <h3 className="font-semibold text-gray-900 text-sm truncate">{file.name}</h3>
-          </div>
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      {/* Top Bar */}
+      <div
+        className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0 pr-4">
+          <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+          <span className="font-medium text-sm sm:text-base text-gray-100 truncate" title={file.name}>
+            {file.name}
+          </span>
+          {file.size ? (
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              ({formatFileSize(file.size)})
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <a
+            href={activeUrl || file.url}
+            download={file.name}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Download File"
+          >
+            <Download className="w-5 h-5" />
+          </a>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200/50"
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Close (Esc)"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
+      </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-auto bg-gray-100/50 p-4 flex items-center justify-center min-h-[400px]">
-          {/* 1. PDF */}
-          {isPdf && (
-            <iframe
-              src={`${file.url}#toolbar=0`}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
-              title={file.name}
-            />
-          )}
-
-          {/* 2. Image */}
-          {isImg && (
-            <div className="flex items-center justify-center w-full h-[68vh] bg-white rounded-xl border border-gray-200 p-2">
+      {/* Document Canvas */}
+      <div
+        className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
+        onClick={onClose}
+      >
+        <div
+          className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {loadingFile ? (
+            <div className="flex flex-col items-center justify-center text-gray-400 gap-2">
+              <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+              <span className="text-sm">Loading preview...</span>
+            </div>
+          ) : loadError ? (
+            <div className="text-center p-8 max-w-md">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">Unable to preview file</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                The file &ldquo;{file.name}&rdquo; could not be rendered directly.
+              </p>
+              <div className="flex justify-center gap-2">
+                <a
+                  href={activeUrl || file.url}
+                  download={file.name}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download File</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : isImg ? (
+            <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
               <img
-                src={file.url}
+                src={activeUrl}
                 alt={file.name}
-                className="max-w-full max-h-full object-contain rounded-lg"
+                className="max-h-full max-w-full object-contain select-none"
               />
             </div>
-          )}
-
-          {/* 3. Text / CSV */}
-          {isText && (
+          ) : isPdf ? (
             <iframe
-              src={file.url}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white p-4 font-mono text-xs"
+              src={`${activeUrl}#toolbar=0`}
               title={file.name}
+              className="w-full h-full border-0 bg-white"
             />
-          )}
-
-          {/* 4. Native DOCX Viewer (Works on Local Pre-submission and Live files) */}
-          {isDocx && (
-            <div className="w-full h-[68vh] bg-white rounded-xl border border-gray-200 overflow-y-auto p-6 sm:p-10 shadow-inner">
-              {renderingDocx && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-xs">Rendering Word document...</span>
-                </div>
-              )}
-              {renderError && (
-                <div className="text-center py-12 text-gray-500 text-xs">
-                  <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  Could not parse this Word file preview. Use "Save a Copy" below to inspect.
-                </div>
-              )}
+          ) : isText && textContent !== null ? (
+            <div className="w-full h-full bg-gray-900 border border-gray-800 p-6 overflow-auto text-left select-text">
+              <pre className="font-mono text-xs sm:text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {textContent}
+              </pre>
+            </div>
+          ) : isDocx ? (
+            <div className="w-full h-full bg-white text-gray-900 overflow-y-auto p-6 sm:p-12 text-left select-text">
               <div ref={docxContainerRef} className="max-w-3xl mx-auto" />
             </div>
-          )}
-
-          {/* 5. Remote Excel / PPT (via Office Online Viewer) */}
-          {isOfficeDoc && !isLocalBlob && (
-            <iframe
-              src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
-              title={file.name}
-            />
-          )}
-
-          {/* 6. Fallback for un-uploaded non-DOCX formats (e.g. local .xlsx) */}
-          {!isPdf && !isImg && !isText && !isDocx && (!isOfficeDoc || isLocalBlob) && (
-            <div className="text-center py-12 px-4 max-w-md">
-              <FileText className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+          ) : (
+            <div className="text-center p-8 max-w-md">
+              <FileGenericIcon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
               <h4 className="text-sm font-bold text-gray-900 mb-1">{file.name}</h4>
               <p className="text-xs text-gray-500 mb-4">
-                This format ({ext.toUpperCase()}) will be viewable inline once submitted.
+                This file type ({ext.toUpperCase()}) cannot be previewed directly in the browser.
               </p>
               <a
-                href={file.url}
+                href={activeUrl || file.url}
                 download={file.name}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Save a Copy</span>
+                <span>Download File</span>
               </a>
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-gray-100 flex justify-end gap-2 bg-white">
-          <a
-            href={file.url}
-            download={file.name}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Save a Copy</span>
-          </a>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-semibold hover:bg-gray-900 transition-colors"
-          >
-            Close
-          </button>
-        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
