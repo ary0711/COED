@@ -32,11 +32,11 @@ import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 const studentMenuItems = [
   { icon: Bell,         label: 'Dashboard',               id: 'dashboard'    },
-  { icon: User,         label: 'Faculty & Departments',    id: 'faculty'      },
-  { icon: BookOpen,     label: 'Academic Resources',       id: 'resources'    },
-  { icon: Award,        label: 'Calendar Activities',id: 'achievements' },
-  { icon: MessageSquare,label: 'Inquiry / Contact',        id: 'inquiry'      },
-  { icon: Settings,     label: 'Settings',                 id: 'settings'     },
+  { icon: User,         label: 'Faculty & Departments',   id: 'faculty'      },
+  { icon: BookOpen,     label: 'Academic Resources',      id: 'resources'    },
+  { icon: Award,        label: 'Calendar Activities',     id: 'achievements' },
+  { icon: MessageSquare,label: 'Inquiry / Contact',       id: 'inquiry'      },
+  { icon: Settings,     label: 'Settings',                id: 'settings'     },
 ];
 
 const ME_API_URL = 'http://localhost:5000/api/me';
@@ -98,6 +98,60 @@ interface NotificationRow {
   created_at: string;
 }
 
+// ====================== SHARED CALENDAR TYPES & HELPERS ======================
+interface RealCalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  start_time?: string | null;
+  end_time?: string | null;   
+  department_ids: string[] | null;
+  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
+  audience?: string | null;
+  status: string | null;
+  posted_by_role: string | null;
+}
+
+const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
+
+const EVENT_TYPE_COLOR: Record<string, string> = {
+  meeting: '#3B82F6',
+  activity: '#10B981',
+  holiday: '#8B5CF6',
+  deadline: '#F59E0B',
+  exam: '#EF4444',
+};
+const DEFAULT_STUDENT_EVENT_COLOR = '#1E3A8A';
+
+function colorForStudentEvent(ev: RealCalendarEvent): string {
+  const t = ev.event_type?.toLowerCase() || '';
+  return EVENT_TYPE_COLOR[t] || DEFAULT_STUDENT_EVENT_COLOR;
+}
+
+function dateOnlyStudent(isoLike: string): string {
+  if (!isoLike) return '';
+  return isoLike.split('T')[0];
+}
+
+function sortEventsChronologically(a: RealCalendarEvent, b: RealCalendarEvent): number {
+  const dateComp = a.event_date.localeCompare(b.event_date);
+  if (dateComp !== 0) return dateComp;
+  const timeA = a.start_time;
+  const timeB = b.start_time;
+  if (timeA && !timeB) return -1;
+  if (!timeA && timeB) return 1;
+  if (!timeA && !timeB) return a.title.localeCompare(b.title);
+  return (timeA ?? '').localeCompare(timeB ?? '');
+}
+
+function isStudentAuthorizedEvent(ev: RealCalendarEvent): boolean {
+  if (!ev.audience) return true;
+  const aud = ev.audience.trim().toLowerCase();
+  return ['all', 'everyone', 'student', 'students'].includes(aud);
+}
+
+// ====================== MAIN COMPONENT ======================
 interface StudentDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
@@ -232,6 +286,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
               profile={profile}
               loading={profileLoading}
               error={profileError}
+              setActiveMenuItem={setActiveMenuItem}
             />
           )}
           {activeMenuItem === 'faculty'     && <FacultyDepartments />}
@@ -255,10 +310,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
 }
 
 // ====================== NOTIFICATION BELL ======================
-// Self-contained: reads/writes the shared `notifications` table, scoped
-// to the logged-in user via localStorage('userId') (this app uses a
-// custom JWT login, not Supabase Auth, so there's no auth session to
-// read the user from). Updates live via a realtime subscription.
 function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [open, setOpen] = useState(false);
@@ -381,91 +432,178 @@ function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) 
 }
 
 // ====================== STUDENT DASHBOARD VIEW ======================
-// Header/welcome banner and the "Enrolled Subjects" stat card have been
-// removed per request. The remaining stat cards now span 3 columns.
 interface StudentDashboardViewProps {
   selectedProgram: string;
   profile: StudentProfile | null;
   loading: boolean;
   error: string | null;
+  setActiveMenuItem: (id: string) => void;
 }
 
-function StudentDashboardView({ selectedProgram, profile, loading }: StudentDashboardViewProps) {
-  const announcements = [
-    { id: 1, title: 'Midterm Examination Schedule Released', date: 'Feb 12, 2026', type: 'important' },
-    { id: 2, title: 'Faculty Evaluation Period Open',        date: 'Feb 10, 2026', type: 'info'      },
-    { id: 3, title: 'College Foundation Day Activities',     date: 'Feb 8, 2026',  type: 'info'      },
-  ];
-
+function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenuItem }: StudentDashboardViewProps) {
   const displayId = profile?.student_no ?? '—';
-  const displayYearLevel = profile?.year_level ?? '—';
+  const displayYearLevel = profile?.year_level ? `${profile.year_level} Year` : '—';
   const displayStanding = profile?.academic_standing ?? '—';
+
+  const [upcomingEvents, setUpcomingEvents] = useState<RealCalendarEvent[]>([]);
+  const [inquiries, setInquiries] = useState<StudentInquiry[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      setLoadingData(true);
+      try {
+        const token = localStorage.getItem('token');
+        const userId = localStorage.getItem('userId');
+        
+        // Load Upcoming Activities
+        const evRes = await fetch(CALENDAR_API_URL_STUDENT, { headers: { Authorization: `Bearer ${token}` } });
+        if (evRes.ok) {
+          const data = await evRes.json();
+          const todayStr = new Date().toISOString().split('T')[0];
+          const studentOnly = ((data ?? []) as RealCalendarEvent[])
+            .filter(isStudentAuthorizedEvent)
+            .filter(e => dateOnlyStudent(e.event_date) >= todayStr)
+            .sort(sortEventsChronologically);
+          setUpcomingEvents(studentOnly);
+        }
+
+        // Load Active Inquiries
+        if (userId) {
+          const { data: inqData } = await supabase
+            .from('inquiries')
+            .select('*')
+            .eq('student_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(10);
+          if (inqData) setInquiries(inqData);
+        }
+
+      } catch (err) {
+        console.error('Failed to load dashboard widgets', err);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    loadDashboardData();
+  }, []);
 
   return (
     <div>
-      {/* ── Stat cards — 3-column now that Enrolled Subjects has been removed ── */}
+      {/* ── Stat cards (Non-clickable) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <Users className="w-7 h-7 sm:w-8 sm:h-8 text-green-600 mb-2" />
-          <div className="text-base sm:text-xl font-bold text-gray-900 truncate">
-            {loading ? <span className="inline-block h-5 w-16 bg-gray-200 rounded animate-pulse" /> : displayId}
+        
+        {/* Card 1: Student ID */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
+          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 mb-3">
+            <User className="w-5 h-5" />
           </div>
-          <div className="text-xs sm:text-sm text-gray-600">Student ID</div>
-        </div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <Calendar className="w-7 h-7 sm:w-8 sm:h-8 text-orange-600 mb-2" />
-          <div className="text-xl sm:text-2xl font-bold text-gray-900">
-            {loading ? <span className="inline-block h-6 w-8 bg-gray-200 rounded animate-pulse" /> : displayYearLevel}
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
+            {loading ? <span className="inline-block h-6 w-20 bg-gray-200 rounded animate-pulse" /> : displayId}
           </div>
-          <div className="text-xs sm:text-sm text-gray-600">Year Level</div>
+          <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Student ID</div>
         </div>
-        <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-          <Award className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 mb-2" />
-          <div className="text-base sm:text-xl font-bold text-gray-900">
-            {loading ? <span className="inline-block h-5 w-20 bg-gray-200 rounded animate-pulse" /> : displayStanding}
+
+        {/* Card 2: Year Level */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
+            <GraduationCap className="w-5 h-5" />
           </div>
-          <div className="text-xs sm:text-sm text-gray-600">Academic Standing</div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
+            {loading ? <span className="inline-block h-6 w-16 bg-gray-200 rounded animate-pulse" /> : displayYearLevel}
+          </div>
+          <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Year Level</div>
         </div>
+
+        {/* Card 3: Academic Standing */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
+          <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 mb-3">
+            <Award className="w-5 h-5" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
+            {loading ? <span className="inline-block h-6 w-24 bg-gray-200 rounded animate-pulse" /> : displayStanding}
+          </div>
+          <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Academic Standing</div>
+        </div>
+
       </div>
 
-      {/* ── Announcements / Upcoming Deadlines — same lg:grid-cols-2 pattern as Faculty ── */}
+      {/* ── Bottom Action Cards (Clickable) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Recent Announcements</h2>
-          <div className="space-y-3">
-            {announcements.map((a) => (
-              <div key={a.id} className={`p-4 rounded-lg border-l-4 ${a.type === 'important' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-blue-500'}`}>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">{a.title}</div>
-                <div className="text-xs sm:text-sm text-gray-600 mt-1">{a.date}</div>
+        
+        {/* Inquiry Card */}
+        <div 
+          onClick={() => setActiveMenuItem('inquiry')} 
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
+        >
+          <div className="flex justify-between items-center mb-6 shrink-0">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Inquiry & Contact</h2>
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+            {loadingData ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
               </div>
-            ))}
+            ) : inquiries.length > 0 ? (
+              inquiries.map(inq => (
+                <div key={inq.id} className="p-4 bg-gray-50 border border-gray-100 rounded-xl flex justify-between items-center group-hover:bg-blue-50 transition-colors">
+                  <div className="min-w-0 pr-4">
+                    <div className="text-sm font-bold text-gray-900 truncate mb-1">{inq.subject}</div>
+                    <div className="text-xs text-gray-500">Submitted {new Date(inq.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})}</div>
+                  </div>
+                  <span className={`text-[10px] px-2.5 py-1 rounded-full uppercase font-bold tracking-wider flex-shrink-0 ${inq.status === 'answered' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {inq.status}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <MessageSquare className="w-10 h-10 mb-3 opacity-20" />
+                <p className="text-sm font-semibold text-gray-600">No active inquiries</p>
+                <p className="text-xs mt-1 text-gray-400">Click here to ask a question or submit a concern.</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Upcoming Deadlines</h2>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-4 bg-yellow-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Midterm Examinations</div>
-                <div className="text-xs sm:text-sm text-gray-600">Starts: March 1, 2026</div>
-              </div>
+        {/* Calendar Card */}
+        <div 
+          onClick={() => setActiveMenuItem('achievements')} 
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
+        >
+          <div className="flex justify-between items-center mb-6 shrink-0">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Upcoming Activities</h2>
+            <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
+              <Calendar className="w-5 h-5" />
             </div>
-            <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Enrollment Verification</div>
-                <div className="text-xs sm:text-sm text-gray-600">Due: February 28, 2026</div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+            {loadingData ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
               </div>
-            </div>
-            <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg">
-              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 flex-shrink-0" />
-              <div>
-                <div className="font-medium text-gray-900 text-sm sm:text-base">Scholarship Application Deadline</div>
-                <div className="text-xs sm:text-sm text-gray-600">Due: March 15, 2026</div>
+            ) : upcomingEvents.length > 0 ? (
+              upcomingEvents.map(ev => (
+                <div key={ev.id} className="p-4 bg-gray-50 border border-gray-100 rounded-xl flex flex-col gap-1.5 border-l-4" style={{ borderLeftColor: colorForStudentEvent(ev) }}>
+                  <span className="truncate text-sm font-bold text-gray-900">{ev.title}</span>
+                  <span className="text-xs font-medium text-gray-500">
+                    {new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})} 
+                    {ev.start_time && ` · ${formatSingleTime(ev.start_time)}`}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <Calendar className="w-10 h-10 mb-3 opacity-20" />
+                <p className="text-sm font-semibold text-gray-600">No upcoming activities</p>
+                <p className="text-xs mt-1 text-gray-400">Your schedule is clear for now.</p>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -581,32 +719,8 @@ function FacultyDepartments() {
 function AcademicResources() {
   return <AcademicDocumentsViewer />;
 }
+
 // ====================== ACHIEVEMENTS & ACTIVITIES ======================
-interface RealCalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  event_date: string;
-  start_time?: string | null; // Added for synchronized start time support
-  end_time?: string | null;   // Added for synchronized end time support
-  department_ids: string[] | null;
-  event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
-  audience?: string | null;
-  status: string | null;
-  posted_by_role: string | null;
-}
-
-const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
-
-const EVENT_TYPE_COLOR: Record<string, string> = {
-  meeting: '#3B82F6',
-  activity: '#10B981',
-  holiday: '#8B5CF6',
-  deadline: '#F59E0B',
-  exam: '#EF4444',
-};
-const DEFAULT_STUDENT_EVENT_COLOR = '#1E3A8A';
-
 const ROLE_DISPLAY_LABEL_STUDENT: Record<string, string> = {
   dean: 'Dean',
   admin: 'Admin',
@@ -619,16 +733,6 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-function colorForStudentEvent(ev: RealCalendarEvent): string {
-  const t = ev.event_type?.toLowerCase() || '';
-  return EVENT_TYPE_COLOR[t] || DEFAULT_STUDENT_EVENT_COLOR;
-}
-
-function dateOnlyStudent(isoLike: string): string {
-  if (!isoLike) return '';
-  return isoLike.split('T')[0];
-}
 
 function formatSingleTime(timeStr?: string | null): string | null {
   if (!timeStr) return null;
@@ -648,33 +752,6 @@ function formatEventTimeRange(start?: string | null, end?: string | null): strin
   if (s && e) return `${s} – ${e}`;
   if (s) return s;
   return 'Time not specified';
-}
-
-function sortEventsChronologically(a: RealCalendarEvent, b: RealCalendarEvent): number {
-  const dateComp = a.event_date.localeCompare(b.event_date);
-  if (dateComp !== 0) return dateComp;
-  const timeA = a.start_time;
-  const timeB = b.start_time;
-  if (timeA && !timeB) return -1;
-  if (!timeA && timeB) return 1;
-  if (!timeA && !timeB) return a.title.localeCompare(b.title);
-  return (timeA ?? '').localeCompare(timeB ?? '');
-}
-
-function formatTimeFromDate(isoLike: string): string | null {
-  if (!isoLike || !isoLike.includes('T')) return null;
-  const timePart = isoLike.split('T')[1];
-  if (!timePart || timePart.startsWith('00:00:00')) return null;
-  const d = new Date(isoLike);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-// Client-side defense-in-depth audience guard
-function isStudentAuthorizedEvent(ev: RealCalendarEvent): boolean {
-  if (!ev.audience) return true;
-  const aud = ev.audience.trim().toLowerCase();
-  return ['all', 'everyone', 'student', 'students'].includes(aud);
 }
 
 function AchievementsActivities() {
@@ -1080,9 +1157,9 @@ function AchievementsActivities() {
       </div>
 
       {/* ── Event Details Modal ── */}
-      {selectedEvent && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4">
+      {selectedEvent && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <span
@@ -1133,16 +1210,14 @@ function AchievementsActivities() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
 // ====================== INQUIRY / CONTACT ======================
-// Category dropdown + inquiry history (with the dean's reply, if any).
-// Submitting inserts into the shared `inquiries` table with
-// sender_role: 'student', so it shows up in the dean's Inquiries page.
 function InquiryContact() {
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState(INQUIRY_CATEGORIES[0]);
@@ -1345,9 +1420,9 @@ function InquiryContact() {
       </div>
 
       {/* ── Detail modal (shows the dean's reply, if any) ── */}
-      {selectedInquiry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+      {selectedInquiry && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div className="min-w-0">
                 {selectedInquiry.category && (
@@ -1393,13 +1468,16 @@ function InquiryContact() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
 // ====================== SETTINGS ======================
+type StudentSettingsTab = 'profile' | 'security' | 'notifications';
+
 interface StudentSettingsProps {
   selectedProgram: string;
   setSelectedProgram: (program: string) => void;
@@ -1409,9 +1487,7 @@ interface StudentSettingsProps {
   onProfileUpdated: () => void;
 }
 
-type StudentSettingsTab = 'profile' | 'security' | 'notifications' | 'academic' | 'account';
-
-function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
+function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
   const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
 
   const [emailNotifications, setEmailNotifications] = useState(true);
@@ -1436,10 +1512,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
   useEffect(() => {
     setEmailInput(userEmail);
   }, [userEmail]);
-
-  const displayYearLevel = profile?.year_level ?? '—';
-  const displayStanding = profile?.academic_standing ?? '—';
-  const displayEnrollmentStatus = profile?.enrollment_status ?? '—';
 
   const handleSaveChanges = async () => {
     const trimmedName = fullNameInput.trim();
@@ -1482,11 +1554,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
         return;
       }
 
-      // Email is intentionally not sent to the backend — this app has
-      // no real Supabase Auth session to safely re-verify a changed
-      // email against (matches the PATCH /api/me route's own note).
-      // If the user typed a different email, let them know it wasn't
-      // applied rather than silently ignoring it.
       if (trimmedEmail !== userEmail) {
         setSaveMessage({ type: 'success', text: 'Name and Student ID saved. Email address changes are not yet supported — contact your Department Chair to update your email.' });
       } else {
@@ -1501,19 +1568,10 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
     }
   };
 
-  const handleCancel = () => {
-    setFullNameInput(profile?.full_name ?? '');
-    setStudentNoInput(profile?.student_no ?? '');
-    setEmailInput(userEmail);
-    setSaveMessage(null);
-  };
-
   const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
     { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
     { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
-    { key: 'academic', label: 'Academic Settings', icon: <BookOpen className="w-4 h-4" /> },
-    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
   ];
 
   return (
@@ -1525,13 +1583,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
           <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={handleCancel}
-            disabled={saving}
-            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            Cancel
-          </button>
           <button
             onClick={handleSaveChanges}
             disabled={saving || loading}
@@ -1554,7 +1605,7 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
         </div>
       )}
 
-      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
+      {/* Body: vertical tabs + panel */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
         {/* Sidebar tab list */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
@@ -1574,7 +1625,7 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
           ))}
         </nav>
 
-        {/* Panel — fixed min-height so switching tabs doesn't resize the card */}
+        {/* Panel */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
           {activeTab === 'profile' && (
             <div>
@@ -1676,51 +1727,6 @@ function StudentSettings({ selectedProgram, setSelectedProgram, profile, userEma
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'academic' && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Academic Settings</h2>
-              <p className="text-sm text-gray-500 mb-6">Your program, standing, and enrollment status.</p>
-
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-xs text-blue-600 uppercase font-semibold mb-2 flex items-center gap-1.5">
-                    <GraduationCap className="w-4 h-4" /> Your Program
-                  </p>
-                  <p className="text-sm font-medium text-gray-900">{selectedProgram || '—'}</p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    This is the program you registered under, approved by your Department Chair. Contact your Chair if this needs to change.
-                  </p>
-                  <p className="text-xs text-gray-600 mt-3">
-                    <span className="font-semibold">Year Level:</span> {displayYearLevel}
-                  </p>
-                </div>
-
-                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <p className="text-xs text-green-600 uppercase font-semibold mb-1">Current Status</p>
-                  <p className="text-sm font-medium text-gray-900">{displayEnrollmentStatus}</p>
-                </div>
-
-                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="text-xs text-purple-600 uppercase font-semibold mb-1">Academic Standing</p>
-                  <p className="text-sm font-medium text-gray-900">{displayStanding}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mb-6">Manage your active sessions.</p>
-              <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
-                  Log Out from All Devices
-                </button>
-                <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
               </div>
             </div>
           )}

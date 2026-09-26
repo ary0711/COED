@@ -29,6 +29,7 @@ import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
+import { createPortal } from 'react-dom';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 // ====================== TRACER SURVEY API HELPERS ======================
@@ -112,12 +113,12 @@ async function getDashboardStats(_alumniId: string) {
 
 const alumniMenuItems = [
   { icon: Bell,         label: 'Dashboard',              id: 'dashboard'   },
-  { icon: FileText,     label: 'Graduate Tracer Survey',  id: 'tracer'      },
-  { icon: CalendarIcon, label: 'Alumni Calendar',         id: 'calendar'    },
-  { icon: BookOpen,     label: 'College Information',     id: 'college-info'},
-  { icon: Award,        label: 'Achievements',            id: 'achievements'},
-  { icon: FileText,     label: 'Documents & Resources',   id: 'documents'   },
-  { icon: MessageSquare,label: 'Inquiry / Contact',       id: 'inquiry'     },
+  { icon: FileText,     label: 'Graduate Tracer Survey', id: 'tracer'      },
+  { icon: CalendarIcon, label: 'Alumni Calendar',        id: 'calendar'    },
+  { icon: BookOpen,     label: 'College Information',    id: 'college-info'},
+  { icon: Award,        label: 'Achievements',           id: 'achievements'},
+  { icon: FileText,     label: 'Documents & Resources',  id: 'documents'   },
+  { icon: MessageSquare,label: 'Inquiry / Contact',      id: 'inquiry'     },
   { icon: Settings,     label: 'Settings',               id: 'settings'    },
 ];
 
@@ -696,6 +697,9 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     postGraduateDegree: '',
   });
 
+  // State to hold the original data so it doesn't blank out on Cancel/Update
+  const [originalData, setOriginalData] = useState<typeof formData | null>(null);
+
   // Load existing survey through your existing Express route: GET /api/tracer-survey/mine
   useEffect(() => {
     (async () => {
@@ -703,7 +707,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       try {
         const existing = await getTracerSurvey(alumniId);
         if (existing) {
-          setFormData({
+          const fetchedData = {
             firstName: existing.first_name || '',
             lastName: existing.last_name || '',
             employmentStatus: existing.employment_status || 'employed',
@@ -713,7 +717,9 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
             monthlySalary: existing.monthly_salary || '25000-30000',
             relevance: existing.relevance || 'very-relevant',
             postGraduateDegree: existing.post_graduate_degree || '',
-          });
+          };
+          setFormData(fetchedData);
+          setOriginalData(fetchedData);
           setLastUpdated(existing.updated_at);
           setIsNew(false);
           setIsEditing(false);
@@ -807,6 +813,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       }
 
       setLastUpdated(new Date().toISOString());
+      setOriginalData(formData); // Save new state so it persists
       setIsNew(false);
       setIsEditing(false);
       setShowConfirmModal(false);
@@ -842,6 +849,12 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
 
   const isEmployedType = formData.employmentStatus === 'employed';
 
+  const handleCancelEdit = () => {
+    if (originalData) setFormData(originalData); // Restore details, prevents blanking
+    setIsEditing(false);
+    setErrors([]);
+  };
+
   return (
     <div className="space-y-6">
       {/* ── Section Header Banner ── */}
@@ -871,7 +884,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
             </button>
           ) : !isNew && isEditing ? (
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={handleCancelEdit}
               className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
             >
               Cancel Edit
@@ -1033,7 +1046,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Relevance to Degree (Retained contextually) */}
+            {/* Relevance to Degree */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Degree Alignment & Relevance
@@ -1051,7 +1064,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Job Title (Retained contextually) */}
+            {/* Job Title */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Designation / Position Title {isEmployedType && <span className="text-rose-500">*</span>}
@@ -1110,7 +1123,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                       {/* Circular Progress Bar */}
                       <div className="relative w-8 h-8 flex items-center justify-center">
                         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                          {/* Background Circle */}
                           <path
                             className="text-gray-100"
                             strokeWidth="3"
@@ -1118,7 +1130,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                             fill="none"
                             d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                           />
-                          {/* Progress Circle */}
                           <path
                             className="text-blue-600 transition-all duration-300 ease-out"
                             strokeDasharray={`${uploadProgress}, 100`}
@@ -1164,7 +1175,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               {!isNew && (
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
+                  onClick={handleCancelEdit}
                   className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Discard Changes
@@ -1184,8 +1195,8 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       </div>
 
       {/* ── Document Preview Modal ── */}
-      {showPreview && previewUrl && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {showPreview && previewUrl && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-2 animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center p-4 border-b border-gray-100">
               <h3 className="font-bold text-gray-800">Document Preview</h3>
@@ -1200,12 +1211,13 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               <img src={previewUrl} alt="Preview" className="max-w-full h-auto object-contain rounded shadow-sm" />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Submission Confirmation Modal ── */}
-      {showConfirmModal && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {showConfirmModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
             <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E3A8A] flex items-center justify-center mx-auto mb-3.5">
               <FileText className="w-6 h-6" />
@@ -1250,12 +1262,13 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Status Feedback Modal (Success/Error) ── */}
-      {feedbackModal.open && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {feedbackModal.open && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
@@ -1282,7 +1295,8 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               Done
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -1561,14 +1575,14 @@ function AlumniCalendar() {
                 aria-label="Previous month"
                 className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <ChevronLeft className="w-5 h-5"/>
               </button>
               <button
                 onClick={nextMonth}
                 aria-label="Next month"
                 className="p-2 rounded-xl hover:bg-white hover:shadow-xs border border-transparent hover:border-gray-200 text-gray-600 transition-all"
               >
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="w-5 h-5"/>
               </button>
             </div>
           </div>
@@ -1761,7 +1775,7 @@ function AlumniCalendar() {
 
           {upcomingEvents.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
-              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30"/>
               <p className="text-xs font-medium">No upcoming events scheduled</p>
             </div>
           ) : (
@@ -1811,67 +1825,71 @@ function AlumniCalendar() {
       </div>
 
       {/* ── Event Details Modal ── */}
-      {selectedEvent && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between gap-3">
-              <div>
+      {selectedEvent && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between p-6 border-b border-gray-100">
+              <div className="min-w-0">
                 <span
-                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
-                  style={{ backgroundColor: colorForAlumniEvent(selectedEvent) }}
+                  className="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full mb-2 capitalize"
+                  style={{
+                    backgroundColor: `${colorForAlumniEvent(selectedEvent)}15`,
+                    color: colorForAlumniEvent(selectedEvent),
+                  }}
                 >
                   {selectedEvent.event_type || 'Activity'}
                 </span>
-                <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                <h3 className="text-lg font-semibold text-gray-900 truncate">
                   {selectedEvent.title}
                 </h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Scheduled for {formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 ml-4"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5"/>
               </button>
             </div>
 
-            <div className="space-y-2.5 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
+            <div className="p-6 space-y-4">
               <div>
-                <span className="font-semibold text-gray-900">Date: </span>
-                <span>{formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}</span>
-              </div>
-
-              <div>
-                <span className="font-semibold text-gray-900">Time: </span>
-                <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Time</p>
+                <p className="text-sm text-gray-700">
+                  {formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}
+                </p>
               </div>
 
               {selectedEvent.location && (
                 <div>
-                  <span className="font-semibold text-gray-900">Location: </span>
-                  <span>{selectedEvent.location}</span>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Location</p>
+                  <p className="text-sm text-gray-700">{selectedEvent.location}</p>
                 </div>
               )}
 
               <div>
-                <span className="font-semibold text-gray-900">Posted by: </span>
-                <span>
+                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Posted By</p>
+                <p className="text-sm text-gray-700">
                   {ROLE_DISPLAY_LABEL_ALUMNI[selectedEvent.posted_by_role ?? ''] ??
                     selectedEvent.posted_by_role ??
                     'College Administration'}
-                </span>
-              </div>
-            </div>
-
-            {selectedEvent.description && (
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Description</h4>
-                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed bg-white p-3 rounded-xl border border-gray-100 whitespace-pre-wrap">
-                  {selectedEvent.description}
                 </p>
               </div>
-            )}
+
+              {selectedEvent.description && (
+                <div className="pt-2">
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Description</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {selectedEvent.description}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2125,8 +2143,8 @@ function AlumniInquiry() {
       </div>
 
       {/* ── Detail modal (shows the dean's reply, if any) ── */}
-      {selectedInquiry && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {selectedInquiry && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div className="min-w-0">
@@ -2173,7 +2191,8 @@ function AlumniInquiry() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
