@@ -52,8 +52,8 @@ import { ResearchExtension } from '../ResearchExtension';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 const facultyMenuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
-  { icon: BookOpen,        label: 'Teaching Load',        id: 'teaching-load' },
+  { icon: LayoutDashboard, label: 'Dashboard',             id: 'dashboard' },
+  { icon: BookOpen,        label: 'Teaching Load',         id: 'teaching-load' },
   { icon: FileText,        label: 'Research & Extension', id: 'research' },
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: GraduationCap,   label: "Dean's List",          id: 'deans-list' },
@@ -483,7 +483,7 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
   );
 }
 
-// ====================== ACADE// ====================== ACADEMIC RESOURCES (FACULTY) ======================
+// ====================== ACADEMIC RESOURCES (FACULTY) ======================
 function AcademicResources() {
   return <AcademicDocumentsViewer />;
 }
@@ -555,8 +555,8 @@ function TeachingLoad() {
   };
 
   const UploadModal = () => (
-    uploadModalOpen ? (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    uploadModalOpen && typeof document !== 'undefined' ? createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Upload Class List</h2>
@@ -597,7 +597,8 @@ function TeachingLoad() {
             </div>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     ) : null
   );
 
@@ -1367,8 +1368,8 @@ export default function FacultyAchievements() {
         </div>
       </div>
 
-      {modal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+      {modal.isOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center border border-gray-100">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
@@ -1395,7 +1396,8 @@ export default function FacultyAchievements() {
               Dismiss
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2041,7 +2043,7 @@ function FacultyCalendar() {
                         <span
                           className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-full text-xs sm:text-sm font-semibold transition-transform ${
                             isTodayDate
-                              ? 'bg-[#1E3A8A] text-white shadow-2xs'
+                              ? 'bg-[#1E3A8A] text-white shadow-xs'
                               : isPast
                               ? 'text-gray-400'
                               : 'text-gray-700'
@@ -2057,6 +2059,7 @@ function FacultyCalendar() {
                         )}
                       </div>
 
+                      {/* Desktop Event Pills */}
                       <div className="hidden sm:flex flex-col gap-1">
                         {dayEvents.slice(0, 2).map((ev) => (
                           <button
@@ -2079,6 +2082,7 @@ function FacultyCalendar() {
                         )}
                       </div>
 
+                      {/* Mobile Dots */}
                       {hasEvents && (
                         <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                           {dayEvents.slice(0, 3).map((ev) => (
@@ -2094,6 +2098,7 @@ function FacultyCalendar() {
                         </div>
                       )}
 
+                      {/* Tooltip Hover Preview with Time Range */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -2397,8 +2402,8 @@ function FacultyCalendar() {
       )}
 
       {/* ── Event Details Modal ── */}
-      {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+      {selectedEvent && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3 min-w-0">
@@ -2453,7 +2458,8 @@ function FacultyCalendar() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
