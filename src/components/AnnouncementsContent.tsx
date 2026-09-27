@@ -107,11 +107,13 @@ interface AnnouncementItem {
   updated_at?: string;
 }
 function ChairAnnouncementsView() {
+    
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -216,6 +218,12 @@ function ChairAnnouncementsView() {
       setFormError('Announcement date is required.');
       return;
     }
+
+    if (!editingId && form.eventDate < todayStr) {
+      setFormError('Announcement date cannot be in the past.');
+      return;
+    }
+
     if (form.startTime && form.endTime && form.startTime > form.endTime) {
       setFormError('End time cannot be earlier than start time.');
       return;
@@ -589,6 +597,7 @@ function ChairAnnouncementsView() {
                     </label>
                     <input
                       type="date"
+                      min={todayStr}
                       value={form.eventDate}
                       onChange={(e) => setForm({ ...form, eventDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white"
@@ -710,7 +719,9 @@ function ChairAnnouncementsView() {
 // 2. DEAN / ADMIN ANNOUNCEMENT VIEW (With Edit & Department Targeting)
 // ─────────────────────────────────────────────────────────────────────────────
 function DeanAnnouncementsView() {
+    
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const todayStr = new Date().toISOString().split('T')[0];
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -868,6 +879,14 @@ function DeanAnnouncementsView() {
       setModalType('error');
       setModalTitle('Schedule Date Required');
       setModalMessage('Please select a date for this announcement.');
+      setShowModal(true);
+      return;
+    }
+
+    if (!editingId && eventDate < todayStr) {
+      setModalType('error');
+      setModalTitle('Invalid Date');
+      setModalMessage('You cannot schedule an announcement on a past date.');
       setShowModal(true);
       return;
     }
@@ -1263,6 +1282,7 @@ function DeanAnnouncementsView() {
                     </label>
                     <input
                       type="date"
+                      min={todayStr}
                       value={eventDate}
                       onChange={(e) => setEventDate(e.target.value)}
                       className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] transition-all bg-white"

@@ -84,6 +84,11 @@ router.get('/', authenticate, async (req, res) => {
 
 // POST /api/announcements
 router.post('/', authenticate, async (req, res) => {
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (event_date < todayStr) {
+    return res.status(400).json({ error: 'Announcement date cannot be in the past.' });
+  }
   const { title, content, expires_at, is_pinned, event_date, start_time, end_time } = req.body;
   let { target_role, target_department_id } = req.body;
 
