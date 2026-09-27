@@ -173,6 +173,29 @@ export default function App() {
     }, 0);
   };
 
+  // =====================================================
+  // PROFILE UPDATE
+  // Keeps the dashboard/header name synchronized after saving
+  // the profile from System Settings.
+  // =====================================================
+  const handleProfileUpdate = (updatedProfile: {
+    fullName: string;
+    email: string;
+  }) => {
+    setCurrentUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            username: updatedProfile.fullName,
+          }
+        : prev
+    );
+
+    // Keep localStorage synchronized with the React state as well.
+    localStorage.setItem('userFullName', updatedProfile.fullName);
+    localStorage.setItem('userEmail', updatedProfile.email);
+  };
+
   // Prevent flicker during initial session restore
   if (initializing) {
     return (
@@ -261,12 +284,19 @@ export default function App() {
       {/* DEPARTMENT CHAIR */}
       {currentRole === 'chair' && (
         <DepartmentChairDashboard
-          onRoleChange={toggleRole}
-          activeMenuItem={activeMenuItem}
-          setActiveMenuItem={setActiveMenuItem}
-          onLogout={handleLogout}
-          userName={currentUser?.username ?? 'Chair'}
-        />
+  onRoleChange={toggleRole}
+  activeMenuItem={activeMenuItem}
+  setActiveMenuItem={setActiveMenuItem}
+  onLogout={handleLogout}
+  userName={currentUser?.username ?? 'Chair'}
+  onProfileUpdate={(updatedProfile) => {
+    setCurrentUser((prev) =>
+      prev
+        ? { ...prev, username: updatedProfile.fullName }
+        : prev
+    );
+  }}
+/>
       )}
 
       {/* FACULTY */}

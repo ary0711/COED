@@ -41,6 +41,7 @@ import {
   ClipboardCheck,
   RefreshCw,
   TrendingUp,
+  EyeOff,
   Award,
 } from 'lucide-react';
 
@@ -82,11 +83,16 @@ const chairMenuItems = [
   { icon: Settings,        label: 'System Settings',      id: 'settings' },
 ];
 
-interface DepartmentChairDashboardProps {
-  onRoleChange?: () => void;
-  activeMenuItem: string;
-  setActiveMenuItem: (id: string) => void;
+interface DepartmentChairDashboardProps { 
+  onRoleChange?: () => void; 
+  activeMenuItem: string; 
+  setActiveMenuItem: (id: string) => void; 
   onLogout?: () => void;
+  userName?: string;
+  onProfileUpdate?: (updatedProfile: {
+    fullName: string;
+    email: string;
+  }) => void;
 }
 
 export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
@@ -139,7 +145,13 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
 
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, onLogout }: DepartmentChairDashboardProps) {
+export function DepartmentChairDashboard({
+  activeMenuItem,
+  setActiveMenuItem,
+  onLogout,
+  userName: appUserName,
+  onProfileUpdate,
+}: DepartmentChairDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleInternalLogout = () => {
     localStorage.clear();
@@ -149,7 +161,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, on
   const token = localStorage.getItem('token');
   const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
   const userId = decoded?.userId ?? '';
-  const userName = decoded?.fullName || 'Department Chair';
+  const userName = appUserName || decoded?.fullName || 'Department Chair';
   const departmentNames: string[] = decoded?.departmentNames ?? [];
 
   return (
@@ -177,7 +189,14 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, on
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
           {activeMenuItem === 'approvals'          && <AccountApprovalsView departmentNames={departmentNames} />}
-          {activeMenuItem === 'settings'           && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
+         {activeMenuItem === 'settings' && (
+  <ChairSystemSettings
+    userName={userName}
+    departmentNames={departmentNames}
+    onLogout={handleInternalLogout}
+    onProfileUpdate={onProfileUpdate}
+  />
+)}
         </main>
       </div>
     </div>
@@ -2663,7 +2682,7 @@ const CHAIR_SETTINGS_TABS = [
   { id: 'security',      label: 'Password & Security',  icon: KeyRound },
   { id: 'notifications', label: 'Notifications',        icon: Bell },
   { id: 'department',    label: 'Department Settings',  icon: Users },
-  { id: 'account',       label: 'Account Actions',       icon: ArrowLeft },
+
 ] as const;
 
 type ChairSettingsTabId = typeof CHAIR_SETTINGS_TABS[number]['id'];
@@ -2686,17 +2705,36 @@ function ChairSystemSettings({
   userName,
   departmentNames,
   onLogout,
+  onProfileUpdate,
 }: {
   userName: string;
   departmentNames: string[];
   onLogout?: () => void;
+  onProfileUpdate?: (updatedProfile: { fullName: string; email: string }) => void;
 }) {
   const [activeTab, setActiveTab] = useState<ChairSettingsTabId>('profile');
 
   const [fullName, setFullName] = useState(userName);
   const [email, setEmail] = useState('');
   const [positionRole] = useState('Department Chair');
-  const [department, setDepartment] = useState(departmentNames.join(', '));
+  const [department] = useState(departmentNames.join(', '));
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileMessage, setProfileMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successTitle, setSuccessTitle] = useState('Profile Updated Successfully');
+  const [successText, setSuccessText] = useState('Your personal information has been updated successfully.');
+
+  const [securityMessage, setSecurityMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -2714,7 +2752,259 @@ function ChairSystemSettings({
 
   const [saving, setSaving] = useState(false);
 
+  // Load the Chair's actual profile from the same backend used by the Dean settings.
+  useEffect(() => {
+    const loadProfile = async () => {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        setProfileLoading(false);
+        setProfileMessage({
+          type: 'error',
+          text: 'Your session has expired. Please log in again.',
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load profile information.');
+        }
+
+        if (data.profile) {
+          const loadedName = data.profile.full_name || userName || '';
+          const loadedEmail = data.profile.email || '';
+
+          setFullName(loadedName);
+          setEmail(loadedEmail);
+
+          localStorage.setItem('userFullName', loadedName);
+          localStorage.setItem('userEmail', loadedEmail);
+        }
+      } catch (error) {
+        console.error('Failed to load Chair profile:', error);
+        setProfileMessage({
+          type: 'error',
+          text: error instanceof Error
+            ? error.message
+            : 'Unable to load your profile information.',
+        });
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [userName]);
+
+  const saveProfile = async () => {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Your session has expired. Please log in again.',
+      });
+      return;
+    }
+
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Full name is required.',
+      });
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Email address is required.',
+      });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Please enter a valid email address.',
+      });
+      return;
+    }
+
+    setSaving(true);
+    setProfileMessage(null);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          full_name: trimmedName,
+          email: trimmedEmail,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update your profile.');
+      }
+
+      const updatedName = data.profile?.full_name || trimmedName;
+      const updatedEmail = data.profile?.email || trimmedEmail;
+
+      setFullName(updatedName);
+      setEmail(updatedEmail);
+
+      localStorage.setItem('userFullName', updatedName);
+      localStorage.setItem('userEmail', updatedEmail);
+
+      onProfileUpdate?.({
+        fullName: updatedName,
+        email: updatedEmail,
+      });
+
+      setProfileMessage(null);
+      setSuccessTitle('Profile Updated Successfully');
+      setSuccessText('Your personal information has been updated successfully.');
+      setShowSuccessMessage(true);
+    } catch (error) {
+      console.error('Chair profile update failed:', error);
+      setProfileMessage({
+        type: 'error',
+        text: error instanceof Error
+          ? error.message
+          : 'Failed to update your personal information.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changePassword = async () => {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setSecurityMessage({
+        type: 'error',
+        text: 'Your session has expired. Please log in again.',
+      });
+      return;
+    }
+
+    if (!currentPassword) {
+      setSecurityMessage({ type: 'error', text: 'Current password is required.' });
+      return;
+    }
+
+    if (!newPassword) {
+      setSecurityMessage({ type: 'error', text: 'New password is required.' });
+      return;
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setSecurityMessage({
+        type: 'error',
+        text: 'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
+      });
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setSecurityMessage({
+        type: 'error',
+        text: 'Your new password must be different from your current password.',
+      });
+      return;
+    }
+
+    if (!confirmPassword) {
+      setSecurityMessage({ type: 'error', text: 'Please confirm your new password.' });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setSecurityMessage({
+        type: 'error',
+        text: 'New password and confirm password do not match.',
+      });
+      return;
+    }
+
+    setSaving(true);
+    setSecurityMessage(null);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to change your password.');
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSecurityMessage(null);
+      setSuccessTitle('Password Changed Successfully');
+      setSuccessText('Your password has been updated successfully.');
+      setShowSuccessMessage(true);
+    } catch (error) {
+      console.error('Chair password change failed:', error);
+      setSecurityMessage({
+        type: 'error',
+        text: error instanceof Error
+          ? error.message
+          : 'Failed to change your password.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveChanges = async () => {
+    if (activeTab === 'profile') {
+      await saveProfile();
+      return;
+    }
+
+    if (activeTab === 'security') {
+      await changePassword();
+      return;
+    }
+
     setSaving(true);
     try {
       await new Promise(res => setTimeout(res, 600));
@@ -2733,12 +3023,7 @@ function ChairSystemSettings({
           <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          <button
-            onClick={handleCancel}
-            className="px-4 sm:px-5 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
+         
           <button
             onClick={handleSaveChanges}
             disabled={saving}
@@ -2748,6 +3033,33 @@ function ChairSystemSettings({
           </button>
         </div>
       </div>
+
+      {showSuccessMessage && (
+        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0">
+              <CheckCircle className="w-5 h-5" />
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">
+                {successTitle}
+              </p>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                {successText}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowSuccessMessage(false)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs sm:text-sm font-semibold px-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
@@ -2782,20 +3094,28 @@ function ChairSystemSettings({
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
                   <input
                     type="text"
-                    value={fullName}
+                    value={profileLoading ? 'Loading...' : fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={profileLoading}
+                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                    }`}
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
                   <input
                     type="email"
-                    value={email}
+                    value={profileLoading ? 'Loading...' : email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={profileLoading}
+                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                    }`}
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
                   <input
@@ -2805,18 +3125,22 @@ function ChairSystemSettings({
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
                   <input
                     type="text"
                     value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
                   />
                 </div>
-                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
-                  Edit Profile
-                </button>
+
+                {profileMessage?.type === 'error' && (
+                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {profileMessage.text}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2829,34 +3153,71 @@ function ChairSystemSettings({
               <div className="space-y-4 max-w-md mb-6">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5">Minimum 8 characters: uppercase, lowercase, number, and special character.</p>
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <button className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
-                  Change Password
-                </button>
+
+                {securityMessage && securityMessage.type === 'error' && (
+                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {securityMessage.text}
+                  </div>
+                )}
+
               </div>
 
               <div className="border-t border-gray-100 pt-5">
@@ -2868,7 +3229,7 @@ function ChairSystemSettings({
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-1">
-                <button className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                <button type="button" className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
                   Log Out of All Devices
                 </button>
               </div>
@@ -2941,20 +3302,6 @@ function ChairSystemSettings({
             </div>
           )}
 
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
-
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Log Out
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

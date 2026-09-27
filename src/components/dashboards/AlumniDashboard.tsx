@@ -24,6 +24,7 @@ import {
   Calendar,
   Upload,
   Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -139,7 +140,11 @@ export function AlumniDashboard({
   idNumber,
 }: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  const [displayName, setDisplayName] = useState(
+  userName ||
+  localStorage.getItem('userFullName') ||
+  'Alumni'
+);
   // Profile state
   const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -180,9 +185,14 @@ export function AlumniDashboard({
       }
 
       if (data) {
-        setProfile(data);
-        setUserEmail(data.email ?? '');
-      }
+  setProfile(data);
+  setUserEmail(data.email ?? '');
+
+  if (data.full_name) {
+    setDisplayName(data.full_name);
+    localStorage.setItem('userFullName', data.full_name);
+  }
+}
     } catch (err) {
       console.error('Failed to load profile:', err);
     } finally {
@@ -236,10 +246,10 @@ export function AlumniDashboard({
             </button>
             <div className="flex-1">
               <DashboardHeader
-                userRole="Alumni"
-                userName={userName ?? 'Alumni'}
-                onLogout={handleInternalLogout}
-              />
+  userRole="Alumni"
+  userName={displayName}
+  onLogout={handleInternalLogout}
+/>
             </div>
           </div>
         </div>
@@ -256,13 +266,22 @@ export function AlumniDashboard({
             {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
             {activeMenuItem === 'settings'     && (
               <AlumniSettings
-                profile={profile}
-                userEmail={userEmail}
-                loading={profileLoading}
-                onProfileUpdated={fetchProfile}
-                idNumber={idNumber || ''}
-                onLogout={handleInternalLogout}
-              />
+  profile={profile}
+  userEmail={userEmail}
+  loading={profileLoading}
+  onProfileUpdated={async () => {
+    await fetchProfile();
+
+    const updatedName =
+      localStorage.getItem('userFullName');
+
+    if (updatedName) {
+      setDisplayName(updatedName);
+    }
+  }}
+  idNumber={idNumber || ''}
+  onLogout={handleInternalLogout}
+/>
             )}
           </div>
         </main>
@@ -2455,6 +2474,7 @@ function AlumniAchievements() {
 }
 
 // ====================== SETTINGS ======================
+// ====================== SETTINGS ======================
 interface AlumniSettingsProps {
   profile: { full_name: string; email: string } | null;
   userEmail: string;
@@ -2464,110 +2484,525 @@ interface AlumniSettingsProps {
   onLogout?: () => void;
 }
 
-type AlumniSettingsTab = 'profile' | 'security' | 'notifications' | 'account';
+type AlumniSettingsTab =
+  | 'profile'
+  | 'security'
+  | 'notifications'
+  | 'account';
 
-function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumber, onLogout }: AlumniSettingsProps) {
-  const [activeTab, setActiveTab] = useState<AlumniSettingsTab>('profile');
+function AlumniSettings({
+  profile,
+  userEmail,
+  loading,
+  onProfileUpdated,
+  idNumber,
+  onLogout,
+}: AlumniSettingsProps) {
+  const [activeTab, setActiveTab] =
+    useState<AlumniSettingsTab>('profile');
 
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+  // =====================================================
+  // NOTIFICATIONS
+  // =====================================================
+  const [emailNotifications, setEmailNotifications] =
+    useState(true);
 
-  const [fullNameInput, setFullNameInput] = useState('');
-  const [emailInput, setEmailInput] = useState('');
-  const [idNumberInput, setIdNumberInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [announcementAlerts, setAnnouncementAlerts] =
+    useState(true);
 
+  // =====================================================
+  // PROFILE
+  // =====================================================
+  const [fullNameInput, setFullNameInput] =
+    useState('');
+
+  const [emailInput, setEmailInput] =
+    useState('');
+
+  const [idNumberInput, setIdNumberInput] =
+    useState('');
+
+  // =====================================================
+  // SECURITY
+  // =====================================================
+  const [currentPassword, setCurrentPassword] =
+    useState('');
+
+  const [newPassword, setNewPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  const [passwordMessage, setPasswordMessage] =
+    useState('');
+
+  // =====================================================
+  // STATES
+  // =====================================================
+  const [saving, setSaving] =
+    useState(false);
+
+  const [saveMessage, setSaveMessage] =
+    useState<{
+      type: 'success' | 'error';
+      text: string;
+    } | null>(null);
+
+  // =====================================================
+  // LOAD PROFILE
+  // =====================================================
   useEffect(() => {
-    if (profile?.full_name) {
-      setFullNameInput(profile.full_name);
-    }
-  }, [profile?.full_name]);
+    setFullNameInput(
+      profile?.full_name ||
+      localStorage.getItem('userFullName') ||
+      ''
+    );
 
-  useEffect(() => {
-    setEmailInput(userEmail);
-  }, [userEmail]);
+    setEmailInput(
+      profile?.email ||
+      userEmail ||
+      localStorage.getItem('userEmail') ||
+      ''
+    );
 
-  useEffect(() => {
-    setIdNumberInput(idNumber);
-  }, [idNumber]);
+    setIdNumberInput(
+      idNumber ||
+      localStorage.getItem('userIdNumber') ||
+      ''
+    );
+  }, [profile, userEmail, idNumber]);
 
-  const handleSaveChanges = async () => {
-    const trimmedName = fullNameInput.trim();
-    const trimmedEmail = emailInput.trim();
+  // =====================================================
+  // SAVE PERSONAL INFORMATION
+  // =====================================================
+  const saveProfile = async () => {
+    const trimmedName =
+      fullNameInput.trim();
 
+    const trimmedEmail =
+      emailInput.trim().toLowerCase();
+
+    const trimmedIdNumber =
+      idNumberInput.trim();
+
+    // VALIDATION
     if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
-      return;
+      setSaveMessage({
+        type: 'error',
+        text: 'Full name is required.',
+      });
+      return false;
     }
+
+    if (!trimmedIdNumber) {
+      setSaveMessage({
+        type: 'error',
+        text: 'Alumni ID is required.',
+      });
+      return false;
+    }
+
     if (!trimmedEmail) {
-      setSaveMessage({ type: 'error', text: 'Email address cannot be empty.' });
-      return;
+      setSaveMessage({
+        type: 'error',
+        text: 'Email address is required.',
+      });
+      return false;
+    }
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      setSaveMessage({
+        type: 'error',
+        text: 'Please enter a valid email address.',
+      });
+      return false;
+    }
+
+    const token =
+      localStorage.getItem('token');
+
+    if (!token) {
+      setSaveMessage({
+        type: 'error',
+        text:
+          'Your session has expired. Please log in again.',
+      });
+      return false;
     }
 
     setSaving(true);
     setSaveMessage(null);
 
     try {
-      const userId = localStorage.getItem('userId');
-      if (!userId) throw new Error('No userId found.');
+      const response = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization:
+              `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            email: trimmedEmail,
+            id_number: trimmedIdNumber,
+          }),
+        }
+      );
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: trimmedName, email: trimmedEmail, id_number: idNumberInput.trim() })
-        .eq('id', userId);
+      const data =
+        await response.json().catch(() => ({}));
 
-      if (error) throw error;
-      setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
-      onProfileUpdated();
-    } catch (err) {
-      console.error('Failed to update profile:', err);
-      setSaveMessage({ type: 'error', text: 'Failed to save changes. Please try again.' });
+      console.log(
+        'PUT /api/auth/profile RESPONSE:',
+        data
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          data.message ||
+          'Failed to update your profile.'
+        );
+      }
+
+      // =================================================
+      // UPDATE LOCAL STATE
+      // =================================================
+      setFullNameInput(trimmedName);
+      setEmailInput(trimmedEmail);
+      setIdNumberInput(trimmedIdNumber);
+
+      // =================================================
+      // UPDATE LOCAL STORAGE
+      // =================================================
+      localStorage.setItem(
+        'userFullName',
+        trimmedName
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        trimmedEmail
+      );
+
+      localStorage.setItem(
+        'userIdNumber',
+        trimmedIdNumber
+      );
+
+      // =================================================
+      // REFRESH PROFILE
+      // =================================================
+      await onProfileUpdated();
+
+      setSaveMessage({
+        type: 'success',
+        text:
+          'Personal information updated successfully.',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Alumni profile update failed:',
+        error
+      );
+
+      setSaveMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update your personal information.',
+      });
+
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCancel = () => {
-    setFullNameInput(profile?.full_name ?? '');
-    setEmailInput(userEmail);
-    setIdNumberInput(idNumber);
+  // =====================================================
+  // CHANGE PASSWORD
+  // =====================================================
+  const changePassword = async () => {
+    setPasswordMessage('');
     setSaveMessage(null);
+
+    if (!currentPassword) {
+      setPasswordMessage(
+        'Current password is required.'
+      );
+      return false;
+    }
+
+    if (!newPassword) {
+      setPasswordMessage(
+        'New password is required.'
+      );
+      return false;
+    }
+
+    if (!confirmPassword) {
+      setPasswordMessage(
+        'Please confirm your new password.'
+      );
+      return false;
+    }
+
+    if (
+      newPassword !==
+      confirmPassword
+    ) {
+      setPasswordMessage(
+        'New password and confirm password do not match.'
+      );
+      return false;
+    }
+
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
+      return false;
+    }
+
+    if (
+      currentPassword ===
+      newPassword
+    ) {
+      setPasswordMessage(
+        'Your new password must be different from your current password.'
+      );
+      return false;
+    }
+
+    const token =
+      localStorage.getItem('token');
+
+    if (!token) {
+      setPasswordMessage(
+        'Your session has expired. Please log in again.'
+      );
+      return false;
+    }
+
+    setSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization:
+              `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password:
+              currentPassword,
+            new_password:
+              newPassword,
+            confirm_password:
+              confirmPassword,
+          }),
+        }
+      );
+
+      const data =
+        await response.json().catch(() => ({}));
+
+      console.log(
+        'PUT /api/auth/password RESPONSE:',
+        data
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          data.message ||
+          'Failed to change your password.'
+        );
+      }
+
+      // CLEAR PASSWORD FIELDS
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      setPasswordMessage('');
+
+      setSaveMessage({
+        type: 'success',
+        text:
+          'Password changed successfully.',
+      });
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Alumni password update failed:',
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to change your password.';
+
+      setPasswordMessage(message);
+
+      setSaveMessage({
+        type: 'error',
+        text: message,
+      });
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const tabs: { key: AlumniSettingsTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
-    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
-    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
-    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
+  // =====================================================
+  // TOP SAVE BUTTON
+  // =====================================================
+  const handleSaveChanges =
+    async () => {
+      if (activeTab === 'profile') {
+        await saveProfile();
+        return;
+      }
+
+      if (activeTab === 'security') {
+        await changePassword();
+        return;
+      }
+
+      setSaveMessage({
+        type: 'success',
+        text: 'Settings saved successfully.',
+      });
+    };
+
+  // =====================================================
+  // CANCEL
+  // =====================================================
+  const handleCancel = () => {
+    setSaveMessage(null);
+    setPasswordMessage('');
+
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+
+    setFullNameInput(
+      profile?.full_name ||
+      localStorage.getItem('userFullName') ||
+      ''
+    );
+
+    setEmailInput(
+      profile?.email ||
+      userEmail ||
+      localStorage.getItem('userEmail') ||
+      ''
+    );
+
+    setIdNumberInput(
+      idNumber ||
+      localStorage.getItem('userIdNumber') ||
+      ''
+    );
+  };
+
+  // =====================================================
+  // TABS
+  // =====================================================
+  const tabs: {
+    key: AlumniSettingsTab;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      key: 'profile',
+      label: 'Profile Information',
+      icon: (
+        <User className="w-4 h-4" />
+      ),
+    },
+    {
+      key: 'security',
+      label: 'Password & Security',
+      icon: (
+        <Lock className="w-4 h-4" />
+      ),
+    },
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      icon: (
+        <Bell className="w-4 h-4" />
+      ),
+    },
   ];
 
+  // =====================================================
+  // RENDER
+  // =====================================================
   return (
     <div>
-      {/* Header */}
+
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex gap-3">
-          <button
-            onClick={handleCancel}
-            disabled={saving}
-            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            Cancel
-          </button>
+          
+
           <button
             onClick={handleSaveChanges}
-            disabled={saving || loading}
+            disabled={
+              saving ||
+              loading
+            }
             className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving
+              ? 'Saving...'
+              : 'Save Changes'}
           </button>
         </div>
       </div>
 
+      {/* MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -2580,14 +3015,19 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
         </div>
       )}
 
-      {/* Body: vertical tabs + panel (matches the Dean's Settings layout) */}
+      {/* BODY */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-        {/* Sidebar tab list */}
+
+        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setSaveMessage(null);
+                setPasswordMessage('');
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
                 activeTab === tab.key
                   ? 'bg-blue-50 text-blue-700'
@@ -2600,12 +3040,21 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
           ))}
         </nav>
 
-        {/* Panel — fixed min-height so switching tabs doesn't resize the card */}
+        {/* PANEL */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+
+          {/* =================================================
+              PROFILE
+          ================================================= */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
 
               {loading ? (
                 <div className="animate-pulse space-y-4">
@@ -2613,36 +3062,67 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
                   </div>
+
                   <div className="h-10 bg-gray-100 rounded-lg" />
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+
+                    {/* FULL NAME */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
+
                       <input
                         type="text"
                         value={fullNameInput}
-                        onChange={(e) => setFullNameInput(e.target.value)}
+                        onChange={(e) => {
+                          setFullNameInput(
+                            e.target.value
+                          );
+                          setSaveMessage(null);
+                        }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
+                    {/* ALUMNI ID */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Alumni ID</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Alumni ID
+                      </label>
+
                       <input
                         type="text"
                         value={idNumberInput}
-                        onChange={(e) => setIdNumberInput(e.target.value)}
+                        onChange={(e) => {
+                          setIdNumberInput(
+                            e.target.value
+                          );
+                          setSaveMessage(null);
+                        }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
                   </div>
+
+                  {/* EMAIL */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address
+                    </label>
+
                     <input
                       type="email"
                       value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
+                      onChange={(e) => {
+                        setEmailInput(
+                          e.target.value
+                        );
+                        setSaveMessage(null);
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
                   </div>
@@ -2651,65 +3131,266 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
             </div>
           )}
 
+          {/* =================================================
+              SECURITY
+          ================================================= */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
-              <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Change Password
-                </button>
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Enable Two-Factor Authentication
-                </button>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Keep your account secure.
+              </p>
+
+              <div className="space-y-4 max-w-md">
+
+                {/* CURRENT PASSWORD */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={currentPassword}
+                      onChange={(e) => {
+                        setCurrentPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Enter current password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (value) => !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* NEW PASSWORD */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    New Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Min 8 chars, Aa1@"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowNewPassword(
+                          (value) => !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* CONFIRM PASSWORD */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirm New Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Confirm new password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (value) => !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* PASSWORD ERROR */}
+                {passwordMessage && (
+                  <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {passwordMessage}
+                  </div>
+                )}
+              </div>
+
+              {/* 2FA */}
+              <div className="mt-8 pt-5 border-t border-gray-100">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Add an extra layer of protection to your account.
+                    </p>
+                  </div>
+
+                  <span className="text-xs font-medium text-gray-500 whitespace-nowrap">
+                    Not configured
+                  </span>
+                </div>
               </div>
             </div>
           )}
 
+          {/* =================================================
+              NOTIFICATIONS
+          ================================================= */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Choose what you want to be notified about.
+              </p>
+
               <div className="space-y-4">
+
+                {/* EMAIL NOTIFICATIONS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Email Notifications</p>
-                    <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Email Notifications
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Receive email updates about your activities
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={emailNotifications}
-                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      onChange={(e) =>
+                        setEmailNotifications(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
 
+                {/* ANNOUNCEMENT ALERTS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
-                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcement Alerts
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important announcements
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      onChange={(e) =>
+                        setAnnouncementAlerts(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
               </div>
             </div>
           )}
 
+          {/* =================================================
+              ACCOUNT
+          ================================================= */}
           {activeTab === 'account' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mb-6">Manage your active session.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Account Actions
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Manage your active session.
+              </p>
+
               <div className="space-y-3 max-w-md">
                 <button
                   onClick={onLogout}
@@ -2717,7 +3398,10 @@ function AlumniSettings({ profile, userEmail, loading, onProfileUpdated, idNumbe
                 >
                   Log Out from Account
                 </button>
-                <p className="text-xs text-gray-500 text-center">This will sign you out from your session and return to the home page</p>
+
+                <p className="text-xs text-gray-500 text-center">
+                  This will sign you out from your session and return to the home page
+                </p>
               </div>
             </div>
           )}

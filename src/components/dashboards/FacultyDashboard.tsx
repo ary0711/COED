@@ -41,6 +41,7 @@ import {
   AlertTriangle,
   FileImage,
   FileCode,
+  EyeOff,
   File as FileGenericIcon,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
@@ -1886,13 +1887,18 @@ type TabKey = 'profile' | 'security' | 'notifications' | 'account';
 
 function FacultySettings() {
   const [activeTab, setActiveTab] = useState<TabKey>('profile');
+
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
   const [departmentNotices, setDepartmentNotices] = useState(true);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [saveMessage, setSaveMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   const [fullNameInput, setFullNameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
@@ -1908,37 +1914,135 @@ function FacultySettings() {
     status: '',
   });
 
+  // Password & Security
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [passwordMessage, setPasswordMessage] = useState('');
+
   const fetchMe = async () => {
     setLoading(true);
     setLoadError('');
+
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        setLoadError('Failed to load your profile.');
-        setLoading(false);
+
+      if (!token) {
+        setLoadError('Your session has expired. Please log in again.');
         return;
       }
+
+      // Use the same auth endpoint used by the Dean settings.
+      const res = await fetch('http://localhost:5000/api/auth/me', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
       const data = await res.json();
 
-      setFullNameInput(data.fullName ?? '');
-      setEmailInput(data.email ?? '');
-      setContactEmailInput(data.contactEmail ?? '');
-      setContactNoInput(data.contactNo ?? '');
-      setSpecializationInput(data.specialization ?? '');
+      if (!res.ok) {
+        throw new Error(
+          data.error || data.message || 'Failed to load your profile.'
+        );
+      }
+
+      const profile = data.profile ?? data;
+      const facultyProfile =
+        data.facultyProfile ??
+        data.faculty_profile ??
+        data.faculty ??
+        {};
+
+      const loadedFullName =
+        profile?.full_name ??
+        data.fullName ??
+        '';
+
+      const loadedEmail =
+        profile?.email ??
+        data.email ??
+        '';
+
+      const loadedContactEmail =
+        facultyProfile?.contact_email ??
+        data.contactEmail ??
+        '';
+
+      const loadedContactNo =
+        facultyProfile?.contact_no ??
+        data.contactNo ??
+        '';
+
+      const loadedSpecialization =
+        facultyProfile?.specialization ??
+        data.specialization ??
+        '';
+
+      const loadedFacultyId =
+        data.facultyId ??
+        profile?.id_number ??
+        data.idNumber ??
+        '—';
+
+      const loadedPosition =
+        data.position ??
+        facultyProfile?.position ??
+        'Faculty';
+
+      const loadedDepartment =
+        data.departmentNames?.[0] ??
+        data.departmentName ??
+        profile?.department ??
+        '—';
+
+      const loadedDateHired =
+        data.dateHired ??
+        facultyProfile?.date_hired ??
+        null;
+
+      const loadedStatus =
+        data.status ??
+        profile?.status ??
+        facultyProfile?.status ??
+        '—';
+
+      setFullNameInput(loadedFullName);
+      setEmailInput(loadedEmail);
+      setContactEmailInput(loadedContactEmail);
+      setContactNoInput(loadedContactNo);
+      setSpecializationInput(loadedSpecialization);
+
       setReadOnly({
-        facultyId: data.facultyId ?? '—',
-        position: data.position ?? '—',
-        departmentName: data.departmentNames?.[0] ?? '—',
-        dateHired: data.dateHired
-          ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        facultyId: loadedFacultyId,
+        position: loadedPosition,
+        departmentName: loadedDepartment,
+        dateHired: loadedDateHired
+          ? new Date(loadedDateHired).toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })
           : '—',
-        status: data.status ?? '—',
+        status: loadedStatus,
       });
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
+
+      localStorage.setItem('userFullName', loadedFullName);
+      localStorage.setItem('userEmail', loadedEmail);
+    } catch (error) {
+      console.error('Failed to load faculty profile:', error);
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Could not reach the server. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -1948,11 +2052,30 @@ function FacultySettings() {
     fetchMe();
   }, []);
 
-  const handleSaveChanges = async () => {
+  const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
+    const trimmedContactEmail = contactEmailInput.trim();
+    const trimmedContactNo = contactNoInput.trim();
+    const trimmedSpecialization = specializationInput.trim();
+
     if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
-      return;
+      setSaveMessage({
+        type: 'error',
+        text: 'Full name cannot be empty.',
+      });
+      return false;
+    }
+
+    if (trimmedContactEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailRegex.test(trimmedContactEmail)) {
+        setSaveMessage({
+          type: 'error',
+          text: 'Please enter a valid contact email address.',
+        });
+        return false;
+      }
     }
 
     setSaving(true);
@@ -1960,54 +2083,256 @@ function FacultySettings() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/me', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          contact_email: contactEmailInput.trim(),
-          contact_no: contactNoInput.trim(),
-          specialization: specializationInput.trim(),
-        }),
-      });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes.' });
-        return;
+      if (!token) {
+        setSaveMessage({
+          type: 'error',
+          text: 'Your session has expired. Please log in again.',
+        });
+        return false;
       }
 
-      setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
+      const res = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            email: emailInput.trim(),
+
+            // Faculty-specific information.
+            contact_email: trimmedContactEmail || null,
+            contact_no: trimmedContactNo || null,
+            specialization: trimmedSpecialization || null,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+          data.message ||
+          'Failed to save your profile.'
+        );
+      }
+
+      // Keep the UI immediately synchronized.
+      setFullNameInput(trimmedName);
+      setContactEmailInput(trimmedContactEmail);
+      setContactNoInput(trimmedContactNo);
+      setSpecializationInput(trimmedSpecialization);
+
+      localStorage.setItem('userFullName', trimmedName);
+      localStorage.setItem('userEmail', emailInput.trim());
+
+      setSaveMessage({
+        type: 'success',
+        text: 'Personal information updated successfully.',
+      });
+
+      // Reload from the database to verify the saved values.
       await fetchMe();
-    } catch {
-      setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
+
+      return true;
+    } catch (error) {
+      console.error('Faculty profile update failed:', error);
+
+      setSaveMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to save your personal information.',
+      });
+
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
+  const changePassword = async () => {
+    setPasswordMessage('');
+
+    if (!currentPassword) {
+      setPasswordMessage('Please enter your current password.');
+      return false;
+    }
+
+    if (!newPassword) {
+      setPasswordMessage('Please enter a new password.');
+      return false;
+    }
+
+    if (!confirmPassword) {
+      setPasswordMessage('Please confirm your new password.');
+      return false;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('New password and confirm password do not match.');
+      return false;
+    }
+
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
+      return false;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordMessage(
+        'Your new password must be different from your current password.'
+      );
+      return false;
+    }
+
+    setSaving(true);
+    setPasswordMessage('');
+
+    try {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        setPasswordMessage(
+          'Your session has expired. Please log in again.'
+        );
+        return false;
+      }
+
+      const res = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+          data.message ||
+          'Failed to change your password.'
+        );
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      setSaveMessage({
+        type: 'success',
+        text: 'Password changed successfully.',
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Faculty password update failed:', error);
+
+      setPasswordMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to change your password.'
+      );
+
+      setSaveMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to change your password.',
+      });
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    if (activeTab === 'profile') {
+      await saveProfile();
+      return;
+    }
+
+    if (activeTab === 'security') {
+      await changePassword();
+      return;
+    }
+
+    setSaveMessage({
+      type: 'success',
+      text: 'Settings saved successfully.',
+    });
+  };
+
   const handleCancel = () => {
-    fetchMe();
     setSaveMessage(null);
+    setPasswordMessage('');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+
+    if (activeTab === 'profile') {
+      fetchMe();
+    }
   };
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
-    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
-    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
-    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
+    {
+      key: 'profile',
+      label: 'Profile Information',
+      icon: <User className="w-4 h-4" />,
+    },
+    {
+      key: 'security',
+      label: 'Password & Security',
+      icon: <Lock className="w-4 h-4" />,
+    },
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      icon: <Bell className="w-4 h-4" />,
+    },
+    {
+      key: 'account',
+      label: 'Account Actions',
+      icon: <LogOut className="w-4 h-4" />,
+    },
   ];
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Settings
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex gap-3">
           <button
             onClick={handleCancel}
@@ -2016,6 +2341,7 @@ function FacultySettings() {
           >
             Cancel
           </button>
+
           <button
             onClick={handleSaveChanges}
             disabled={saving || loading}
@@ -2031,6 +2357,7 @@ function FacultySettings() {
           {loadError}
         </div>
       )}
+
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -2048,7 +2375,10 @@ function FacultySettings() {
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setPasswordMessage('');
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
                 activeTab === tab.key
                   ? 'bg-blue-50 text-blue-700'
@@ -2064,8 +2394,12 @@ function FacultySettings() {
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
 
               {loading ? (
                 <div className="animate-pulse space-y-4">
@@ -2079,7 +2413,9 @@ function FacultySettings() {
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
                       <input
                         type="text"
                         value={fullNameInput}
@@ -2087,8 +2423,11 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Faculty ID
+                      </label>
                       <input
                         type="text"
                         value={readOnly.facultyId}
@@ -2100,7 +2439,9 @@ function FacultySettings() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Login Email
+                      </label>
                       <input
                         type="email"
                         value={emailInput}
@@ -2108,8 +2449,11 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Contact Email
+                      </label>
                       <input
                         type="email"
                         value={contactEmailInput}
@@ -2122,7 +2466,9 @@ function FacultySettings() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Contact Number
+                      </label>
                       <input
                         type="text"
                         value={contactNoInput}
@@ -2131,8 +2477,11 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Specialization
+                      </label>
                       <input
                         type="text"
                         value={specializationInput}
@@ -2145,7 +2494,9 @@ function FacultySettings() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Position
+                      </label>
                       <input
                         type="text"
                         value={readOnly.position}
@@ -2153,8 +2504,11 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Department
+                      </label>
                       <input
                         type="text"
                         value={readOnly.departmentName}
@@ -2162,8 +2516,11 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Date Hired
+                      </label>
                       <input
                         type="text"
                         value={readOnly.dateHired}
@@ -2179,34 +2536,193 @@ function FacultySettings() {
 
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
-              <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Change Password
+              <h2 className="text-lg font-semibold text-gray-900">
+                Password & Security
+              </h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Keep your account secure.
+              </p>
+
+              <div className="space-y-4 max-w-md">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => {
+                        setCurrentPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Enter current password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowCurrentPassword((value) => !value)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={
+                        showCurrentPassword
+                          ? 'Hide current password'
+                          : 'Show current password'
+                      }
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    New Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Min 8 chars, Aa1@"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowNewPassword((value) => !value)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={
+                        showNewPassword
+                          ? 'Hide new password'
+                          : 'Show new password'
+                      }
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirm New Password
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Confirm new password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword((value) => !value)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={
+                        showConfirmPassword
+                          ? 'Hide confirmed password'
+                          : 'Show confirmed password'
+                      }
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {passwordMessage && (
+                  <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {passwordMessage}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={changePassword}
+                  disabled={saving}
+                  className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Changing Password...' : 'Change Password'}
                 </button>
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Enable Two-Factor Authentication
-                </button>
+              </div>
+
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Add an extra layer of protection to your account.
+                    </p>
+                  </div>
+
+                  <span className="text-xs font-medium text-gray-500">
+                    Not configured
+                  </span>
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Notifications
+              </h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Choose what you want to be notified about.
+              </p>
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Announcements</p>
-                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcements
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important announcements
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      onChange={(e) =>
+                        setAnnouncementAlerts(e.target.checked)
+                      }
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -2215,17 +2731,24 @@ function FacultySettings() {
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Department Notices</p>
-                    <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Department Notices
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Receive updates from your department
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={departmentNotices}
-                      onChange={(e) => setDepartmentNotices(e.target.checked)}
+                      onChange={(e) =>
+                        setDepartmentNotices(e.target.checked)
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all peer-checked:bg-blue-600 after:h-5 after:w-5 after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all"></div>
                   </label>
                 </div>
               </div>
@@ -2234,13 +2757,29 @@ function FacultySettings() {
 
           {activeTab === 'account' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mb-6">Manage your active sessions.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Account Actions
+              </h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Manage your active sessions.
+              </p>
+
               <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user_role');
+                    window.location.reload();
+                  }}
+                  className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
+                >
                   Log Out from All Devices
                 </button>
-                <p className="text-xs text-gray-500 text-center">This will sign you out from all active sessions</p>
+
+                <p className="text-xs text-gray-500 text-center">
+                  This will sign you out from all active sessions
+                </p>
               </div>
             </div>
           )}

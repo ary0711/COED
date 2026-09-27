@@ -22,6 +22,7 @@ import {
   Download,
   Eye,
   Loader2,
+  EyeOff,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { createPortal } from 'react-dom';
@@ -39,7 +40,54 @@ const studentMenuItems = [
   { icon: Settings,     label: 'Settings',                id: 'settings'     },
 ];
 
-const ME_API_URL = 'http://localhost:5000/api/me';
+const ME_API_URL = 'http://localhost:5000/api/students/me';
+function getStoredStudentId(): string {
+  // First priority: value stored during login
+  const storedId =
+    localStorage.getItem('userIdNumber')?.trim();
+
+  if (storedId) {
+    return storedId;
+  }
+
+  // Second priority: read idNumber from JWT
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    return '';
+  }
+
+  try {
+    const parts = token.split('.');
+
+    if (parts.length !== 3) {
+      return '';
+    }
+
+    const payload = JSON.parse(
+      atob(
+        parts[1]
+          .replace(/-/g, '+')
+          .replace(/_/g, '/')
+      )
+    );
+
+    return (
+      payload.idNumber ||
+      payload.studentNo ||
+      payload.student_no ||
+      ''
+    );
+
+  } catch (error) {
+    console.error(
+      'Could not read Student ID from token:',
+      error
+    );
+
+    return '';
+  }
+}
 // Available academic programs (BSIT intentionally excluded)
 const PROGRAM_OPTIONS = [
   'Bachelor of Science in Secondary Education - Mathematics',
@@ -65,6 +113,7 @@ interface StudentProfile {
   student_id: string;
   full_name: string;
   student_no: string;
+  email: string;
   year_level: number;
   program: string;
   gpa: number | null;
@@ -177,53 +226,252 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const fetchProfile = async () => {
-    setProfileLoading(true);
-    setProfileError(null);
+  setProfileLoading(true);
+  setProfileError(null);
 
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setProfileError('No logged-in user found. Please sign in again.');
-        setProfileLoading(false);
-        return;
-      }
+  try {
+    const token = localStorage.getItem('token');
 
-      const res = await fetch(ME_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        setProfileError('Failed to load your profile. Please try again.');
-        setProfileLoading(false);
-        return;
-      }
-
-      const data = await res.json();
-
-      setProfile({
-        student_id: data.userId,
-        full_name: data.fullName ?? '',
-        student_no: data.studentNo ?? '',
-        year_level: data.yearLevel ?? 0,
-        program: data.program ?? '',
-        gpa: data.gpa ?? null,
-        academic_standing: data.academicStanding ?? '—',
-        enrollment_status: data.enrollmentStatus ?? '—',
-        department_id: data.departmentId ?? null,
-        department_name: data.departmentNames?.[0] ?? null,
-      });
-      setUserEmail(data.email ?? '');
-
-      // Keep the program selector in sync with the student's actual approved program
-      if (data.program) {
-        setSelectedProgram(data.program);
-      }
-    } catch {
-      setProfileError('Could not reach the server. Please try again.');
-    } finally {
-      setProfileLoading(false);
+    if (!token) {
+      setProfileError(
+        'No logged-in user found. Please sign in again.'
+      );
+      return;
     }
-  };
+
+    const res = await fetch(ME_API_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await res.json();
+
+    console.log(
+      'FULL /api/me RESPONSE:',
+      data
+    );
+
+    if (!res.ok) {
+      setProfileError(
+        data.error ||
+        data.message ||
+        'Failed to load your profile. Please try again.'
+      );
+      return;
+    }
+
+    // =====================================================
+    // NESTED DATA
+    // =====================================================
+    const profileData =
+      data.profile || {};
+
+    const studentProfileData =
+      data.studentProfile ||
+      data.student_profile ||
+      {};
+
+    // =====================================================
+    // FULL NAME
+    // =====================================================
+    const resolvedFullName =
+      data.fullName ||
+      data.full_name ||
+      profileData.full_name ||
+      studentProfileData.full_name ||
+      localStorage.getItem(
+        'userFullName'
+      ) ||
+      '';
+
+    // =====================================================
+    // EMAIL
+    // =====================================================
+    const resolvedEmail =
+      data.email ||
+      data.userEmail ||
+      data.user_email ||
+      profileData.email ||
+      localStorage.getItem(
+        'userEmail'
+      ) ||
+      '';
+
+    // =====================================================
+    // STUDENT ID
+    //
+    // Priority:
+    // 1. data.studentNo
+    // 2. data.student_no
+    // 3. student_profiles.student_no
+    // 4. data.idNumber
+    // 5. data.id_number
+    // 6. profiles.id_number
+    // 7. localStorage.userIdNumber
+    // 8. JWT idNumber
+    // =====================================================
+    const resolvedStudentNo =
+      data.studentNo ||
+      data.student_no ||
+      studentProfileData.student_no ||
+      data.idNumber ||
+      data.id_number ||
+      profileData.id_number ||
+      getStoredStudentId() ||
+      '';
+
+    // =====================================================
+    // OTHER STUDENT DATA
+    // =====================================================
+    const resolvedYearLevel =
+      data.yearLevel ??
+      data.year_level ??
+      studentProfileData.year_level ??
+      0;
+
+    const resolvedProgram =
+      data.program ||
+      studentProfileData.program ||
+      '';
+
+    const resolvedGpa =
+      data.gpa ??
+      studentProfileData.gpa ??
+      null;
+
+    const resolvedAcademicStanding =
+      data.academicStanding ||
+      data.academic_standing ||
+      studentProfileData.academic_standing ||
+      '—';
+
+    const resolvedEnrollmentStatus =
+      data.enrollmentStatus ||
+      data.enrollment_status ||
+      studentProfileData.enrollment_status ||
+      '—';
+
+    const resolvedDepartmentId =
+      data.departmentId ??
+      data.department_id ??
+      studentProfileData.department_id ??
+      null;
+
+    const resolvedDepartmentName =
+      data.departmentName ||
+      data.departmentNames?.[0] ||
+      null;
+
+    const resolvedUserId =
+      data.userId ||
+      data.id ||
+      profileData.id ||
+      '';
+
+    // =====================================================
+    // DEBUG
+    // =====================================================
+    console.log(
+      'RESOLVED STUDENT PROFILE:',
+      {
+        userId: resolvedUserId,
+        fullName: resolvedFullName,
+        studentNo: resolvedStudentNo,
+        email: resolvedEmail,
+        yearLevel: resolvedYearLevel,
+        program: resolvedProgram,
+      }
+    );
+
+    // =====================================================
+    // SET PROFILE
+    // =====================================================
+    setProfile({
+      student_id:
+        resolvedUserId,
+
+      full_name:
+        resolvedFullName,
+
+      student_no:
+        resolvedStudentNo,
+
+      email:
+        resolvedEmail,
+
+      year_level:
+        resolvedYearLevel,
+
+      program:
+        resolvedProgram,
+
+      gpa:
+        resolvedGpa,
+
+      academic_standing:
+        resolvedAcademicStanding,
+
+      enrollment_status:
+        resolvedEnrollmentStatus,
+
+      department_id:
+        resolvedDepartmentId,
+
+      department_name:
+        resolvedDepartmentName,
+    });
+
+    setUserEmail(
+      resolvedEmail
+    );
+
+    // =====================================================
+    // KEEP LOCAL STORAGE SYNCHRONIZED
+    // =====================================================
+    if (resolvedFullName) {
+      localStorage.setItem(
+        'userFullName',
+        resolvedFullName
+      );
+    }
+
+    if (resolvedEmail) {
+      localStorage.setItem(
+        'userEmail',
+        resolvedEmail
+      );
+    }
+
+    if (resolvedStudentNo) {
+      localStorage.setItem(
+        'userIdNumber',
+        resolvedStudentNo
+      );
+    }
+
+    if (resolvedProgram) {
+      setSelectedProgram(
+        resolvedProgram
+      );
+    }
+
+  } catch (error) {
+    console.error(
+      'FETCH STUDENT PROFILE ERROR:',
+      error
+    );
+
+    setProfileError(
+      'Could not reach the server. Please try again.'
+    );
+
+  } finally {
+    setProfileLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchProfile();
@@ -1520,7 +1768,10 @@ function InquiryContact() {
 }
 
 // ====================== SETTINGS ======================
-type StudentSettingsTab = 'profile' | 'security' | 'notifications';
+type StudentSettingsTab =
+  'profile' |
+  'security' |
+  'notifications';
 
 interface StudentSettingsProps {
   selectedProgram: string;
@@ -1531,116 +1782,594 @@ interface StudentSettingsProps {
   onProfileUpdated: () => void;
 }
 
-function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
-  const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
+function StudentSettings({
+  profile,
+  userEmail,
+  loading,
+  onProfileUpdated,
+}: StudentSettingsProps) {
 
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+  const [activeTab, setActiveTab] =
+    useState<StudentSettingsTab>('profile');
 
-  // Editable fields, initialized from profile/auth once loaded
-  const [fullNameInput, setFullNameInput] = useState('');
-  const [studentNoInput, setStudentNoInput] = useState('');
-  const [emailInput, setEmailInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // =====================================================
+  // NOTIFICATIONS
+  // =====================================================
+  const [emailNotifications, setEmailNotifications] =
+    useState(true);
 
+  const [announcementAlerts, setAnnouncementAlerts] =
+    useState(true);
+
+  // =====================================================
+  // PROFILE
+  // =====================================================
+  const [fullNameInput, setFullNameInput] =
+    useState('');
+
+  const [studentNoInput, setStudentNoInput] =
+    useState('');
+
+  const [emailInput, setEmailInput] =
+    useState('');
+
+  // =====================================================
+  // SECURITY
+  // =====================================================
+  const [currentPassword, setCurrentPassword] =
+    useState('');
+
+  const [newPassword, setNewPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  // =====================================================
+  // STATES
+  // =====================================================
+  const [saving, setSaving] =
+    useState(false);
+
+  const [saveMessage, setSaveMessage] =
+    useState<{
+      type: 'success' | 'error';
+      text: string;
+    } | null>(null);
+
+  const [passwordMessage, setPasswordMessage] =
+    useState('');
+
+  // =====================================================
+  // LOAD PROFILE FROM DASHBOARD
+  // =====================================================
   useEffect(() => {
-    if (profile?.full_name) {
-      setFullNameInput(profile.full_name);
-    }
-    if (profile?.student_no) {
-      setStudentNoInput(profile.student_no);
-    }
-  }, [profile?.full_name, profile?.student_no]);
+  const storedStudentId =
+    getStoredStudentId();
 
-  useEffect(() => {
-    setEmailInput(userEmail);
-  }, [userEmail]);
+  if (!profile) {
+    setFullNameInput('');
 
-  const handleSaveChanges = async () => {
-    const trimmedName = fullNameInput.trim();
-    const trimmedStudentNo = studentNoInput.trim();
-    const trimmedEmail = emailInput.trim();
+    setStudentNoInput(
+      storedStudentId
+    );
 
-    if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
-      return;
+    setEmailInput(
+      userEmail ||
+      localStorage.getItem(
+        'userEmail'
+      ) ||
+      ''
+    );
+
+    return;
+  }
+
+  setFullNameInput(
+    profile.full_name || ''
+  );
+
+  setStudentNoInput(
+    profile.student_no ||
+    storedStudentId ||
+    ''
+  );
+
+  setEmailInput(
+    profile.email ||
+    userEmail ||
+    localStorage.getItem(
+      'userEmail'
+    ) ||
+    ''
+  );
+
+}, [profile, userEmail]);
+
+  // =====================================================
+  // SAVE PERSONAL INFORMATION
+  // =====================================================
+  const saveProfile = async () => {
+  const trimmedName =
+    fullNameInput.trim();
+
+  const trimmedStudentNo =
+    studentNoInput.trim();
+
+  const trimmedEmail =
+    emailInput.trim();
+
+  // =====================================================
+  // VALIDATION
+  // =====================================================
+  if (!trimmedName) {
+    setSaveMessage({
+      type: 'error',
+      text: 'Full name is required.',
+    });
+    return false;
+  }
+
+  if (!trimmedStudentNo) {
+    setSaveMessage({
+      type: 'error',
+      text: 'Student ID is required.',
+    });
+    return false;
+  }
+
+  if (!trimmedEmail) {
+    setSaveMessage({
+      type: 'error',
+      text: 'Email address is required.',
+    });
+    return false;
+  }
+
+  const emailRegex =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailRegex.test(trimmedEmail)) {
+    setSaveMessage({
+      type: 'error',
+      text:
+        'Please enter a valid email address.',
+    });
+    return false;
+  }
+
+  const token =
+    localStorage.getItem('token');
+
+  if (!token) {
+    setSaveMessage({
+      type: 'error',
+      text:
+        'Your session has expired. Please log in again.',
+    });
+    return false;
+  }
+
+  setSaving(true);
+  setSaveMessage(null);
+
+  try {
+    // =================================================
+    // UPDATE STUDENT PROFILE
+    // =================================================
+    const response =
+  await fetch(
+  'http://localhost:5000/api/students/me',
+        {
+          method: 'PATCH',
+
+          headers: {
+            'Content-Type':
+              'application/json',
+
+            Authorization:
+              `Bearer ${token}`,
+          },
+
+          body: JSON.stringify({
+            full_name:
+              trimmedName,
+
+            email:
+              trimmedEmail,
+
+            student_no:
+              trimmedStudentNo,
+          }),
+        }
+      );
+
+    const data =
+      await response.json();
+
+    console.log(
+      'PATCH /api/me RESPONSE:',
+      data
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        data.message ||
+        'Failed to update your profile.'
+      );
     }
-    if (!trimmedStudentNo) {
-      setSaveMessage({ type: 'error', text: 'Student ID cannot be empty.' });
-      return;
+
+    // =================================================
+    // UPDATE LOCAL STATE
+    // =================================================
+    setFullNameInput(
+      trimmedName
+    );
+
+    setStudentNoInput(
+      trimmedStudentNo
+    );
+
+    setEmailInput(
+      trimmedEmail
+    );
+
+    // =================================================
+    // UPDATE LOCAL STORAGE
+    // =================================================
+    localStorage.setItem(
+      'userFullName',
+      trimmedName
+    );
+
+    localStorage.setItem(
+      'userEmail',
+      trimmedEmail
+    );
+
+    localStorage.setItem(
+      'userIdNumber',
+      trimmedStudentNo
+    );
+
+    // =================================================
+    // REFRESH DASHBOARD
+    // =================================================
+    await onProfileUpdated();
+
+    setSaveMessage({
+      type: 'success',
+      text:
+        'Personal information updated successfully.',
+    });
+
+    return true;
+
+  } catch (error) {
+    console.error(
+      'Student profile update failed:',
+      error
+    );
+
+    setSaveMessage({
+      type: 'error',
+      text:
+        error instanceof Error
+          ? error.message
+          : 'Failed to update your personal information.',
+    });
+
+    return false;
+
+  } finally {
+    setSaving(false);
+  }
+};
+
+  // =====================================================
+  // CHANGE PASSWORD
+  // =====================================================
+  const changePassword = async () => {
+
+    setPasswordMessage('');
+    setSaveMessage(null);
+
+    if (!currentPassword) {
+      setPasswordMessage(
+        'Current password is required.'
+      );
+      return false;
     }
-    if (!trimmedEmail) {
-      setSaveMessage({ type: 'error', text: 'Email address cannot be empty.' });
-      return;
+
+    if (!newPassword) {
+      setPasswordMessage(
+        'New password is required.'
+      );
+      return false;
+    }
+
+    if (!confirmPassword) {
+      setPasswordMessage(
+        'Please confirm your new password.'
+      );
+      return false;
+    }
+
+    if (
+      newPassword !==
+      confirmPassword
+    ) {
+      setPasswordMessage(
+        'New password and confirm password do not match.'
+      );
+      return false;
+    }
+
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
+      return false;
+    }
+
+    if (
+      currentPassword ===
+      newPassword
+    ) {
+      setPasswordMessage(
+        'Your new password must be different from your current password.'
+      );
+      return false;
+    }
+
+    const token =
+      localStorage.getItem('token');
+
+    if (!token) {
+      setPasswordMessage(
+        'Your session has expired. Please log in again.'
+      );
+      return false;
     }
 
     setSaving(true);
-    setSaveMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/me', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          student_no: trimmedStudentNo,
-        }),
+
+      const response =
+        await fetch(
+          'http://localhost:5000/api/auth/password',
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type':
+                'application/json',
+              Authorization:
+                `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              current_password:
+                currentPassword,
+
+              new_password:
+                newPassword,
+
+              confirm_password:
+                confirmPassword,
+            }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      console.log(
+        'PUT /api/auth/password:',
+        data
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          data.message ||
+          'Failed to change your password.'
+        );
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      setSaveMessage({
+        type: 'success',
+        text:
+          'Password changed successfully.',
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes. Please try again.' });
-        return;
-      }
+      setPasswordMessage('');
 
-      if (trimmedEmail !== userEmail) {
-        setSaveMessage({ type: 'success', text: 'Name and Student ID saved. Email address changes are not yet supported — contact your Department Chair to update your email.' });
-      } else {
-        setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
-      }
+      return true;
 
-      onProfileUpdated();
-    } catch {
-      setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
+    } catch (error) {
+
+      console.error(
+        'Student password update failed:',
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to change your password.';
+
+      setPasswordMessage(
+        message
+      );
+
+      setSaveMessage({
+        type: 'error',
+        text: message,
+      });
+
+      return false;
+
     } finally {
+
       setSaving(false);
+
     }
   };
 
-  const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
-    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
-    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+  // =====================================================
+  // TOP SAVE BUTTON
+  // =====================================================
+  const handleSaveChanges =
+    async () => {
+
+      if (
+        activeTab ===
+        'profile'
+      ) {
+        await saveProfile();
+        return;
+      }
+
+      if (
+        activeTab ===
+        'security'
+      ) {
+        await changePassword();
+        return;
+      }
+
+      setSaveMessage({
+        type: 'success',
+        text:
+          'Settings saved successfully.',
+      });
+    };
+
+  // =====================================================
+  // CANCEL
+  // =====================================================
+  const handleCancel = () => {
+
+    setSaveMessage(null);
+    setPasswordMessage('');
+
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+
+    setFullNameInput(
+      profile?.full_name || ''
+    );
+
+    setStudentNoInput(
+      profile?.student_no || ''
+    );
+
+    setEmailInput(
+      profile?.email ||
+      userEmail ||
+      localStorage.getItem(
+        'userEmail'
+      ) ||
+      ''
+    );
+  };
+
+  // =====================================================
+  // TABS
+  // =====================================================
+  const tabs: {
+    key: StudentSettingsTab;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+
+    {
+      key: 'profile',
+      label: 'Profile Information',
+      icon:
+        <User className="w-4 h-4" />,
+    },
+
+    {
+      key: 'security',
+      label: 'Password & Security',
+      icon:
+        <Lock className="w-4 h-4" />,
+    },
+
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      icon:
+        <Bell className="w-4 h-4" />,
+    },
+
   ];
 
+  // =====================================================
+  // RENDER
+  // =====================================================
   return (
     <div>
-      {/* Header */}
+
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex gap-3">
+
           <button
-            onClick={handleSaveChanges}
-            disabled={saving || loading}
+            onClick={
+              handleSaveChanges
+            }
+            disabled={
+              saving ||
+              loading ||
+              !profile
+            }
             className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving
+              ? 'Saving...'
+              : 'Save Changes'}
           </button>
+
         </div>
       </div>
 
+      {/* MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
-            saveMessage.type === 'success'
+            saveMessage.type ===
+            'success'
               ? 'bg-green-50 border-green-200 text-green-700'
               : 'bg-red-50 border-red-200 text-red-700'
           }`}
@@ -1649,14 +2378,23 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </div>
       )}
 
-      {/* Body: vertical tabs + panel */}
+      {/* BODY */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-        {/* Sidebar tab list */}
+
+        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
+
           {tabs.map((tab) => (
+
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(
+                  tab.key
+                );
+                setPasswordMessage('');
+                setSaveMessage(null);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
                 activeTab === tab.key
                   ? 'bg-blue-50 text-blue-700'
@@ -1666,116 +2404,441 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
               {tab.icon}
               {tab.label}
             </button>
+
           ))}
+
         </nav>
 
-        {/* Panel */}
+        {/* PANEL */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
-          {activeTab === 'profile' && (
+
+          {/* =================================================
+              PROFILE
+          ================================================= */}
+          {activeTab ===
+            'profile' && (
+
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
 
               {loading ? (
+
                 <div className="animate-pulse space-y-4">
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
                     <div className="h-10 bg-gray-100 rounded-lg" />
+
                     <div className="h-10 bg-gray-100 rounded-lg" />
+
                   </div>
+
                   <div className="h-10 bg-gray-100 rounded-lg" />
+
                 </div>
+
+              ) : !profile ? (
+
+                <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                  Your profile information could not be loaded.
+                </div>
+
               ) : (
+
                 <>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+                    {/* FULL NAME */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
+
                       <input
                         type="text"
-                        value={fullNameInput}
-                        onChange={(e) => setFullNameInput(e.target.value)}
+                        value={
+                          fullNameInput
+                        }
+                        onChange={(e) =>
+                          setFullNameInput(
+                            e.target.value
+                          )
+                        }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
+
                     </div>
+
+                    {/* STUDENT ID */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
+
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Student ID
+                      </label>
+
                       <input
                         type="text"
-                        value={studentNoInput}
-                        onChange={(e) => setStudentNoInput(e.target.value)}
+                        value={
+                          studentNoInput
+                        }
+                        onChange={(e) =>
+                          setStudentNoInput(
+                            e.target.value
+                          )
+                        }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
+
                     </div>
+
                   </div>
+
+                  {/* EMAIL */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address
+                    </label>
+
                     <input
                       type="email"
-                      value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
+                      value={
+                        emailInput
+                      }
+                      onChange={(e) =>
+                        setEmailInput(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                   </div>
+
                 </>
+
               )}
+
             </div>
+
           )}
 
-          {activeTab === 'security' && (
+          {/* =================================================
+              SECURITY
+          ================================================= */}
+          {activeTab ===
+            'security' && (
+
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
-              <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Change Password
-                </button>
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Enable Two-Factor Authentication
-                </button>
+
+              <h2 className="text-lg font-semibold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Keep your account secure.
+              </p>
+
+              <div className="space-y-4 max-w-md">
+
+                {/* CURRENT */}
+                <div>
+
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Password
+                  </label>
+
+                  <div className="relative">
+
+                    <input
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={
+                        currentPassword
+                      }
+                      onChange={(e) => {
+                        setCurrentPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Enter current password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (value) =>
+                            !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+
+                  </div>
+
+                </div>
+
+                {/* NEW */}
+                <div>
+
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    New Password
+                  </label>
+
+                  <div className="relative">
+
+                    <input
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={
+                        newPassword
+                      }
+                      onChange={(e) => {
+                        setNewPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Min 8 chars, Aa1@"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowNewPassword(
+                          (value) =>
+                            !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+
+                  </div>
+
+                </div>
+
+                {/* CONFIRM */}
+                <div>
+
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirm New Password
+                  </label>
+
+                  <div className="relative">
+
+                    <input
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={
+                        confirmPassword
+                      }
+                      onChange={(e) => {
+                        setConfirmPassword(
+                          e.target.value
+                        );
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Confirm new password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (value) =>
+                            !value
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+
+                  </div>
+
+                </div>
+
+                {/* ERROR */}
+                {passwordMessage && (
+                  <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {passwordMessage}
+                  </div>
+                )}
+
+                
+
               </div>
+
+              {/* 2FA */}
+              <div className="mt-6 pt-5 border-t border-gray-100">
+
+                <div className="flex items-center justify-between">
+
+                  <div>
+
+                    <p className="text-sm font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Add an extra layer of protection to your account.
+                    </p>
+
+                  </div>
+
+                  <span className="text-xs font-medium text-gray-500">
+                    Not configured
+                  </span>
+
+                </div>
+
+              </div>
+
             </div>
+
           )}
 
-          {activeTab === 'notifications' && (
+          {/* =================================================
+              NOTIFICATIONS
+          ================================================= */}
+          {activeTab ===
+            'notifications' && (
+
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+
+              <h2 className="text-lg font-semibold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Choose what you want to be notified about.
+              </p>
+
               <div className="space-y-4">
+
+                {/* EMAIL NOTIFICATIONS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Email Notifications</p>
-                    <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+
+                    <p className="text-sm font-medium text-gray-900">
+                      Email Notifications
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Receive email updates about your activities
+                    </p>
+
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
+
                     <input
                       type="checkbox"
-                      checked={emailNotifications}
-                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      checked={
+                        emailNotifications
+                      }
+                      onChange={(e) =>
+                        setEmailNotifications(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+
                   </label>
+
                 </div>
 
+                {/* ANNOUNCEMENT ALERTS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
-                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcement Alerts
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important announcements
+                    </p>
+
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
+
                     <input
                       type="checkbox"
-                      checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      checked={
+                        announcementAlerts
+                      }
+                      onChange={(e) =>
+                        setAnnouncementAlerts(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+
                   </label>
+
                 </div>
+
               </div>
+
             </div>
+
           )}
+
         </div>
       </div>
+
     </div>
   );
 }
