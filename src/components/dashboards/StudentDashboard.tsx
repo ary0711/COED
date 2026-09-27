@@ -289,7 +289,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
               setActiveMenuItem={setActiveMenuItem}
             />
           )}
-          {activeMenuItem === 'faculty'     && <FacultyDepartments />}
+          {activeMenuItem === 'faculty'     && <FacultyDepartments profile={profile} />}
           {activeMenuItem === 'resources'   && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
           {activeMenuItem === 'inquiry'     && <InquiryContact />}
@@ -505,6 +505,7 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
         </div>
 
         {/* Card 2: Year Level */}
+        {/* Card 2: Year Level & Program */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
             <GraduationCap className="w-5 h-5" />
@@ -512,7 +513,12 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
           <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
             {loading ? <span className="inline-block h-6 w-16 bg-gray-200 rounded animate-pulse" /> : displayYearLevel}
           </div>
-          <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Year Level</div>
+          <div 
+            className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5 truncate" 
+            title={profile?.program || 'Program'}
+          >
+            Year Level {profile?.program ? ` • ${profile.program}` : ''}
+          </div>
         </div>
 
         {/* Card 3: Academic Standing */}
@@ -612,101 +618,139 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
 }
 
 // ====================== FACULTY DEPARTMENTS ======================
-interface FacultyMember {
-  id: string;
-  full_name: string;
-  email: string | null;
-  position: string | null;
-}
-
-function FacultyDepartments() {
-  const [faculty, setFaculty] = useState<FacultyMember[]>([]);
-  const [departmentName, setDepartmentName] = useState<string>('');
+function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
+  const [faculty, setFaculty] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     const load = async () => {
+      if (!profile) return;
       setLoading(true);
       setLoadError('');
+      
       try {
-        const token = localStorage.getItem('token');
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, role, program, department')
+          .in('role', ['department_chair', 'faculty']);
 
-        const meRes = await fetch(ME_API_URL, {
-          headers: { Authorization: `Bearer ${token}` },
+        if (error) throw error;
+
+        const studentProg = profile.program || profile.department_name || '';
+
+        // Smart string matcher to link Faculty/Chairs to the Student's Program
+        const isMatch = (targetStr: string, stProg: string) => {
+          const t = (targetStr || '').toLowerCase();
+          const s = (stProg || '').toLowerCase();
+          if (!t || !s) return false;
+          if (t === s || t.includes(s) || s.includes(t)) return true;
+          if ((s.includes('beed') || s.includes('elementary')) && (t.includes('beed') || t.includes('elementary'))) return true;
+          if ((s.includes('btled') || s.includes('technology') || s.includes('livelihood')) && (t.includes('btled') || t.includes('technology') || t.includes('livelihood'))) return true;
+          if ((s.includes('math') || s.includes('mathematics')) && (t.includes('math') || t.includes('mathematics'))) return true;
+          if (s.includes('english') && t.includes('english')) return true;
+          if (s.includes('science') && t.includes('science')) return true;
+          return false;
+        };
+
+        const matched = (data || []).filter((p) => {
+          const targetStr = [p.program, p.department].filter(Boolean).join(' ');
+          return isMatch(targetStr, studentProg);
         });
-        if (!meRes.ok) {
-          setLoadError('Failed to load your profile.');
-          setLoading(false);
-          return;
-        }
-        const me = await meRes.json();
 
-        if (!me.departmentId) {
-          setLoadError('No department is associated with your program yet.');
-          setLoading(false);
-          return;
-        }
-
-        setDepartmentName(me.departmentNames?.[0] ?? '');
-
-        const facultyRes = await fetch(`http://localhost:5000/api/faculty/by-department/${me.departmentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        // Sort so the Chairman always appears at the top
+        matched.sort((a, b) => {
+          if (a.role === 'department_chair' && b.role !== 'department_chair') return -1;
+          if (a.role !== 'department_chair' && b.role === 'department_chair') return 1;
+          return (a.full_name || '').localeCompare(b.full_name || '');
         });
-        if (!facultyRes.ok) {
-          setLoadError('Failed to load faculty for your department.');
-          setLoading(false);
-          return;
-        }
-        const facultyData = await facultyRes.json();
-        setFaculty(facultyData ?? []);
-      } catch {
-        setLoadError('Could not reach the server. Please try again.');
+
+        setFaculty(matched);
+      } catch (err) {
+        setLoadError('Could not reach the database. Please try again.');
       } finally {
         setLoading(false);
       }
     };
-    load();
-  }, []);
+
+    if (profile) {
+      load();
+    }
+  }, [profile]);
+
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  const departmentName = profile.department_name || profile.program || 'Your Program';
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Departments</h1>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-1">
-          {departmentName ? `${departmentName} Faculty` : 'My Faculty Members'}
+          {departmentName}
         </h2>
-        <p className="text-xs text-gray-400 mb-4">Faculty assigned to your program's department</p>
+        <p className="text-xs text-gray-400 mb-6">Faculty assigned to your specific program</p>
 
         {loading ? (
           <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <Loader2 className="w-5 h-5 border-t-transparent rounded-full animate-spin text-blue-600" />
             <span className="text-sm">Loading faculty...</span>
           </div>
         ) : faculty.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-            <User className="w-10 h-10 mb-2 opacity-40" />
-            <p className="text-sm text-gray-400">No faculty found for your department yet.</p>
+          <div className="flex flex-col items-center justify-center h-48 text-gray-300">
+            <Users className="w-12 h-12 mb-3 opacity-40" />
+            <p className="text-sm text-gray-400">No faculty members found for your program yet.</p>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {faculty.map((f) => (
-              <div key={f.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-gray-900 text-sm sm:text-base">{f.full_name}</div>
-                    <div className="text-xs sm:text-sm text-gray-600">{f.position ?? 'Faculty'}</div>
-                    {f.email && <div className="text-xs sm:text-sm text-blue-600">{f.email}</div>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {faculty.map((f) => {
+              const isChair = f.role === 'department_chair';
+              
+              return (
+                <div key={f.id} className={`p-4 rounded-xl border transition-colors flex items-center justify-between gap-3 ${
+                  isChair ? 'bg-blue-50/40 border-blue-200 hover:bg-blue-50' : 'bg-white border-gray-100 hover:bg-gray-50'
+                }`}>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-12 h-12 rounded-full flex flex-shrink-0 items-center justify-center font-bold text-lg shadow-sm ${
+                      isChair ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {(f.full_name || 'U').substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-bold text-gray-900 text-sm sm:text-base flex items-center gap-2 truncate">
+                        <span className="truncate">{f.full_name}</span>
+                        {isChair && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] uppercase tracking-wider font-bold rounded-md flex-shrink-0">
+                            Chairman
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                        {isChair ? 'Department Chairman' : (f.position || 'Faculty Member')}
+                      </div>
+                      {f.email && (
+                        <div className="text-xs sm:text-sm text-blue-600 mt-0.5 truncate">
+                          {f.email}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <User className="w-7 h-7 text-gray-400 flex-shrink-0" />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
