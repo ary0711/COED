@@ -273,7 +273,9 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
   // Faculty picks "Save as PDF" as the destination inside the browser's own
   // print dialog — no extra PDF library needed. The print-only CSS below
   // makes sure ONLY the letterhead + table shows up in that PDF/printout,
-  // not the upload form, sidebar, or search/sort toolbar.
+  // not the upload form, sidebar, or search/sort toolbar. The header and
+  // footer images are pinned with position: fixed so they repeat
+  // identically on every page of the printout, not just the first.
   const handlePrint = () => window.print();
 
   const reset = () => {
@@ -314,6 +316,15 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
         should appear when the faculty prints or "Save as PDF"s the page.
         Everything else on the page (upload form, sidebar, toolbar, nav,
         browser chrome we can't touch) is hidden for the print media type.
+
+        Header/footer repetition: both the CTU header and footer images
+        are pinned with position: fixed inside #dl-print-area, so browsers
+        redraw them on every printed page (not just the first). The
+        padding-top/padding-bottom on #dl-print-area reserve space so the
+        actual table content never renders underneath either fixed image.
+        If your header/footer images have a different aspect ratio than
+        assumed here, adjust padding-top (currently 130px) and
+        padding-bottom (currently 110px) so there's no gap or overlap.
       */}
       <style>{`
         @media print {
@@ -330,12 +341,24 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             width: 100%;
             margin: 0;
             padding: 0;
+            padding-top: 130px;
             padding-bottom: 110px;
             box-shadow: none !important;
             border: none !important;
           }
           #dl-print-area .no-print {
             display: none !important;
+          }
+          #dl-print-area .print-header-fixed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            background: white;
+            z-index: 10;
           }
           #dl-print-area .print-footer-fixed {
             position: fixed;
@@ -645,12 +668,14 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </p>
               </div>
 
-              {/* CTU Header image — appears on screen preview and on the printed/PDF output */}
-              <div className="px-4 sm:px-6 pt-4">
+              {/* CTU Header image — shown at top on screen; repeats identically
+                  on every printed/PDF page via the .print-header-fixed rule above */}
+              <div className="px-4 sm:px-6 pt-4 print-header-fixed">
                 <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain" />
               </div>
 
-              {/* Letterhead-style header — this is what should appear on the PDF */}
+              {/* Letterhead-style title block — appears once, right under the
+                  header, on the screen preview and on page 1 of the printout */}
               <div className="px-4 sm:px-6 pt-2 pb-4 border-b border-gray-100 text-center">
                 <p className="text-xs text-gray-400 tracking-wide uppercase">Cebu Technological University</p>
                 <h2 className="text-base sm:text-lg font-bold text-gray-900 mt-1">Dean's List</h2>
