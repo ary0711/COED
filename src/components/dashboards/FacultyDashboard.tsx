@@ -38,11 +38,16 @@ import {
   MapPin,
   Filter,
   Search,
+  AlertTriangle,
+  FileImage,
+  FileCode,
+  File as FileGenericIcon,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { createPortal } from 'react-dom';
 import { DashboardHeader } from '../DashboardHeader';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { renderAsync } from 'docx-preview';
 import { AccomplishmentReport } from './AccomplishmentReport';
 import { ExtensionReport } from './ExtensionReport';
 import { DeansListGenerator } from './DeansListGenerator';
@@ -811,12 +816,14 @@ function TeachingLoad() {
     </>
   );
 }
-
 // ====================== 5.3 ACHIEVEMENTS ======================
+
 interface FileAttachment {
   name: string;
   url: string;
+  path?: string;
   size?: number;
+  type?: string;
 }
 
 interface AchievementSubmission {
@@ -827,11 +834,44 @@ interface AchievementSubmission {
   date_received: string | null;
   file_name: string | null;
   file_url: string | null;
+  file_path?: string | null;
   files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
   dean_remarks: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface ModalState {
+  isOpen: boolean;
+  type: 'success' | 'error' | 'validation';
+  title: string;
+  message: string;
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileExtension(filename: string): string {
+  return (filename.split('.').pop() || '').toLowerCase();
+}
+
+function getFileIcon(filename: string, className = 'w-4 h-4') {
+  const ext = getFileExtension(filename);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className={className} />;
+  }
+  if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+  if (['pdf', 'docx', 'doc'].includes(ext)) {
+    return <FileText className={className} />;
+  }
+  return <FileGenericIcon className={className} />;
 }
 
 export default function FacultyAchievements() {
@@ -844,6 +884,10 @@ export default function FacultyAchievements() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // In-Modal Preview State
+  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+  const localBlobUrlsRef = useRef<Map<string, string>>(new Map());
+
   const [modal, setModal] = useState<ModalState>({
     isOpen: false,
     type: 'success',
@@ -854,6 +898,12 @@ export default function FacultyAchievements() {
   const closeModal = () => {
     setModal((prev) => ({ ...prev, isOpen: false }));
   };
+
+  const handleClosePreview = useCallback(() => {
+    localBlobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    localBlobUrlsRef.current.clear();
+    setPreviewFile(null);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -877,6 +927,24 @@ export default function FacultyAchievements() {
 
   const removeSelectedFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePreviewLocalFile = (file: File) => {
+    let blobUrl = localBlobUrlsRef.current.get(file.name);
+    if (!blobUrl) {
+      blobUrl = URL.createObjectURL(file);
+      localBlobUrlsRef.current.set(file.name, blobUrl);
+    }
+    setPreviewFile({
+      name: file.name,
+      url: blobUrl,
+      size: file.size,
+      type: file.type,
+    });
+  };
+
+  const handlePreviewRemoteFile = (file: FileAttachment) => {
+    setPreviewFile(file);
   };
 
   useEffect(() => {
@@ -976,13 +1044,9 @@ export default function FacultyAchievements() {
       return a.files;
     }
     if (a.file_url) {
-      return [{ name: a.file_name || 'Attached Document', url: a.file_url }];
+      return [{ name: a.file_name || 'Attached Document', url: a.file_url, path: a.file_path || undefined }];
     }
     return [];
-  };
-
-  const openFile = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -1094,7 +1158,7 @@ export default function FacultyAchievements() {
                     <input
                       type="file"
                       multiple
-                      accept=".pdf,.jpg,.jpeg,.png,.docx,.doc"
+                      accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.txt,.csv"
                       className="hidden"
                       onChange={handleFileChange}
                     />
@@ -1112,13 +1176,26 @@ export default function FacultyAchievements() {
                             className="flex items-center justify-between p-2.5 bg-blue-50/50 border border-blue-100/80 rounded-xl text-xs"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                              <span className="truncate max-w-[240px] sm:max-w-[340px] font-medium text-blue-950">
+                              <div className="p-1 bg-white rounded-md border border-blue-100 text-blue-700">
+                                {getFileIcon(file.name, 'w-3.5 h-3.5')}
+                              </div>
+                              <span className="truncate max-w-[200px] sm:max-w-[300px] font-medium text-blue-950" title={file.name}>
                                 {file.name}
                               </span>
                             </div>
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-gray-400 text-[11px]">{(file.size / 1024).toFixed(0)} KB</span>
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              {/* Preview staged local file before uploading */}
+                              <button
+                                type="button"
+                                onClick={() => handlePreviewLocalFile(file)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                                title="Preview file"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Preview</span>
+                              </button>
+
+                              <span className="text-gray-400 text-[11px]">{formatFileSize(file.size)}</span>
                               <button
                                 type="button"
                                 onClick={() => removeSelectedFile(idx)}
@@ -1214,7 +1291,8 @@ export default function FacultyAchievements() {
                             {files.map((f, i) => (
                               <button
                                 key={i}
-                                onClick={() => openFile(f.url)}
+                                type="button"
+                                onClick={() => handlePreviewRemoteFile(f)}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-colors border border-gray-200/80 font-medium"
                                 title="Open attachment"
                               >
@@ -1293,7 +1371,8 @@ export default function FacultyAchievements() {
                             {files.map((f, i) => (
                               <button
                                 key={i}
-                                onClick={() => openFile(f.url)}
+                                type="button"
+                                onClick={() => handlePreviewRemoteFile(f)}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-gray-50 hover:bg-blue-50 text-blue-700 border border-gray-200/80 font-medium"
                               >
                                 <Eye size={12} />
@@ -1368,6 +1447,15 @@ export default function FacultyAchievements() {
         </div>
       </div>
 
+      {/* --- IN-APP GOOGLE CLASSROOM-STYLE PREVIEW MODAL --- */}
+      {previewFile && (
+        <AchievementPreviewModal
+          file={previewFile}
+          onClose={handleClosePreview}
+        />
+      )}
+
+      {/* --- NOTIFICATION MODAL --- */}
       {modal.isOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center border border-gray-100">
@@ -1400,6 +1488,257 @@ export default function FacultyAchievements() {
         document.body
       )}
     </div>
+  );
+}
+
+// ─── Achievement Document Viewer Modal (Classroom Design Canvas) ───────────────
+
+function AchievementPreviewModal({
+  file,
+  onClose,
+}: {
+  file: FileAttachment;
+  onClose: () => void;
+}) {
+  const [activeUrl, setActiveUrl] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<boolean>(false);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+
+  const ext = useMemo(() => getFileExtension(file.name), [file.name]);
+  const isPdf = ext === 'pdf';
+  const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
+  const isDocx = ext === 'docx' || ext === 'doc';
+  const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
+
+  // Lock body scroll and listen for Escape key
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  // Resolve signed storage URL if path exists, otherwise use public/blob url
+  useEffect(() => {
+    let isCancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    setTextContent(null);
+
+    const resolveUrl = async () => {
+      try {
+        if (file.path) {
+          const res = await fetch(
+            `${RESEARCH_API_URL}/preview-url?path=${encodeURIComponent(file.path)}`,
+            { headers: { Authorization: `Bearer ${getResearchToken()}` } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (!isCancelled) {
+              setActiveUrl(data.url);
+              return;
+            }
+          }
+        }
+        if (!isCancelled) {
+          setActiveUrl(file.url);
+        }
+      } catch {
+        if (!isCancelled) {
+          setActiveUrl(file.url);
+        }
+      }
+    };
+
+    resolveUrl();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [file]);
+
+  // Client-side render for DOCX and text formats
+  useEffect(() => {
+    if (!activeUrl) return;
+
+    if (isDocx) {
+      fetch(activeUrl)
+        .then((res) => {
+          if (!res.ok) throw new Error('Network error');
+          return res.blob();
+        })
+        .then((blob) => {
+          if (!docxContainerRef.current) return;
+          docxContainerRef.current.innerHTML = '';
+          return renderAsync(blob, docxContainerRef.current, undefined, {
+            className: 'docx',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+          });
+        })
+        .then(() => setLoading(false))
+        .catch(() => {
+          setLoadError(true);
+          setLoading(false);
+        });
+    } else if (isText) {
+      fetch(activeUrl)
+        .then((res) => res.text())
+        .then((txt) => {
+          setTextContent(txt);
+          setLoading(false);
+        })
+        .catch(() => {
+          setLoadError(true);
+          setLoading(false);
+        });
+    } else {
+      setLoading(false);
+    }
+  }, [activeUrl, isDocx, isText]);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in select-none"
+      onClick={onClose}
+    >
+      {/* Top Bar matching Google Classroom dark layout */}
+      <div
+        className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0 pr-4">
+          <div className="text-blue-400 shrink-0">
+            {getFileIcon(file.name, 'w-5 h-5')}
+          </div>
+          <span className="font-medium text-sm sm:text-base text-gray-100 truncate" title={file.name}>
+            {file.name}
+          </span>
+          {file.size ? (
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              ({formatFileSize(file.size)})
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={activeUrl || file.url}
+            download={file.name}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Download File"
+          >
+            <Download className="w-5 h-5" />
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Close (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Document Canvas */}
+      <div
+        className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
+        onClick={onClose}
+      >
+        <div
+          className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {loading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 gap-2">
+              <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+              <span className="text-sm font-medium text-gray-600">Loading document...</span>
+            </div>
+          )}
+
+          {loadError ? (
+            <div className="m-auto text-center p-8 max-w-md">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">Unable to preview file</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                The file &ldquo;{file.name}&rdquo; could not be rendered directly.
+              </p>
+              <div className="flex justify-center gap-2">
+                <a
+                  href={activeUrl || file.url}
+                  download={file.name}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download File</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : isImg ? (
+            <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
+              <img
+                src={activeUrl}
+                alt={file.name}
+                className="max-h-full max-w-full object-contain select-none"
+              />
+            </div>
+          ) : isPdf ? (
+            <iframe
+              src={`${activeUrl}#toolbar=0`}
+              title={file.name}
+              className="w-full h-full border-0 bg-white"
+            />
+          ) : isText && textContent !== null ? (
+            <div className="w-full h-full bg-gray-900 border border-gray-800 p-6 overflow-auto text-left select-text">
+              <pre className="font-mono text-xs sm:text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {textContent}
+              </pre>
+            </div>
+          ) : isDocx ? (
+            <div className="w-full h-full overflow-y-auto bg-gray-100 p-4 sm:p-8 flex justify-center text-left select-text">
+              <div ref={docxContainerRef} className="w-full max-w-3xl min-h-full" />
+            </div>
+          ) : (
+            <div className="m-auto text-center p-8 max-w-md">
+              <FileGenericIcon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">{file.name}</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                This file format ({ext.toUpperCase()}) cannot be previewed directly in the browser.
+              </p>
+              <a
+                href={activeUrl || file.url}
+                download={file.name}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download File</span>
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
