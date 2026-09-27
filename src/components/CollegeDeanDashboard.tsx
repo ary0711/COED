@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { renderAsync } from 'docx-preview';
+import { createPortal } from 'react-dom';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -100,6 +101,10 @@ import {
   Pencil,
   Save,
   AlertCircle,
+   FileCode,
+  FileImage,
+  File as FileGenericIcon,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -3188,11 +3193,29 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getFileExtension(filename: string): string {
+  return (filename.split('.').pop() || '').toLowerCase();
+}
+
+function getFileIcon(filename: string, className = 'w-5 h-5') {
+  const ext = getFileExtension(filename);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className={className} />;
+  }
+  if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+  if (['pdf', 'docx', 'doc'].includes(ext)) {
+    return <FileText className={className} />;
+  }
+  return <FileGenericIcon className={className} />;
+}
+
 export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  
+
   // Categories State (Dynamic)
   const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('custom_doc_categories');
@@ -3221,12 +3244,19 @@ export function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Preview Modal States
-  const [previewModal, setPreviewModal] = useState<{ open: boolean; url: string | null; name: string; isLocalDocx: boolean }>({
+  // Classroom-Style Preview Modal State (Works for Local & Remote Files)
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean;
+    url: string | null;
+    name: string;
+    size?: number;
+    isLocalBlob: boolean;
+  }>({
     open: false,
     url: null,
     name: '',
-    isLocalDocx: false,
+    size: undefined,
+    isLocalBlob: false,
   });
 
   const fetchDocuments = useCallback(async () => {
@@ -3260,6 +3290,34 @@ export function AcademicRecords() {
     fetchDocuments();
   }, [fetchDocuments]);
 
+  // Handle ESC & lock scrolling when preview modal is open
+  useEffect(() => {
+    if (previewModal.open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePreviewModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewModal.open]);
+
+  const closePreviewModal = () => {
+    if (previewModal.url && previewModal.isLocalBlob) {
+      URL.revokeObjectURL(previewModal.url);
+    }
+    setPreviewModal({ open: false, url: null, name: '', size: undefined, isLocalBlob: false });
+  };
+
   // --- Category Management ---
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) return;
@@ -3279,7 +3337,6 @@ export function AcademicRecords() {
     if (typeFilter === key) setTypeFilter('all');
     if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
   };
-  // ---------------------------
 
   const resetForm = () => {
     setForm({
@@ -3334,8 +3391,8 @@ export function AcademicRecords() {
   // --- Drag and Drop File Handlers ---
   const handleFileSelect = (selectedFile: File | undefined | null) => {
     if (!selectedFile) return;
-    
-    const validExtensions = ['.pdf', '.doc', '.docx'];
+
+    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv'];
     const fileName = selectedFile.name.toLowerCase();
     const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
@@ -3343,7 +3400,7 @@ export function AcademicRecords() {
       setFile(selectedFile);
       setFormError('');
     } else {
-      setFormError('Sorry, only PDF and Word documents (.doc, .docx) are allowed.');
+      setFormError('Only PDF, Word documents (.doc, .docx), images, and text/csv files are supported.');
     }
   };
 
@@ -3357,22 +3414,21 @@ export function AcademicRecords() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
   };
-  // -----------------------------------
 
-  // --- PREVIEW LOGIC (Saktong paingon sa /preview endpoint sa backend) ---
+  // --- Remote Document Preview (From API) ---
   const handlePreview = async (doc: AcademicDocument) => {
-    setDownloadingId(doc.id); 
+    setDownloadingId(doc.id);
     setLoadError('');
     try {
       const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
         headers: { Authorization: `Bearer ${getDocsToken()}` },
       });
-      
+
       if (!res.ok) {
         const errText = await res.text();
         let errorMsg = 'Failed to retrieve document preview link.';
@@ -3384,43 +3440,40 @@ export function AcademicRecords() {
         }
         throw new Error(errorMsg);
       }
-      
+
       const data = await res.json();
       if (!data.url) throw new Error('Backend did not return a valid URL.');
-      
-      const ext = doc.file_name.split('.').pop()?.toLowerCase();
-      const isDocx = ext === 'doc' || ext === 'docx';
-      
+
       setPreviewModal({
         open: true,
-        url: isDocx ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(data.url)}` : data.url,
-        name: doc.title,
-        isLocalDocx: false
+        url: data.url,
+        name: doc.file_name || doc.title,
+        size: doc.file_size,
+        isLocalBlob: false,
       });
     } catch (err: any) {
-      console.error("Preview Error:", err);
+      console.error('Preview Error:', err);
       setLoadError(`Preview Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
     }
   };
 
+  // --- Local Document Preview (Before Uploading) ---
   const handleLocalPreview = () => {
     if (file) {
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      const isDocx = ext === 'doc' || ext === 'docx';
       const localUrl = URL.createObjectURL(file);
       setPreviewModal({
         open: true,
         url: localUrl,
         name: file.name,
-        isLocalDocx: isDocx // We cannot use officeapps.live.com for local blob URLs
+        size: file.size,
+        isLocalBlob: true,
       });
     } else if (editingDoc) {
       handlePreview(editingDoc);
     }
   };
-  // ---------------------
 
   const handleSave = async () => {
     setFormError('');
@@ -3527,9 +3580,16 @@ export function AcademicRecords() {
         throw new Error(errorMsg);
       }
       const data = await res.json();
-      if(data.url) window.open(data.url, '_blank');
+      if (data.url) {
+        const link = document.createElement('a');
+        link.href = data.url;
+        link.download = doc.file_name || doc.title;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (err: any) {
-      console.error("Download Error:", err);
+      console.error('Download Error:', err);
       setLoadError(`Download Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
@@ -3572,7 +3632,7 @@ export function AcademicRecords() {
             <span className="hidden sm:inline">Categories</span>
           </button>
         </div>
-        
+
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -3687,51 +3747,6 @@ export function AcademicRecords() {
         )}
       </div>
 
-      {/* --- PREVIEW MODAL --- */}
-      {previewModal.open && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <h3 className="font-bold text-gray-900 truncate">{previewModal.name}</h3>
-              </div>
-              <button 
-                onClick={() => {
-                  setPreviewModal({ open: false, url: null, name: '', isLocalDocx: false });
-                  if (previewModal.url && previewModal.url.startsWith('blob:')) URL.revokeObjectURL(previewModal.url);
-                }} 
-                className="p-2 hover:bg-gray-200 rounded-lg transition-colors shrink-0"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="flex-1 bg-gray-100 relative">
-              {previewModal.isLocalDocx ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
-                  <FileText className="w-16 h-16 text-gray-300 mb-4" />
-                  <h4 className="text-lg font-bold text-gray-700">Preview Not Available for Local Word Docs</h4>
-                  <p className="text-sm text-gray-500 max-w-sm mt-2">
-                    Because this is an unpublished Word Document (.doc/.docx), it cannot be previewed in the browser. Please save the document to view it normally, or upload a PDF instead.
-                  </p>
-                </div>
-              ) : previewModal.url ? (
-                <iframe 
-                  src={previewModal.url} 
-                  className="w-full h-full border-0" 
-                  title="Document Preview"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* --- CATEGORY MANAGEMENT MODAL --- */}
       {showCategoryModal && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
@@ -3742,12 +3757,12 @@ export function AcademicRecords() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
               {Object.entries(docCategories).map(([key, label]) => (
                 <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
                   <span className="text-sm font-medium text-gray-700">{label}</span>
-                  <button 
+                  <button
                     onClick={() => handleDeleteCategory(key)}
                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
                     title="Delete Category"
@@ -3761,14 +3776,14 @@ export function AcademicRecords() {
             <div className="border-t border-gray-100 pt-4">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
               <div className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newCategoryName}
                   onChange={e => setNewCategoryName(e.target.value)}
-                  placeholder="e.g. Certificates" 
+                  placeholder="e.g. Certificates"
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <button 
+                <button
                   onClick={handleAddCategory}
                   disabled={!newCategoryName.trim()}
                   className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
@@ -3781,7 +3796,7 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- UPLOAD MODAL --- */}
+      {/* --- UPLOAD / EDIT MODAL --- */}
       {showUploadModal && (
         <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
@@ -3873,45 +3888,48 @@ export function AcademicRecords() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                   {editingDoc ? 'Replace File (optional)' : 'File *'}
                 </label>
-                
+
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => document.getElementById('hidden-file-input')?.click()}
                   className={`w-full py-4 px-3 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                    isDragging 
-                      ? 'border-blue-500 bg-blue-50' 
+                    isDragging
+                      ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-300 hover:border-gray-400 bg-gray-50'
                   }`}
                 >
                   <input
                     id="hidden-file-input"
                     type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv"
                     className="hidden"
                     onChange={(e) => handleFileSelect(e.target.files?.[0])}
                   />
-                  
+
                   {file ? (
-                    <div 
-                      className="flex items-center justify-between w-full max-w-[300px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                    <div
+                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
                       onClick={(e) => {
-                        e.stopPropagation(); // prevent reopening file picker
+                        e.stopPropagation();
                         handleLocalPreview();
                       }}
-                      title="Click to preview file"
+                      title="Click to preview file before upload"
                     >
                       <div className="flex items-center gap-2 text-[#1E3A8A] overflow-hidden">
                         <Eye className="w-4 h-4 flex-shrink-0 text-blue-500" />
                         <span className="text-xs font-semibold truncate hover:underline cursor-pointer">
                           {file.name}
                         </span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">
+                          ({formatFileSize(file.size)})
+                        </span>
                       </div>
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation(); 
+                          e.stopPropagation();
                           setFile(null);
                           const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
                           if (fileInput) fileInput.value = '';
@@ -3926,22 +3944,22 @@ export function AcademicRecords() {
                     <>
                       <UploadCloud className="w-6 h-6 text-blue-500 mb-1.5" />
                       <p className="text-xs font-medium text-gray-700">
-                        Drag & Drop or <span className="text-blue-600">Browse</span>
+                        Drag & Drop or <span className="text-blue-600 font-semibold">Browse</span>
                       </p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        .PDF, .DOC, .DOCX only
+                        .PDF, .DOC, .DOCX, .PNG, .JPG up to 15MB
                       </p>
                     </>
                   )}
                 </div>
-                
+
                 {editingDoc && !file && (
                   <p className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5" /> 
-                    Current file: 
-                    <button 
+                    <FileText className="w-3.5 h-3.5" />
+                    Current file:
+                    <button
                       type="button"
-                      onClick={() => handleLocalPreview()} 
+                      onClick={() => handleLocalPreview()}
                       className="font-medium text-blue-600 hover:underline truncate"
                       title="Click to preview current file"
                     >
@@ -3971,6 +3989,7 @@ export function AcademicRecords() {
         </div>
       )}
 
+      {/* --- DELETE CONFIRMATION MODAL --- */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -3979,7 +3998,7 @@ export function AcademicRecords() {
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Delete Document?</h3>
             <p className="text-sm text-gray-500 mb-6">
-              This will permanently remove <span className="font-semibold text-gray-800">"{deleteConfirm.title}"</span>. This cannot be undone.
+              This will permanently remove <span className="font-semibold text-gray-800">&ldquo;{deleteConfirm.title}&rdquo;</span>. This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
@@ -3999,7 +4018,233 @@ export function AcademicRecords() {
           </div>
         </div>
       )}
+
+      {/* --- GOOGLE CLASSROOM-STYLE PREVIEW MODAL (Supporting All Formats) --- */}
+      {previewModal.open && previewModal.url && (
+        <AcademicPreviewModal
+          url={previewModal.url}
+          name={previewModal.name}
+          size={previewModal.size}
+          onClose={closePreviewModal}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Document Preview Modal Component (All Formats, Matching Classroom Design) ─
+
+function AcademicPreviewModal({
+  url,
+  name,
+  size,
+  onClose,
+}: {
+  url: string;
+  name: string;
+  size?: number;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+
+  const ext = getFileExtension(name);
+  const isPdf = ext === 'pdf';
+  const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
+  const isDocx = ext === 'docx' || ext === 'doc';
+  const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    setTextContent(null);
+
+    if (isDocx) {
+      fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to load file');
+          return res.blob();
+        })
+        .then((blob) => {
+          if (isCancelled || !docxContainerRef.current) return;
+          docxContainerRef.current.innerHTML = '';
+          return renderAsync(blob, docxContainerRef.current, undefined, {
+            className: 'docx',
+            inWrapper: true, // Enables full page layout, document margins & styling
+            ignoreWidth: false,
+            ignoreHeight: false,
+          });
+        })
+        .then(() => {
+          if (!isCancelled) setLoading(false);
+        })
+        .catch((err) => {
+          console.error('Docx rendering error:', err);
+          if (!isCancelled) {
+            setLoadError(true);
+            setLoading(false);
+          }
+        });
+    } else if (isText) {
+      fetch(url)
+        .then((res) => res.text())
+        .then((txt) => {
+          if (!isCancelled) {
+            setTextContent(txt);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setLoadError(true);
+            setLoading(false);
+          }
+        });
+    } else {
+      setLoading(false);
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [url, isDocx, isText]);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in select-none"
+      onClick={onClose}
+    >
+      {/* Top Bar */}
+      <div
+        className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0 pr-4">
+          <div className="text-blue-400 shrink-0">
+            {getFileIcon(name, 'w-5 h-5')}
+          </div>
+          <span className="font-medium text-sm sm:text-base text-gray-100 truncate" title={name}>
+            {name}
+          </span>
+          {size ? (
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              ({formatFileSize(size)})
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={url}
+            download={name}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Download File"
+          >
+            <Download className="w-5 h-5" />
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Close (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Document Canvas */}
+      <div
+        className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
+        onClick={onClose}
+      >
+        <div
+          className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {loading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 gap-2">
+              <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+              <span className="text-sm font-medium text-gray-600">Loading document...</span>
+            </div>
+          )}
+
+          {loadError ? (
+            <div className="m-auto text-center p-8 max-w-md">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">Unable to preview file</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                The file &ldquo;{name}&rdquo; could not be rendered directly.
+              </p>
+              <div className="flex justify-center gap-2">
+                <a
+                  href={url}
+                  download={name}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download File</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : isImg ? (
+            <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
+              <img
+                src={url}
+                alt={name}
+                className="max-h-full max-w-full object-contain select-none"
+              />
+            </div>
+          ) : isPdf ? (
+            <iframe
+              src={`${url}#toolbar=0`}
+              title={name}
+              className="w-full h-full border-0 bg-white"
+            />
+          ) : isText && textContent !== null ? (
+            <div className="w-full h-full bg-gray-900 border border-gray-800 p-6 overflow-auto text-left select-text">
+              <pre className="font-mono text-xs sm:text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {textContent}
+              </pre>
+            </div>
+          ) : isDocx ? (
+            /* Dedicated scroll container with neutral canvas background */
+            <div className="w-full h-full overflow-y-auto bg-gray-100 p-4 sm:p-8 flex justify-center text-left select-text">
+              <div ref={docxContainerRef} className="w-full max-w-3xl min-h-full" />
+            </div>
+          ) : (
+            <div className="m-auto text-center p-8 max-w-md">
+              <FileGenericIcon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">{name}</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                This file format ({ext.toUpperCase()}) cannot be previewed directly in the browser.
+              </p>
+              <a
+                href={url}
+                download={name}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download File</span>
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
