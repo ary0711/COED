@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
@@ -31,7 +31,6 @@ import {
   Settings,
   KeyRound,
   User,
- Calendar as CalendarIcon,
   Archive,
   MapPin,
   Tag,
@@ -39,13 +38,13 @@ import {
   Eye,
   CalendarDays,
   Pencil,
+  ClipboardCheck,
+  RefreshCw
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
-import { NotificationsPanel } from './NotificationsPanel';
-import { FacultyMonitoringTable } from './FacultyMonitoringTable';
 import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
@@ -54,10 +53,20 @@ import { ExtensionReport } from './dashboards/ExtensionReport';
 import { supabase } from '../supabaseClient';
 
 
+const dateOnly = (ts: string | null | undefined): string => {
+  if (!ts) return '';
+  return ts.split('T')[0];
+};
+
+// Converts a plain <input type="date"> value ("2026-07-01") into a full ISO timestamp.
+const toTimestamp = (dateStr: string): string => {
+  if (!dateStr) return '';
+  return new Date(`${dateStr}T00:00:00`).toISOString();
+};
+
 const chairMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',           id: 'dashboard' },
   { icon: Calendar,        label: 'Department Calendar', id: 'calendar' },
-  { icon: Users,           label: 'Faculty Monitoring',  id: 'faculty' },
   { icon: FileCheck2,      label: 'Reports',             id: 'chairReports' },
   { icon: FileText,        label: 'Reports Monitoring',  id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',    id: 'records' },
@@ -75,8 +84,6 @@ interface DepartmentChairDashboardProps {
 
 export type StandardEventType = 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam';
 export type CalendarAudience = 'all' | 'students' | 'faculty' | 'alumni';
-
-
 type AccountRole = 'student' | 'faculty' | 'alumni';
 
 interface AccountApplicant {
@@ -90,19 +97,46 @@ interface AccountApplicant {
   status: 'pending' | 'active' | 'rejected';
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+interface Profile {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  id_number: string;
+  department?: string | null;
+  program?: string | null;
+  status: string;
+  created_at: string;
+}
 
-export function DepartmentChairDashboard({ 
-  activeMenuItem, 
-  setActiveMenuItem, 
-  onLogout 
-}: DepartmentChairDashboardProps) {
+// ─── HELPER: SMART PROGRAM MATCHER (Fix for Elementary Ed vs BEEd) ─────────
+const isProgramMatch = (userProg: string, chairDepts: string[]) => {
+  const p = (userProg || '').trim().toLowerCase();
+  if (!p) return false;
+
+  return chairDepts.some((d) => {
+    const dept = d.trim().toLowerCase();
+    
+    // Direct match
+    if (p === dept || p.includes(dept) || dept.includes(p)) return true;
+
+    // Aliases
+    if ((p.includes('beed') || p.includes('elementary')) && (dept.includes('beed') || dept.includes('elementary'))) return true;
+    if ((p.includes('btled') || p.includes('technology') || p.includes('livelihood')) && (dept.includes('btled') || dept.includes('technology') || dept.includes('livelihood'))) return true;
+    if ((p.includes('math') || p.includes('mathematics')) && (dept.includes('math') || dept.includes('mathematics'))) return true;
+    if (p.includes('english') && dept.includes('english')) return true;
+
+    return false;
+  });
+};
+
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, onLogout }: DepartmentChairDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleInternalLogout = () => {
     localStorage.clear();
-    if (onLogout) {
-      onLogout();
-    }
+    if (onLogout) onLogout();
   };
 
   const token = localStorage.getItem('token');
@@ -113,45 +147,24 @@ export function DepartmentChairDashboard({
 
   return (
     <div className="flex min-h-screen bg-transparent">
-      <Sidebar
-        menuItems={chairMenuItems}
-        activeItem={activeMenuItem}
-        onItemClick={setActiveMenuItem}
-        userRole="Department Chair"
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onLogout={handleInternalLogout}
-      />
-
+      <Sidebar menuItems={chairMenuItems} activeItem={activeMenuItem} onItemClick={setActiveMenuItem} userRole="Department Chair" isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onLogout={handleInternalLogout} />
       <div className="hidden lg:block w-64 shrink-0" />
-
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 px-4 lg:px-0">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-              aria-label="Open menu"
-            >
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <DashboardHeader 
-                userRole="Department Chair" 
-                userName={userName} 
-                departmentNames={departmentNames} 
-                onLogout={handleInternalLogout}
-              />
+              <DashboardHeader userRole="Department Chair" userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />
             </div>
           </div>
         </div>
-
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
-          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} />}
+          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
           {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
-          {activeMenuItem === 'faculty'     && <FacultyMonitoring />}
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
-          {activeMenuItem === 'reports'     && <ReportsMonitoring />}
+          {activeMenuItem === 'reports'     && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
           {activeMenuItem === 'announcements' && <AnnouncementsView />}
           {activeMenuItem === 'approvals'   && <AccountApprovalsView departmentNames={departmentNames} />}
@@ -162,141 +175,216 @@ export function DepartmentChairDashboard({
   );
 }
 
-/* ─────────────────────────────────────────────
-   Dashboard Overview
-───────────────────────────────────────────── */
-function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: string) => void }) {
-  // Demo data for Faculty Monitoring Preview
-  const recentFaculty = [
-    { id: 1, name: 'Dr. Maria Santos', email: 'maria.santos@university.edu', status: 'Submitted', date: 'Feb 10, 2026' },
-    { id: 2, name: 'Prof. John Rodriguez', email: 'john.rodriguez@university.edu', status: 'Submitted', date: 'Feb 11, 2026' },
-    { id: 3, name: 'Dr. Lisa Chen', email: 'lisa.chen@university.edu', status: 'Pending', date: 'Jan 15, 2026' },
-    { id: 4, name: 'Prof. David Martinez', email: 'david.martinez@university.edu', status: 'Overdue', date: 'Dec 28, 2025' },
-    { id: 5, name: 'Dr. Emily Wilson', email: 'emily.wilson@university.edu', status: 'Submitted', date: 'Feb 12, 2026' },
-  ];
+// ─── Dashboard Overview ────────────────────────────────────────────────────────
+function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveMenuItem: (id: string) => void, departmentNames: string[] }) {
+  const [facultyCount, setFacultyCount] = useState(0);
+  const [facultyList, setFacultyList] = useState<any[]>([]);
+  
+  // Dashboard states for Account Approvals
+  const [accountsData, setAccountsData] = useState<any[]>([]);
+  const [dashboardApprovalTab, setDashboardApprovalTab] = useState<'pending' | 'active' | 'rejected'>('pending');
 
-  // Demo data for Account Approvals Preview
-  const recentApprovals = [
-    { id: 1, name: 'Jenisel Carinoza', type: 'Student', detail: '0008' },
-    { id: 2, name: 'Erlin Pugoy', type: 'Alumni', detail: '3241512' },
-    { id: 3, name: 'Mark Bautista', type: 'Faculty', detail: 'EMP-018' },
-    { id: 4, name: 'Sarah Alcantara', type: 'Student', detail: '0012' },
-  ];
+  const [reportStats, setReportStats] = useState({ submitted: 0, pending: 0 });
+  const [upcomingCount, setUpcomingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // 1. Fetch total faculty for summary count and card list
+        const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
+        
+        // Fetch current reports to get real statuses
+        const { data: reports } = await supabase.from('accomplishment_reports').select('submitted_by, status, updated_at');
+        
+        if (profiles) {
+          const matchedFaculty = profiles.filter((p: any) => {
+            const userProg = (p.program || p.department || '').trim();
+            return isProgramMatch(userProg, departmentNames);
+          }).map(p => {
+            const fReport = reports?.find(r => r.submitted_by === p.id);
+            let rStatus = 'Pending';
+            if (fReport) {
+              if (fReport.status === 'submitted') rStatus = 'Submitted';
+              else if (fReport.status === 'approved') rStatus = 'Approved';
+              else if (fReport.status === 'rejected') rStatus = 'Rejected';
+              else rStatus = 'Draft';
+            }
+            return {
+              id: p.id,
+              name: p.full_name,
+              email: p.email,
+              reportStatus: rStatus,
+              lastUpdated: fReport ? new Date(fReport.updated_at).toLocaleDateString() : 'No data'
+            }
+          });
+          setFacultyList(matchedFaculty);
+          setFacultyCount(matchedFaculty.length);
+        }
+
+        // 2. Fetch All Accounts for Dashboard card
+        const { data: allAccounts } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, status, created_at')
+          .order('created_at', { ascending: false });
+
+        if (allAccounts) setAccountsData(allAccounts);
+
+        // 3. Fetch Calendar Data
+        const { data: calData } = await supabase.from('calendar_events').select('event_date');
+        if (calData) {
+          const today = new Date().toISOString().split('T')[0];
+          setUpcomingCount(calData.filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length);
+        }
+
+        // 4. Fetch Report Stats
+        if (reports) {
+          setReportStats({ 
+            submitted: reports.filter(r => r.status === 'submitted' || r.status === 'approved').length, 
+            pending: profiles ? profiles.length - reports.filter(r => r.status === 'submitted' || r.status === 'approved').length : 0 
+          });
+        }
+      } catch (err) {
+        console.error("Error loading dashboard data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, [departmentNames]);
+
+  // Derived state for the account approvals tabs
+  const pendingAccounts = accountsData.filter(a => a.status === 'pending');
+  const approvedAccounts = accountsData.filter(a => a.status === 'active');
+  const rejectedAccounts = accountsData.filter(a => a.status === 'rejected');
+
+  const displayedAccounts = dashboardApprovalTab === 'pending' ? pendingAccounts
+                          : dashboardApprovalTab === 'active' ? approvedAccounts
+                          : rejectedAccounts;
 
   return (
     <div className="flex flex-col h-full lg:h-[calc(100vh-140px)]">
-      
-      {/* SUMMARY CARDS ROW */}
       <div className="mb-6 flex-shrink-0">
-        <div
-          className="flex gap-3 overflow-x-auto pb-2 sm:hidden"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
-        >
-          {[
-            { title: 'Total Faculty',       value: '18', icon: GraduationCap, iconColor: '#2563EB', iconBgColor: '#DBEAFE', trend: '2', trendUp: true },
-            { title: 'Submitted Reports',   value: '14', icon: CheckCircle,   iconColor: '#10B981', iconBgColor: '#D1FAE5' },
-            { title: 'Pending Reports',     value: '4',  icon: Clock,         iconColor: '#F59E0B', iconBgColor: '#FEF3C7' },
-            { title: 'Upcoming Activities', value: '6',  icon: Calendar,      iconColor: '#8B5CF6', iconBgColor: '#EDE9FE' },
-          ].map((card) => (
-            <div key={card.title} className="flex-shrink-0 w-44">
-              <SummaryCard {...card} />
-            </div>
-          ))}
-        </div>
-
         <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <SummaryCard title="Total Faculty"       value="18" icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" trend="2" trendUp={true} />
-          <SummaryCard title="Submitted Reports"   value="14" icon={CheckCircle}   iconColor="#10B981" iconBgColor="#D1FAE5" />
-          <SummaryCard title="Pending Reports"     value="4"  icon={Clock}         iconColor="#F59E0B" iconBgColor="#FEF3C7" />
-          <SummaryCard title="Upcoming Activities" value="6"  icon={Calendar}      iconColor="#8B5CF6" iconBgColor="#EDE9FE" />
+          <div className="transition-transform"><SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" /></div>
+          <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
+          <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
+          <div onClick={() => setActiveMenuItem('calendar')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Upcoming Activities" value={loading ? '...' : upcomingCount.toString()} icon={Calendar} iconColor="#8B5CF6" iconBgColor="#EDE9FE" /></div>
         </div>
       </div>
 
-      {/* 2-COLUMN GRID FOR LISTS - Takes up remaining height */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0 pb-4">
         
-        {/* FACULTY MONITORING CARD */}
+        {/* FACULTY MONITORING (Left Side) */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-600" />
-              <h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2>
-            </div>
-            <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
-              {recentFaculty.length} updates
-            </span>
+            <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2></div>
+            <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{facultyList.length} updates</span>
           </div>
-          
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-            {recentFaculty.map((faculty) => (
-              <div key={faculty.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
+            {loading ? <div className="flex justify-center items-center h-full text-gray-400"><Loader2 className="w-6 h-6 animate-spin" /></div> : facultyList.length === 0 ? <div className="flex justify-center items-center h-full text-sm text-gray-400">No faculty records found.</div> : facultyList.slice(0, 5).map((faculty) => (
+              <div key={faculty.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50">
                 <div className="min-w-0 flex-1 pr-4">
                   <p className="text-sm font-semibold text-gray-900 truncate">{faculty.name}</p>
                   <p className="text-[11px] text-gray-400 truncate">{faculty.email}</p>
                 </div>
                 <div className="flex flex-col items-end flex-shrink-0">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 ${
-                    faculty.status === 'Submitted' ? 'bg-emerald-100 text-emerald-700' :
-                    faculty.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-700'
+                    faculty.reportStatus === 'Submitted' ? 'bg-amber-100 text-amber-700' : 
+                    faculty.reportStatus === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 
+                    faculty.reportStatus === 'Draft' ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700'
                   }`}>
-                    {faculty.status}
+                    {faculty.reportStatus || 'Pending'}
                   </span>
-                  <span className="text-[10px] text-gray-400">{faculty.date}</span>
+                  <span className="text-[10px] text-gray-400">{faculty.lastUpdated}</span>
                 </div>
               </div>
             ))}
           </div>
-
           <div className="p-4 border-t border-gray-100 bg-white">
-            <button
-              onClick={() => setActiveMenuItem('faculty')}
-              className="w-full py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
-            >
-              Manage All Faculty <ChevronRight className="w-4 h-4" />
-            </button>
+            <button onClick={() => setActiveMenuItem('reports')} className="w-full py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5">Manage Reports <ChevronRight className="w-4 h-4" /></button>
           </div>
         </div>
 
-        {/* ACCOUNT APPROVALS CARD */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-amber-600" />
-              <h2 className="text-sm font-bold text-gray-900">Account Approvals</h2>
-            </div>
-            <span className="flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              {recentApprovals.length} pending
-            </span>
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-            {recentApprovals.map((account) => (
-              <div key={account.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 hover:border-gray-200 transition-colors">
-                <div className="min-w-0 flex-1 pr-4">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{account.name}</p>
-                  <p className="text-[11px] font-mono text-gray-400 mt-0.5">ID: {account.detail}</p>
-                </div>
-                <div className="flex-shrink-0">
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md ${
-                    account.type === 'Student' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                    account.type === 'Alumni' ? 'bg-pink-50 text-pink-700 border border-pink-100' :
-                    'bg-green-50 text-green-700 border border-green-100'
-                  }`}>
-                    {account.type}
-                  </span>
-                </div>
+        {/* ACCOUNT APPROVALS (Right Side) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-amber-600" />
+                <h2 className="text-sm font-bold text-gray-900">Account Approvals</h2>
               </div>
-            ))}
+              {pendingAccounts.length > 0 && (
+                <span className="flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {pendingAccounts.length} Pending
+                </span>
+              )}
+            </div>
+
+            {/* DASHBOARD CARD TABS */}
+            <div className="flex gap-1 bg-gray-200/50 p-1 rounded-lg">
+              <button 
+                onClick={() => setDashboardApprovalTab('pending')}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${dashboardApprovalTab === 'pending' ? 'bg-white shadow-sm text-amber-700' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Pending ({pendingAccounts.length})
+              </button>
+              <button 
+                onClick={() => setDashboardApprovalTab('active')}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${dashboardApprovalTab === 'active' ? 'bg-white shadow-sm text-green-700' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Approved ({approvedAccounts.length})
+              </button>
+              <button 
+                onClick={() => setDashboardApprovalTab('rejected')}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${dashboardApprovalTab === 'rejected' ? 'bg-white shadow-sm text-red-700' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Rejected ({rejectedAccounts.length})
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            {loading ? (
+              <div className="flex justify-center items-center h-full text-gray-400">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : displayedAccounts.length === 0 ? (
+              <div className="flex flex-col justify-center items-center h-full text-sm text-gray-400 opacity-60">
+                <ClipboardCheck className="w-8 h-8 mb-2" />
+                No {dashboardApprovalTab === 'active' ? 'approved' : dashboardApprovalTab} accounts found.
+              </div>
+            ) : (
+              displayedAccounts.slice(0, 5).map((account) => {
+                const isApproved = account.status === 'active';
+                const isPending = account.status === 'pending';
+                
+                return (
+                  <div key={account.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className="min-w-0 flex-1 pr-4">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{account.full_name}</p>
+                      <p className="text-[11px] font-mono text-gray-400 mt-0.5 capitalize">Role: {account.role}</p>
+                    </div>
+                    <div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isApproved ? 'bg-green-100 text-green-700' : isPending ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                        {isApproved ? 'Approved' : isPending ? 'Pending' : 'Rejected'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
 
           <div className="p-4 border-t border-gray-100 bg-white">
-            <button
-              onClick={() => setActiveMenuItem('approvals')}
-              className="w-full py-2.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
+            <button 
+              onClick={() => setActiveMenuItem('approvals')} 
+              className="w-full py-2.5 bg-[#1E3A8A]/5 text-[#1E3A8A] hover:bg-[#1E3A8A]/10 rounded-xl transition-colors text-xs font-semibold flex items-center justify-center gap-1.5"
             >
-              Review Pending Accounts <ChevronRight className="w-4 h-4" />
+              Open Account Approvals <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -305,7 +393,10 @@ function ChairDashboardView({ setActiveMenuItem }: { setActiveMenuItem: (id: str
     </div>
   );
 }
-// ─── Calendar & Activities (DEPARTMENT CHAIR DASHBOARD) ──────────────────────
+
+/* ─────────────────────────────────────────────
+   Department Calendar
+───────────────────────────────────────────── */
 
 interface CalendarEvent {
   id: string;
@@ -421,12 +512,7 @@ function displayEventType(ev: CalendarEvent): string {
   return ev.event_type;
 }
 
-function dateOnly(isoLike: string): string {
-  if (!isoLike) return '';
-  return isoLike.split('T')[0];
-}
-
-function toTimestamp(dateStr: string): string {
+function toCalendarTimestamp(dateStr: string): string {
   return `${dateStr}T08:00:00.000Z`;
 }
 
@@ -644,15 +730,20 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
       return;
     }
     if (!form.date) {
-      setFormError('Please select a date.');
-      return;
-    }
-    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
-      setFormError('End time must be later than start time.');
+      setFormError('Event date is required.');
       return;
     }
     if (isCustomType && !form.customType.trim()) {
       setFormError('Custom activity type is required.');
+      return;
+    }
+    if (!isCustomType && !form.type) {
+      setFormError('Type of activity is required.');
+      return;
+    }
+
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      setFormError('End time must be later than start time.');
       return;
     }
 
@@ -668,7 +759,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
     const payload = {
       title: form.title.trim(),
       description: form.description.trim() || null,
-      event_date: toTimestamp(form.date),
+      event_date: toCalendarTimestamp(form.date),
       start_time: form.start_time ? form.start_time : null,
       end_time: form.end_time ? form.end_time : null,
       location: form.location.trim() || null,
@@ -1315,7 +1406,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
       {inspectingEvent && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-md p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <span
@@ -1408,11 +1499,11 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
         </div>
       )}
 
-      {/* Add / Edit Event Modal with Start & End Time Inputs */}
+      {/* Add / Edit Event Modal with strict rectangle shaping & error handling */}
       {showModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
               <h2 className="text-lg font-bold text-gray-900">
                 {editingEventId ? 'Edit Department Event' : 'Add New Department Event'}
               </h2>
@@ -1421,15 +1512,15 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                   resetForm();
                   setShowModal(false);
                 }}
-                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="overflow-y-auto p-6 space-y-4">
               {formError && (
-                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">
+                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 font-medium">
                   {formError}
                 </div>
               )}
@@ -1455,9 +1546,9 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
                   <input
                     type="time"
                     value={form.start_time}
@@ -1466,20 +1557,13 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
                   <input
                     type="time"
                     value={form.end_time}
                     onChange={(e) => setForm({ ...form, end_time: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
                   />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Posting to Department</label>
-                <div className="w-full px-3 py-2 border border-gray-100 bg-gray-50 rounded-lg text-sm font-medium text-gray-700">
-                  {departmentNames.length > 0 ? departmentNames.join(', ') : 'Your Department'}
                 </div>
               </div>
 
@@ -1510,7 +1594,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Type of Activity *</label>
-                <div className="flex flex-wrap gap-2.5 mb-3">
+                <div className="flex flex-wrap gap-2 mb-3">
                   {PREDEFINED_TYPES.map((pt) => (
                     <button
                       key={pt.id}
@@ -1522,11 +1606,11 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
                         !isCustomType && form.type === pt.id
                           ? 'border-gray-400 bg-gray-50 shadow-sm ring-1 ring-gray-300'
-                          : 'border-transparent hover:bg-gray-50'
+                          : 'border-transparent bg-gray-50 hover:bg-gray-100'
                       }`}
                     >
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: pt.color }} />
-                      <span className="text-gray-700 font-semibold">{pt.label}</span>
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: pt.color }} />
+                      <span className="text-gray-700">{pt.label}</span>
                     </button>
                   ))}
                   <button
@@ -1535,11 +1619,11 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
                       isCustomType
                         ? 'border-gray-400 bg-gray-50 shadow-sm ring-1 ring-gray-300'
-                        : 'border-transparent hover:bg-gray-50'
+                        : 'border-transparent bg-gray-50 hover:bg-gray-100'
                     }`}
                   >
                     <Plus className="w-3 h-3 text-gray-500" />
-                    <span className="text-gray-700 font-semibold">Custom</span>
+                    <span className="text-gray-700">Custom</span>
                   </button>
                 </div>
 
@@ -1548,7 +1632,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                     <div className="flex-1">
                       <input
                         type="text"
-                        placeholder="Enter custom activity (e.g. Sports, Seminar)..."
+                        placeholder="Enter custom activity (e.g. Sports)..."
                         value={form.customType}
                         onChange={(e) => setForm({ ...form, customType: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/30 focus:border-[#1E3A8A] bg-white"
@@ -1569,14 +1653,14 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
               <button
                 onClick={() => {
                   resetForm();
                   setShowModal(false);
                 }}
                 disabled={submitting}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 bg-white"
               >
                 Cancel
               </button>
@@ -1601,10 +1685,50 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
     </div>
   );
 }
-/* ─────────────────────────────────────────────
-   Account Approvals
-───────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────
+   Chair Reports View
+   Wired to the real AccomplishmentReport and ExtensionReport
+   components. Lets the Department Chair switch between their
+   own Accomplishment Report and Extension Report forms.
+───────────────────────────────────────────── */
+function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
+  const [activeReportTab, setActiveReportTab] = useState<'accomplishment' | 'extension'>('accomplishment');
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-2 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
+        <button
+          onClick={() => setActiveReportTab('accomplishment')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            activeReportTab === 'accomplishment' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Accomplishment Report
+        </button>
+        <button
+          onClick={() => setActiveReportTab('extension')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            activeReportTab === 'extension' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Extension Report
+        </button>
+      </div>
+
+      {activeReportTab === 'accomplishment' && (
+        <AccomplishmentReport userId={userId} userName={userName} />
+      )}
+      {activeReportTab === 'extension' && (
+        <ExtensionReport userId={userId} userName={userName} />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Account Approvals View
+───────────────────────────────────────────── */
 const ACCOUNTS_API_URL = 'http://localhost:5000/api/accounts';
 
 const ROLE_TABS: { id: AccountRole; label: string }[] = [
@@ -2129,347 +2253,376 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
   );
 }
 
-
-// --- Modal Component ---
-interface ReminderConfirmModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}
-
-function ReminderConfirmModal({
-  isOpen,
-  onClose,
-  onConfirm,
-}: ReminderConfirmModalProps) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
-      <div className="bg-white rounded-xl shadow-lg p-6 w-11/12 max-w-md border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-2">Send Reminders</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          Are you sure you want to send reminders to all faculty members with pending or overdue reports?
-        </p>
-        
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-[#1E3A8A] rounded-lg hover:bg-[#1E40AF] transition-colors"
-          >
-            Confirm & Send
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- Faculty Monitoring Component ---
-function FacultyMonitoring() {
-  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
-
-  const handleConfirmSend = () => {
-    // Add logic to send reminders here
-    console.log("Reminders sent!");
-    setIsReminderModalOpen(false);
-  };
-
-  return (
-    <div>
-      {/* Top Header with the SINGLE Send Reminder Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Faculty Monitoring</h1>
-        
-        <button 
-          onClick={() => setIsReminderModalOpen(true)}
-          className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors"
-        >
-          Send Reminder
-        </button>
-      </div>
-
-      {/* Table Component (Make sure you delete the button inside this file!) */}
-      <FacultyMonitoringTable />
-
-      {/* Confirmation Modal */}
-      <ReminderConfirmModal 
-        isOpen={isReminderModalOpen} 
-        onClose={() => setIsReminderModalOpen(false)} 
-        onConfirm={handleConfirmSend} 
-      />
-    </div>
-  );
-}
-
-// ─── My Drafts ────────────────────────────────────────────
-interface DraftSummary {
-  id: string;
-  quarter: string;
-  year: string;
-  progress: number;
-  updated_at: string;
-  created_at: string;
-}
-
-const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
-
-function getDraftsToken() {
-  return localStorage.getItem('token');
-}
-
-function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extension') => void }) {
-  const [accDraft, setAccDraft] = useState<DraftSummary | null>(null);
-  const [extDraft, setExtDraft] = useState<DraftSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-
-  const fetchDrafts = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const token = getDraftsToken();
-      const [accRes, extRes] = await Promise.all([
-        fetch(`${ACCOMPLISHMENT_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${EXTENSION_DRAFTS_URL}/my-draft`, { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-      let hadError = false;
-      if (accRes.ok) setAccDraft(await accRes.json());
-      else hadError = true;
-      if (extRes.ok) setExtDraft(await extRes.json());
-      else hadError = true;
-      if (hadError) setLoadError('Failed to load one or more drafts.');
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchDrafts(); }, []);
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-
-  const cards = [
-    accDraft ? { type: 'accomplishment' as const, label: 'Accomplishment Report', draft: accDraft } : null,
-    extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft } : null,
-  ].filter(Boolean) as { type: 'accomplishment' | 'extension'; label: string; draft: DraftSummary }[];
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
-      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
-      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
-          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Loading drafts...</span>
-        </div>
-      ) : cards.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {cards.map(({ type, label, draft }) => (
-            <div key={type} className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
-              <div className="min-w-0">
-                <div className="font-semibold text-gray-900 text-sm">{label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{draft.quarter} Quarter, {draft.year} · {draft.progress ?? 0}% complete</div>
-                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
-              </div>
-              <button
-                onClick={() => onEdit(type)}
-                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
-              >
-                Continue Editing
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* Chair's own Reports */
-function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'drafts' | 'accomplishment' | 'extension'>('drafts');
-
-  return (
-    <div>
-      <div className="mb-6 pb-6 border-b border-gray-200">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Reports</h1>
-        <p className="text-gray-500 text-sm">Submit and track your own Accomplishment and Extension reports as Department Chair.</p>
-      </div>
-
-      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => setTab('drafts')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
-        >
-          My Drafts
-        </button>
-        <button
-          onClick={() => setTab('accomplishment')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
-        >
-          Accomplishment Report
-        </button>
-        <button
-          onClick={() => setTab('extension')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
-        >
-          Extension Report
-        </button>
-      </div>
-
-      {tab === 'drafts' && (
-        <MyDraftsPanel onEdit={(type) => setTab(type)} />
-      )}
-
-      {tab === 'accomplishment' && (
-        <AccomplishmentReport userId={userId} userName={userName} />
-      )}
-
-      {tab === 'extension' && (
-        <ExtensionReport userId={userId} userName={userName} />
-      )}
-    </div>
-  );
-}
-
 /* ─────────────────────────────────────────────
    Reports Monitoring
 ───────────────────────────────────────────── */
-function ReportsMonitoring() {
-  const [view, setView] = useState<'table' | 'details'>('table');
-  const [selectedReport, setSelectedReport] = useState<any>(null);
+const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
+const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
+const WFH_API_URL = 'http://localhost:5000/api/wfh-reports';
 
-  const [reports] = useState([
-    {
-      id: 1,
-      faculty: 'Dr. Sarah Johnson',
-      report: 'Q4 2025 Performance Report',
-      status: 'Submitted',
-      dateSubmitted: 'Feb 10, 2026',
-      content: 'Summary of student achievements and research progress for the semester. All course objectives met with 95% passing rate.',
-    },
-    {
-      id: 2,
-      faculty: 'Prof. Michael Chen',
-      report: 'Q4 2025 Performance Report',
-      status: 'Pending',
-      dateSubmitted: '---',
-      content: '',
-    },
-  ]);
+interface AccomplishmentReportRow {
+  id: string; submitted_by: string; quarter: string; year: string; status: string; progress: number; dean_remarks: string | null; created_at: string; updated_at: string;
+  pi1_data?: any[]; mfo3_pi3_data?: any[]; other_accomplishments?: string | null;
+}
+interface ExtensionReportRow {
+  id: string; submitted_by: string; quarter: string; year: string; status: string; progress: number; dean_remarks: string | null; created_at: string; updated_at: string; rows?: any[];
+}
+interface WfhReportRow {
+  id: string; user_id: string; name?: string; reporting_period?: string; position_rank?: string; college_office?: string; program_unit?: string; working_hours?: string; daily_accomplishments?: any[]; supporting_docs?: Record<string, boolean>; other_docs_specify?: string; photos?: any[]; status: string; dean_remarks: string | null; created_at: string; updated_at: string;
+}
+interface ConsolidatedReportRow {
+  profile: any; departmentName: string; accomplishmentReport: AccomplishmentReportRow | null; extensionReport: ExtensionReportRow | null; wfhReport: WfhReportRow | null; effectiveStatus: string; effectiveProgress: number; lastUpdated: string | null;
+}
 
-  if (view === 'details' && selectedReport) {
-    return (
-      <div>
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => { setView('table'); setSelectedReport(null); }}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft />
-          </button>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Report Details</h1>
-        </div>
+export function ReportsMonitoring({ departmentNames }: { departmentNames: string[] }) {
+  const [rows, setRows] = useState<ConsolidatedReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [quarterSelect, setQuarterSelect] = useState<string>(() => {
+    const now = new Date();
+    return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+  });
+  const [statusFilter, setStatusFilter] = useState<'all' | 'not_started' | 'submitted' | 'approved' | 'rejected'>('all');
+  const [search, setSearch] = useState('');
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
-        <div className="bg-white rounded-xl shadow-md p-5 sm:p-8 border border-gray-100">
-          <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b pb-6 mb-6">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{selectedReport.report}</h2>
-              <p className="text-blue-600 font-medium">Faculty: {selectedReport.faculty}</p>
-            </div>
-            <div className="sm:text-right">
-              <span className={`px-4 py-1 rounded-full text-sm font-bold ${selectedReport.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                {selectedReport.status}
-              </span>
-              <p className="text-xs text-gray-500 mt-2 italic">Submission Date: {selectedReport.dateSubmitted}</p>
-            </div>
-          </div>
+  const [selectedReport, setSelectedReport] = useState<{ type: string; report: any; profile: any; } | null>(null);
+  const [rejectFor, setRejectFor] = useState<{ type: string; report: any } | null>(null);
+  const [remarksInput, setRemarksInput] = useState('');
+  const [actionId, setActionId] = useState<string | null>(null);
 
-          <div className="space-y-6 text-gray-700">
-            <h3 className="text-lg font-semibold text-gray-800">Faculty Submission Content:</h3>
-            <div className="p-4 sm:p-6 bg-gray-50 rounded-lg border border-gray-100 leading-relaxed italic">
-              "{selectedReport.content || 'No content provided for this report.'}"
-            </div>
-            <button className="flex items-center gap-2 text-blue-600 font-medium hover:underline">
-              <Download size={18} /> Download Full Attachment (PDF)
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+
+  const showInfo = (title: string, message: string) => { setModalTitle(title); setModalMessage(message); setShowInfoModal(true); };
+  const getToken = () => localStorage.getItem('token');
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const [q, y] = quarterSelect.split(' ');
+    const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+    const quarter = quarterMap[q] || '1st';
+    const year = y || String(new Date().getFullYear());
+
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
+      let personnelList = profiles || [];
+
+      // EXCEPTION LOGIC: Strictly filter based on chairman's program using Smart Matcher
+      if (departmentNames && departmentNames.length > 0) {
+        personnelList = personnelList.filter((u: any) => {
+          const userProg = (u.program || u.department || '').trim();
+          return isProgramMatch(userProg, departmentNames);
+        });
+      } else {
+        personnelList = []; 
+      }
+
+      // Fetch Reports directly from Supabase for resilience
+      const [ { data: accData }, { data: extData }, { data: wfhData } ] = await Promise.all([
+        supabase.from('accomplishment_reports').select('*').eq('quarter', quarter).eq('year', year),
+        supabase.from('extension_reports').select('*').eq('quarter', quarter).eq('year', year),
+        supabase.from('wfh_reports').select('*').neq('status', 'draft')
+      ]);
+
+      const accMap = new Map((accData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
+      const extMap = new Map((extData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
+      const wfhMap = new Map((wfhData || []).filter(r => r.status !== 'draft').map(r => [r.user_id, r]));
+
+      const consolidated = personnelList.map((p: any) => {
+        const departmentName = p.department || p.program || 'General';
+        const acc = accMap.get(p.id) ?? null;
+        const ext = extMap.get(p.id) ?? null;
+        const wfh = wfhMap.get(p.id) ?? null;
+
+        let effectiveStatus = 'not_started';
+        let progress = 0;
+
+        if (acc || ext || wfh) {
+          const statuses = [acc?.status, ext?.status, wfh?.status].filter(Boolean);
+          if (statuses.includes('submitted')) effectiveStatus = 'submitted';
+          else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
+          else if (statuses.includes('approved')) effectiveStatus = 'approved';
+
+          const validProgress: number[] = [];
+          if (typeof acc?.progress === 'number') validProgress.push(acc.progress);
+          if (typeof ext?.progress === 'number') validProgress.push(ext.progress);
+          if (wfh) validProgress.push(wfh.status === 'approved' ? 100 : 75);
+          progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
+        }
+
+        return { profile: p, departmentName, accomplishmentReport: acc, extensionReport: ext, wfhReport: wfh, effectiveStatus, effectiveProgress: progress, lastUpdated: acc?.updated_at || null };
+      });
+
+      setRows(consolidated);
+    } catch (err: any) {
+      showInfo('Error', err?.message || 'Failed to load reports.');
+    } finally {
+      setLoading(false);
+    }
+  }, [quarterSelect, departmentNames]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
+    setActionId(id);
+    const table = type === 'accomplishment' ? 'accomplishment_reports' : type === 'extension' ? 'extension_reports' : 'wfh_reports';
+    try {
+      const { error } = await supabase.from(table).update({ status, dean_remarks: remarks }).eq('id', id);
+      if (error) {
+        showInfo('Error', error.message);
+        return;
+      }
+      showInfo('Success', `Report successfully marked as ${status}.`);
+      setSelectedReport(null);
+      setRejectFor(null);
+      await fetchData();
+    } catch {
+      showInfo('Error', 'Could not reach the server.');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+    setRemindingId(row.profile.id);
+    try {
+      await supabase.from('notifications').insert({
+        user_id: row.profile.id,
+        title: `Reminder: ${quarterSelect} Quarterly Report`,
+        message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report to the Chairman.`,
+        type: 'announcement',
+        is_read: false,
+      });
+      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+    } catch (err: any) {
+      showInfo('Error', err.message || 'Failed to send reminder.');
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
+  const filteredRows = rows.filter((row) => {
+    if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      const matchName = (row.profile.full_name || '').toLowerCase().includes(query);
+      if (!matchName) return false;
+    }
+    return true;
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch(status) {
+      case 'approved': return { label: 'Approved', bg: '#D1FAE5', color: '#065F46' };
+      case 'submitted': return { label: 'Pending Review', bg: '#FEF3C7', color: '#92400E' };
+      case 'rejected': return { label: 'Rejected', bg: '#FEE2E2', color: '#B91C1C' };
+      default: return { label: 'Not Started', bg: '#FEE2E2', color: '#991B1B' };
+    }
+  };
 
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports Monitoring</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Reports Monitoring</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Consolidated submission monitoring and approval for Faculty under <span className="font-semibold text-gray-800">{departmentNames.join(', ')}</span>.
+          </p>
+        </div>
+        <select value={quarterSelect} onChange={(e) => setQuarterSelect(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          {['Q4 2026', 'Q3 2026', 'Q2 2026', 'Q1 2026'].map((q) => <option key={q} value={q}>{q}</option>)}
+        </select>
+      </div>
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px]">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left py-4 px-4 sm:px-6 text-sm font-semibold text-gray-700">Faculty Name</th>
-                <th className="text-left py-4 px-4 sm:px-6 text-sm font-semibold text-gray-700">Report Type</th>
-                <th className="text-center py-4 px-4 sm:px-6 text-sm font-semibold text-gray-700">Date Submitted</th>
-                <th className="text-center py-4 px-4 sm:px-6 text-sm font-semibold text-gray-700">Status</th>
-                <th className="text-center py-4 px-4 sm:px-6 text-sm font-semibold text-gray-700">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((report) => (
-                <tr key={report.id} className="border-t border-gray-200 hover:bg-gray-50 transition-colors">
-                  <td className="py-4 px-4 sm:px-6 font-medium text-gray-900 whitespace-nowrap">{report.faculty}</td>
-                  <td className="py-4 px-4 sm:px-6 text-gray-600">{report.report}</td>
-                  <td className="py-4 px-4 sm:px-6 text-center text-gray-500 font-mono text-sm whitespace-nowrap">{report.dateSubmitted}</td>
-                  <td className="py-4 px-4 sm:px-6 text-center">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${report.status === 'Submitted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {report.status}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 sm:px-6 text-center">
-                    {report.status === 'Submitted' ? (
-                      <button
-                        onClick={() => { setSelectedReport(report); setView('details'); }}
-                        className="px-4 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all text-sm font-medium whitespace-nowrap"
-                      >
-                        View Details
-                      </button>
-                    ) : (
-                      <span className="text-gray-400 text-xs italic">Awaiting Submission</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4">
+        <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search faculty name..." className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none bg-gray-50" />
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50">
+              <option value="all">All Status</option>
+              <option value="not_started">Not Started</option>
+              <option value="submitted">Pending Review</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button onClick={fetchData} className="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600"><RefreshCw className="w-4 h-4" /></button>
+          </div>
         </div>
       </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center items-center h-64 text-gray-400"><Loader2 className="w-8 h-8 animate-spin" /></div>
+        ) : filteredRows.length === 0 ? (
+          <div className="flex flex-col justify-center items-center h-64 text-gray-400">
+            <ClipboardCheck className="w-12 h-12 mb-3 opacity-30" />
+            <p>No reports found for this program.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[850px]">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left py-3.5 px-6 text-xs font-semibold text-gray-500 uppercase">Faculty Name</th>
+                  <th className="text-left py-3.5 px-6 text-xs font-semibold text-gray-500 uppercase">Submissions</th>
+                  <th className="text-left py-3.5 px-6 text-xs font-semibold text-gray-500 uppercase">Progress</th>
+                  <th className="text-center py-3.5 px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="text-center py-3.5 px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredRows.map((row) => {
+                  const cfg = getStatusBadge(row.effectiveStatus);
+                  return (
+                    <tr key={row.profile.id} className="hover:bg-blue-50/30">
+                      <td className="py-4 px-6">
+                        <div className="font-semibold text-gray-900 text-sm">{row.profile.full_name}</div>
+                        <div className="text-xs text-gray-400">{row.departmentName}</div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {row.accomplishmentReport && <button onClick={() => setSelectedReport({ type: 'accomplishment', report: row.accomplishmentReport!, profile: row.profile })} className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100"><FileText className="w-3 h-3 inline mr-1" />Accomplishment</button>}
+                          {row.extensionReport && <button onClick={() => setSelectedReport({ type: 'extension', report: row.extensionReport!, profile: row.profile })} className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100"><FileText className="w-3 h-3 inline mr-1" />Extension</button>}
+                          {row.wfhReport && <button onClick={() => setSelectedReport({ type: 'wfh', report: row.wfhReport!, profile: row.profile })} className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100"><FileText className="w-3 h-3 inline mr-1" />WFH</button>}
+                          {!row.accomplishmentReport && !row.extensionReport && !row.wfhReport && <span className="text-xs text-gray-400">—</span>}
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden w-24">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${row.effectiveProgress}%`, backgroundColor: row.effectiveStatus === 'approved' ? '#10B981' : row.effectiveProgress > 0 ? '#F59E0B' : '#D1D5DB' }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600">{row.effectiveProgress}%</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex justify-center">
+                          {row.accomplishmentReport || row.extensionReport || row.wfhReport ? (
+                            <button onClick={() => setSelectedReport({ type: 'accomplishment', report: row.accomplishmentReport || row.extensionReport || row.wfhReport, profile: row.profile })} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg">
+                              <Eye className="w-3.5 h-3.5" /> View
+                            </button>
+                          ) : (
+                            <button onClick={() => sendIndividualReminder(row)} disabled={remindingId === row.profile.id} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg">
+                              {remindingId === row.profile.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Megaphone className="w-3.5 h-3.5" />} Remind
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Review Modal */}
+      {selectedReport && (
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-4 overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
+            <div className="flex justify-between p-4 border-b sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="font-bold text-gray-900 capitalize">{selectedReport.type} Report — {selectedReport.profile.full_name}</h3>
+                <p className="text-xs text-gray-500 uppercase">Status: <span className="font-semibold">{selectedReport.report.status}</span></p>
+              </div>
+              <button onClick={() => setSelectedReport(null)} className="p-2 hover:bg-gray-100 rounded-xl"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              {selectedReport.type === 'accomplishment' && (
+                <div className="space-y-4">
+                  {[
+                    { title: 'PI 1: Licensure Exam', rows: (selectedReport.report as AccomplishmentReportRow).pi1_data, cols: [['date_exam','Date'],['no_passers','Passers']] },
+                    { title: 'Research & Pubs', rows: (selectedReport.report as AccomplishmentReportRow).mfo3_pi3_data, cols: [['title_research','Title'],['name_publication','Publication']] },
+                  ].filter(s => s.rows && s.rows.length > 0).map(section => (
+                    <div key={section.title}>
+                      <p className="font-semibold text-sm text-gray-800 mb-1">{section.title}</p>
+                      <GenericJsonTable rows={section.rows!} columns={section.cols.map(([key, label]) => ({ key, label }))} />
+                    </div>
+                  ))}
+                  {(selectedReport.report as AccomplishmentReportRow).other_accomplishments && (
+                    <div className="text-sm bg-gray-50 p-3 rounded-xl border">{(selectedReport.report as AccomplishmentReportRow).other_accomplishments}</div>
+                  )}
+                </div>
+              )}
+              {selectedReport.type === 'extension' && (
+                <GenericJsonTable rows={(selectedReport.report as ExtensionReportRow).rows ?? []} columns={[{ key: 'extension_project', label: 'Project' }, { key: 'partner_linkage', label: 'Partner' }]} />
+              )}
+              {selectedReport.type === 'wfh' && (
+                <GenericJsonTable rows={(selectedReport.report as WfhReportRow).daily_accomplishments ?? []} columns={[{ key: 'date', label: 'Date' }, { key: 'activities', label: 'Activities' }]} />
+              )}
+
+              {selectedReport.report.status === 'submitted' && (
+                <div className="flex gap-3 pt-4 border-t">
+                  <button onClick={() => decideReport(selectedReport.type, selectedReport.report.id, 'approved')} className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Approve</button>
+                  <button onClick={() => setRejectFor({ type: selectedReport.type, report: selectedReport.report })} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700">Reject</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Remarks Modal */}
+      {rejectFor && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="font-bold text-lg mb-2">Reject Report?</h3>
+            <textarea value={remarksInput} onChange={(e) => setRemarksInput(e.target.value)} rows={3} placeholder="Reasons for rejection..." className="w-full p-2 border rounded-xl text-sm mb-4" />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectFor(null)} className="flex-1 py-2 border rounded-xl text-sm font-semibold">Cancel</button>
+              <button onClick={() => decideReport(rejectFor.type, rejectFor.report.id, 'rejected', remarksInput)} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold">Confirm Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInfoModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white p-6 rounded-xl w-full max-w-sm text-center">
+            <h3 className="font-bold text-lg mb-2">{modalTitle}</h3>
+            <p className="text-gray-600 text-sm mb-4">{modalMessage}</p>
+            <button onClick={() => setShowInfoModal(false)} className="w-full py-2 bg-[#1E3A8A] text-white font-semibold rounded-xl text-sm">OK</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// ─── Shared Generic Table for Reports ──────────────────────────────────────────
+function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: string; label: string }[] }) {
+  if (!rows || rows.length === 0) return <p className="text-xs text-gray-400 italic py-1">No entries recorded.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-collapse border border-gray-200">
+        <thead>
+          <tr className="bg-gray-100">
+            {columns.map((c) => <th key={c.key} className="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">{c.label}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+              {columns.map((c) => <td key={c.key} className="border border-gray-200 px-3 py-2 align-top text-gray-800">{row[c.key] || '—'}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────
-   Academic Records
+   Academic Records Viewer
 ───────────────────────────────────────────── */
 function AcademicRecordsView() {
   return <AcademicDocumentsViewer />;
@@ -2479,15 +2632,8 @@ function AcademicRecordsView() {
    Announcements
 ───────────────────────────────────────────── */
 interface Announcement {
-  id: string;
-  title: string;
-  content: string;
-  author_id: string | null;
-  target_role: string[] | null;
-  is_pinned: boolean | null;
-  expires_at: string | null;
-  created_at: string;
-  updated_at: string;
+  id: string; title: string; content: string; author_id: string | null; target_role: string[] | null;
+  is_pinned: boolean | null; expires_at: string | null; created_at: string; updated_at: string;
 }
 
 const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
@@ -2496,119 +2642,83 @@ function AnnouncementsView() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-
-  const [showModal, setShowModal]         = useState(false);
-  const [expandedId, setExpandedId]       = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [submitting, setSubmitting]       = useState(false);
-  const [deletingId, setDeletingId]       = useState<string | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', scheduledDate: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } });
   const [formError, setFormError] = useState('');
 
   const fetchAnnouncements = async () => {
-    setLoading(true);
-    setLoadError('');
+    setLoading(true); setLoadError('');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(ANNOUNCEMENTS_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError('Failed to load announcements: ' + (err.error || res.statusText));
-        setAnnouncements([]);
-        return;
-      }
+      const res = await fetch(ANNOUNCEMENTS_API_URL, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Failed to load announcements');
       const data = await res.json();
-      setAnnouncements((data ?? []) as Announcement[]);
+      setAnnouncements(data ?? []);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
       setAnnouncements([]);
     }
     setLoading(false);
   };
-  useEffect(() => {
-    fetchAnnouncements();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  
+  useEffect(() => { fetchAnnouncements(); }, []);
 
   const handleCreate = async () => {
     setFormError('');
-    if (!form.title.trim())       { setFormError('Title is required.'); return; }
+    if (!form.title.trim()) { setFormError('Title is required.'); return; }
     if (!form.description.trim()) { setFormError('Description is required.'); return; }
-    if (!form.scheduledDate)      { setFormError('Please select a scheduled date.'); return; }
+    
+    const hasRecipient = form.recipients.faculty || form.recipients.student || form.recipients.alumni;
+    if (!hasRecipient) { setFormError('Please select at least one target recipient.'); return; }
 
     setSubmitting(true);
+    const targetRoles = [];
+    if (form.recipients.faculty) targetRoles.push('faculty');
+    if (form.recipients.student) targetRoles.push('student');
+    if (form.recipients.alumni) targetRoles.push('alumni');
 
     const payload = {
-      title: form.title.trim(),
-      content: form.description.trim(),
-      expires_at: toTimestamp(form.scheduledDate),
+      title: form.title.trim(), content: form.description.trim(), target_role: targetRoles,
+      expires_at: form.scheduledDate ? toTimestamp(form.scheduledDate) : null,
     };
 
-    const token = localStorage.getItem('token');
-    let res: Response;
     try {
-      res = await fetch(ANNOUNCEMENTS_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+      const token = localStorage.getItem('token');
+      const res = await fetch(ANNOUNCEMENTS_API_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
       });
-    } catch (err) {
-      setSubmitting(false);
+      if (!res.ok) throw new Error('Failed to post announcement');
+      const data = await res.json();
+      setAnnouncements(prev => [data as Announcement, ...prev]);
+      setForm({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } });
+      setShowModal(false);
+    } catch {
       setFormError('Could not reach the server. Please try again.');
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setFormError('Failed to post announcement: ' + (err.error || res.statusText));
-      return;
-    }
-
-    const data = await res.json();
-    setAnnouncements(prev => [data as Announcement, ...prev]);
-    setForm({ title: '', description: '', scheduledDate: '' });
-    setShowModal(false);
   };
 
   const handleDelete = async (id: string) => {
     setDeletingId(id);
-    const token = localStorage.getItem('token');
-    let res: Response;
     try {
-      res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (err) {
+      const res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+      if (!res.ok) throw new Error('Failed to delete announcement');
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
+      setDeleteConfirm(null);
+      if (expandedId === id) setExpandedId(null);
+    } catch {
+      setLoadError('Could not reach the server.');
+    } finally {
       setDeletingId(null);
-      setLoadError('Could not reach the server. Please try again.');
-      return;
     }
-    setDeletingId(null);
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setLoadError('Failed to delete announcement: ' + (err.error || res.statusText));
-      return;
-    }
-
-    setAnnouncements(prev => prev.filter(a => a.id !== id));
-    setDeleteConfirm(null);
-    if (expandedId === id) setExpandedId(null);
   };
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  };
-
+  const formatDate = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const isUpcoming = (expiresAt: string | null) => {
     if (!expiresAt) return true;
     const today = new Date().toISOString().split('T')[0];
@@ -2622,198 +2732,99 @@ function AnnouncementsView() {
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Announcements</h1>
           <p className="text-gray-500 text-sm">Post and manage announcements for faculty and students.</p>
         </div>
-        <button
-          onClick={() => { setForm({ title: '', description: '', scheduledDate: '' }); setFormError(''); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors text-sm font-semibold shadow-md flex-shrink-0 self-start"
-        >
-          <Plus className="w-4 h-4" />
-          New Announcement
+        <button onClick={() => { setForm({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } }); setFormError(''); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors text-sm font-semibold shadow-md flex-shrink-0 self-start">
+          <Plus className="w-4 h-4" /> New Announcement
         </button>
       </div>
 
-      {loadError && (
-        <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {loadError}
-        </div>
-      )}
+      {loadError && <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {loadError}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm">Loading announcements…</span>
-        </div>
+        <div className="flex items-center justify-center py-20 text-gray-400 gap-2"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-sm">Loading announcements…</span></div>
       ) : announcements.length === 0 ? (
-        <div className="py-20 text-center text-gray-400">
-          <Megaphone className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No announcements yet. Create one to get started.</p>
-        </div>
+        <div className="py-20 text-center text-gray-400"><Megaphone className="w-10 h-10 mx-auto mb-3 opacity-30" /><p className="text-sm">No announcements yet. Create one to get started.</p></div>
       ) : (
         <div className="space-y-3">
           {announcements.map(ann => (
-            <div
-              key={ann.id}
-              className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-            >
+            <div key={ann.id} onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-[#1E3A8A]/30 transition-all cursor-pointer group">
               <div className="flex items-start gap-4 p-4 sm:p-5">
                 <div className="w-1 self-stretch rounded-full bg-[#1E3A8A] flex-shrink-0" />
-
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      isUpcoming(ann.expires_at)
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {isUpcoming(ann.expires_at) ? 'Upcoming' : 'Past'}
-                    </span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isUpcoming(ann.expires_at) ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{isUpcoming(ann.expires_at) ? 'Upcoming' : 'Past'}</span>
                     <span className="text-xs text-gray-400">Posted {formatDate(dateOnly(ann.created_at))}</span>
                   </div>
-                  <h3 className="font-semibold text-gray-900 text-base leading-snug">{ann.title}</h3>
-                  {ann.expires_at && (
-                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                      <Calendar className="w-3.5 h-3.5" />
-                      Scheduled: {formatDate(dateOnly(ann.expires_at))}
+                  <h3 className="font-semibold text-gray-900 group-hover:text-[#1E3A8A] text-base leading-snug transition-colors">{ann.title}</h3>
+                  {ann.target_role && ann.target_role.length > 0 && (
+                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                      <span className="text-[10px] text-gray-500 font-semibold mr-1">To:</span>
+                      {ann.target_role.map(role => <span key={role} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded uppercase font-semibold">{role}</span>)}
                     </div>
                   )}
                 </div>
-
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)}
-                    className="p-2 text-gray-400 hover:text-[#1E3A8A] hover:bg-blue-50 rounded-lg transition-colors text-xs font-medium"
-                    title={expandedId === ann.id ? 'Collapse' : 'View details'}
-                  >
-                    <ChevronRight className={`w-4 h-4 transition-transform ${expandedId === ann.id ? 'rotate-90' : ''}`} />
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirm(ann.id)}
-                    disabled={deletingId === ann.id}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
-                    title="Delete announcement"
-                  >
-                    {deletingId === ann.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </button>
+                  <button className="p-2 text-gray-400 group-hover:text-[#1E3A8A] group-hover:bg-blue-50 rounded-lg transition-colors text-xs font-medium"><ChevronRight className={`w-4 h-4 transition-transform ${expandedId === ann.id ? 'rotate-90' : ''}`} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(ann.id); }} disabled={deletingId === ann.id} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">{deletingId === ann.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}</button>
                 </div>
               </div>
-
-              {expandedId === ann.id && (
-                <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50">
-                  <p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p>
-                </div>
-              )}
+              {expandedId === ann.id && <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50"><p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p></div>}
             </div>
           ))}
         </div>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">New Announcement</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Fill in the details below to post an announcement.</p>
-              </div>
-              <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+              <div><h2 className="text-lg font-bold text-gray-900">New Announcement</h2><p className="text-xs text-gray-400 mt-0.5">Fill in the details below to post an announcement.</p></div>
+              <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
-
-            <div className="space-y-4">
-              {formError && (
-                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 flex items-center gap-2">
-                  <X className="w-4 h-4 flex-shrink-0" /> {formError}
+            <div className="overflow-y-auto p-6 space-y-4 custom-scrollbar">
+              {formError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {formError}</div>}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title <span className="text-red-500">*</span></label>
+                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Faculty Meeting — July 2026" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Target Recipients <span className="text-red-500">*</span></label>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.faculty} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, faculty: e.target.checked } })} /> Faculty / Staff</label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.student} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, student: e.target.checked } })} /> Students</label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.alumni} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, alumni: e.target.checked } })} /> Alumni</label>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={e => setForm({ ...form, title: e.target.value })}
-                  placeholder="e.g. Faculty Meeting — July 2026"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]"
-                />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Scheduled Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={form.scheduledDate}
-                  onChange={e => setForm({ ...form, scheduledDate: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]"
-                />
-                <p className="text-xs text-gray-400 mt-1">This is the date the announcement is about, or the event date.</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date (Optional)</label>
+                <input type="date" value={form.scheduledDate} onChange={e => setForm({ ...form, scheduledDate: e.target.value })} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  rows={4}
-                  placeholder="Write the full announcement message here…"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] resize-none"
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-red-500">*</span></label>
+                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} placeholder="Write the full announcement message here…" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] resize-none" />
               </div>
             </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowModal(false)}
-                disabled={submitting}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Posting…' : 'Post Announcement'}
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
+              <button onClick={() => setShowModal(false)} disabled={submitting} className="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={handleCreate} disabled={submitting} className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {submitting ? 'Posting…' : 'Post Announcement'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {deleteConfirm !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      
+      {deleteConfirm !== null && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-              <Trash2 className="w-7 h-7 text-red-600" />
-            </div>
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><Trash2 className="w-7 h-7 text-red-600" /></div>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Delete Announcement?</h3>
-            <p className="text-sm text-gray-500 mb-6">
-              This will permanently remove <span className="font-semibold text-gray-800">"{announcements.find(a => a.id === deleteConfirm)?.title}"</span>. This cannot be undone.
-            </p>
+            <p className="text-sm text-gray-500 mb-6">This will permanently remove <span className="font-semibold text-gray-800">"{announcements.find(a => a.id === deleteConfirm)?.title}"</span>. This cannot be undone.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                Yes, Delete
-              </button>
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={() => handleDelete(deleteConfirm)} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">Yes, Delete</button>
             </div>
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
@@ -2975,7 +2986,7 @@ function ChairSystemSettings({
                     type="text"
                     value={positionRole}
                     disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500"
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
                   />
                 </div>
                 <div>
