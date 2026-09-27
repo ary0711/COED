@@ -24,24 +24,25 @@ const upload = multer({
 
 const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
 
+// Updated to exactly match the frontend dash format to prevent validation errors
 const ALLOWED_SDGS = [
-  'SDG 1: No Poverty',
-  'SDG 2: Zero Hunger',
-  'SDG 3: Good Health and Well-Being',
-  'SDG 4: Quality Education',
-  'SDG 5: Gender Equality',
-  'SDG 6: Clean Water and Sanitation',
-  'SDG 7: Affordable and Clean Energy',
-  'SDG 8: Decent Work and Economic Growth',
-  'SDG 9: Industry, Innovation and Infrastructure',
-  'SDG 10: Reduced Inequalities',
-  'SDG 11: Sustainable Cities and Communities',
-  'SDG 12: Responsible Consumption and Production',
-  'SDG 13: Climate Action',
-  'SDG 14: Life Below Water',
-  'SDG 15: Life on Land',
-  'SDG 16: Peace, Justice and Strong Institutions',
-  'SDG 17: Partnerships for the Goals',
+  'SDG 1 – No Poverty',
+  'SDG 2 – Zero Hunger',
+  'SDG 3 – Good Health and Well-Being',
+  'SDG 4 – Quality Education',
+  'SDG 5 – Gender Equality',
+  'SDG 6 – Clean Water and Sanitation',
+  'SDG 7 – Affordable and Clean Energy',
+  'SDG 8 – Decent Work and Economic Growth',
+  'SDG 9 – Industry, Innovation and Infrastructure',
+  'SDG 10 – Reduced Inequalities',
+  'SDG 11 – Sustainable Cities and Communities',
+  'SDG 12 – Responsible Consumption and Production',
+  'SDG 13 – Climate Action',
+  'SDG 14 – Life Below Water',
+  'SDG 15 – Life on Land',
+  'SDG 16 – Peace, Justice and Strong Institutions',
+  'SDG 17 – Partnerships for the Goals',
 ];
 
 // GET /api/research-submissions/preview-url
@@ -101,9 +102,10 @@ router.get('/', authenticate, requireDean, async (req, res) => {
 
   const submitterIds = [...new Set(submissions.map((s) => s.submitted_by).filter(Boolean))];
 
+  // Fetch profiles including direct department/program fields
   const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
-    .select('id, full_name, role')
+    .select('id, full_name, role, department, program')
     .in('id', submitterIds);
 
   if (profilesError) {
@@ -112,6 +114,7 @@ router.get('/', authenticate, requireDean, async (req, res) => {
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
+  // Fetch relational faculty department records
   const { data: facultyRows } = await supabase
     .from('faculty_profiles')
     .select('user_id, department_id')
@@ -134,12 +137,18 @@ router.get('/', authenticate, requireDean, async (req, res) => {
   const merged = submissions.map((s) => {
     const profile = profileMap.get(s.submitted_by);
     const deptId = departmentIdByUser.get(s.submitted_by);
-    const departmentName = deptId ? departmentNameById.get(deptId) ?? null : null;
+    
+    // Fallback logic: 1. Relation DB -> 2. Text column (department) -> 3. Text column (program)
+    const resolvedDepartment =
+      (deptId ? departmentNameById.get(deptId) : null) ||
+      profile?.department ||
+      profile?.program ||
+      null;
 
     return {
       ...s,
       submitter: profile
-        ? { full_name: profile.full_name, department: departmentName }
+        ? { full_name: profile.full_name, department: resolvedDepartment }
         : null,
     };
   });

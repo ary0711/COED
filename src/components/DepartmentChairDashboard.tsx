@@ -39,7 +39,8 @@ import {
   CalendarDays,
   Pencil,
   ClipboardCheck,
-  RefreshCw
+  RefreshCw,
+  TrendingUp,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -50,6 +51,7 @@ import AnnouncementsContent from './AnnouncementsContent';
 
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
+import { ResearchExtension } from './ResearchExtension';
 
 import { supabase } from '../supabaseClient';
 
@@ -66,14 +68,15 @@ const toTimestamp = (dateStr: string): string => {
 };
 
 const chairMenuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard',           id: 'dashboard' },
-  { icon: Calendar,        label: 'Department Calendar', id: 'calendar' },
-  { icon: FileCheck2,      label: 'Reports',             id: 'chairReports' },
-  { icon: FileText,        label: 'Reports Monitoring',  id: 'reports' },
-  { icon: ClipboardList,   label: 'Academic Records',    id: 'records' },
-  { icon: Megaphone,       label: 'Announcements',       id: 'announcements' },
-  { icon: UserCheck,       label: 'Account Approvals',   id: 'approvals' },
-  { icon: Settings,        label: 'System Settings',     id: 'settings' },
+  { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
+  { icon: Calendar,        label: 'Department Calendar',  id: 'calendar' },
+  { icon: FileCheck2,      label: 'Reports',              id: 'chairReports' },
+  { icon: TrendingUp,     label: 'Research & Extension', id: 'researchExtension' },
+  { icon: FileText,        label: 'Reports Monitoring',   id: 'reports' },
+  { icon: ClipboardList,   label: 'Academic Records',     id: 'records' },
+  { icon: Megaphone,       label: 'Announcements',        id: 'announcements' },
+  { icon: UserCheck,       label: 'Account Approvals',    id: 'approvals' },
+  { icon: Settings,        label: 'System Settings',      id: 'settings' },
 ];
 
 interface DepartmentChairDashboardProps {
@@ -162,14 +165,15 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, on
           </div>
         </div>
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
-          {activeMenuItem === 'dashboard'   && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
-          {activeMenuItem === 'calendar'    && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
-          {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
-          {activeMenuItem === 'reports'     && <ReportsMonitoring departmentNames={departmentNames} />}
-          {activeMenuItem === 'records'     && <AcademicRecordsView />}
-          {activeMenuItem === 'announcements' && <AnnouncementsContent userRole="department_chair" />}
-          {activeMenuItem === 'approvals'   && <AccountApprovalsView departmentNames={departmentNames} />}
-          {activeMenuItem === 'settings'    && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
+          {activeMenuItem === 'dashboard'          && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
+          {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
+          {activeMenuItem === 'chairReports'        && <ChairReportsView userId={userId} userName={userName} />}
+          {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
+          {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
+          {activeMenuItem === 'records'            && <AcademicRecordsView />}
+          {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
+          {activeMenuItem === 'approvals'          && <AccountApprovalsView departmentNames={departmentNames} />}
+          {activeMenuItem === 'settings'           && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
         </main>
       </div>
     </div>
@@ -1697,9 +1701,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
 
 /* ─────────────────────────────────────────────
    Chair Reports View
-   Wired to the real AccomplishmentReport and ExtensionReport
-   components. Lets the Department Chair switch between their
-   own Accomplishment Report and Extension Report forms.
 ───────────────────────────────────────────── */
 function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
   const [activeReportTab, setActiveReportTab] = useState<'accomplishment' | 'extension'>('accomplishment');

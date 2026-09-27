@@ -84,17 +84,19 @@ router.get('/', authenticate, async (req, res) => {
 
 // POST /api/announcements
 router.post('/', authenticate, async (req, res) => {
+  // 1. Extract from req.body FIRST before any validation
+  const { title, content, expires_at, is_pinned, event_date, start_time, end_time } = req.body;
+  let { target_role, target_department_id } = req.body;
+
+  // 2. Validation checks
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required.' });
+  if (!content || !String(content).trim()) return res.status(400).json({ error: 'Content is required.' });
+  if (!event_date) return res.status(400).json({ error: 'Announcement date is required.' });
 
   const todayStr = new Date().toISOString().split('T')[0];
   if (event_date < todayStr) {
     return res.status(400).json({ error: 'Announcement date cannot be in the past.' });
   }
-  const { title, content, expires_at, is_pinned, event_date, start_time, end_time } = req.body;
-  let { target_role, target_department_id } = req.body;
-
-  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required.' });
-  if (!content || !String(content).trim()) return res.status(400).json({ error: 'Content is required.' });
-  if (!event_date) return res.status(400).json({ error: 'Announcement date is required.' });
 
   if (start_time && end_time && start_time > end_time) {
     return res.status(400).json({ error: 'End time cannot be earlier than start time.' });
