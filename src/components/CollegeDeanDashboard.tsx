@@ -1782,8 +1782,8 @@ interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
-  start_time?: string | null; // Added for start time support
-  end_time?: string | null; // Added for end time support
+  start_time?: string | null;
+  end_time?: string | null;
   end_date?: string | null;
   location: string | null;
   department_ids: string[] | null;
@@ -1852,7 +1852,6 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
-// Formats "HH:MM:SS" or "HH:MM" into readable 12-hour format (e.g., "9:00 AM")
 function formatSingleTime(timeStr?: string | null): string | null {
   if (!timeStr) return null;
   const parts = timeStr.split(':');
@@ -1865,7 +1864,6 @@ function formatSingleTime(timeStr?: string | null): string | null {
   return `${hours12}:${minutes} ${period}`;
 }
 
-// Combines start and end times into a clean range (e.g., "8:00 AM – 10:30 AM")
 function formatEventTimeRange(start?: string | null, end?: string | null): string {
   const s = formatSingleTime(start);
   const e = formatSingleTime(end);
@@ -1874,7 +1872,6 @@ function formatEventTimeRange(start?: string | null, end?: string | null): strin
   return 'Time not specified';
 }
 
-// Helper to sort events chronologically by start_time (events without time sort last)
 function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
   const dateComp = a.event_date.localeCompare(b.event_date);
   if (dateComp !== 0) return dateComp;
@@ -1902,28 +1899,23 @@ export default function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  // Core Data States
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Primary View Mode: Active Planning vs. History / Archive
   const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
 
-  // Calendar Navigation
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
 
-  // Modals & Inspection
   const [showModal, setShowModal] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Form State with Start & End Time
   const emptyForm = {
     title: '',
     date: '',
@@ -1933,14 +1925,13 @@ export default function CalendarActivities() {
     description: '',
     event_type: 'activity',
     custom_event_type: '',
-    event_color: '#10B981', // Default to Activity green
+    event_color: '#10B981',
     audience: 'all',
     target_department_id: '',
   };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
-  // Archive Search & Filter State
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveYear, setArchiveYear] = useState<string>('all');
   const [archiveMonth, setArchiveMonth] = useState<string>('all');
@@ -2136,6 +2127,12 @@ export default function CalendarActivities() {
     
     if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
       setFormError('Please complete all required fields. Only the description is optional.');
+      return;
+    }
+
+    // Prevent selecting a past date upon creation/edit
+    if (form.date < todayStr) {
+      setFormError('You cannot schedule an event on a past date.');
       return;
     }
 
@@ -2905,7 +2902,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Unified Add / Edit Event Modal with Start & End Time ── */}
+      {/* ── Unified Add / Edit Event Modal ── */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div
@@ -2953,6 +2950,7 @@ export default function CalendarActivities() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
                   type="date"
+                  min={todayStr} 
                   value={form.date}
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
