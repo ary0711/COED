@@ -46,6 +46,7 @@ import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
+import AnnouncementsContent from './AnnouncementsContent';
 
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
@@ -166,7 +167,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, on
           {activeMenuItem === 'chairReports' && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'reports'     && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'     && <AcademicRecordsView />}
-          {activeMenuItem === 'announcements' && <AnnouncementsView />}
+          {activeMenuItem === 'announcements' && <AnnouncementsContent userRole="department_chair" />}
           {activeMenuItem === 'approvals'   && <AccountApprovalsView departmentNames={departmentNames} />}
           {activeMenuItem === 'settings'    && <ChairSystemSettings userName={userName} departmentNames={departmentNames} onLogout={handleInternalLogout} />}
         </main>
@@ -2636,207 +2637,6 @@ function AcademicRecordsView() {
   return <AcademicDocumentsViewer />;
 }
 
-/* ─────────────────────────────────────────────
-   Announcements
-───────────────────────────────────────────── */
-interface Announcement {
-  id: string; title: string; content: string; author_id: string | null; target_role: string[] | null;
-  is_pinned: boolean | null; expires_at: string | null; created_at: string; updated_at: string;
-}
-
-const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
-
-function AnnouncementsView() {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } });
-  const [formError, setFormError] = useState('');
-
-  const fetchAnnouncements = async () => {
-    setLoading(true); setLoadError('');
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(ANNOUNCEMENTS_API_URL, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error('Failed to load announcements');
-      const data = await res.json();
-      setAnnouncements(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setAnnouncements([]);
-    }
-    setLoading(false);
-  };
-  
-  useEffect(() => { fetchAnnouncements(); }, []);
-
-  const handleCreate = async () => {
-    setFormError('');
-    if (!form.title.trim()) { setFormError('Title is required.'); return; }
-    if (!form.description.trim()) { setFormError('Description is required.'); return; }
-    
-    const hasRecipient = form.recipients.faculty || form.recipients.student || form.recipients.alumni;
-    if (!hasRecipient) { setFormError('Please select at least one target recipient.'); return; }
-
-    setSubmitting(true);
-    const targetRoles = [];
-    if (form.recipients.faculty) targetRoles.push('faculty');
-    if (form.recipients.student) targetRoles.push('student');
-    if (form.recipients.alumni) targetRoles.push('alumni');
-
-    const payload = {
-      title: form.title.trim(), content: form.description.trim(), target_role: targetRoles,
-      expires_at: form.scheduledDate ? toTimestamp(form.scheduledDate) : null,
-    };
-
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(ANNOUNCEMENTS_API_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Failed to post announcement');
-      const data = await res.json();
-      setAnnouncements(prev => [data as Announcement, ...prev]);
-      setForm({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } });
-      setShowModal(false);
-    } catch {
-      setFormError('Could not reach the server. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    setDeletingId(id);
-    try {
-      const res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-      if (!res.ok) throw new Error('Failed to delete announcement');
-      setAnnouncements(prev => prev.filter(a => a.id !== id));
-      setDeleteConfirm(null);
-      if (expandedId === id) setExpandedId(null);
-    } catch {
-      setLoadError('Could not reach the server.');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const formatDate = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const isUpcoming = (expiresAt: string | null) => {
-    if (!expiresAt) return true;
-    const today = new Date().toISOString().split('T')[0];
-    return dateOnly(expiresAt) >= today;
-  };
-
-  return (
-    <div>
-      <div className="mb-6 pb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-1">Announcements</h1>
-          <p className="text-gray-500 text-sm">Post and manage announcements for faculty and students.</p>
-        </div>
-        <button onClick={() => { setForm({ title: '', description: '', scheduledDate: '', recipients: { faculty: false, student: false, alumni: false } }); setFormError(''); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors text-sm font-semibold shadow-md flex-shrink-0 self-start">
-          <Plus className="w-4 h-4" /> New Announcement
-        </button>
-      </div>
-
-      {loadError && <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {loadError}</div>}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-400 gap-2"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-sm">Loading announcements…</span></div>
-      ) : announcements.length === 0 ? (
-        <div className="py-20 text-center text-gray-400"><Megaphone className="w-10 h-10 mx-auto mb-3 opacity-30" /><p className="text-sm">No announcements yet. Create one to get started.</p></div>
-      ) : (
-        <div className="space-y-3">
-          {announcements.map(ann => (
-            <div key={ann.id} onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-[#1E3A8A]/30 transition-all cursor-pointer group">
-              <div className="flex items-start gap-4 p-4 sm:p-5">
-                <div className="w-1 self-stretch rounded-full bg-[#1E3A8A] flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isUpcoming(ann.expires_at) ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{isUpcoming(ann.expires_at) ? 'Upcoming' : 'Past'}</span>
-                    <span className="text-xs text-gray-400">Posted {formatDate(dateOnly(ann.created_at))}</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900 group-hover:text-[#1E3A8A] text-base leading-snug transition-colors">{ann.title}</h3>
-                  {ann.target_role && ann.target_role.length > 0 && (
-                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                      <span className="text-[10px] text-gray-500 font-semibold mr-1">To:</span>
-                      {ann.target_role.map(role => <span key={role} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded uppercase font-semibold">{role}</span>)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button className="p-2 text-gray-400 group-hover:text-[#1E3A8A] group-hover:bg-blue-50 rounded-lg transition-colors text-xs font-medium"><ChevronRight className={`w-4 h-4 transition-transform ${expandedId === ann.id ? 'rotate-90' : ''}`} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(ann.id); }} disabled={deletingId === ann.id} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">{deletingId === ann.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}</button>
-                </div>
-              </div>
-              {expandedId === ann.id && <div className="px-5 pb-5 pt-0 ml-5 border-t border-gray-50"><p className="text-sm text-gray-600 leading-relaxed pt-3">{ann.content}</p></div>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
-              <div><h2 className="text-lg font-bold text-gray-900">New Announcement</h2><p className="text-xs text-gray-400 mt-0.5">Fill in the details below to post an announcement.</p></div>
-              <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
-            </div>
-            <div className="overflow-y-auto p-6 space-y-4 custom-scrollbar">
-              {formError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {formError}</div>}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title <span className="text-red-500">*</span></label>
-                <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Faculty Meeting — July 2026" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Target Recipients <span className="text-red-500">*</span></label>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.faculty} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, faculty: e.target.checked } })} /> Faculty / Staff</label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.student} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, student: e.target.checked } })} /> Students</label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit"><input type="checkbox" className="w-4 h-4 text-[#1E3A8A] border-gray-300 rounded focus:ring-[#1E3A8A]" checked={form.recipients.alumni} onChange={(e) => setForm({ ...form, recipients: { ...form.recipients, alumni: e.target.checked } })} /> Alumni</label>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date (Optional)</label>
-                <input type="date" value={form.scheduledDate} onChange={e => setForm({ ...form, scheduledDate: e.target.value })} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A]" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-red-500">*</span></label>
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} placeholder="Write the full announcement message here…" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] resize-none" />
-              </div>
-            </div>
-            <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
-              <button onClick={() => setShowModal(false)} disabled={submitting} className="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50">Cancel</button>
-              <button onClick={handleCreate} disabled={submitting} className="flex-1 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} {submitting ? 'Posting…' : 'Post Announcement'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {deleteConfirm !== null && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><Trash2 className="w-7 h-7 text-red-600" /></div>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Delete Announcement?</h3>
-            <p className="text-sm text-gray-500 mb-6">This will permanently remove <span className="font-semibold text-gray-800">"{announcements.find(a => a.id === deleteConfirm)?.title}"</span>. This cannot be undone.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm)} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">Yes, Delete</button>
-            </div>
-          </div>
-        </div>, document.body
-      )}
-    </div>
-  );
-}
 
 /* ─────────────────────────────────────────────
    System Settings (Department Chair)
