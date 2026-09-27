@@ -41,6 +41,7 @@ import {
   ClipboardCheck,
   RefreshCw,
   TrendingUp,
+  Award,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -52,6 +53,7 @@ import AnnouncementsContent from './AnnouncementsContent';
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
 import { ResearchExtension } from './ResearchExtension';
+import { FacultyAchievements } from './FacultyAchievements';
 
 import { supabase } from '../supabaseClient';
 
@@ -72,6 +74,7 @@ const chairMenuItems = [
   { icon: Calendar,        label: 'Department Calendar',  id: 'calendar' },
   { icon: FileCheck2,      label: 'Reports',              id: 'chairReports' },
   { icon: TrendingUp,     label: 'Research & Extension', id: 'researchExtension' },
+  { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: FileText,        label: 'Reports Monitoring',   id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',     id: 'records' },
   { icon: Megaphone,       label: 'Announcements',        id: 'announcements' },
@@ -169,6 +172,7 @@ export function DepartmentChairDashboard({ activeMenuItem, setActiveMenuItem, on
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
           {activeMenuItem === 'chairReports'        && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
+          {activeMenuItem === 'achievements'       && <FacultyAchievements />}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
