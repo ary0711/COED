@@ -345,14 +345,6 @@ router.post('/register', async (req, res) => {
 // =========================================================
 // LOGIN
 // =========================================================
-// =========================================================
-// LOGIN
-// =========================================================
-
-// =========================================================
-// LOGIN
-// =========================================================
-
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -397,9 +389,7 @@ router.post('/login', async (req, res) => {
 
     // =====================================================
     // FIND PROFILE USING EMAIL
-    // THIS IS YOUR ORIGINAL WORKING METHOD
     // =====================================================
-
     if (user.email) {
       const { data: profile, error: profileError } =
         await supabase
@@ -439,7 +429,6 @@ router.post('/login', async (req, res) => {
     // =====================================================
     // ACCOUNT STATUS
     // =====================================================
-
     if (profileStatus === 'pending') {
       return res.status(403).json({
         error:
@@ -464,7 +453,6 @@ router.post('/login', async (req, res) => {
     // =====================================================
     // DEPARTMENT INFORMATION
     // =====================================================
-
     const departmentIds =
       user.department_ids ?? [];
 
@@ -484,15 +472,10 @@ router.post('/login', async (req, res) => {
     // =====================================================
     // CREATE JWT
     // =====================================================
-
     const token = jwt.sign(
       {
         userId: user.id,
-
-        // IMPORTANT:
-        // This is the actual profiles.id
         profileId,
-
         username: user.username,
         role: user.role,
         fullName,
@@ -512,11 +495,9 @@ router.post('/login', async (req, res) => {
     // =====================================================
     // LOGIN RESPONSE
     // =====================================================
-
     return res.json({
       message: 'Login successful!',
       token,
-
       user: {
         id: user.id,
         profileId,
@@ -537,22 +518,10 @@ router.post('/login', async (req, res) => {
     });
   }
 });
-// =========================================================
-// GET CURRENT AUTHENTICATED USER / PROFILE
-// =========================================================
 
 // =========================================================
 // GET CURRENT AUTHENTICATED USER / PROFILE
 // =========================================================
-
-// =========================================================
-// GET CURRENT AUTHENTICATED USER / PROFILE
-// =========================================================
-
-// =========================================================
-// GET CURRENT AUTHENTICATED USER / PROFILE
-// =========================================================
-
 router.get('/me', authenticate, async (req, res) => {
   try {
     const jwtUsername = req.user?.username;
@@ -674,27 +643,12 @@ router.get('/me', authenticate, async (req, res) => {
 
 // =========================================================
 // UPDATE CURRENT USER'S PERSONAL INFORMATION
-// CUSTOM USERS + PROFILES SYSTEM
 // =========================================================
-
 router.put('/profile', authenticate, async (req, res) => {
   try {
-    // =====================================================
-    // 1. GET IDENTIFIERS FROM THE JWT
-    // =====================================================
-
     const jwtUserId = req.user?.userId;
     const jwtUsername = req.user?.username;
     const jwtEmail = req.user?.email;
-
-    console.log('================ PROFILE UPDATE ================');
-    console.log('JWT userId:', jwtUserId);
-    console.log('JWT username:', jwtUsername);
-    console.log('JWT email:', jwtEmail);
-
-    // =====================================================
-    // 2. VALIDATE REQUEST
-    // =====================================================
 
     const { full_name, email } = req.body;
 
@@ -721,16 +675,8 @@ router.put('/profile', authenticate, async (req, res) => {
       });
     }
 
-    // =====================================================
-    // 3. FIND THE CURRENT USER IN public.users
-    //
-    // Username is preferred because your custom login
-    // uses username.
-    // =====================================================
-
     let currentUser = null;
 
-    // Try username first
     if (jwtUsername) {
       const { data, error } = await supabase
         .from('users')
@@ -744,18 +690,11 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
       if (error) {
-        console.error(
-          'User lookup by username error:',
-          error
-        );
+        console.error('User lookup by username error:', error);
       }
-
-      if (data) {
-        currentUser = data;
-      }
+      if (data) currentUser = data;
     }
 
-    // Try user ID second
     if (!currentUser && jwtUserId) {
       const { data, error } = await supabase
         .from('users')
@@ -766,18 +705,11 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
       if (error) {
-        console.error(
-          'User lookup by ID error:',
-          error
-        );
+        console.error('User lookup by ID error:', error);
       }
-
-      if (data) {
-        currentUser = data;
-      }
+      if (data) currentUser = data;
     }
 
-    // Try email third
     if (!currentUser && jwtEmail) {
       const { data, error } = await supabase
         .from('users')
@@ -791,48 +723,19 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
       if (error) {
-        console.error(
-          'User lookup by email error:',
-          error
-        );
+        console.error('User lookup by email error:', error);
       }
-
-      if (data) {
-        currentUser = data;
-      }
+      if (data) currentUser = data;
     }
 
     if (!currentUser) {
-      console.error(
-        'CURRENT USER NOT FOUND',
-        {
-          jwtUserId,
-          jwtUsername,
-          jwtEmail
-        }
-      );
-
       return res.status(404).json({
         success: false,
-        error:
-          'Your account could not be found in the system.'
+        error: 'Your account could not be found in the system.'
       });
     }
 
-    console.log(
-      'Current public.users record:',
-      currentUser
-    );
-
-    // =====================================================
-    // 4. FIND THE PROFILE
-    // =====================================================
-
     let profile = null;
-
-    // ---------------------------------------------
-    // Try profile ID
-    // ---------------------------------------------
 
     const { data: profileById, error: profileIdError } =
       await supabase
@@ -842,19 +745,9 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
     if (profileIdError) {
-      console.error(
-        'Profile lookup by ID error:',
-        profileIdError
-      );
+      console.error('Profile lookup by ID error:', profileIdError);
     }
-
-    if (profileById) {
-      profile = profileById;
-    }
-
-    // ---------------------------------------------
-    // Try email
-    // ---------------------------------------------
+    if (profileById) profile = profileById;
 
     if (!profile && currentUser.email) {
       const {
@@ -870,20 +763,10 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
       if (profileEmailError) {
-        console.error(
-          'Profile lookup by email error:',
-          profileEmailError
-        );
+        console.error('Profile lookup by email error:', profileEmailError);
       }
-
-      if (profileByEmail) {
-        profile = profileByEmail;
-      }
+      if (profileByEmail) profile = profileByEmail;
     }
-
-    // ---------------------------------------------
-    // Try JWT email as final fallback
-    // ---------------------------------------------
 
     if (!profile && jwtEmail) {
       const {
@@ -899,42 +782,17 @@ router.put('/profile', authenticate, async (req, res) => {
         .maybeSingle();
 
       if (profileJwtEmailError) {
-        console.error(
-          'Profile JWT email lookup error:',
-          profileJwtEmailError
-        );
+        console.error('Profile JWT email lookup error:', profileJwtEmailError);
       }
-
-      if (profileByJwtEmail) {
-        profile = profileByJwtEmail;
-      }
+      if (profileByJwtEmail) profile = profileByJwtEmail;
     }
 
     if (!profile) {
-      console.error(
-        'PROFILE NOT FOUND',
-        {
-          userId: currentUser.id,
-          username: currentUser.username,
-          email: currentUser.email
-        }
-      );
-
       return res.status(404).json({
         success: false,
-        error:
-          'Your profile record could not be found.'
+        error: 'Your profile record could not be found.'
       });
     }
-
-    console.log(
-      'Current profile record:',
-      profile
-    );
-
-    // =====================================================
-    // 5. CHECK DUPLICATE EMAIL
-    // =====================================================
 
     const {
       data: duplicateUser,
@@ -956,8 +814,7 @@ router.put('/profile', authenticate, async (req, res) => {
     if (duplicateUser) {
       return res.status(409).json({
         success: false,
-        error:
-          'This email address is already being used by another account.'
+        error: 'This email address is already being used by another account.'
       });
     }
 
@@ -981,14 +838,9 @@ router.put('/profile', authenticate, async (req, res) => {
     if (duplicateProfile) {
       return res.status(409).json({
         success: false,
-        error:
-          'This email address is already being used by another account.'
+        error: 'This email address is already being used by another account.'
       });
     }
-
-    // =====================================================
-    // 6. UPDATE public.profiles
-    // =====================================================
 
     const {
       data: updatedProfile,
@@ -1007,20 +859,11 @@ router.put('/profile', authenticate, async (req, res) => {
       .single();
 
     if (profileUpdateError) {
-      console.error(
-        'Profiles update error:',
-        profileUpdateError
-      );
-
       return res.status(400).json({
         success: false,
         error: profileUpdateError.message
       });
     }
-
-    // =====================================================
-    // 7. UPDATE public.users
-    // =====================================================
 
     const {
       error: usersUpdateError
@@ -1032,12 +875,6 @@ router.put('/profile', authenticate, async (req, res) => {
       .eq('id', currentUser.id);
 
     if (usersUpdateError) {
-      console.error(
-        'Users update error:',
-        usersUpdateError
-      );
-
-      // Restore profile
       await supabase
         .from('profiles')
         .update({
@@ -1052,10 +889,6 @@ router.put('/profile', authenticate, async (req, res) => {
         error: usersUpdateError.message
       });
     }
-
-    // =====================================================
-    // 8. UPDATE ROLE-SPECIFIC TABLES
-    // =====================================================
 
     if (currentUser.role === 'faculty') {
       await supabase
@@ -1086,23 +919,10 @@ router.put('/profile', authenticate, async (req, res) => {
         .eq('user_id', currentUser.id);
     }
 
-    // =====================================================
-    // 9. RETURN UPDATED DATA
-    // =====================================================
-
-    console.log(
-      'PROFILE UPDATE SUCCESS:',
-      updatedProfile
-    );
-
     return res.json({
       success: true,
-
-      message:
-        'Profile updated successfully.',
-
+      message: 'Profile updated successfully.',
       profile: updatedProfile,
-
       user: {
         id: currentUser.id,
         profileId: updatedProfile.id,
@@ -1110,27 +930,20 @@ router.put('/profile', authenticate, async (req, res) => {
         role: currentUser.role,
         fullName: updatedProfile.full_name,
         email: updatedProfile.email,
-        idNumber:
-          updatedProfile.id_number || '',
-        department:
-          updatedProfile.department || null
+        idNumber: updatedProfile.id_number || '',
+        department: updatedProfile.department || null
       }
     });
 
   } catch (error) {
-    console.error(
-      'UPDATE PROFILE ERROR:',
-      error
-    );
-
+    console.error('UPDATE PROFILE ERROR:', error);
     return res.status(500).json({
       success: false,
-      error:
-        error.message ||
-        'Failed to update profile.'
+      error: error.message || 'Failed to update profile.'
     });
   }
 });
+
 // =========================================================
 // FORGOT PASSWORD
 // =========================================================
@@ -1194,7 +1007,7 @@ router.post('/sync-reset-password', async (req, res) => {
       });
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!\%*?&.#_-]{8,}$/;
     if (!password || !passwordRegex.test(password)) {
       return res.status(400).json({
         success: false,
@@ -1239,15 +1052,53 @@ router.post('/sync-reset-password', async (req, res) => {
 // =========================================================
 router.get('/faculty', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    // 1. Fetch active faculty, department chairs, and deans from public.users
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, email, role, programs, department_ids, created_at')
+      .in('role', ['faculty', 'department_chair', 'dept_chair', 'dean', 'college_dean']);
+
+    if (usersError) throw usersError;
+
+    const userIds = (users || []).map((u) => u.id);
+    if (userIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // 2. Fetch corresponding profile records
+    const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('role', 'faculty')
+      .in('id', userIds)
       .eq('status', 'active')
       .order('full_name', { ascending: true });
 
-    if (error) throw error;
-    return res.json({ success: true, data: data ?? [] });
+    if (profilesError) throw profilesError;
+
+    const userMap = new Map((users || []).map((u) => [u.id, u]));
+
+    // 3. Merge profiles with user roles and program assignments
+    const merged = (profiles || []).map((p) => {
+      const u = userMap.get(p.id) || {};
+      const actualRole = u.role || p.role || 'faculty';
+      const fallbackDept = Array.isArray(u.programs) && u.programs.length > 0 ? u.programs[0] : null;
+
+      return {
+        ...p,
+        role: actualRole,
+        department: p.department || p.program || fallbackDept || 'General Academic',
+        program: p.program || p.department || fallbackDept || 'General Academic',
+        position:
+          p.position ||
+          (['department_chair', 'dept_chair'].includes(actualRole)
+            ? 'Department Chair'
+            : ['dean', 'college_dean'].includes(actualRole)
+            ? 'College Dean'
+            : 'Faculty Member'),
+      };
+    });
+
+    return res.json({ success: true, data: merged });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to load faculty', error: error.message });
   }
@@ -1255,10 +1106,24 @@ router.get('/faculty', async (req, res) => {
 
 router.get('/faculty-count', async (req, res) => {
   try {
+    // 1. Fetch IDs of all academic personnel (faculty, department chairs, deans)
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', ['faculty', 'department_chair', 'dept_chair', 'dean', 'college_dean']);
+
+    if (usersError) throw usersError;
+
+    const userIds = (users || []).map((u) => u.id);
+    if (userIds.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    // 2. Count active profiles matching those user IDs
     const { count, error } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
-      .eq('role', 'faculty')
+      .in('id', userIds)
       .eq('status', 'active');
 
     if (error) throw error;
@@ -1434,6 +1299,7 @@ router.get('/users', authenticate, async (req, res) => {
   }
   return res.json(data ?? []);
 });
+
 router.get('/profile-test', (req, res) => {
   console.log('✅ /profile-test was reached');
 
@@ -1446,7 +1312,6 @@ router.get('/profile-test', (req, res) => {
 // =========================================================
 // UPDATE CURRENT USER PASSWORD
 // =========================================================
-
 router.put('/password', authenticate, async (req, res) => {
   try {
     const userId = req.user?.userId;
@@ -1467,7 +1332,6 @@ router.put('/password', authenticate, async (req, res) => {
     // -----------------------------------------------------
     // VALIDATION
     // -----------------------------------------------------
-
     if (!current_password) {
       return res.status(400).json({
         success: false,
@@ -1496,9 +1360,8 @@ router.put('/password', authenticate, async (req, res) => {
       });
     }
 
-    // Same password policy used by registration
     const passwordRegex =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!\%*?&.#_-]{8,}$/;
 
     if (!passwordRegex.test(new_password)) {
       return res.status(400).json({
@@ -1518,7 +1381,6 @@ router.put('/password', authenticate, async (req, res) => {
     // -----------------------------------------------------
     // GET CURRENT USER FROM public.users
     // -----------------------------------------------------
-
     const {
       data: currentUser,
       error: userLookupError
@@ -1529,11 +1391,7 @@ router.put('/password', authenticate, async (req, res) => {
       .maybeSingle();
 
     if (userLookupError) {
-      console.error(
-        'Password user lookup error:',
-        userLookupError
-      );
-
+      console.error('Password user lookup error:', userLookupError);
       return res.status(500).json({
         success: false,
         error: userLookupError.message
@@ -1550,7 +1408,6 @@ router.put('/password', authenticate, async (req, res) => {
     // -----------------------------------------------------
     // VERIFY CURRENT PASSWORD
     // -----------------------------------------------------
-
     const currentPasswordMatches =
       await bcrypt.compare(
         current_password,
@@ -1567,15 +1424,12 @@ router.put('/password', authenticate, async (req, res) => {
     // -----------------------------------------------------
     // HASH NEW PASSWORD
     // -----------------------------------------------------
-
     const newPasswordHash =
       await bcrypt.hash(new_password, 10);
 
     // -----------------------------------------------------
     // UPDATE public.users
-    // This is the password your custom login uses.
     // -----------------------------------------------------
-
     const {
       error: passwordUpdateError
     } = await supabase
@@ -1586,11 +1440,7 @@ router.put('/password', authenticate, async (req, res) => {
       .eq('id', currentUser.id);
 
     if (passwordUpdateError) {
-      console.error(
-        'Password update error:',
-        passwordUpdateError
-      );
-
+      console.error('Password update error:', passwordUpdateError);
       return res.status(400).json({
         success: false,
         error: passwordUpdateError.message
@@ -1598,12 +1448,8 @@ router.put('/password', authenticate, async (req, res) => {
     }
 
     // -----------------------------------------------------
-    // OPTIONAL: sync Supabase Auth if an Auth account exists
-    //
-    // Your Admin may not have an auth.users record, so
-    // failure here must NOT make the custom password update fail.
+    // OPTIONAL: sync Supabase Auth
     // -----------------------------------------------------
-
     try {
       const {
         error: authUpdateError
@@ -1637,17 +1483,12 @@ router.put('/password', authenticate, async (req, res) => {
     });
 
   } catch (error) {
-    console.error(
-      'UPDATE PASSWORD ERROR:',
-      error
-    );
-
+    console.error('UPDATE PASSWORD ERROR:', error);
     return res.status(500).json({
       success: false,
-      error:
-        error.message ||
-        'Failed to update password.'
+      error: error.message || 'Failed to update password.'
     });
   }
 });
+
 module.exports = router;

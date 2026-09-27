@@ -20,6 +20,7 @@ import ResearchPageEditor from './pages/ResearchPageEditor';
 import AchievementsPageEditor from './pages/AchievementsPageEditor';
 import AccreditationPageEditor from './pages/AccreditationPageEditor';
 import ContactPageEditor from './pages/ContactPageEditor';
+import { FacultyStaffManagement } from './FacultyStaffManagement';
 import FooterPageEditor from './pages/FooterPageEditor';
 import {
   getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats,saveHomepageFeatures
@@ -107,6 +108,7 @@ import {
   File as FileGenericIcon,
   AlertTriangle,
   HelpCircle,
+  Mail,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -218,7 +220,7 @@ const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
   { icon: FileText,        label: 'Academic Records',        id: 'records' },
-  { icon: GraduationCap,   label: 'Faculty & Staff',         id: 'faculty' },
+  { icon: GraduationCap,   label: 'Faculty',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
@@ -4250,183 +4252,6 @@ function AcademicPreviewModal({
   );
 }
 
-// ─── Faculty & Staff ──────────────────────────────────────────────────────────
-function FacultyStaffManagement() {
-  const [facultyList, setFacultyList] = useState<Profile[]>([]);
-  const [staffList, setStaffList] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [facultyRes, staffRes] = await Promise.all([
-        fetch('http://localhost:5000/api/auth/faculty'),
-        fetch('http://localhost:5000/api/auth/staff')
-      ]);
-
-      const facultyResult = await facultyRes.json();
-      const staffResult = await staffRes.json();
-
-      setFacultyList(facultyResult.success && Array.isArray(facultyResult.data) ? facultyResult.data : []);
-      setStaffList(staffResult.success && Array.isArray(staffResult.data) ? staffResult.data : []);
-    } catch (err) {
-      console.error('Failed to load faculty and staff data:', err);
-      setFacultyList([]);
-      setStaffList([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const filterPerson = (person: Profile) => {
-    if (!search.trim()) return true;
-    const searchText = search.toLowerCase().trim();
-    return (
-      (person.full_name ?? '').toLowerCase().includes(searchText) ||
-      (person.email ?? '').toLowerCase().includes(searchText) ||
-      (person.id_number ?? '').toLowerCase().includes(searchText) ||
-      (person.department ?? '').toLowerCase().includes(searchText)
-    );
-  };
-
-  const filteredFaculty = facultyList.filter(filterPerson);
-  const filteredStaff = staffList.filter(filterPerson);
-
-  const renderList = (list: Profile[], role: 'faculty' | 'staff', emptyMessage: string) => {
-    const isFaculty = role === 'faculty';
-    const accent = isFaculty ? '#2563EB' : '#16A34A';
-    const accentBg = isFaculty ? '#DBEAFE' : '#D1FAE5';
-
-    if (loading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-          <div className={`w-7 h-7 border-2 border-gray-200 rounded-full animate-spin mb-3 ${isFaculty ? 'border-t-blue-600' : 'border-t-green-600'}`} />
-          <p className="text-sm">Loading {role}...</p>
-        </div>
-      );
-    }
-
-    if (list.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-          <Users className="w-10 h-10 mb-2 opacity-40" />
-          <p className="text-sm text-gray-400">
-            {search ? `No ${role} found matching "${search}"` : emptyMessage}
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-3 overflow-y-auto max-h-[600px] pr-2">
-        {list.map((person) => {
-          const name = person.full_name || 'Unnamed User';
-          const deptOrRole = person.department || (isFaculty ? 'Faculty' : 'Staff');
-          const initial = name.charAt(0).toUpperCase();
-
-          return (
-            <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors shadow-sm">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
-                {initial}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
-                <p className="text-xs font-medium text-gray-600 truncate">{deptOrRole}</p>
-                {person.id_number && (
-                  <p className="text-[11px] text-gray-400 truncate mt-0.5">ID: <span className="font-mono">{person.id_number}</span></p>
-                )}
-                {person.email && (
-                  <p className="text-[11px] text-gray-400 truncate">{person.email}</p>
-                )}
-              </div>
-              <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
-                {role}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Faculty & Staff</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage all registered personnel accounts</p>
-        </div>
-        
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, ID, email, dept..."
-              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
-            />
-          </div>
-          <button 
-            onClick={loadData} 
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors bg-white shadow-sm"
-            title="Refresh List"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
-        
-        {/* Faculty Column */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/30">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-                <GraduationCap className="w-4 h-4" />
-              </div>
-              <h2 className="text-base font-bold text-gray-900">Faculty Profiles</h2>
-            </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
-              {filteredFaculty.length} {filteredFaculty.length === 1 ? 'Member' : 'Members'}
-            </span>
-          </div>
-          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
-            {renderList(filteredFaculty, 'faculty', 'No active faculty members found')}
-          </div>
-        </div>
-
-        {/* Staff Column */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-green-50/30">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-green-100 text-green-700 rounded-lg">
-                <UserCircle className="w-4 h-4" />
-              </div>
-              <h2 className="text-base font-bold text-gray-900">Staff Profiles</h2>
-            </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-green-100 text-green-700 rounded-full">
-              {filteredStaff.length} {filteredStaff.length === 1 ? 'Member' : 'Members'}
-            </span>
-          </div>
-          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
-            {renderList(filteredStaff, 'staff', 'No active staff members found')}
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-}
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {

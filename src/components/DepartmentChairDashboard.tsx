@@ -1793,46 +1793,49 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
       }
       const data = await res.json();
       const mapped: AccountApplicant[] = (data ?? []).map((p: any) => {
-        if (roleTab === 'student') {
-          const rp = p.student_profiles;
-          const yl = rp?.year_level ?? 1;
-          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-          return {
-            id: p.id,
-            name: p.full_name ?? '—',
-            email: p.email ?? '—',
-            idNumber: rp?.student_no ?? '—',
-            program: rp?.program ?? '—',
-            detail: `${yl}${suffix} Year`,
-            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-            status: p.status,
-          };
-        }
-        if (roleTab === 'faculty') {
-          const rp = p.faculty_profiles;
-          return {
-            id: p.id,
-            name: p.full_name ?? '—',
-            email: p.email ?? '—',
-            idNumber: rp?.faculty_id ? String(rp.faculty_id).slice(0, 8) : '—',
-            program: '—',
-            detail: rp?.position ?? 'Faculty',
-            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-            status: p.status,
-          };
-        }
-        const rp = p.alumni_profiles;
-        return {
-          id: p.id,
-          name: p.full_name ?? '—',
-          email: p.email ?? '—',
-          idNumber: rp?.alumni_id ? String(rp.alumni_id).slice(0, 8) : '—',
-          program: rp?.program ?? '—',
-          detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
-          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-          status: p.status,
-        };
-      });
+  if (roleTab === 'student') {
+    const rp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
+    const yl = rp?.year_level ?? 1;
+    const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+    return {
+      id: p.id,
+      name: p.full_name ?? '—',
+      email: p.email ?? '—',
+      // Checks rp.student_no, fallback to profiles.id_number
+      idNumber: rp?.student_no || p.id_number || '—',
+      program: rp?.program || p.program || p.department || '—',
+      detail: `${yl}${suffix} Year`,
+      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      status: p.status,
+    };
+  }
+  if (roleTab === 'faculty') {
+    const rp = Array.isArray(p.faculty_profiles) ? p.faculty_profiles[0] : p.faculty_profiles;
+    const resolvedId = rp?.faculty_id || p.id_number;
+    return {
+      id: p.id,
+      name: p.full_name ?? '—',
+      email: p.email ?? '—',
+      idNumber: resolvedId ? String(resolvedId).slice(0, 8) : '—',
+      program: '—',
+      detail: rp?.position || 'Faculty',
+      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      status: p.status,
+    };
+  }
+  const rp = Array.isArray(p.alumni_profiles) ? p.alumni_profiles[0] : p.alumni_profiles;
+  const resolvedAlumniId = rp?.alumni_id || p.id_number;
+  return {
+    id: p.id,
+    name: p.full_name ?? '—',
+    email: p.email ?? '—',
+    idNumber: resolvedAlumniId ? String(resolvedAlumniId).slice(0, 8) : '—',
+    program: rp?.program || p.program || p.department || '—',
+    detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
+    registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    status: p.status,
+  };
+});
       setAccounts(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
