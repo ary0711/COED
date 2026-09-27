@@ -228,6 +228,12 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
       setDownloadUrl(url);
       setGeneratedAt(generatedTimestamp);
 
+      // Open the freshly generated PDF in a new tab right away, so the
+      // faculty member can immediately see/verify it using the browser's
+      // built-in PDF viewer, instead of it silently landing in Downloads
+      // with no visual confirmation.
+      if (url) viewInNewTab(url);
+
       // Record this batch in the (session-only) history list, newest first.
       setHistory(prev => [
         {
@@ -248,17 +254,28 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     }
   };
 
+  // Opens a generated PDF in a new browser tab using the browser's own
+  // built-in PDF viewer, instead of forcing an immediate silent download.
+  // The faculty member can then look it over and use the viewer's own
+  // download/print/save controls once they've confirmed it's correct.
+  const viewInNewTab = (url: string) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Kept as a fallback for anywhere a true forced-download (not just a
+  // view) is explicitly wanted, e.g. from a script or automated flow.
   const downloadFile = (url: string, filenameBase: string) => {
     if (!url) return;
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Deans-List-${filenameBase.replace(/\s+/g, '-')}.xlsx`;
+    link.download = `Deans-List-${filenameBase.replace(/\s+/g, '-')}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleDownload = () => downloadFile(downloadUrl, semesterLabel);
+  const handleDownload = () => viewInNewTab(downloadUrl);
 
   // Loads a past batch from history back into the main results table/view
   // (does not re-fetch from the server — reuses the data already held in memory).
@@ -367,6 +384,19 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             right: 0;
             width: 100%;
             margin-top: 0 !important;
+          }
+          /*
+            Force a page break every 15 rows so a manual browser print/PDF
+            of this page paginates the same way the backend-generated PDF
+            does (see ROWS_PER_PAGE in the backend's deansList route).
+          */
+          #dl-print-area table tbody tr:nth-of-type(15n) {
+            page-break-after: always;
+            break-after: page;
+          }
+          #dl-print-area table tbody tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           @page {
             margin: 1.5cm;
@@ -632,7 +662,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                               View
                             </button>
                             <button
-                              onClick={() => downloadFile(item.fileUrl, item.semesterLabel)}
+                              onClick={() => viewInNewTab(item.fileUrl)}
                               disabled={!item.fileUrl}
                               className="flex items-center gap-1 px-3 py-1.5 bg-[#1E3A8A] text-white rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
                             >
@@ -708,7 +738,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
 
               {/* Table toolbar — screen only */}
               <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
-                <div className="relative w-full sm:w-64">
+                <div className="relative w-full sm:w-64 shrink-0">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
@@ -718,26 +748,21 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                     className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                   />
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => setSortAsc(s => !s)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors"
-                  >
-                    <ArrowUpDown size={14} /> GWA {sortAsc ? '↑' : '↓'}
-                  </button>
+                <div className="flex items-center gap-2 flex-nowrap shrink-0">
+  
                   <button
                     onClick={handlePrint}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors shrink-0 whitespace-nowrap"
                     title="Opens your browser's print dialog — choose 'Save as PDF' as the destination to export a PDF"
                   >
-                    <Printer size={14} /> Print / Save as PDF
+                    <Printer size={14} /> <span className="hidden sm:inline">Print / Save as PDF</span>
                   </button>
                   <button
                     onClick={handleDownload}
                     disabled={!downloadUrl}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-lg text-xs sm:text-sm hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 bg-[#1E3A8A] text-white rounded-lg text-xs sm:text-sm hover:bg-blue-800 disabled:opacity-50 transition-colors shrink-0 whitespace-nowrap"
                   >
-                    <Download size={14} /> Download (CTU Letterhead)
+                    <Download size={14} /> <span className="sm:hidden">Download</span><span className="hidden sm:inline">Download (CTU Letterhead)</span>
                   </button>
                 </div>
               </div>

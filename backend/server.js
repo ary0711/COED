@@ -21,6 +21,10 @@ app.use(
 app.use(express.json());
 app.use(helmet());
 
+const path = require('path');
+
+app.use('/generated', express.static(path.join(__dirname, 'generated')));
+
 // ============================================================
 // CRON
 // ============================================================
