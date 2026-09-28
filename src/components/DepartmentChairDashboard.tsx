@@ -50,11 +50,12 @@ import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 import AnnouncementsContent from './AnnouncementsContent';
-
+import { WfhReport } from './WfhReport';
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
 import { ResearchExtension } from './ResearchExtension';
 import { FacultyAchievements } from './FacultyAchievements';
+import { ReportsSection } from './ReportsSection';
 
 import { supabase } from '../supabaseClient';
 
@@ -182,9 +183,9 @@ export function DepartmentChairDashboard({
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
           {activeMenuItem === 'dashboard'          && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
-          {activeMenuItem === 'chairReports'        && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
+          {activeMenuItem === 'chairReports' && (<ReportsSection userId={userId} userName={userName} />)}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
@@ -1717,43 +1718,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
           </div>
         </div>,
         document.body
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   Chair Reports View
-───────────────────────────────────────────── */
-function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [activeReportTab, setActiveReportTab] = useState<'accomplishment' | 'extension'>('accomplishment');
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-2 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
-        <button
-          onClick={() => setActiveReportTab('accomplishment')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeReportTab === 'accomplishment' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          Accomplishment Report
-        </button>
-        <button
-          onClick={() => setActiveReportTab('extension')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeReportTab === 'extension' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          Extension Report
-        </button>
-      </div>
-
-      {activeReportTab === 'accomplishment' && (
-        <AccomplishmentReport userId={userId} userName={userName} />
-      )}
-      {activeReportTab === 'extension' && (
-        <ExtensionReport userId={userId} userName={userName} />
       )}
     </div>
   );
