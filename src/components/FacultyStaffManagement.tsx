@@ -382,13 +382,7 @@ export function FacultyStaffManagement() {
             </div>
 
             <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedFaculty(null)}
-                className="px-5 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-100 transition-colors shadow-2xs"
-              >
-                Close
-              </button>
+              
             </div>
           </div>
         </div>,
