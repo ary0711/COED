@@ -500,7 +500,7 @@ function AlumniEmploymentCard() {
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number, name: string) => [`${value} alumni`, name]} />
+                  <Tooltip formatter={(value, name) => [`${value} alumni`, name]} />
                   <Legend
                     verticalAlign="bottom"
                     height={30}
