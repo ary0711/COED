@@ -676,67 +676,104 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
   // --- STATES FOR DEPARTMENT MODAL ---
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
   // UPDATE: Gi-add ang staff diri sa state type
-  const [deptStats, setDeptStats] = useState<{ name: string; faculty: number; students: number; staff: number }[]>([]);
+  const [deptStats, setDeptStats] = useState<{ name: string; faculty: number; students: number }[]>([]);
   const [loadingDeptStats, setLoadingDeptStats] = useState(false);
 
   // Function to fetch department statistics dynamically
   const openDeptModal = async () => {
-    setIsDeptModalOpen(true);
-    setLoadingDeptStats(true);
-    try {
-      // 1. Fetch all official department names
-      const { data: depts } = await supabase.from('departments').select('name');
-      
-      // 2. Fetch all faculty, student, AND staff profiles with their departments
-      const { data: profiles } = await supabase
+  setIsDeptModalOpen(true);
+  setLoadingDeptStats(true);
+  try {
+    const token = localStorage.getItem('token');
+
+    // 1. Official departments + users (parehas nga source sa User Management)
+    const [{ data: depts }, usersRes] = await Promise.all([
+      supabase.from('departments').select('id, name, code'),
+      fetch('http://localhost:5000/api/auth/users', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ]);
+
+    let users: any[] = [];
+    if (usersRes.ok) {
+      users = (await usersRes.json()) ?? [];
+    } else {
+      const { data } = await supabase
         .from('profiles')
-        .select('department, role')
-        .in('role', ['faculty', 'student', 'staff']); // Gi-apil ang 'staff'
-
-      const statsMap: Record<string, { originalName: string; faculty: number; students: number; staff: number }> = {};
-      
-      // Initialize map with known departments from the DB
-      if (depts) {
-        depts.forEach(d => {
-          // Use uppercase key to prevent case-sensitivity duplicates (e.g. BEEd vs BEED)
-          const key = d.name.trim().toUpperCase();
-          statsMap[key] = { originalName: d.name.trim(), faculty: 0, students: 0, staff: 0 };
-        });
-      }
-
-      // Aggregate counts from profiles that HAVE an assigned department
-      if (profiles) {
-        profiles.forEach(p => {
-          if (!p.department) return; // Skip accounts with no department
-          
-          const key = p.department.trim().toUpperCase();
-          
-          // Only count if the department actually exists in the official DB map
-          if (statsMap[key]) {
-            if (p.role === 'faculty') statsMap[key].faculty++;
-            if (p.role === 'student') statsMap[key].students++;
-            if (p.role === 'staff') statsMap[key].staff++; // Ihap para sa staff
-          }
-        });
-      }
-
-      // Convert map back to an array for rendering
-      const statsArray = Object.keys(statsMap)
-        .map(key => ({
-          name: statsMap[key].originalName,
-          faculty: statsMap[key].faculty,
-          students: statsMap[key].students,
-          staff: statsMap[key].staff
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-      setDeptStats(statsArray);
-    } catch (err) {
-      console.error('Failed to load department stats:', err);
-    } finally {
-      setLoadingDeptStats(false);
+        .select('id, full_name, role, department, program');
+      users = data ?? [];
     }
-  };
+
+    // "BSEd-Math" / "BSED-MATH" / "bsed math" -> "BSEDMATH"
+    const norm = (s?: string | null) => (s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    const statsMap: Record<string, { name: string; faculty: number; students: number }> = {};
+    const aliasToKey: Record<string, string> = {};
+    const idToKey: Record<string, string> = {};
+
+    (depts ?? []).forEach((d) => {
+      statsMap[d.id] = { name: d.name.trim(), faculty: 0, students: 0 };
+      idToKey[d.id] = d.id;
+      aliasToKey[norm(d.name)] = d.id;
+      if (d.code) aliasToKey[norm(d.code)] = d.id;
+    });
+
+    // Mo-return og list sa department keys nga mo-match sa text
+    const resolveText = (val?: string | null): string[] => {
+      const n = norm(val);
+      if (!n) return [];
+      if (aliasToKey[n]) return [aliasToKey[n]]; // exact match
+      const keys = new Set<string>();
+      Object.entries(aliasToKey).forEach(([alias, key]) => {
+        if (alias.startsWith(n) || n.startsWith(alias)) keys.add(key);
+      });
+      return Array.from(keys);
+    };
+
+    const parseArr = (v: any): string[] => {
+      if (!v) return [];
+      if (Array.isArray(v)) return v;
+      try { return JSON.parse(v); } catch { return []; }
+    };
+
+    const unmatched: any[] = [];
+
+    users.forEach((u) => {
+      const isStudent = u.role === 'student';
+      const isFaculty = u.role === 'faculty' || u.role === 'department_chair';
+      if (!isStudent && !isFaculty) return;
+
+      const keys = new Set<string>();
+
+      // a) department_ids (UUID)
+      parseArr(u.department_ids).forEach((id) => idToKey[id] && keys.add(idToKey[id]));
+      // b) program / department (text)
+      [u.program, u.department].forEach((t) => resolveText(t).forEach((k) => keys.add(k)));
+      // c) programs array (text)
+      parseArr(u.programs).forEach((t) => resolveText(t).forEach((k) => keys.add(k)));
+
+      if (keys.size === 0) {
+        unmatched.push({ name: u.full_name ?? u.username, role: u.role, program: u.program, department: u.department });
+        return;
+      }
+
+      keys.forEach((k) => {
+        if (isStudent) statsMap[k].students++;
+        else statsMap[k].faculty++;
+      });
+    });
+
+    if (unmatched.length) {
+      console.warn('Users na wala ma-ihap sa bisan unsang department:', unmatched);
+    }
+
+    setDeptStats(Object.values(statsMap).sort((a, b) => a.name.localeCompare(b.name)));
+  } catch (err) {
+    console.error('Failed to load department stats:', err);
+  } finally {
+    setLoadingDeptStats(false);
+  }
+};
 
   // 1. Department count
   useEffect(() => {
@@ -1041,15 +1078,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
 
                         <div className="w-px h-6 bg-gray-200" />
 
-                        {/* Staff stat */}
-                        <div className="flex flex-col items-center" title="Total Staff">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <UserCircle className="w-3.5 h-3.5 text-amber-600" />
-                            <span className="text-sm font-bold text-gray-900 leading-none">{dept.staff}</span>
-                          </div>
-                          <span className="text-[10px] text-gray-400 font-medium">Staff</span>
-                        </div>
-
+                      
                       </div>
                     </div>
                   ))}
