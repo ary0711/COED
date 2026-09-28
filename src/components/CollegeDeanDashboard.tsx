@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { renderAsync } from 'docx-preview';
+import { createPortal } from 'react-dom';
 import { notifyRole } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
@@ -11,6 +12,7 @@ import { AccreditationPage } from './coed/AccreditationPage';
 import { ContactPage } from './coed/ContactPage';
 import { Footer } from './coed/Footer';
 import HomePageEditor from './pages/HomePageEditor';
+import AnnouncementsContent from './AnnouncementsContent';
 import AboutPageEditor from './pages/AboutPageEditor';
 import DepartmentsPageEditor from './pages/DepartmentsPageEditor';
 import ClubsPageEditor from './pages/ClubsPageEditor';
@@ -18,6 +20,7 @@ import ResearchPageEditor from './pages/ResearchPageEditor';
 import AchievementsPageEditor from './pages/AchievementsPageEditor';
 import AccreditationPageEditor from './pages/AccreditationPageEditor';
 import ContactPageEditor from './pages/ContactPageEditor';
+import { FacultyStaffManagement } from './FacultyStaffManagement';
 import FooterPageEditor from './pages/FooterPageEditor';
 import {
   getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats,saveHomepageFeatures
@@ -100,6 +103,12 @@ import {
   Pencil,
   Save,
   AlertCircle,
+   FileCode,
+  FileImage,
+  File as FileGenericIcon,
+  AlertTriangle,
+  HelpCircle,
+  Mail,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -211,7 +220,7 @@ const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
   { icon: FileText,        label: 'Academic Records',        id: 'records' },
-  { icon: GraduationCap,   label: 'Faculty & Staff',         id: 'faculty' },
+  { icon: GraduationCap,   label: 'Faculty',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
   { icon: UserCheck,       label: 'Alumni Tracer',           id: 'alumni' },
@@ -1782,8 +1791,8 @@ interface CalendarEvent {
   title: string;
   description: string | null;
   event_date: string;
-  start_time?: string | null; // Added for start time support
-  end_time?: string | null; // Added for end time support
+  start_time?: string | null;
+  end_time?: string | null;
   end_date?: string | null;
   location: string | null;
   department_ids: string[] | null;
@@ -1852,7 +1861,6 @@ function dateOnlyStr(isoLike: string): string {
   return isoLike.split('T')[0];
 }
 
-// Formats "HH:MM:SS" or "HH:MM" into readable 12-hour format (e.g., "9:00 AM")
 function formatSingleTime(timeStr?: string | null): string | null {
   if (!timeStr) return null;
   const parts = timeStr.split(':');
@@ -1865,7 +1873,6 @@ function formatSingleTime(timeStr?: string | null): string | null {
   return `${hours12}:${minutes} ${period}`;
 }
 
-// Combines start and end times into a clean range (e.g., "8:00 AM – 10:30 AM")
 function formatEventTimeRange(start?: string | null, end?: string | null): string {
   const s = formatSingleTime(start);
   const e = formatSingleTime(end);
@@ -1874,7 +1881,6 @@ function formatEventTimeRange(start?: string | null, end?: string | null): strin
   return 'Time not specified';
 }
 
-// Helper to sort events chronologically by start_time (events without time sort last)
 function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
   const dateComp = a.event_date.localeCompare(b.event_date);
   if (dateComp !== 0) return dateComp;
@@ -1902,28 +1908,23 @@ export default function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
-  // Core Data States
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Primary View Mode: Active Planning vs. History / Archive
   const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
 
-  // Calendar Navigation
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
 
-  // Modals & Inspection
   const [showModal, setShowModal] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Form State with Start & End Time
   const emptyForm = {
     title: '',
     date: '',
@@ -1933,14 +1934,13 @@ export default function CalendarActivities() {
     description: '',
     event_type: 'activity',
     custom_event_type: '',
-    event_color: '#10B981', // Default to Activity green
+    event_color: '#10B981',
     audience: 'all',
     target_department_id: '',
   };
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
 
-  // Archive Search & Filter State
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveYear, setArchiveYear] = useState<string>('all');
   const [archiveMonth, setArchiveMonth] = useState<string>('all');
@@ -2136,6 +2136,12 @@ export default function CalendarActivities() {
     
     if (!form.title.trim() || !form.date || !form.location.trim() || !form.event_type || !form.audience) {
       setFormError('Please complete all required fields. Only the description is optional.');
+      return;
+    }
+
+    // Prevent selecting a past date upon creation/edit
+    if (form.date < todayStr) {
+      setFormError('You cannot schedule an event on a past date.');
       return;
     }
 
@@ -2905,7 +2911,7 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Unified Add / Edit Event Modal with Start & End Time ── */}
+      {/* ── Unified Add / Edit Event Modal ── */}
       {showModal && (
         <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
           <div
@@ -2953,6 +2959,7 @@ export default function CalendarActivities() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
                   type="date"
+                  min={todayStr} 
                   value={form.date}
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3190,11 +3197,29 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getFileExtension(filename: string): string {
+  return (filename.split('.').pop() || '').toLowerCase();
+}
+
+function getFileIcon(filename: string, className = 'w-5 h-5') {
+  const ext = getFileExtension(filename);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className={className} />;
+  }
+  if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+  if (['pdf', 'docx', 'doc'].includes(ext)) {
+    return <FileText className={className} />;
+  }
+  return <FileGenericIcon className={className} />;
+}
+
 export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  
+
   // Categories State (Dynamic)
   const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('custom_doc_categories');
@@ -3223,12 +3248,19 @@ export function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Preview Modal States
-  const [previewModal, setPreviewModal] = useState<{ open: boolean; url: string | null; name: string; isLocalDocx: boolean }>({
+  // Classroom-Style Preview Modal State (Works for Local & Remote Files)
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean;
+    url: string | null;
+    name: string;
+    size?: number;
+    isLocalBlob: boolean;
+  }>({
     open: false,
     url: null,
     name: '',
-    isLocalDocx: false,
+    size: undefined,
+    isLocalBlob: false,
   });
 
   const fetchDocuments = useCallback(async () => {
@@ -3262,6 +3294,34 @@ export function AcademicRecords() {
     fetchDocuments();
   }, [fetchDocuments]);
 
+  // Handle ESC & lock scrolling when preview modal is open
+  useEffect(() => {
+    if (previewModal.open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePreviewModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewModal.open]);
+
+  const closePreviewModal = () => {
+    if (previewModal.url && previewModal.isLocalBlob) {
+      URL.revokeObjectURL(previewModal.url);
+    }
+    setPreviewModal({ open: false, url: null, name: '', size: undefined, isLocalBlob: false });
+  };
+
   // --- Category Management ---
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) return;
@@ -3281,7 +3341,6 @@ export function AcademicRecords() {
     if (typeFilter === key) setTypeFilter('all');
     if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
   };
-  // ---------------------------
 
   const resetForm = () => {
     setForm({
@@ -3336,8 +3395,8 @@ export function AcademicRecords() {
   // --- Drag and Drop File Handlers ---
   const handleFileSelect = (selectedFile: File | undefined | null) => {
     if (!selectedFile) return;
-    
-    const validExtensions = ['.pdf', '.doc', '.docx'];
+
+    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv'];
     const fileName = selectedFile.name.toLowerCase();
     const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
@@ -3345,7 +3404,7 @@ export function AcademicRecords() {
       setFile(selectedFile);
       setFormError('');
     } else {
-      setFormError('Sorry, only PDF and Word documents (.doc, .docx) are allowed.');
+      setFormError('Only PDF, Word documents (.doc, .docx), images, and text/csv files are supported.');
     }
   };
 
@@ -3359,22 +3418,21 @@ export function AcademicRecords() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
   };
-  // -----------------------------------
 
-  // --- PREVIEW LOGIC (Saktong paingon sa /preview endpoint sa backend) ---
+  // --- Remote Document Preview (From API) ---
   const handlePreview = async (doc: AcademicDocument) => {
-    setDownloadingId(doc.id); 
+    setDownloadingId(doc.id);
     setLoadError('');
     try {
       const res = await fetch(`${DOCS_API_URL}/${doc.id}/preview`, {
         headers: { Authorization: `Bearer ${getDocsToken()}` },
       });
-      
+
       if (!res.ok) {
         const errText = await res.text();
         let errorMsg = 'Failed to retrieve document preview link.';
@@ -3386,43 +3444,40 @@ export function AcademicRecords() {
         }
         throw new Error(errorMsg);
       }
-      
+
       const data = await res.json();
       if (!data.url) throw new Error('Backend did not return a valid URL.');
-      
-      const ext = doc.file_name.split('.').pop()?.toLowerCase();
-      const isDocx = ext === 'doc' || ext === 'docx';
-      
+
       setPreviewModal({
         open: true,
-        url: isDocx ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(data.url)}` : data.url,
-        name: doc.title,
-        isLocalDocx: false
+        url: data.url,
+        name: doc.file_name || doc.title,
+        size: doc.file_size,
+        isLocalBlob: false,
       });
     } catch (err: any) {
-      console.error("Preview Error:", err);
+      console.error('Preview Error:', err);
       setLoadError(`Preview Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
     }
   };
 
+  // --- Local Document Preview (Before Uploading) ---
   const handleLocalPreview = () => {
     if (file) {
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      const isDocx = ext === 'doc' || ext === 'docx';
       const localUrl = URL.createObjectURL(file);
       setPreviewModal({
         open: true,
         url: localUrl,
         name: file.name,
-        isLocalDocx: isDocx // We cannot use officeapps.live.com for local blob URLs
+        size: file.size,
+        isLocalBlob: true,
       });
     } else if (editingDoc) {
       handlePreview(editingDoc);
     }
   };
-  // ---------------------
 
   const handleSave = async () => {
     setFormError('');
@@ -3529,9 +3584,16 @@ export function AcademicRecords() {
         throw new Error(errorMsg);
       }
       const data = await res.json();
-      if(data.url) window.open(data.url, '_blank');
+      if (data.url) {
+        const link = document.createElement('a');
+        link.href = data.url;
+        link.download = doc.file_name || doc.title;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (err: any) {
-      console.error("Download Error:", err);
+      console.error('Download Error:', err);
       setLoadError(`Download Error: ${err.message}`);
     } finally {
       setDownloadingId(null);
@@ -3574,7 +3636,7 @@ export function AcademicRecords() {
             <span className="hidden sm:inline">Categories</span>
           </button>
         </div>
-        
+
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -3689,51 +3751,6 @@ export function AcademicRecords() {
         )}
       </div>
 
-      {/* --- PREVIEW MODAL --- */}
-      {previewModal.open && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <h3 className="font-bold text-gray-900 truncate">{previewModal.name}</h3>
-              </div>
-              <button 
-                onClick={() => {
-                  setPreviewModal({ open: false, url: null, name: '', isLocalDocx: false });
-                  if (previewModal.url && previewModal.url.startsWith('blob:')) URL.revokeObjectURL(previewModal.url);
-                }} 
-                className="p-2 hover:bg-gray-200 rounded-lg transition-colors shrink-0"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="flex-1 bg-gray-100 relative">
-              {previewModal.isLocalDocx ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
-                  <FileText className="w-16 h-16 text-gray-300 mb-4" />
-                  <h4 className="text-lg font-bold text-gray-700">Preview Not Available for Local Word Docs</h4>
-                  <p className="text-sm text-gray-500 max-w-sm mt-2">
-                    Because this is an unpublished Word Document (.doc/.docx), it cannot be previewed in the browser. Please save the document to view it normally, or upload a PDF instead.
-                  </p>
-                </div>
-              ) : previewModal.url ? (
-                <iframe 
-                  src={previewModal.url} 
-                  className="w-full h-full border-0" 
-                  title="Document Preview"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* --- CATEGORY MANAGEMENT MODAL --- */}
       {showCategoryModal && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
@@ -3744,12 +3761,12 @@ export function AcademicRecords() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
               {Object.entries(docCategories).map(([key, label]) => (
                 <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
                   <span className="text-sm font-medium text-gray-700">{label}</span>
-                  <button 
+                  <button
                     onClick={() => handleDeleteCategory(key)}
                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
                     title="Delete Category"
@@ -3763,14 +3780,14 @@ export function AcademicRecords() {
             <div className="border-t border-gray-100 pt-4">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
               <div className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={newCategoryName}
                   onChange={e => setNewCategoryName(e.target.value)}
-                  placeholder="e.g. Certificates" 
+                  placeholder="e.g. Certificates"
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <button 
+                <button
                   onClick={handleAddCategory}
                   disabled={!newCategoryName.trim()}
                   className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
@@ -3783,7 +3800,7 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- UPLOAD MODAL --- */}
+      {/* --- UPLOAD / EDIT MODAL --- */}
       {showUploadModal && (
         <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
@@ -3875,45 +3892,48 @@ export function AcademicRecords() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                   {editingDoc ? 'Replace File (optional)' : 'File *'}
                 </label>
-                
+
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => document.getElementById('hidden-file-input')?.click()}
                   className={`w-full py-4 px-3 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                    isDragging 
-                      ? 'border-blue-500 bg-blue-50' 
+                    isDragging
+                      ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-300 hover:border-gray-400 bg-gray-50'
                   }`}
                 >
                   <input
                     id="hidden-file-input"
                     type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv"
                     className="hidden"
                     onChange={(e) => handleFileSelect(e.target.files?.[0])}
                   />
-                  
+
                   {file ? (
-                    <div 
-                      className="flex items-center justify-between w-full max-w-[300px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                    <div
+                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
                       onClick={(e) => {
-                        e.stopPropagation(); // prevent reopening file picker
+                        e.stopPropagation();
                         handleLocalPreview();
                       }}
-                      title="Click to preview file"
+                      title="Click to preview file before upload"
                     >
                       <div className="flex items-center gap-2 text-[#1E3A8A] overflow-hidden">
                         <Eye className="w-4 h-4 flex-shrink-0 text-blue-500" />
                         <span className="text-xs font-semibold truncate hover:underline cursor-pointer">
                           {file.name}
                         </span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">
+                          ({formatFileSize(file.size)})
+                        </span>
                       </div>
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation(); 
+                          e.stopPropagation();
                           setFile(null);
                           const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
                           if (fileInput) fileInput.value = '';
@@ -3928,22 +3948,22 @@ export function AcademicRecords() {
                     <>
                       <UploadCloud className="w-6 h-6 text-blue-500 mb-1.5" />
                       <p className="text-xs font-medium text-gray-700">
-                        Drag & Drop or <span className="text-blue-600">Browse</span>
+                        Drag & Drop or <span className="text-blue-600 font-semibold">Browse</span>
                       </p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        .PDF, .DOC, .DOCX only
+                        .PDF, .DOC, .DOCX, .PNG, .JPG up to 15MB
                       </p>
                     </>
                   )}
                 </div>
-                
+
                 {editingDoc && !file && (
                   <p className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5" /> 
-                    Current file: 
-                    <button 
+                    <FileText className="w-3.5 h-3.5" />
+                    Current file:
+                    <button
                       type="button"
-                      onClick={() => handleLocalPreview()} 
+                      onClick={() => handleLocalPreview()}
                       className="font-medium text-blue-600 hover:underline truncate"
                       title="Click to preview current file"
                     >
@@ -3973,6 +3993,7 @@ export function AcademicRecords() {
         </div>
       )}
 
+      {/* --- DELETE CONFIRMATION MODAL --- */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -3981,7 +4002,7 @@ export function AcademicRecords() {
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Delete Document?</h3>
             <p className="text-sm text-gray-500 mb-6">
-              This will permanently remove <span className="font-semibold text-gray-800">"{deleteConfirm.title}"</span>. This cannot be undone.
+              This will permanently remove <span className="font-semibold text-gray-800">&ldquo;{deleteConfirm.title}&rdquo;</span>. This cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
@@ -4001,187 +4022,236 @@ export function AcademicRecords() {
           </div>
         </div>
       )}
+
+      {/* --- GOOGLE CLASSROOM-STYLE PREVIEW MODAL (Supporting All Formats) --- */}
+      {previewModal.open && previewModal.url && (
+        <AcademicPreviewModal
+          url={previewModal.url}
+          name={previewModal.name}
+          size={previewModal.size}
+          onClose={closePreviewModal}
+        />
+      )}
     </div>
   );
 }
 
-// ─── Faculty & Staff ──────────────────────────────────────────────────────────
-function FacultyStaffManagement() {
-  const [facultyList, setFacultyList] = useState<Profile[]>([]);
-  const [staffList, setStaffList] = useState<Profile[]>([]);
+// ─── Document Preview Modal Component (All Formats, Matching Classroom Design) ─
+
+function AcademicPreviewModal({
+  url,
+  name,
+  size,
+  onClose,
+}: {
+  url: string;
+  name: string;
+  size?: number;
+  onClose: () => void;
+}) {
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState(false);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [facultyRes, staffRes] = await Promise.all([
-        fetch('http://localhost:5000/api/auth/faculty'),
-        fetch('http://localhost:5000/api/auth/staff')
-      ]);
-
-      const facultyResult = await facultyRes.json();
-      const staffResult = await staffRes.json();
-
-      setFacultyList(facultyResult.success && Array.isArray(facultyResult.data) ? facultyResult.data : []);
-      setStaffList(staffResult.success && Array.isArray(staffResult.data) ? staffResult.data : []);
-    } catch (err) {
-      console.error('Failed to load faculty and staff data:', err);
-      setFacultyList([]);
-      setStaffList([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const ext = getFileExtension(name);
+  const isPdf = ext === 'pdf';
+  const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext);
+  const isDocx = ext === 'docx' || ext === 'doc';
+  const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    let isCancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    setTextContent(null);
 
-  const filterPerson = (person: Profile) => {
-    if (!search.trim()) return true;
-    const searchText = search.toLowerCase().trim();
-    return (
-      (person.full_name ?? '').toLowerCase().includes(searchText) ||
-      (person.email ?? '').toLowerCase().includes(searchText) ||
-      (person.id_number ?? '').toLowerCase().includes(searchText) ||
-      (person.department ?? '').toLowerCase().includes(searchText)
-    );
-  };
-
-  const filteredFaculty = facultyList.filter(filterPerson);
-  const filteredStaff = staffList.filter(filterPerson);
-
-  const renderList = (list: Profile[], role: 'faculty' | 'staff', emptyMessage: string) => {
-    const isFaculty = role === 'faculty';
-    const accent = isFaculty ? '#2563EB' : '#16A34A';
-    const accentBg = isFaculty ? '#DBEAFE' : '#D1FAE5';
-
-    if (loading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-          <div className={`w-7 h-7 border-2 border-gray-200 rounded-full animate-spin mb-3 ${isFaculty ? 'border-t-blue-600' : 'border-t-green-600'}`} />
-          <p className="text-sm">Loading {role}...</p>
-        </div>
-      );
+    if (isDocx) {
+      fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to load file');
+          return res.blob();
+        })
+        .then((blob) => {
+          if (isCancelled || !docxContainerRef.current) return;
+          docxContainerRef.current.innerHTML = '';
+          return renderAsync(blob, docxContainerRef.current, undefined, {
+            className: 'docx',
+            inWrapper: true, // Enables full page layout, document margins & styling
+            ignoreWidth: false,
+            ignoreHeight: false,
+          });
+        })
+        .then(() => {
+          if (!isCancelled) setLoading(false);
+        })
+        .catch((err) => {
+          console.error('Docx rendering error:', err);
+          if (!isCancelled) {
+            setLoadError(true);
+            setLoading(false);
+          }
+        });
+    } else if (isText) {
+      fetch(url)
+        .then((res) => res.text())
+        .then((txt) => {
+          if (!isCancelled) {
+            setTextContent(txt);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setLoadError(true);
+            setLoading(false);
+          }
+        });
+    } else {
+      setLoading(false);
     }
 
-    if (list.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center h-40 text-gray-300">
-          <Users className="w-10 h-10 mb-2 opacity-40" />
-          <p className="text-sm text-gray-400">
-            {search ? `No ${role} found matching "${search}"` : emptyMessage}
-          </p>
-        </div>
-      );
-    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [url, isDocx, isText]);
 
-    return (
-      <div className="space-y-3 overflow-y-auto max-h-[600px] pr-2">
-        {list.map((person) => {
-          const name = person.full_name || 'Unnamed User';
-          const deptOrRole = person.department || (isFaculty ? 'Faculty' : 'Staff');
-          const initial = name.charAt(0).toUpperCase();
+  if (typeof document === 'undefined') return null;
 
-          return (
-            <div key={person.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors shadow-sm">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: accentBg, color: accent }}>
-                {initial}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900 text-sm truncate">{name}</p>
-                <p className="text-xs font-medium text-gray-600 truncate">{deptOrRole}</p>
-                {person.id_number && (
-                  <p className="text-[11px] text-gray-400 truncate mt-0.5">ID: <span className="font-mono">{person.id_number}</span></p>
-                )}
-                {person.email && (
-                  <p className="text-[11px] text-gray-400 truncate">{person.email}</p>
-                )}
-              </div>
-              <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: accentBg, color: accent }}>
-                {role}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Faculty & Staff</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage all registered personnel accounts</p>
-        </div>
-        
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, ID, email, dept..."
-              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm"
-            />
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in select-none"
+      onClick={onClose}
+    >
+      {/* Top Bar */}
+      <div
+        className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0 pr-4">
+          <div className="text-blue-400 shrink-0">
+            {getFileIcon(name, 'w-5 h-5')}
           </div>
-          <button 
-            onClick={loadData} 
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors bg-white shadow-sm"
-            title="Refresh List"
+          <span className="font-medium text-sm sm:text-base text-gray-100 truncate" title={name}>
+            {name}
+          </span>
+          {size ? (
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              ({formatFileSize(size)})
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={url}
+            download={name}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Download File"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <Download className="w-5 h-5" />
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            title="Close (Esc)"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
-        
-        {/* Faculty Column */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/30">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-                <GraduationCap className="w-4 h-4" />
-              </div>
-              <h2 className="text-base font-bold text-gray-900">Faculty Profiles</h2>
+      {/* Document Canvas */}
+      <div
+        className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
+        onClick={onClose}
+      >
+        <div
+          className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {loading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 gap-2">
+              <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+              <span className="text-sm font-medium text-gray-600">Loading document...</span>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
-              {filteredFaculty.length} {filteredFaculty.length === 1 ? 'Member' : 'Members'}
-            </span>
-          </div>
-          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
-            {renderList(filteredFaculty, 'faculty', 'No active faculty members found')}
-          </div>
-        </div>
+          )}
 
-        {/* Staff Column */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-green-50/30">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-green-100 text-green-700 rounded-lg">
-                <UserCircle className="w-4 h-4" />
+          {loadError ? (
+            <div className="m-auto text-center p-8 max-w-md">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">Unable to preview file</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                The file &ldquo;{name}&rdquo; could not be rendered directly.
+              </p>
+              <div className="flex justify-center gap-2">
+                <a
+                  href={url}
+                  download={name}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download File</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
               </div>
-              <h2 className="text-base font-bold text-gray-900">Staff Profiles</h2>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-green-100 text-green-700 rounded-full">
-              {filteredStaff.length} {filteredStaff.length === 1 ? 'Member' : 'Members'}
-            </span>
-          </div>
-          <div className="p-4 sm:p-5 flex-1 overflow-hidden">
-            {renderList(filteredStaff, 'staff', 'No active staff members found')}
-          </div>
+          ) : isImg ? (
+            <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
+              <img
+                src={url}
+                alt={name}
+                className="max-h-full max-w-full object-contain select-none"
+              />
+            </div>
+          ) : isPdf ? (
+            <iframe
+              src={`${url}#toolbar=0`}
+              title={name}
+              className="w-full h-full border-0 bg-white"
+            />
+          ) : isText && textContent !== null ? (
+            <div className="w-full h-full bg-gray-900 border border-gray-800 p-6 overflow-auto text-left select-text">
+              <pre className="font-mono text-xs sm:text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+                {textContent}
+              </pre>
+            </div>
+          ) : isDocx ? (
+            /* Dedicated scroll container with neutral canvas background */
+            <div className="w-full h-full overflow-y-auto bg-gray-100 p-4 sm:p-8 flex justify-center text-left select-text">
+              <div ref={docxContainerRef} className="w-full max-w-3xl min-h-full" />
+            </div>
+          ) : (
+            <div className="m-auto text-center p-8 max-w-md">
+              <FileGenericIcon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900 mb-1">{name}</h4>
+              <p className="text-xs text-gray-500 mb-4">
+                This file format ({ext.toUpperCase()}) cannot be previewed directly in the browser.
+              </p>
+              <a
+                href={url}
+                download={name}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download File</span>
+              </a>
+            </div>
+          )}
         </div>
-
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
+
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {
@@ -4628,8 +4698,9 @@ export function ResearchAchievements() {
 
       {/* Review & Inspect Modal (View-Only; No editing allowed) */}
       {viewingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+  <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60" onClick={() => setViewingItem(null)} />
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-[10000]">
             <button
               onClick={() => setViewingItem(null)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
@@ -4809,8 +4880,9 @@ export function ResearchAchievements() {
 
       {/* Reject Modal */}
       {rejectFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100">
+  <div className="fixed top-0 left-0 right-0 bottom-0 z-[10001] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60" onClick={() => setRejectFor(null)} />
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100 relative z-[10002]">
             <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
             <p className="text-xs text-gray-500 mb-4">
               Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
@@ -4898,7 +4970,7 @@ function DocxPreviewModal({
   }, [file.url, isDocx]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
+    <div className="fixed inset-0 z-[10005] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
           <div className="flex items-center gap-2 min-w-0 pr-2">
@@ -8063,28 +8135,52 @@ function ReportsAnalytics() {
     }
   };
 
-  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
-    setRemindingId(row.profile.id);
-    try {
+const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+  setRemindingId(row.profile.id);
+  try {
+    // 1. Check user's notification preferences for reports
+    const { data: prefs, error: prefError } = await supabase
+      .from('notification_preferences')
+      .select('reports')
+      .eq('user_id', row.profile.id)
+      .maybeSingle();
+
+    if (prefError) {
+      console.error('Error checking preferences:', prefError);
+    }
+
+    // Giatras nato ang pag-check: Kung naka-off ang reports, 
+    // i-set lang nato nga true/allowed ang insert sa code, 
+    // PERO dili nato i-insert kung false. 
+    // O kaya, kung gusto nimo nga silent drop gyud (mo-success sa Dean pero walay ma-save):
+    const isReportEnabled = prefs?.reports !== false;
+
+    if (isReportEnabled) {
       const dueText = deadline
         ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
         : '';
+
       const { error } = await supabase.from('notifications').insert({
         user_id: row.profile.id,
         title: `Reminder: ${quarterSelect} Quarterly Report`,
         message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
-        type: 'announcement',
+        type: 'report', // Gi-match nato sa report type
         is_read: false,
       });
-      if (error) throw error;
-      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
-    } catch (err: any) {
-      showInfo('Error', err.message || 'Failed to send reminder.');
-    } finally {
-      setRemindingId(null);
-    }
-  };
 
+      if (error) throw error;
+    } else {
+      console.log(`Silent drop: Notification blocked for ${row.profile.full_name} because reports preference is OFF.`);
+    }
+
+    // Kanunay gyud mo-show og Success sa Dean bisag gi-block sa luyo!
+    showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+  } catch (err: any) {
+    showInfo('Error', err.message || 'Failed to send reminder.');
+  } finally {
+    setRemindingId(null);
+  }
+};
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
 
@@ -8614,663 +8710,6 @@ function GenericJsonTable({ rows, columns }: { rows: any[]; columns: { key: stri
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// ─── Announcements ────────────────────────────────────────────────────────────
-const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
-const ALL_ROLES = ['department_chair', 'faculty', 'student', 'alumni'];
-
-const ANNOUNCEMENT_ROLE_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
-  department_chair: {
-    label: 'Department Chairs',
-    bg: 'bg-indigo-50',
-    text: 'text-indigo-700',
-    border: 'border-indigo-200',
-  },
-  faculty: {
-    label: 'Faculty',
-    bg: 'bg-blue-50',
-    text: 'text-blue-700',
-    border: 'border-blue-200',
-  },
-  student: {
-    label: 'Students',
-    bg: 'bg-emerald-50',
-    text: 'text-emerald-700',
-    border: 'border-emerald-200',
-  },
-  alumni: {
-    label: 'Alumni',
-    bg: 'bg-purple-50',
-    text: 'text-purple-700',
-    border: 'border-purple-200',
-  },
-};
-
-function AnnouncementsContent() {
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<DeptOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-
-  const [isComposerOpen, setIsComposerOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterDepartment, setFilterDepartment] = useState('all');
-
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [itemToDelete, setItemToDelete] = useState<{ id: string; title: string } | null>(null);
-
-  const [showModal, setShowModal] = useState(false);
-  const [modalTitle, setModalTitle] = useState('');
-  const [modalMessage, setModalMessage] = useState('');
-  const [modalType, setModalType] = useState<'success' | 'error'>('success');
-
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([...ALL_ROLES]);
-  const [targetDepartmentId, setTargetDepartmentId] = useState<string>('');
-  const [publishing, setPublishing] = useState(false);
-
-  function formatManilaTime(dateString: string) {
-    return new Date(dateString).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
-
-  const getToken = () => localStorage.getItem('token');
-
-  const loadAnnouncements = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const res = await fetch(ANNOUNCEMENTS_API_URL, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setLoadError(err.error || 'Failed to load announcements.');
-        setAnnouncements([]);
-        return;
-      }
-      const data = await res.json();
-      setAnnouncements(data ?? []);
-    } catch {
-      setLoadError('Could not reach the server. Please try again.');
-      setAnnouncements([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDepartments = async () => {
-    const { data, error } = await supabase
-      .from('departments')
-      .select('id, name')
-      .order('name');
-    if (!error && data) setDepartments(data);
-  };
-
-  useEffect(() => {
-    loadAnnouncements();
-    loadDepartments();
-
-    const channelName = `announcements-channel-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'announcements' },
-        () => loadAnnouncements()
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const toggleRole = (role: string) => {
-    setSelectedRoles((prev) =>
-      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
-    );
-  };
-
-  const selectAllRoles = () => setSelectedRoles([...ALL_ROLES]);
-  const deselectAllRoles = () => setSelectedRoles([]);
-
-  const closeComposer = () => {
-    setIsComposerOpen(false);
-  };
-
-  const publishAnnouncement = async () => {
-    if (!title.trim() || !content.trim()) {
-      setModalType('error');
-      setModalTitle('Required Fields Missing');
-      setModalMessage('Please provide both an announcement title and detailed content.');
-      setShowModal(true);
-      return;
-    }
-    if (selectedRoles.length === 0) {
-      setModalType('error');
-      setModalTitle('No Recipients Selected');
-      setModalMessage('Please select at least one recipient role for this announcement.');
-      setShowModal(true);
-      return;
-    }
-
-    setPublishing(true);
-    try {
-      const res = await fetch(ANNOUNCEMENTS_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          content: content.trim(),
-          target_role: selectedRoles,
-          target_department_id: targetDepartmentId || null,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setModalType('error');
-        setModalTitle('Publishing Failed');
-        setModalMessage(err.error || 'Failed to publish announcement.');
-        setShowModal(true);
-        return;
-      }
-
-      setTitle('');
-      setContent('');
-      setSelectedRoles([...ALL_ROLES]);
-      setTargetDepartmentId('');
-      setIsComposerOpen(false);
-
-      setModalType('success');
-      setModalTitle('Announcement Published');
-      setModalMessage('Your broadcast has been registered and distributed to the selected audience.');
-      setShowModal(true);
-      await loadAnnouncements();
-    } catch (err: any) {
-      setModalType('error');
-      setModalTitle('Publishing Error');
-      setModalMessage(err?.message || 'Failed to publish announcement.');
-      setShowModal(true);
-    } finally {
-      setPublishing(false);
-    }
-  };
-
-  const executeDelete = async (id: string) => {
-    setDeletingId(id);
-    try {
-      const res = await fetch(`${ANNOUNCEMENTS_API_URL}/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!res.ok && res.status !== 204) {
-        const err = await res.json().catch(() => ({}));
-        setModalType('error');
-        setModalTitle('Delete Failed');
-        setModalMessage(err.error || 'Failed to delete announcement.');
-        setShowModal(true);
-        return;
-      }
-
-      await supabase
-        .from('notifications')
-        .delete()
-        .eq('reference_id', id)
-        .eq('reference_table', 'announcements');
-
-      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
-      setItemToDelete(null);
-    } catch {
-      setModalType('error');
-      setModalTitle('Error');
-      setModalMessage('Failed to delete announcement.');
-      setShowModal(true);
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const roleLabel = (r: string) => ANNOUNCEMENT_ROLE_CONFIG[r]?.label ?? r;
-  const deptName = (id: string | null) =>
-    id ? departments.find((d) => d.id === id)?.name ?? 'Department-Restricted' : null;
-
-  const filteredAnnouncements = announcements.filter((a) => {
-    const matchesSearch =
-      a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDept =
-      filterDepartment === 'all'
-        ? true
-        : filterDepartment === 'college_wide'
-        ? !a.target_department_id
-        : a.target_department_id === filterDepartment;
-    return matchesSearch && matchesDept;
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-[#1E3A8A]">
-            <Megaphone className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">
-              Announcements Management
-            </h1>
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-              Create official notices and broadcast targeted updates across departments.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setIsComposerOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm hover:shadow"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>New Announcement</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-gray-700">Total Records:</span>
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-            {filteredAnnouncements.length}
-          </span>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-center gap-2.5">
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search announcements..."
-              className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white"
-            />
-          </div>
-
-          <div className="w-full sm:w-auto">
-            <select
-              value={filterDepartment}
-              onChange={(e) => setFilterDepartment(e.target.value)}
-              className="w-full sm:w-auto px-3.5 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white text-gray-700 font-medium"
-            >
-              <option value="all">All Scopes</option>
-              <option value="college_wide">College-Wide Only</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} Only
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {loadError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs sm:text-sm flex items-start gap-2.5">
-          <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-          <div>
-            <p className="font-semibold">Unable to refresh announcements</p>
-            <p className="text-rose-600 mt-0.5">{loadError}</p>
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-16 flex flex-col items-center justify-center text-center">
-          <RefreshCw className="w-8 h-8 text-[#1E3A8A] animate-spin mb-3" />
-          <p className="text-sm font-semibold text-gray-800">Synchronizing Announcements</p>
-          <p className="text-xs text-gray-400 mt-1">Fetching latest published broadcasts from system records...</p>
-        </div>
-      ) : filteredAnnouncements.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-12 text-center">
-          <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-3 text-gray-400">
-            <Inbox className="w-6 h-6" />
-          </div>
-          <h3 className="text-sm font-bold text-gray-800">No Announcements Found</h3>
-          <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1 mb-4">
-            {searchQuery || filterDepartment !== 'all'
-              ? 'No matching announcements found for the selected criteria.'
-              : 'There are currently no active announcements published.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => setIsComposerOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF] transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            Post First Announcement
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredAnnouncements.map((announcement) => {
-            const roles: string[] = announcement.target_role ?? [];
-            const dept = deptName(announcement.target_department_id);
-
-            return (
-              <div
-                key={announcement.id}
-                className="bg-white rounded-xl border border-gray-200/80 hover:border-gray-300 transition-all p-5 shadow-sm hover:shadow"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div className="space-y-2 min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 bg-gray-100/80 px-2 py-0.5 rounded-md">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        {formatManilaTime(announcement.created_at)}
-                      </span>
-
-                      {dept ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md">
-                          <Building2 className="w-3 h-3" />
-                          {dept} Only
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
-                          <Building2 className="w-3 h-3" />
-                          College-Wide
-                        </span>
-                      )}
-
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                        <CheckCircle className="w-3 h-3" />
-                        Active
-                      </span>
-                    </div>
-
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 leading-snug tracking-tight">
-                      {announcement.title}
-                    </h3>
-
-                    <div className="text-xs sm:text-sm text-gray-600 leading-relaxed whitespace-pre-wrap pt-0.5">
-                      {announcement.content}
-                    </div>
-
-                    <div className="pt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-semibold text-gray-400 mr-1 flex items-center gap-1">
-                        <Users className="w-3 h-3" />
-                        Audience:
-                      </span>
-                      {roles.map((r: string) => {
-                        const conf = ANNOUNCEMENT_ROLE_CONFIG[r];
-                        return (
-                          <span
-                            key={r}
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
-                              conf
-                                ? `${conf.bg} ${conf.text}${conf.border}`
-                                : 'bg-gray-100 text-gray-700 border-gray-200'
-                            }`}
-                          >
-                            {roleLabel(r)}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="flex sm:flex-col items-center justify-end gap-2 shrink-0 sm:pl-3 sm:border-l sm:border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setItemToDelete({
-                          id: announcement.id,
-                          title: announcement.title,
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition-colors"
-                      title="Delete Announcement"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* COMPOSER MODAL (Full screen coverage with w-screen h-screen) */}
-      {isComposerOpen && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 bg-gray-50/80 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-gray-900 font-bold text-base">
-                <Megaphone className="w-5 h-5 text-[#1E3A8A]" />
-                Create New Announcement
-              </div>
-              <button
-                type="button"
-                onClick={closeComposer}
-                disabled={publishing}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5 overflow-y-auto">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Title <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Midterm Examination Schedule & Room Assignments"
-                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Content / Memorandum <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  rows={4}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Type the announcement details and instructions here..."
-                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] transition-all resize-none"
-                />
-              </div>
-
-              <div className="p-4 bg-gray-50/80 rounded-xl border border-gray-200/70 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-gray-500" />
-                    Target Recipient Roles <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={selectAllRoles}
-                      className="text-[11px] text-[#1E3A8A] font-semibold hover:underline"
-                    >
-                      Select All
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                      type="button"
-                      onClick={deselectAllRoles}
-                      className="text-[11px] text-gray-500 hover:text-gray-800"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {ALL_ROLES.map((role) => {
-                    const isSelected = selectedRoles.includes(role);
-                    return (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => toggleRole(role)}
-                        className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center justify-between transition-all ${
-                          isSelected
-                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]'
-                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
-                        }`}
-                      >
-                        <span className="truncate">{roleLabel(role)}</span>
-                        {isSelected ? (
-                          <Check className="w-3.5 h-3.5 shrink-0 ml-1 stroke-[2.5]" />
-                        ) : (
-                          <span className="w-3.5 h-3.5 shrink-0 ml-1 rounded-full border border-gray-300" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-gray-500" />
-                  Department Scope (Optional)
-                </label>
-                <select
-                  value={targetDepartmentId}
-                  onChange={(e) => setTargetDepartmentId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] bg-white text-gray-800"
-                >
-                  <option value="">All Departments (College-Wide)</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} Department Only
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={closeComposer}
-                disabled={publishing}
-                className="px-4 py-2 text-xs sm:text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={publishAnnouncement}
-                disabled={publishing}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm hover:shadow disabled:opacity-50"
-              >
-                {publishing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Publishing...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    Publish Announcement
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE MODAL (Full screen coverage with w-screen h-screen) */}
-      {itemToDelete && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3.5">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-gray-900 mb-1">Delete Announcement?</h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-5">
-              Are you sure you want to permanently remove{' '}
-              <span className="font-semibold text-gray-800">"{itemToDelete.title}"</span>? Associated notifications will also be cleared.
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setItemToDelete(null)}
-                disabled={Boolean(deletingId)}
-                className="flex-1 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => executeDelete(itemToDelete.id)}
-                disabled={Boolean(deletingId)}
-                className="flex-1 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 inline-flex items-center justify-center gap-1"
-              >
-                {deletingId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                {deletingId ? 'Deleting...' : 'Confirm Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUCCESS/ERROR MODAL (Full screen coverage with w-screen h-screen) */}
-      {showModal && (
-        <div className="fixed top-0 left-0 w-screen h-screen z-[99999] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center border border-gray-100">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
-                modalType === 'success'
-                  ? 'bg-emerald-100 text-emerald-600'
-                  : 'bg-rose-100 text-rose-600'
-              }`}
-            >
-              {modalType === 'success' ? (
-                <CheckCircle className="w-6 h-6" />
-              ) : (
-                <CircleDot className="w-6 h-6" />
-              )}
-            </div>
-
-            <h3 className="text-base font-bold text-gray-900 mb-1">{modalTitle}</h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-5">{modalMessage}</p>
-
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-colors shadow-sm"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -9976,6 +9415,7 @@ function LandingPageManagement() {
 
 // ─── System Settings ──────────────────────────────────────────────────────────
 const NOTIF_DEFAULTS = {
+  allowAll: true,
   inquiries: true,
   reports: true,
   announcements: true,
@@ -9994,13 +9434,30 @@ const SETTINGS_TABS = [
 
 type SettingsTabId = typeof SETTINGS_TABS[number]['id'];
 
-function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function ToggleCard({ 
+  label, 
+  description, 
+  checked, 
+  onChange,
+  disabled = false
+}: { 
+  label: string; 
+  description?: string; 
+  checked: boolean; 
+  onChange: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between py-3.5 border-b border-gray-100 last:border-0">
-      <span className="text-sm text-gray-700">{label}</span>
+    <div className={`flex items-center justify-between p-4 bg-blue-50/40 hover:bg-blue-50/70 border border-blue-100/60 rounded-2xl transition-colors mb-3 last:mb-0 w-full ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+      <div className="pr-4">
+        <h4 className="text-sm font-semibold text-gray-900">{label}</h4>
+        {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+      </div>
       <button
+        type="button"
         onClick={onChange}
-        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+        disabled={disabled}
+        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'} ${disabled ? 'cursor-not-allowed' : ''}`}
       >
         <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${checked ? 'translate-x-5' : ''}`} />
       </button>
@@ -10015,93 +9472,12 @@ interface SystemSettingsProps {
 }
 
 function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsProps) {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
   
   // --- Profile State ---
   const [fullName, setFullName] = useState('');
-const [email, setEmail] = useState('');
-const [positionRole] = useState('College Dean');
-
-useEffect(() => {
-  const loadProfile = async () => {
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      console.error('No login token found.');
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        'http://localhost:5000/api/auth/me',
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      console.log('CURRENT PROFILE RESPONSE:', data);
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || 'Failed to load profile.'
-        );
-      }
-
-      if (!data.profile) {
-        throw new Error(
-          'No profile data was returned from the database.'
-        );
-      }
-
-      const databaseFullName =
-        data.profile.full_name || '';
-
-      const databaseEmail =
-        data.profile.email || '';
-
-      // Display database values
-      setFullName(databaseFullName);
-      setEmail(databaseEmail);
-
-      // Keep local storage synchronized
-      localStorage.setItem(
-        'userFullName',
-        databaseFullName
-      );
-
-      localStorage.setItem(
-        'userEmail',
-        databaseEmail
-      );
-
-      // Update dashboard header
-      onProfileUpdate?.({
-        fullName: databaseFullName,
-        email: databaseEmail,
-      });
-
-    } catch (error) {
-      console.error(
-        'Failed to load profile:',
-        error
-      );
-
-      // Only use parent data as fallback.
-      // DO NOT use username as full name.
-      if (profile) {
-        setFullName(profile.fullName || '');
-        setEmail(profile.email || '');
-      }
-    }
-  };
-
-  loadProfile();
-}, []);
+  const [email, setEmail] = useState('');
+  const [positionRole] = useState('College Dean');
 
   // --- Security State ---
   const [currentPassword, setCurrentPassword] = useState('');
@@ -10110,7 +9486,6 @@ useEffect(() => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   
   // --- Notifications State ---
@@ -10125,7 +9500,71 @@ useEffect(() => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Auto-clear notification messages
+  // Load Profile on mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.profile) throw new Error(data.error || 'Failed to load profile.');
+
+        const databaseFullName = data.profile.full_name || '';
+        const databaseEmail = data.profile.email || '';
+
+        setFullName(databaseFullName);
+        setEmail(databaseEmail);
+        localStorage.setItem('userFullName', databaseFullName);
+        localStorage.setItem('userEmail', databaseEmail);
+
+        onProfileUpdate?.({ fullName: databaseFullName, email: databaseEmail });
+      } catch (error) {
+        console.error('Failed to load profile:', error);
+        if (profile) {
+          setFullName(profile.fullName || '');
+          setEmail(profile.email || '');
+        }
+      }
+    };
+
+    loadProfile();
+  }, []);
+
+  // Load Notification Preferences on mount
+  useEffect(() => {
+    const loadPreferences = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (data.preferences) {
+          setNotifs({
+            allowAll: data.preferences.allow_all ?? true,
+            inquiries: data.preferences.inquiries ?? true,
+            reports: data.preferences.reports ?? true,
+            announcements: data.preferences.announcements ?? true,
+            staffUpdates: data.preferences.staff_updates ?? false,
+            systemNotifs: data.preferences.system_notifs ?? true,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load notification preferences:', error);
+      }
+    };
+
+    loadPreferences();
+  }, []);
+
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => setMessage(null), 5000);
@@ -10133,228 +9572,90 @@ useEffect(() => {
     }
   }, [message]);
 
-  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
-    setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) => {
+    if (key === 'allowAll') {
+      const nextState = !notifs.allowAll;
+      setNotifs((prev) => ({
+        ...prev,
+        allowAll: nextState,
+      }));
+    } else {
+      setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+    }
+  };
 
-  // --- Save Handlers ---
+  const saveProfile = async () => {
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
- const saveProfile = async () => {
-  const trimmedName = fullName.trim();
-  const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedName || !trimmedEmail) {
+      setMessage({ type: 'error', text: 'Full Name and Email are required.' });
+      return;
+    }
 
-  if (!trimmedName || !trimmedEmail) {
-    setMessage({
-      type: 'error',
-      text: 'Full Name and Email are required.',
-    });
-    return;
-  }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
 
-  const emailRegex =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    setSaving(true);
+    setMessage(null);
 
-  if (!emailRegex.test(trimmedEmail)) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter a valid email address.',
-    });
-    return;
-  }
-
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    setMessage({
-      type: 'error',
-      text: 'Your session has expired. Please sign in again.',
-    });
-    return;
-  }
-
-  setSaving(true);
-  setMessage(null);
-
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/auth/profile',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          email: trimmedEmail,
-        }),
-      }
-    );
+        body: JSON.stringify({ full_name: trimmedName, email: trimmedEmail }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update profile.');
 
-    console.log('PROFILE UPDATE RESPONSE:', data);
+      const updatedName = data.profile?.full_name || trimmedName;
+      const updatedEmail = data.profile?.email || trimmedEmail;
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || 'Failed to update profile.'
-      );
+      localStorage.setItem('userFullName', updatedName);
+      localStorage.setItem('userEmail', updatedEmail);
+      if (data.token) localStorage.setItem('token', data.token);
+
+      setFullName(updatedName);
+      setEmail(updatedEmail);
+      onProfileUpdate?.({ fullName: updatedName, email: updatedEmail });
+
+      setMessage({ type: 'success', text: 'Profile updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update profile.' });
+    } finally {
+      setSaving(false);
     }
-
-    const updatedName =
-      data.profile?.full_name || trimmedName;
-
-    const updatedEmail =
-      data.profile?.email || trimmedEmail;
-
-    // Save updated values locally
-    localStorage.setItem(
-      'userFullName',
-      updatedName
-    );
-
-    localStorage.setItem(
-      'userEmail',
-      updatedEmail
-    );
-
-    // Save refreshed JWT if returned
-    if (data.token) {
-      localStorage.setItem(
-        'token',
-        data.token
-      );
-    }
-
-    // Update form
-    setFullName(updatedName);
-    setEmail(updatedEmail);
-
-    // Update dashboard header immediately
-    onProfileUpdate?.({
-      fullName: updatedName,
-      email: updatedEmail,
-    });
-
-    setMessage({
-      type: 'success',
-      text: 'Profile updated successfully.',
-    });
-
-  } catch (error: any) {
-    console.error(
-      'Failed to update profile:',
-      error
-    );
-
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'Failed to update profile.',
-    });
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   const saveSecurity = async () => {
-  if (!currentPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter your current password.',
-    });
-    return;
-  }
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setMessage({ type: 'error', text: 'Please fill in all password fields.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: 'error', text: 'New passwords do not match.' });
+      return;
+    }
 
-  if (!newPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter a new password.',
-    });
-    return;
-  }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
 
-  if (!confirmPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please confirm your new password.',
-    });
-    return;
-  }
 
-  if (newPassword !== confirmPassword) {
-    setMessage({
-      type: 'error',
-      text: 'New passwords do not match.',
-    });
-    return;
-  }
+    setSaving(true);
+    setMessage(null);
 
-  if (newPassword.length < 8) {
-    setMessage({
-      type: 'error',
-      text: 'New password must be at least 8 characters.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[a-z])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one lowercase letter.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[A-Z])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one uppercase letter.',
-    });
-    return;
-  }
-
-  if (!/(?=.*\d)/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one number.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[@$!%*?&.#_-])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one special character.',
-    });
-    return;
-  }
-
-  if (currentPassword === newPassword) {
-    setMessage({
-      type: 'error',
-      text: 'New password must be different from your current password.',
-    });
-    return;
-  }
-
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    setMessage({
-      type: 'error',
-      text: 'Your session has expired. Please sign in again.',
-    });
-    return;
-  }
-
-  setSaving(true);
-  setMessage(null);
-
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/auth/password',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/password', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -10365,53 +9666,58 @@ useEffect(() => {
           new_password: newPassword,
           confirm_password: confirmPassword,
         }),
-      }
-    );
+      });
 
-    const data = await response.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update password.');
 
-    console.log('PASSWORD UPDATE RESPONSE:', data);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage({ type: 'success', text: 'Password updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update password.' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || 'Failed to update password.'
-      );
+ const saveNotifications = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
     }
 
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    setSaving(true);
+    setMessage(null);
 
-    setShowCurrentPassword(false);
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          allow_all: notifs.allowAll,
+          inquiries: notifs.inquiries,
+          reports: notifs.reports,
+          announcements: notifs.announcements,
+          staff_updates: notifs.staffUpdates,
+          system_notifs: notifs.systemNotifs,
+        }),
+      });
 
-    setMessage({
-      type: 'success',
-      text: 'Password updated successfully.',
-    });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
 
-  } catch (error: any) {
-    console.error(
-      'Failed to update password:',
-      error
-    );
-
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'Failed to update password.',
-    });
-
-  } finally {
-    setSaving(false);
-  }
-};
-  const saveNotifications = async () => {
-    await new Promise((res) => setTimeout(res, 400));
-    localStorage.setItem('notificationPreferences', JSON.stringify(notifs));
-    setMessage({ type: 'success', text: 'Notification preferences saved.' });
+      setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveAcademicSettings = async () => {
@@ -10424,45 +9730,22 @@ useEffect(() => {
   };
 
   const handleSaveChanges = async () => {
-  setMessage(null);
-
-  try {
-    switch (activeTab) {
-      case 'profile':
-        await saveProfile();
-        break;
-
-      case 'security':
-        await saveSecurity();
-        break;
-
-      case 'notifications':
-        await saveNotifications();
-        break;
-
-      case 'academic':
-        await saveAcademicSettings();
-        break;
-
-      default:
-        setMessage({
-          type: 'error',
-          text: 'Nothing to save on this tab.',
-        });
+    setMessage(null);
+    try {
+      switch (activeTab) {
+        case 'profile': await saveProfile(); break;
+        case 'security': await saveSecurity(); break;
+        case 'notifications': await saveNotifications(); break;
+        case 'academic': await saveAcademicSettings(); break;
+        default: setMessage({ type: 'error', text: 'Nothing to save on this tab.' });
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'An error occurred while saving.' });
     }
-  } catch (error: any) {
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'An error occurred while saving.',
-    });
-  }
-};
+  };
 
   const handleLogoutAllDevices = async () => {
     if (window.confirm('Are you sure you want to log out of all devices?')) {
-      await supabase.auth.signOut({ scope: 'global' });
       if (onLogout) onLogout();
     }
   };
@@ -10476,7 +9759,7 @@ useEffect(() => {
           <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {!['users', 'landing', 'account'].includes(activeTab) && (
+          {!['users', 'landing'].includes(activeTab) && (
             <button
               onClick={handleSaveChanges}
               disabled={saving}
@@ -10490,13 +9773,7 @@ useEffect(() => {
 
       {/* Message Alert */}
       {message && (
-        <div
-          className={`mb-6 p-4 rounded-xl text-sm font-medium border ${
-            message.type === 'success'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-red-50 text-red-700 border-red-200'
-          }`}
-        >
+        <div className={`mb-6 p-4 rounded-xl text-sm font-medium border ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
           {message.text}
         </div>
       )}
@@ -10510,15 +9787,8 @@ useEffect(() => {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setMessage(null);
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={() => { setActiveTab(tab.id); setMessage(null); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-blue-50 text-[#1E3A8A] font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="truncate">{tab.label}</span>
@@ -10528,15 +9798,8 @@ useEffect(() => {
         </div>
 
         {/* Content Panel */}
-        <div
-          className={`flex-1 min-w-0 ${
-            ['users', 'landing'].includes(activeTab)
-              ? ''
-              : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'
-          }`}
-        >
+        <div className={`flex-1 min-w-0 ${['users', 'landing'].includes(activeTab) ? '' : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'}`}>
           {activeTab === 'users' && <UserManagement />}
-
           {activeTab === 'landing' && <LandingPageManagement />}
 
           {activeTab === 'profile' && (
@@ -10582,158 +9845,75 @@ useEffect(() => {
               <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
 
               <div className="space-y-4 max-w-md mb-6">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter current password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
 
-  {/* CURRENT PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      Current Password
-    </label>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5">At least 8 characters with uppercase, lowercase, number, and special character.</p>
+                </div>
 
-    <div className="relative">
-      <input
-        type={
-          showCurrentPassword
-            ? 'text'
-            : 'password'
-        }
-        value={currentPassword}
-        onChange={(e) =>
-          setCurrentPassword(e.target.value)
-        }
-        placeholder="Enter current password"
-        autoComplete="current-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          setShowCurrentPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showCurrentPassword
-            ? 'Hide current password'
-            : 'Show current password'
-        }
-      >
-        {showCurrentPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-  </div>
-
-  {/* NEW PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      New Password
-    </label>
-
-    <div className="relative">
-      <input
-        type={
-          showNewPassword
-            ? 'text'
-            : 'password'
-        }
-        value={newPassword}
-        onChange={(e) =>
-          setNewPassword(e.target.value)
-        }
-        placeholder="Enter new password"
-        autoComplete="new-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      <button
-        type="button"
-        onClick={() =>
-          setShowNewPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showNewPassword
-            ? 'Hide new password'
-            : 'Show new password'
-        }
-      >
-        {showNewPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-
-    <p className="text-[11px] text-gray-400 mt-1.5">
-      At least 8 characters with uppercase,
-      lowercase, number, and special character.
-    </p>
-  </div>
-
-  {/* CONFIRM NEW PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      Confirm New Password
-    </label>
-
-    <div className="relative">
-      <input
-        type={
-          showConfirmPassword
-            ? 'text'
-            : 'password'
-        }
-        value={confirmPassword}
-        onChange={(e) =>
-          setConfirmPassword(e.target.value)
-        }
-        placeholder="Confirm new password"
-        autoComplete="new-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      <button
-        type="button"
-        onClick={() =>
-          setShowConfirmPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showConfirmPassword
-            ? 'Hide confirmed password'
-            : 'Show confirmed password'
-        }
-      >
-        {showConfirmPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-  </div>
-
-</div>
-
-              <div className="border-t border-gray-100 pt-5">
-                <ToggleRow
+              <div className="border-t border-gray-100 pt-5 max-w-lg">
+                <ToggleCard
                   label="Two-Factor Authentication"
+                  description="Enable two-factor authentication to add an extra layer of security to your account."
                   checked={twoFactorEnabled}
                   onChange={() => setTwoFactorEnabled((v) => !v)}
                 />
-                <p className="text-xs text-gray-500 mt-2 max-w-md">
-                  Enable two-factor authentication to add an extra layer of security to your account.
-                </p>
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-4">
@@ -10750,14 +9930,22 @@ useEffect(() => {
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
+              <p className="text-sm text-gray-500 mt-0.5 mb-5">Choose what alerts you receive.</p>
 
-              <div className="max-w-md">
-                <ToggleRow label="New Inquiries" checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} />
-                <ToggleRow label="Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
-                <ToggleRow label="New Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ToggleRow label="Faculty/Staff Updates" checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} />
-                <ToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+              <div className="w-full">
+                <ToggleCard
+                  label="Allow Notifications"
+                  description="Turn off to completely mute all notifications and reminders."
+                  checked={notifs.allowAll}
+                  onChange={() => toggleNotif('allowAll')}
+                />
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                  <ToggleCard label="New Inquiries" description="Get notified when new stakeholder inquiries come in." checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Pending Reports" description="Get reminders for upcoming or pending department reports." checked={notifs.reports} onChange={() => toggleNotif('reports')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="New Announcements" description="Get notified about important institutional updates." checked={notifs.announcements} onChange={() => toggleNotif('announcements')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Faculty/Staff Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="System Notifications" description="Receive general application alerts and system notices." checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} disabled={!notifs.allowAll} />
+                </div>
               </div>
             </div>
           )}
@@ -10800,21 +9988,6 @@ useEffect(() => {
                   />
                 </div>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
-
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                Log Out
-              </button>
             </div>
           )}
         </div>

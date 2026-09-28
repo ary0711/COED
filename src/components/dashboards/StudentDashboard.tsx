@@ -1,27 +1,22 @@
-import { 
-  User, 
-  BookOpen, 
-  Award, 
-  FileText, 
-  MessageSquare, 
-  Bell, 
+import {
+  User,
+  BookOpen,
+  Award,
+  MessageSquare,
+  Bell,
   Calendar,
   Users,
-  Building2,
   Menu,
   ChevronLeft,
   ChevronRight,
-  History,
-  Trash2,
   X,
   Settings,
   Lock,
-  LogOut,
   GraduationCap,
   RefreshCw,
-  Download,
   Eye,
   Loader2,
+  EyeOff,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { createPortal } from 'react-dom';
@@ -39,7 +34,33 @@ const studentMenuItems = [
   { icon: Settings,     label: 'Settings',                id: 'settings'     },
 ];
 
-const ME_API_URL = 'http://localhost:5000/api/me';
+const ME_API_URL = 'http://localhost:5000/api/students/me';
+
+// How often the dashboard silently re-fetches the profile so a newly
+// published Dean's List result shows up without a manual reload.
+const PROFILE_REFRESH_MS = 30000;
+
+function getStoredStudentId(): string {
+  // First priority: value stored during login
+  const storedId = localStorage.getItem('userIdNumber')?.trim();
+  if (storedId) return storedId;
+
+  // Second priority: read idNumber from JWT
+  const token = localStorage.getItem('token');
+  if (!token) return '';
+
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return '';
+
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.idNumber || payload.studentNo || payload.student_no || '';
+  } catch (error) {
+    console.error('Could not read Student ID from token:', error);
+    return '';
+  }
+}
+
 // Available academic programs (BSIT intentionally excluded)
 const PROGRAM_OPTIONS = [
   'Bachelor of Science in Secondary Education - Mathematics',
@@ -65,6 +86,7 @@ interface StudentProfile {
   student_id: string;
   full_name: string;
   student_no: string;
+  email: string;
   year_level: number;
   program: string;
   gpa: number | null;
@@ -105,7 +127,7 @@ interface RealCalendarEvent {
   description: string | null;
   event_date: string;
   start_time?: string | null;
-  end_time?: string | null;   
+  end_time?: string | null;
   department_ids: string[] | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
   audience?: string | null;
@@ -114,6 +136,17 @@ interface RealCalendarEvent {
 }
 
 const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
+
+// ── Dean's List result for the logged-in student (from the published list) ──
+const DEANS_LIST_STATUS_URL = 'http://localhost:5000/api/deans-list/my-status';
+
+interface DeansListStatus {
+  published: boolean;        // is there a published Dean's List at all?
+  semester?: string;         // e.g. "2nd Semester AY 2025–2026"
+  listed?: boolean;          // is this student on the published list?
+  qualified?: boolean;       // GWA 1.75 or better
+  gwa?: number | null;
+}
 
 const EVENT_TYPE_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
@@ -160,7 +193,7 @@ interface StudentDashboardProps {
   userName?: string;
 }
 
-export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, userName = 'Student' }: StudentDashboardProps) {
+export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Student' }: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleInternalLogout = () => {
     localStorage.clear();
@@ -176,58 +209,136 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  const fetchProfile = async () => {
-    setProfileLoading(true);
+  // silent = true means "refresh in the background": no loading skeletons.
+  const fetchProfile = async (silent = false) => {
+    if (!silent) setProfileLoading(true);
     setProfileError(null);
 
     try {
       const token = localStorage.getItem('token');
+
       if (!token) {
         setProfileError('No logged-in user found. Please sign in again.');
-        setProfileLoading(false);
         return;
       }
 
       const res = await fetch(ME_API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
-
-      if (!res.ok) {
-        setProfileError('Failed to load your profile. Please try again.');
-        setProfileLoading(false);
-        return;
-      }
 
       const data = await res.json();
 
-      setProfile({
-        student_id: data.userId,
-        full_name: data.fullName ?? '',
-        student_no: data.studentNo ?? '',
-        year_level: data.yearLevel ?? 0,
-        program: data.program ?? '',
-        gpa: data.gpa ?? null,
-        academic_standing: data.academicStanding ?? '—',
-        enrollment_status: data.enrollmentStatus ?? '—',
-        department_id: data.departmentId ?? null,
-        department_name: data.departmentNames?.[0] ?? null,
-      });
-      setUserEmail(data.email ?? '');
-
-      // Keep the program selector in sync with the student's actual approved program
-      if (data.program) {
-        setSelectedProgram(data.program);
+      if (!res.ok) {
+        setProfileError(data.error || data.message || 'Failed to load your profile. Please try again.');
+        return;
       }
-    } catch {
+
+      // Nested data
+      const profileData = data.profile || {};
+      const studentProfileData = data.studentProfile || data.student_profile || {};
+
+      const resolvedFullName =
+        data.fullName ||
+        data.full_name ||
+        profileData.full_name ||
+        studentProfileData.full_name ||
+        localStorage.getItem('userFullName') ||
+        '';
+
+      const resolvedEmail =
+        data.email ||
+        data.userEmail ||
+        data.user_email ||
+        profileData.email ||
+        localStorage.getItem('userEmail') ||
+        '';
+
+      // Student ID priority: studentNo > student_no > student_profiles.student_no
+      // > idNumber > id_number > profiles.id_number > localStorage > JWT
+      const resolvedStudentNo =
+        data.studentNo ||
+        data.student_no ||
+        studentProfileData.student_no ||
+        data.idNumber ||
+        data.id_number ||
+        profileData.id_number ||
+        getStoredStudentId() ||
+        '';
+
+      const resolvedYearLevel = data.yearLevel ?? data.year_level ?? studentProfileData.year_level ?? 0;
+      const resolvedProgram = data.program || studentProfileData.program || '';
+      const resolvedGpa = data.gpa ?? studentProfileData.gpa ?? null;
+
+      const resolvedAcademicStanding =
+        data.academicStanding ||
+        data.academic_standing ||
+        studentProfileData.academic_standing ||
+        '—';
+
+      const resolvedEnrollmentStatus =
+        data.enrollmentStatus ||
+        data.enrollment_status ||
+        studentProfileData.enrollment_status ||
+        '—';
+
+      const resolvedDepartmentId = data.departmentId ?? data.department_id ?? studentProfileData.department_id ?? null;
+      const resolvedDepartmentName = data.departmentName || data.departmentNames?.[0] || null;
+      const resolvedUserId = data.userId || data.id || profileData.id || '';
+
+      setProfile({
+        student_id: resolvedUserId,
+        full_name: resolvedFullName,
+        student_no: resolvedStudentNo,
+        email: resolvedEmail,
+        year_level: resolvedYearLevel,
+        program: resolvedProgram,
+        gpa: resolvedGpa,
+        academic_standing: resolvedAcademicStanding,
+        enrollment_status: resolvedEnrollmentStatus,
+        department_id: resolvedDepartmentId,
+        department_name: resolvedDepartmentName,
+      });
+
+      setUserEmail(resolvedEmail);
+
+      // Keep local storage synchronized
+      if (resolvedFullName) localStorage.setItem('userFullName', resolvedFullName);
+      if (resolvedEmail) localStorage.setItem('userEmail', resolvedEmail);
+      if (resolvedStudentNo) localStorage.setItem('userIdNumber', resolvedStudentNo);
+
+      if (resolvedProgram) setSelectedProgram(resolvedProgram);
+    } catch (error) {
+      console.error('FETCH STUDENT PROFILE ERROR:', error);
       setProfileError('Could not reach the server. Please try again.');
     } finally {
       setProfileLoading(false);
     }
   };
 
+  // Load once, then keep the profile fresh: when the tab regains focus and
+  // every PROFILE_REFRESH_MS. This is what makes a published Dean's List
+  // result (Academic Standing) appear without a manual page reload.
   useEffect(() => {
     fetchProfile();
+
+    const refresh = () => fetchProfile(true);
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, PROFILE_REFRESH_MS);
+
+    return () => {
+      window.removeEventListener('focus', refresh);
+      clearInterval(timer);
+    };
   }, []);
+
+  // Also refresh whenever the student goes back to the Dashboard menu
+  useEffect(() => {
+    if (activeMenuItem === 'dashboard') fetchProfile(true);
+  }, [activeMenuItem]);
 
   // Auto-close sidebar when resizing to desktop
   useEffect(() => {
@@ -289,7 +400,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
               setActiveMenuItem={setActiveMenuItem}
             />
           )}
-          {activeMenuItem === 'faculty'     && <FacultyDepartments />}
+          {activeMenuItem === 'faculty'     && <FacultyDepartments profile={profile} />}
           {activeMenuItem === 'resources'   && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
           {activeMenuItem === 'inquiry'     && <InquiryContact />}
@@ -300,7 +411,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
               profile={profile}
               userEmail={userEmail}
               loading={profileLoading}
-              onProfileUpdated={fetchProfile}
+              onProfileUpdated={() => fetchProfile(true)}
             />
           )}
         </main>
@@ -310,7 +421,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem,onLogout, u
 }
 
 // ====================== NOTIFICATION BELL ======================
-function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
+export function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -440,7 +551,7 @@ interface StudentDashboardViewProps {
   setActiveMenuItem: (id: string) => void;
 }
 
-function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenuItem }: StudentDashboardViewProps) {
+function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDashboardViewProps) {
   const displayId = profile?.student_no ?? '—';
   const displayYearLevel = profile?.year_level ? `${profile.year_level} Year` : '—';
   const displayStanding = profile?.academic_standing ?? '—';
@@ -449,13 +560,77 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
   const [inquiries, setInquiries] = useState<StudentInquiry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
+  // ── Dean's List result (Qualified / Not Qualified) ──
+  const [dlStatus, setDlStatus] = useState<DeansListStatus | null>(null);
+  const [dlLoading, setDlLoading] = useState(true);
+
+  const fetchDeansListStatus = async (silent = false) => {
+    if (!silent) setDlLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch(DEANS_LIST_STATUS_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setDlStatus(await res.json());
+    } catch (err) {
+      console.error('Failed to load Dean\'s List status', err);
+    } finally {
+      setDlLoading(false);
+    }
+  };
+
+  // Load once, and keep it fresh so a newly published list shows up without a reload
+  useEffect(() => {
+    fetchDeansListStatus();
+    const refresh = () => fetchDeansListStatus(true);
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, PROFILE_REFRESH_MS);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      clearInterval(timer);
+    };
+  }, []);
+
+  // What the Academic Standing card shows:
+  //  - a Dean's List is published  -> "Qualified" or "Not Qualified" (from the list)
+  //  - nothing published yet       -> whatever is saved on the student's profile
+  const published = !!dlStatus?.published;
+  const isQualified = published
+    ? !!dlStatus?.qualified
+    : displayStanding.startsWith('Qualified');
+  const isNotQualified = published
+    ? !dlStatus?.qualified
+    : displayStanding.startsWith('Not Qualified');
+
+  const standingText = published
+    ? (isQualified ? 'Qualified' : 'Not Qualified')
+    : displayStanding;
+
+  let standingDetail = '';
+  if (published) {
+    if (isQualified) {
+      standingDetail = `Dean's Lister${dlStatus?.gwa != null ? ` · GWA ${Number(dlStatus.gwa).toFixed(2)}` : ''}`;
+    } else if (dlStatus?.listed) {
+      standingDetail = `GWA ${dlStatus.gwa != null ? Number(dlStatus.gwa).toFixed(2) : '—'} · needs 1.75 or better`;
+    } else {
+      standingDetail = "Not on the Dean's List";
+    }
+  }
+
+  const standingColor = isQualified
+    ? 'text-emerald-600'
+    : isNotQualified
+    ? 'text-red-500'
+    : 'text-gray-900';
+
   useEffect(() => {
     const loadDashboardData = async () => {
       setLoadingData(true);
       try {
         const token = localStorage.getItem('token');
         const userId = localStorage.getItem('userId');
-        
+
         // Load Upcoming Activities
         const evRes = await fetch(CALENDAR_API_URL_STUDENT, { headers: { Authorization: `Bearer ${token}` } });
         if (evRes.ok) {
@@ -492,7 +667,7 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
     <div>
       {/* ── Stat cards (Non-clickable) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
-        
+
         {/* Card 1: Student ID */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 mb-3">
@@ -504,7 +679,7 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
           <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Student ID</div>
         </div>
 
-        {/* Card 2: Year Level */}
+        {/* Card 2: Year Level & Program */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
             <GraduationCap className="w-5 h-5" />
@@ -512,28 +687,62 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
           <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
             {loading ? <span className="inline-block h-6 w-16 bg-gray-200 rounded animate-pulse" /> : displayYearLevel}
           </div>
-          <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Year Level</div>
+          <div
+            className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5 truncate"
+            title={profile?.program || 'Program'}
+          >
+            Year Level {profile?.program ? ` • ${profile.program}` : ''}
+          </div>
         </div>
 
-        {/* Card 3: Academic Standing */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
-          <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 mb-3">
+        {/* Card 3: Academic Standing (Dean's List result: Qualified / Not Qualified) */}
+        <div
+          className={`rounded-xl shadow-sm border p-4 sm:p-5 flex flex-col justify-center cursor-default ${
+            isQualified
+              ? 'bg-emerald-50 border-emerald-200'
+              : isNotQualified
+              ? 'bg-red-50 border-red-200'
+              : 'bg-white border-gray-100'
+          }`}
+        >
+          <div
+            className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+              isQualified
+                ? 'bg-emerald-100 text-emerald-600'
+                : isNotQualified
+                ? 'bg-red-100 text-red-600'
+                : 'bg-purple-50 text-purple-600'
+            }`}
+          >
             <Award className="w-5 h-5" />
           </div>
-          <div className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight truncate">
-            {loading ? <span className="inline-block h-6 w-24 bg-gray-200 rounded animate-pulse" /> : displayStanding}
+          <div className={`text-lg sm:text-xl font-bold tracking-tight leading-snug min-h-[2.25rem] flex items-center ${standingColor}`}>
+            {loading || dlLoading ? (
+              <span className="inline-block h-6 w-24 bg-gray-200 rounded animate-pulse" />
+            ) : (
+              standingText
+            )}
           </div>
           <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Academic Standing</div>
+
+          {!loading && !dlLoading && standingDetail && (
+            <div className={`mt-2 text-[11px] font-semibold ${isQualified ? 'text-emerald-700' : 'text-red-600'}`}>
+              {standingDetail}
+              {dlStatus?.semester && (
+                <span className="block font-normal text-gray-500 mt-0.5">{dlStatus.semester}</span>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
 
       {/* ── Bottom Action Cards (Clickable) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
+
         {/* Inquiry Card */}
-        <div 
-          onClick={() => setActiveMenuItem('inquiry')} 
+        <div
+          onClick={() => setActiveMenuItem('inquiry')}
           className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
         >
           <div className="flex justify-between items-center mb-6 shrink-0">
@@ -542,7 +751,7 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
               <MessageSquare className="w-5 h-5" />
             </div>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
             {loadingData ? (
               <div className="flex items-center justify-center h-full">
@@ -571,8 +780,8 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
         </div>
 
         {/* Calendar Card */}
-        <div 
-          onClick={() => setActiveMenuItem('achievements')} 
+        <div
+          onClick={() => setActiveMenuItem('achievements')}
           className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
         >
           <div className="flex justify-between items-center mb-6 shrink-0">
@@ -592,7 +801,7 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
                 <div key={ev.id} className="p-4 bg-gray-50 border border-gray-100 rounded-xl flex flex-col gap-1.5 border-l-4" style={{ borderLeftColor: colorForStudentEvent(ev) }}>
                   <span className="truncate text-sm font-bold text-gray-900">{ev.title}</span>
                   <span className="text-xs font-medium text-gray-500">
-                    {new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})} 
+                    {new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric'})}
                     {ev.start_time && ` · ${formatSingleTime(ev.start_time)}`}
                   </span>
                 </div>
@@ -612,101 +821,139 @@ function StudentDashboardView({ selectedProgram, profile, loading, setActiveMenu
 }
 
 // ====================== FACULTY DEPARTMENTS ======================
-interface FacultyMember {
-  id: string;
-  full_name: string;
-  email: string | null;
-  position: string | null;
-}
-
-function FacultyDepartments() {
-  const [faculty, setFaculty] = useState<FacultyMember[]>([]);
-  const [departmentName, setDepartmentName] = useState<string>('');
+function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
+  const [faculty, setFaculty] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     const load = async () => {
+      if (!profile) return;
       setLoading(true);
       setLoadError('');
+
       try {
-        const token = localStorage.getItem('token');
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, role, program, department')
+          .in('role', ['department_chair', 'faculty']);
 
-        const meRes = await fetch(ME_API_URL, {
-          headers: { Authorization: `Bearer ${token}` },
+        if (error) throw error;
+
+        const studentProg = profile.program || profile.department_name || '';
+
+        // Smart string matcher to link Faculty/Chairs to the Student's Program
+        const isMatch = (targetStr: string, stProg: string) => {
+          const t = (targetStr || '').toLowerCase();
+          const s = (stProg || '').toLowerCase();
+          if (!t || !s) return false;
+          if (t === s || t.includes(s) || s.includes(t)) return true;
+          if ((s.includes('beed') || s.includes('elementary')) && (t.includes('beed') || t.includes('elementary'))) return true;
+          if ((s.includes('btled') || s.includes('technology') || s.includes('livelihood')) && (t.includes('btled') || t.includes('technology') || t.includes('livelihood'))) return true;
+          if ((s.includes('math') || s.includes('mathematics')) && (t.includes('math') || t.includes('mathematics'))) return true;
+          if (s.includes('english') && t.includes('english')) return true;
+          if (s.includes('science') && t.includes('science')) return true;
+          return false;
+        };
+
+        const matched = (data || []).filter((p) => {
+          const targetStr = [p.program, p.department].filter(Boolean).join(' ');
+          return isMatch(targetStr, studentProg);
         });
-        if (!meRes.ok) {
-          setLoadError('Failed to load your profile.');
-          setLoading(false);
-          return;
-        }
-        const me = await meRes.json();
 
-        if (!me.departmentId) {
-          setLoadError('No department is associated with your program yet.');
-          setLoading(false);
-          return;
-        }
-
-        setDepartmentName(me.departmentNames?.[0] ?? '');
-
-        const facultyRes = await fetch(`http://localhost:5000/api/faculty/by-department/${me.departmentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        // Sort so the Chairman always appears at the top
+        matched.sort((a, b) => {
+          if (a.role === 'department_chair' && b.role !== 'department_chair') return -1;
+          if (a.role !== 'department_chair' && b.role === 'department_chair') return 1;
+          return (a.full_name || '').localeCompare(b.full_name || '');
         });
-        if (!facultyRes.ok) {
-          setLoadError('Failed to load faculty for your department.');
-          setLoading(false);
-          return;
-        }
-        const facultyData = await facultyRes.json();
-        setFaculty(facultyData ?? []);
-      } catch {
-        setLoadError('Could not reach the server. Please try again.');
+
+        setFaculty(matched);
+      } catch (err) {
+        setLoadError('Could not reach the database. Please try again.');
       } finally {
         setLoading(false);
       }
     };
-    load();
-  }, []);
+
+    if (profile) {
+      load();
+    }
+  }, [profile?.program, profile?.department_name]);
+
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  const departmentName = profile.department_name || profile.program || 'Your Program';
 
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Faculty & Departments</h1>
 
       {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{loadError}</div>
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+          {loadError}
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-1">
-          {departmentName ? `${departmentName} Faculty` : 'My Faculty Members'}
+          {departmentName}
         </h2>
-        <p className="text-xs text-gray-400 mb-4">Faculty assigned to your program's department</p>
+        <p className="text-xs text-gray-400 mb-6">Faculty assigned to your specific program</p>
 
         {loading ? (
           <div className="flex items-center justify-center h-32 text-gray-400 gap-2">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <Loader2 className="w-5 h-5 border-t-transparent rounded-full animate-spin text-blue-600" />
             <span className="text-sm">Loading faculty...</span>
           </div>
         ) : faculty.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-            <User className="w-10 h-10 mb-2 opacity-40" />
-            <p className="text-sm text-gray-400">No faculty found for your department yet.</p>
+          <div className="flex flex-col items-center justify-center h-48 text-gray-300">
+            <Users className="w-12 h-12 mb-3 opacity-40" />
+            <p className="text-sm text-gray-400">No faculty members found for your program yet.</p>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {faculty.map((f) => (
-              <div key={f.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-gray-900 text-sm sm:text-base">{f.full_name}</div>
-                    <div className="text-xs sm:text-sm text-gray-600">{f.position ?? 'Faculty'}</div>
-                    {f.email && <div className="text-xs sm:text-sm text-blue-600">{f.email}</div>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {faculty.map((f) => {
+              const isChair = f.role === 'department_chair';
+
+              return (
+                <div key={f.id} className={`p-4 rounded-xl border transition-colors flex items-center justify-between gap-3 ${
+                  isChair ? 'bg-blue-50/40 border-blue-200 hover:bg-blue-50' : 'bg-white border-gray-100 hover:bg-gray-50'
+                }`}>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-12 h-12 rounded-full flex flex-shrink-0 items-center justify-center font-bold text-lg shadow-sm ${
+                      isChair ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {(f.full_name || 'U').substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-bold text-gray-900 text-sm sm:text-base flex items-center gap-2 truncate">
+                        <span className="truncate">{f.full_name}</span>
+                        {isChair && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] uppercase tracking-wider font-bold rounded-md flex-shrink-0">
+                            Chairman
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                        {isChair ? 'Department Chairman' : (f.position || 'Faculty Member')}
+                      </div>
+                      {f.email && (
+                        <div className="text-xs sm:text-sm text-blue-600 mt-0.5 truncate">
+                          {f.email}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <User className="w-7 h-7 text-gray-400 flex-shrink-0" />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1490,53 +1737,84 @@ interface StudentSettingsProps {
 function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
   const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
 
+  // Notifications
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
 
-  // Editable fields, initialized from profile/auth once loaded
+  // Profile
   const [fullNameInput, setFullNameInput] = useState('');
   const [studentNoInput, setStudentNoInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
+
+  // Security
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // States
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [passwordMessage, setPasswordMessage] = useState('');
 
+  // Load profile from dashboard
   useEffect(() => {
-    if (profile?.full_name) {
-      setFullNameInput(profile.full_name);
-    }
-    if (profile?.student_no) {
-      setStudentNoInput(profile.student_no);
-    }
-  }, [profile?.full_name, profile?.student_no]);
+    const storedStudentId = getStoredStudentId();
 
-  useEffect(() => {
-    setEmailInput(userEmail);
-  }, [userEmail]);
+    if (!profile) {
+      setFullNameInput('');
+      setStudentNoInput(storedStudentId);
+      setEmailInput(userEmail || localStorage.getItem('userEmail') || '');
+      return;
+    }
 
-  const handleSaveChanges = async () => {
+    setFullNameInput(profile.full_name || '');
+    setStudentNoInput(profile.student_no || storedStudentId || '');
+    setEmailInput(profile.email || userEmail || localStorage.getItem('userEmail') || '');
+  }, [profile, userEmail]);
+
+  // Save personal information
+  const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
     const trimmedStudentNo = studentNoInput.trim();
     const trimmedEmail = emailInput.trim();
 
     if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
-      return;
+      setSaveMessage({ type: 'error', text: 'Full name is required.' });
+      return false;
     }
+
     if (!trimmedStudentNo) {
-      setSaveMessage({ type: 'error', text: 'Student ID cannot be empty.' });
-      return;
+      setSaveMessage({ type: 'error', text: 'Student ID is required.' });
+      return false;
     }
+
     if (!trimmedEmail) {
-      setSaveMessage({ type: 'error', text: 'Email address cannot be empty.' });
-      return;
+      setSaveMessage({ type: 'error', text: 'Email address is required.' });
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      return false;
+    }
+
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
+      return false;
     }
 
     setSaving(true);
     setSaveMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/me', {
+      const response = await fetch('http://localhost:5000/api/students/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1544,28 +1822,146 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         },
         body: JSON.stringify({
           full_name: trimmedName,
+          email: trimmedEmail,
           student_no: trimmedStudentNo,
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setSaveMessage({ type: 'error', text: err.error || 'Failed to save changes. Please try again.' });
-        return;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to update your profile.');
       }
 
-      if (trimmedEmail !== userEmail) {
-        setSaveMessage({ type: 'success', text: 'Name and Student ID saved. Email address changes are not yet supported — contact your Department Chair to update your email.' });
-      } else {
-        setSaveMessage({ type: 'success', text: 'Your changes have been saved.' });
-      }
+      setFullNameInput(trimmedName);
+      setStudentNoInput(trimmedStudentNo);
+      setEmailInput(trimmedEmail);
 
-      onProfileUpdated();
-    } catch {
-      setSaveMessage({ type: 'error', text: 'Could not reach the server. Please try again.' });
+      localStorage.setItem('userFullName', trimmedName);
+      localStorage.setItem('userEmail', trimmedEmail);
+      localStorage.setItem('userIdNumber', trimmedStudentNo);
+
+      // Refresh dashboard
+      await onProfileUpdated();
+
+      setSaveMessage({ type: 'success', text: 'Personal information updated successfully.' });
+      return true;
+    } catch (error) {
+      console.error('Student profile update failed:', error);
+
+      setSaveMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to update your personal information.',
+      });
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  // Change password
+  const changePassword = async () => {
+    setPasswordMessage('');
+    setSaveMessage(null);
+
+    if (!currentPassword) {
+      setPasswordMessage('Current password is required.');
+      return false;
+    }
+
+    if (!newPassword) {
+      setPasswordMessage('New password is required.');
+      return false;
+    }
+
+    if (!confirmPassword) {
+      setPasswordMessage('Please confirm your new password.');
+      return false;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('New password and confirm password do not match.');
+      return false;
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
+      return false;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordMessage('Your new password must be different from your current password.');
+      return false;
+    }
+
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setPasswordMessage('Your session has expired. Please log in again.');
+      return false;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to change your password.');
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      setSaveMessage({ type: 'success', text: 'Password changed successfully.' });
+      setPasswordMessage('');
+
+      return true;
+    } catch (error) {
+      console.error('Student password update failed:', error);
+
+      const message = error instanceof Error ? error.message : 'Failed to change your password.';
+
+      setPasswordMessage(message);
+      setSaveMessage({ type: 'error', text: message });
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Top save button
+  const handleSaveChanges = async () => {
+    if (activeTab === 'profile') {
+      await saveProfile();
+      return;
+    }
+
+    if (activeTab === 'security') {
+      await changePassword();
+      return;
+    }
+
+    setSaveMessage({ type: 'success', text: 'Settings saved successfully.' });
   };
 
   const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
@@ -1576,16 +1972,22 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
 
   return (
     <div>
-      {/* Header */}
+
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Settings
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex gap-3">
           <button
             onClick={handleSaveChanges}
-            disabled={saving || loading}
+            disabled={saving || loading || !profile}
             className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Save Changes'}
@@ -1593,6 +1995,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </div>
       </div>
 
+      {/* MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -1605,14 +2008,19 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </div>
       )}
 
-      {/* Body: vertical tabs + panel */}
+      {/* BODY */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-        {/* Sidebar tab list */}
+
+        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setPasswordMessage('');
+                setSaveMessage(null);
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium mb-1 last:mb-0 transition-colors text-left ${
                 activeTab === tab.key
                   ? 'bg-blue-50 text-blue-700'
@@ -1625,12 +2033,19 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
           ))}
         </nav>
 
-        {/* Panel */}
+        {/* PANEL */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+
+          {/* PROFILE */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
 
               {loading ? (
                 <div className="animate-pulse space-y-4">
@@ -1640,11 +2055,19 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                   </div>
                   <div className="h-10 bg-gray-100 rounded-lg" />
                 </div>
+              ) : !profile ? (
+                <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                  Your profile information could not be loaded.
+                </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+                    {/* FULL NAME */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
                       <input
                         type="text"
                         value={fullNameInput}
@@ -1652,8 +2075,12 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
+                    {/* STUDENT ID */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Student ID
+                      </label>
                       <input
                         type="text"
                         value={studentNoInput}
@@ -1661,9 +2088,14 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                   </div>
+
+                  {/* EMAIL */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address
+                    </label>
                     <input
                       type="email"
                       value={emailInput}
@@ -1676,30 +2108,150 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
             </div>
           )}
 
+          {/* SECURITY */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
-              <div className="space-y-3 max-w-md">
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Change Password
-                </button>
-                <button className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-                  Enable Two-Factor Authentication
-                </button>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Keep your account secure.
+              </p>
+
+              <div className="space-y-4 max-w-md">
+
+                {/* CURRENT */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => {
+                        setCurrentPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Enter current password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* NEW */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Min 8 chars, Aa1@"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* CONFIRM */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(e.target.value);
+                        setPasswordMessage('');
+                        setSaveMessage(null);
+                      }}
+                      placeholder="Confirm new password"
+                      className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* ERROR */}
+                {passwordMessage && (
+                  <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                    {passwordMessage}
+                  </div>
+                )}
+
+              </div>
+
+              {/* 2FA */}
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Add an extra layer of protection to your account.
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-gray-500">
+                    Not configured
+                  </span>
+                </div>
               </div>
             </div>
           )}
 
+          {/* NOTIFICATIONS */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Choose what you want to be notified about.
+              </p>
+
               <div className="space-y-4">
+
+                {/* EMAIL NOTIFICATIONS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Email Notifications</p>
-                    <p className="text-xs text-gray-500 mt-1">Receive email updates about your activities</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Email Notifications
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Receive email updates about your activities
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -1708,14 +2260,19 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                       onChange={(e) => setEmailNotifications(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
 
+                {/* ANNOUNCEMENT ALERTS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Announcement Alerts</p>
-                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcement Alerts
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important announcements
+                    </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -1724,14 +2281,17 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                       onChange={(e) => setAnnouncementAlerts(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
+
               </div>
             </div>
           )}
+
         </div>
       </div>
+
     </div>
   );
 }

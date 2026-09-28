@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
+const path = require('path');
 
 dotenv.config();
 
@@ -21,6 +22,8 @@ app.use(
 app.use(express.json());
 app.use(helmet());
 
+app.use('/generated', express.static(path.join(__dirname, 'generated')));
+
 // ============================================================
 // CRON
 // ============================================================
@@ -32,24 +35,25 @@ require('./cron');
 // ============================================================
 
 const authRoutes = require('./routes/auth');
-
 app.use('/api/auth', authRoutes);
-
 console.log('✅ Auth routes loaded');
 
 app.get('/api/auth/profile-test', (req, res) => {
   console.log('✅ /api/auth/profile-test reached');
-
   res.json({
     success: true,
     message: 'Auth route is working.'
   });
 });
 
+app.use('/api/students', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
 app.use('/api/announcements', require('./routes/announcements'));
-app.use('/api/students', require('./routes/student'));
+
+
+app.use('/api/inquiries', require('./routes/inquiries'));
+console.log('✅ Inquiry routes loaded');
 
 app.use(
   '/api/accomplishment-reports',
@@ -87,14 +91,6 @@ app.use('/api/wfh-reports', require('./routes/wfhReports'));
 
 // ============================================================
 // CONTACT EMAIL REPLY
-// ============================================================
-//
-// Frontend:
-// POST http://localhost:5000/api/contact/reply
-//
-// Route:
-// backend/routes/contact.js
-//
 // ============================================================
 
 app.use(

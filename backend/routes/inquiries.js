@@ -83,12 +83,77 @@ router.post('/', authenticate, async (req, res) => {
   if (error) {
     return res.status(500).json({ error: error.message });
   }
+
+  // ── Fan out notifications to Deans/Admins server-side with Debug Logs ──
+  try {
+    console.log('📢 NAGHAHANAP NG MGA DEAN/ADMIN PARA SA NOTIFICATION...');
+    
+    // 1. Find all users who are deans or admins (Kasama na ang college_dean sakaling mao ni ang role sa database)
+    const { data: targetUsers, error: userLookupErr } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .in('role', ['dean', 'admin', 'college_dean']);
+
+    console.log('👥 MGA NAKITANG TARGET USERS:', targetUsers, 'ERROR:', userLookupErr);
+
+    if (!userLookupErr && targetUsers && targetUsers.length > 0) {
+      const userIds = targetUsers.map(u => u.id);
+
+      // 2. Fetch their notification preferences for inquiries
+      const { data: preferences } = await supabase
+        .from('notification_preferences')
+        .select('user_id, allow_all, inquiries')
+        .in('user_id', userIds);
+
+      console.log('⚙️ MGA NAKITANG PREFERENCES:', preferences);
+
+      const prefMap = new Map();
+      if (preferences) {
+        preferences.forEach(p => prefMap.set(p.user_id, p));
+      }
+
+      const notificationsToInsert = [];
+
+      for (const userId of userIds) {
+        const userPref = prefMap.get(userId);
+        
+        // Respect preferences: if allow_all is false or inquiries is explicitly false, skip
+        if (userPref) {
+          if (userPref.allow_all === false || userPref.inquiries === false) {
+            console.log(`🚫 Na-skip ang notification para sa user ${userId} tungkol sa inquiries preference.`);
+            continue;
+          }
+        }
+
+        notificationsToInsert.push({
+          user_id: userId,
+          title: `New Inquiry: ${data.subject}`,
+          message: `${data.sender_name} submitted a new inquiry.`,
+          type: 'inquiry',
+          reference_id: data.id,
+          reference_table: 'inquiries',
+          is_read: false,
+        });
+      }
+
+      console.log('📥 MGA NOTIFICATIONS NA II-INSERT SA DATABASE:', notificationsToInsert);
+
+      // 3. Insert notifications for opted-in deans/admins
+      if (notificationsToInsert.length > 0) {
+        const { error: insertNotifErr } = await supabase.from('notifications').insert(notificationsToInsert);
+        console.log('✨ RESULTA NG NOTIFICATION INSERT ERROR:', insertNotifErr);
+      }
+    }
+  } catch (notifErr) {
+    console.error('❌ Nabigo sa pagpapadala ng inquiry notification:', notifErr);
+  }
+
   return res.status(201).json(data);
 });
 
 // GET /api/inquiries — ALL inquiries, for the Dean's dashboard
 router.get('/', authenticate, async (req, res) => {
-  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin' && req.user.role !== 'college_dean') {
     return res.status(403).json({ error: 'Not authorized to view all inquiries.' });
   }
 
@@ -105,7 +170,7 @@ router.get('/', authenticate, async (req, res) => {
 
 // PUT /api/inquiries/:id/reply — Dean replies to an inquiry
 router.put('/:id/reply', authenticate, async (req, res) => {
-  if (req.user.role !== 'dean' && req.user.role !== 'admin') {
+  if (req.user.role !== 'dean' && req.user.role !== 'admin' && req.user.role !== 'college_dean') {
     return res.status(403).json({ error: 'Not authorized to reply to inquiries.' });
   }
 

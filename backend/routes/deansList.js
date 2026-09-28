@@ -4,17 +4,116 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const XLSX = require('xlsx');
-const ExcelJS = require('exceljs');
+const puppeteer = require('puppeteer');
 const authenticate = require('../middleware/authenticate');
+const crypto = require('crypto');
+const supabase = require('../supabaseClient'); // MUST use the service_role key (backend only)
+
+
+// ─────────────────────────────────────────────────────────────
+// Excel parsing helpers (Student ID, Full Name, Course, GWA)
+// ─────────────────────────────────────────────────────────────
+// Valid GWA range (Philippine grading: 1.0 best ... 5.0 failing)
+const GWA_MIN = 0.5;
+const GWA_MAX = 5.5;
+
+const normHeader = h => String(h ?? '').toLowerCase().replace(/[^a-z]/g, '');
+
+// "POGOY, ERNESTO JR." and "Ernesto Pogoy Jr." become the same key.
+// Single letters (middle initials) are ignored.
+const normName = v =>
+  String(v ?? '')
+    .toLowerCase()
+    .replace(/[.,]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1)
+    .sort()
+    .join(' ');
+
+// Removes spaces/dashes/".0" and leading zeros so "0221112", "221112" and
+// "022-1112" all compare equal.
+const normId = v =>
+  String(v ?? '')
+    .replace(/\.0+$/, '')
+    .replace(/[\s-]/g, '')
+    .toUpperCase()
+    .replace(/^0+/, '');
+
+// Loose course comparison: "BSEd-Math" ~ "bsed math"
+const normCourse = v => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const courseMatches = (a, b) => {
+  const x = normCourse(a), y = normCourse(b);
+  if (!x || !y) return false;
+  return x === y || x.includes(y) || y.includes(x);
+};
+
+function findColumns(row) {
+  const cols = { id: -1, name: -1, course: -1, gwa: -1 };
+  (row || []).forEach((cell, i) => {
+    const h = normHeader(cell);
+    if (!h) return;
+    if (cols.id < 0 && /^(studentid|studentno|studentnumber|idnumber|idno|id)$/.test(h)) cols.id = i;
+    else if (cols.name < 0 && /^(fullname|studentname|nameofstudent|name|names|student)$/.test(h)) cols.name = i;
+    else if (cols.course < 0 && /(course|program)/.test(h)) cols.course = i;
+    else if (
+      cols.gwa < 0 &&
+      (h.includes('gwa') || h.includes('weightedaverage') || h === 'average' || h === 'gpa' || h === 'grade')
+    ) cols.gwa = i;
+  });
+  return cols;
+}
+
+/**
+ * Reads a flat list: one row per student with Student ID, Full Name, Course, GWA columns.
+ * The header row can be anywhere in the first 30 rows (titles above it are ok).
+ */
+function parseGradesWorkbook(workbook) {
+  const entries = [];
+  let skipped = 0;
+  const sheetsUsed = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: null, raw: true });
+
+    let headerIdx = -1;
+    let cols = null;
+    for (let i = 0; i < Math.min(rows.length, 30); i++) {
+      const c = findColumns(rows[i]);
+      if (c.name >= 0 && c.gwa >= 0) { headerIdx = i; cols = c; break; }
+    }
+    if (headerIdx < 0) continue;
+    sheetsUsed.push(sheetName);
+
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const name = String(row[cols.name] ?? '').trim();
+      if (!name) continue;
+
+      const raw = row[cols.gwa];
+      const gwa = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').replace(',', '.'));
+      if (!isFinite(gwa) || gwa < GWA_MIN || gwa > GWA_MAX) { skipped++; continue; }
+
+      const course = cols.course >= 0 ? String(row[cols.course] ?? '').trim() : '';
+      const studentNo = cols.id >= 0 ? String(row[cols.id] ?? '').replace(/\.0+$/, '').trim() : '';
+      entries.push({ studentNo, name, course, gwa: Math.round(gwa * 100) / 100 });
+    }
+  }
+
+  return { entries, skipped, sheetsUsed };
+}
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const LOGO_PATH = path.join(__dirname, '..', 'public', 'assets', 'ctu-logo.png');
+// Header/footer images — copied here from the frontend's public/header-pics
+// folder so the backend can embed them directly into the PDF. If you ever
+// update the letterhead images, update BOTH copies (frontend + this one).
+const HEADER_IMAGE_PATH = path.join(__dirname, '..', 'public', 'assets', 'ctu-header.png');
+const FOOTER_IMAGE_PATH = path.join(__dirname, '..', 'public', 'assets', 'ctu-footer.png');
 
 // Prefer an app-local generated dir, but fall back to the OS temp dir if the
 // filesystem is read-only (common on Render/Vercel/Railway free tiers, etc.)
-// so uploads don't fail 100% of the time just because ../generated isn't writable.
 function resolveOutputDir() {
   const preferred = path.join(__dirname, '..', 'generated', 'deans-list');
   try {
@@ -31,115 +130,304 @@ function resolveOutputDir() {
 const OUTPUT_DIR = resolveOutputDir();
 
 // ── Qualification rule: adjust to your college's actual policy ──
+// The Excel only has the GWA (no per-subject grades), so the rule is GWA-only.
 const GWA_THRESHOLD = 1.75;
-const MAX_ALLOWED_GRADE = 2.0; // no individual subject grade above this counts as disqualifying
-const MIN_UNITS_FOR_ROW = 1;
-const MAX_UNITS_FOR_ROW = 6;   // sane bound for a single subject's units, used to tell a
-const MIN_GRADE_FOR_ROW = 0.5; // subject row apart from a totals/summary row
-const MAX_GRADE_FOR_ROW = 5.5;
 
-// Words that flag a row as a totals/summary row rather than an actual subject,
-// even if it happens to have two numbers that fall inside the "sane" range above.
-const TOTALS_ROW_PATTERN = /^(total|totals|sub[\s-]?total|overall|gwa|general\s*weighted\s*average|summary)\b/i;
+const isQualified = gwa => typeof gwa === 'number' && isFinite(gwa) && gwa <= GWA_THRESHOLD;
+
+const TABLE = 'deans_list_entries';
+
+// ── student_profiles.academic_standing labels ──
+const STANDING_DEANS_LISTER = "Dean's Lister";
+const STANDING_DEFAULT = 'Good Standing';
+
+// Supabase returns max ~1000 rows per request, so read big tables in pages.
+async function fetchAll(buildQuery) {
+  const pageSize = 1000;
+  let from = 0;
+  const all = [];
+  for (;;) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
 
 /**
- * The real workbook (see DEANS.xlsx) is NOT one flat row per student.
- * It's one sheet per student, each shaped like:
- *
- *   Name:            JUAN DELA CRUZ
- *   ...
- *   SUBJECT NAME     units   grade   =units*grade
- *   SUBJECT NAME     units   grade   =units*grade
- *   ...
- *   (totals row)     =SUM    =SUM    =SUM(...)/units
- *
- * This walks every sheet, finds the student's name + subject rows, and
- * recomputes GWA itself (units × grade, summed, ÷ total units) rather than
- * trusting any cached formula result — so it stays correct even if a
- * template's totals-row formula is off by a cell.
+ * After publishing a batch, make student_profiles.academic_standing match it:
+ *  - qualified students            -> "Dean's Lister"
+ *  - anyone else still marked "Dean's Lister" (old list) -> "Good Standing"
+ * Matching: Student ID first. If a row in the Excel has NO Student ID, falls
+ * back to the name, but only when that name is unique in student_profiles.
+ * Rows that match nobody are returned in `unmatched`.
  */
-function parseStudentSheet(sheet, sheetName) {
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+async function syncAcademicStanding(batchId) {
+  const entries = await fetchAll(() =>
+    supabase.from(TABLE).select('student_no, id_key, full_name, name_key, qualified').eq('batch_id', batchId)
+  );
+  const profiles = await fetchAll(() =>
+    supabase.from('student_profiles').select('student_id, student_no, full_name, academic_standing')
+  );
 
-  let name = null;
-  let course = '';
-  let yearLevel = '';
-  let studentId = '';
-  const subjects = [];
+  const byId = new Map(profiles.map(p => [normId(p.student_no), p]));
+  const nameCount = new Map();
+  profiles.forEach(p => {
+    const k = normName(p.full_name);
+    nameCount.set(k, (nameCount.get(k) || 0) + 1);
+  });
+  const byName = new Map(profiles.map(p => [normName(p.full_name), p]));
 
-  for (const row of rows) {
-    if (!row || row.every(c => c === null || c === '')) continue;
+  const qualifiedProfileIds = new Set();
+  const unmatched = [];
 
-    // Look for label cells like "Name:", "Course:", "Year Level:", "Student ID:"
-    for (let i = 0; i < row.length; i++) {
-      const cell = row[i];
-      if (typeof cell !== 'string') continue;
-      const label = cell.trim().toLowerCase().replace(/:$/, '');
-      if (!label) continue;
-
-      const nextVal = row.slice(i + 1).find(v => v !== null && v !== '');
-      if (nextVal === undefined) continue;
-
-      if (!name && label.startsWith('name')) name = String(nextVal).trim();
-      else if (!course && (label.startsWith('course') || label.startsWith('program'))) course = String(nextVal).trim();
-      else if (!yearLevel && label.startsWith('year')) yearLevel = String(nextVal).trim();
-      else if (!studentId && (label.includes('student id') || label.includes('id no'))) studentId = String(nextVal).trim();
+  for (const e of entries) {
+    let p = null;
+    if (e.id_key) {
+      p = byId.get(e.id_key) || null;
+    } else if (e.name_key && nameCount.get(e.name_key) === 1) {
+      p = byName.get(e.name_key);
     }
 
-    // Look for a subject row: text cell (subject name) + at least two plausible
-    // numeric cells in order [units, grade]. Totals/header rows are skipped
-    // naturally because they either have no subject-name text, their first
-    // number is out of the sane units range, or the text cell matches a
-    // totals-row keyword (TOTAL, GWA, SUMMARY, etc).
-    const subjectText = row.find(c =>
-      typeof c === 'string' &&
-      c.trim().length > 2 &&
-      !/^name|^course|^year|^student id/i.test(c.trim()) &&
-      !TOTALS_ROW_PATTERN.test(c.trim())
-    );
-    const numbers = row.filter(c => typeof c === 'number');
-    if (subjectText && numbers.length >= 2) {
-      const [units, grade] = numbers;
-      if (
-        units >= MIN_UNITS_FOR_ROW && units <= MAX_UNITS_FOR_ROW &&
-        grade >= MIN_GRADE_FOR_ROW && grade <= MAX_GRADE_FOR_ROW
-      ) {
-        subjects.push({ subject: subjectText.trim(), units, grade });
-      }
-    }
+    if (!p) { unmatched.push(e.full_name); continue; }
+    if (e.qualified) qualifiedProfileIds.add(p.student_id);
   }
 
-  if (!name || subjects.length === 0) return null; // not a student sheet (e.g. the summary/list tab)
+  const toSet = profiles.filter(p => qualifiedProfileIds.has(p.student_id) && p.academic_standing !== STANDING_DEANS_LISTER);
+  const toReset = profiles.filter(p => !qualifiedProfileIds.has(p.student_id) && p.academic_standing === STANDING_DEANS_LISTER);
 
-  const totalUnits = subjects.reduce((sum, s) => sum + s.units, 0);
-  const totalWeighted = subjects.reduce((sum, s) => sum + s.units * s.grade, 0);
-  const gwa = totalUnits > 0 ? totalWeighted / totalUnits : NaN;
-  const maxGrade = Math.max(...subjects.map(s => s.grade));
-
-  return {
-    studentId: studentId || sheetName,
-    name,
-    course,
-    yearLevel,
-    gwa,
-    maxGrade,
-    units: totalUnits,
-    subjects,
+  const updateInChunks = async (rows, standing) => {
+    const ids = rows.map(p => p.student_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase
+        .from('student_profiles')
+        .update({ academic_standing: standing })
+        .in('student_id', ids.slice(i, i + 200));
+      if (error) throw error;
+    }
   };
+
+  await updateInChunks(toSet, STANDING_DEANS_LISTER);
+  await updateInChunks(toReset, STANDING_DEFAULT);
+
+  return { updated: qualifiedProfileIds.size, reset: toReset.length, unmatched };
 }
 
-function isQualified(student) {
-  if (!student || !student.name) return false;
-  if (isNaN(student.gwa)) return false;
-  if (student.gwa > GWA_THRESHOLD) return false;
-  if (student.maxGrade > MAX_ALLOWED_GRADE) return false;
-  return true;
+// ── PDF helpers ──
+
+function imageToDataUri(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const ext = path.extname(filePath).replace('.', '') || 'png';
+  const base64 = fs.readFileSync(filePath).toString('base64');
+  return `data:image/${ext};base64,${base64}`;
 }
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildBodyHtml({ students, college, semester, generatedAt }) {
+  const rows = students.map((s, i) => {
+    const badgeBg = s.gwa <= 1.5 ? '#dbeafe' : '#dcfce7';
+    const badgeColor = s.gwa <= 1.5 ? '#1d4ed8' : '#15803d';
+    return `
+      <tr>
+        <td class="rank">${i + 1}</td>
+        <td class="name">${escapeHtml(s.name)}</td>
+        <td class="course">${escapeHtml([s.course, s.yearLevel].filter(Boolean).join(' '))}</td>
+        <td class="gwa-cell">
+          <span class="badge" style="background:${badgeBg}; color:${badgeColor};">${s.gwa.toFixed(2)}</span>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const emptyState = students.length === 0
+    ? `<p class="empty-state">No qualifiers found for this batch.</p>`
+    : '';
+
+  return `
+    <div class="letterhead">
+      <p class="eyebrow">Cebu Technological University</p>
+      <h1>Dean's List</h1>
+      <p class="subtitle">${escapeHtml(college)} · ${escapeHtml(semester)}</p>
+    </div>
+
+    <table class="qualifiers-table">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Full Name</th>
+          <th>Course</th>
+          <th class="gwa-cell">GWA</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+    ${emptyState}
+    <p class="generated-at">Generated ${escapeHtml(generatedAt)}</p>
+  `;
+}
+
+function buildFullHtml(bodyHtml) {
+  return `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        * { box-sizing: border-box; }
+        body {
+          font-family: Helvetica, Arial, sans-serif;
+          color: #1f2937;
+          margin: 0;
+          padding: 0;
+        }
+        .letterhead {
+          text-align: center;
+          padding-bottom: 14px;
+          margin-bottom: 14px;
+          border-bottom: 1px solid #f3f4f6;
+        }
+        .letterhead .eyebrow {
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #9ca3af;
+          margin: 0;
+        }
+        .letterhead h1 {
+          font-size: 18px;
+          font-weight: 700;
+          color: #111827;
+          margin: 4px 0 0;
+        }
+        .letterhead .subtitle {
+          font-size: 12px;
+          color: #6b7280;
+          margin: 4px 0 0;
+        }
+        table.qualifiers-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 11px;
+        }
+        table.qualifiers-table thead th {
+          background: #f9fafb;
+          text-align: left;
+          font-weight: 600;
+          color: #374151;
+          padding: 10px 12px;
+          border-bottom: 2px solid #e5e7eb;
+        }
+        table.qualifiers-table td {
+          padding: 8px 12px;
+          border-bottom: 1px solid #f3f4f6;
+        }
+        table.qualifiers-table .rank {
+          width: 36px;
+          color: #9ca3af;
+          font-size: 10px;
+        }
+        table.qualifiers-table .name {
+          font-weight: 500;
+          color: #111827;
+        }
+        table.qualifiers-table .course {
+          color: #374151;
+        }
+        table.qualifiers-table .gwa-cell {
+          text-align: center;
+          width: 70px;
+        }
+        .badge {
+          display: inline-block;
+          padding: 2px 10px;
+          border-radius: 999px;
+          font-weight: 700;
+          font-size: 10px;
+        }
+        .empty-state {
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          padding: 24px 0;
+        }
+        .generated-at {
+          text-align: right;
+          font-size: 9px;
+          color: #9ca3af;
+          margin-top: 16px;
+        }
+      </style>
+    </head>
+    <body>
+      ${bodyHtml}
+    </body>
+  </html>`;
+}
+
+async function generateDeansListPdf({ filePath, students, college, semester, generatedAt }) {
+  const headerImg = imageToDataUri(HEADER_IMAGE_PATH);
+  const footerImg = imageToDataUri(FOOTER_IMAGE_PATH);
+
+  const headerTemplate = headerImg
+    ? `<div style="width:100%; margin:0 40px; -webkit-print-color-adjust:exact;">
+         <img src="${headerImg}" style="width:100%; display:block;" />
+       </div>`
+    : `<div></div>`;
+
+  const footerTemplate = footerImg
+    ? `<div style="width:100%; margin:0 40px; -webkit-print-color-adjust:exact;">
+         <img src="${footerImg}" style="width:100%; display:block;" />
+       </div>`
+    : `<div></div>`;
+
+  const bodyHtml = buildBodyHtml({ students, college, semester, generatedAt });
+  const fullHtml = buildFullHtml(bodyHtml);
+
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+
+    await page.pdf({
+      path: filePath,
+      format: 'A4',
+      printBackground: true,
+      displayHeaderFooter: true,
+      headerTemplate,
+      footerTemplate,
+      margin: {
+        top: headerImg ? '130px' : '40px',
+        bottom: footerImg ? '110px' : '40px',
+        left: '40px',
+        right: '40px',
+      },
+    });
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // POST /api/deans-list/generate
+// Reads the flat Excel (Full Name, Course, GWA), saves the batch as a DRAFT
+// in deans_list_entries, and builds the PDF. Students do not see anything
+// until the faculty clicks "Publish".
+// ─────────────────────────────────────────────────────────────
 router.post('/generate', authenticate, (req, res, next) => {
-  // Wrap multer so file-too-large / bad-field-name errors come back as JSON
-  // instead of falling through to Express's default (HTML) error handler.
   upload.single('file')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       console.error('[deans-list] Multer error:', err.code, err.message);
@@ -155,8 +443,8 @@ router.post('/generate', authenticate, (req, res, next) => {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded.' });
 
     const semester = req.body.semester || 'Current Semester';
+    const college = req.body.college || '';
 
-    // 1. Parse the uploaded workbook — one sheet per student, per the template.
     let workbook;
     try {
       workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -165,103 +453,339 @@ router.post('/generate', authenticate, (req, res, next) => {
       return res.status(400).json({ message: 'The uploaded file is not a valid Excel workbook.' });
     }
 
-    const allStudents = workbook.SheetNames
-      .map(sheetName => {
-        try {
-          return parseStudentSheet(workbook.Sheets[sheetName], sheetName);
-        } catch (sheetErr) {
-          console.error(`[deans-list] Failed to parse sheet "${sheetName}":`, sheetErr);
-          return null; // skip a broken sheet instead of failing the whole request
-        }
-      })
-      .filter(Boolean); // drops the summary/list sheet and any sheet with no name/subjects
+    const { entries, skipped } = parseGradesWorkbook(workbook);
 
-    if (!allStudents.length) {
+    if (!entries.length) {
       return res.status(400).json({
-        message: 'No student sheets could be read. Expected one sheet per student with a "Name:" cell and subject/units/grade rows, matching the Dean\'s List template.',
+        message: 'No students found. The file needs a header row with "Student ID", "Full Name", "Course" and "GWA" columns, followed by one row per student.',
       });
     }
 
-    const students = allStudents.filter(isQualified);
-    students.sort((a, b) => a.gwa - b.gwa);
+    const batchId = crypto.randomUUID();
+    const rows = entries.map(e => ({
+      batch_id: batchId,
+      semester_label: semester,
+      college,
+      student_no: e.studentNo || null,
+      id_key: normId(e.studentNo) || null,
+      full_name: e.name,
+      name_key: normName(e.name),
+      course: e.course,
+      gwa: e.gwa,
+      qualified: isQualified(e.gwa),
+      is_published: false,
+      created_by: req.user?.id || req.user?.userId || req.user?.sub || null,
+    }));
 
-    // 2. Build the output workbook with CTU letterhead
-    const outWorkbook = new ExcelJS.Workbook();
-    const ws = outWorkbook.addWorksheet("Dean's List");
-
-    ws.mergeCells('A1:E1');
-    ws.mergeCells('A2:E2');
-    ws.mergeCells('A3:E3');
-
-    if (fs.existsSync(LOGO_PATH)) {
-      try {
-        const logoId = outWorkbook.addImage({ filename: LOGO_PATH, extension: 'png' });
-        ws.addImage(logoId, { tl: { col: 0, row: 0 }, ext: { width: 60, height: 60 } });
-      } catch (logoErr) {
-        // A bad/corrupt logo file shouldn't sink the whole generation.
-        console.warn('[deans-list] Could not embed logo, continuing without it:', logoErr.message);
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase.from(TABLE).insert(rows.slice(i, i + 500));
+      if (error) {
+        console.error('[deans-list] Failed to save batch:', error);
+        return res.status(500).json({ message: 'Failed to save the list. Did you create the deans_list_entries table?' });
       }
     }
 
-    ws.getCell('A1').value = 'Cebu Technological University';
-    ws.getCell('A1').font = { bold: true, size: 14 };
-    ws.getCell('A1').alignment = { horizontal: 'center' };
+    const qualifiers = entries
+      .filter(e => isQualified(e.gwa))
+      .sort((a, b) => a.gwa - b.gwa);
 
-    ws.getCell('A2').value = "Dean's List";
-    ws.getCell('A2').font = { bold: true, size: 12 };
-    ws.getCell('A2').alignment = { horizontal: 'center' };
-
-    ws.getCell('A3').value = semester;
-    ws.getCell('A3').font = { italic: true, size: 10 };
-    ws.getCell('A3').alignment = { horizontal: 'center' };
-
-    ws.addRow([]);
-    const headerRow = ws.addRow(['Rank', 'Name', 'Course/Year', 'GWA']);
-    headerRow.font = { bold: true };
-    headerRow.eachCell(cell => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE6F7' } };
-      cell.border = { bottom: { style: 'thin' } };
-    });
-
-    students.forEach((s, i) => {
-      ws.addRow([i + 1, s.name, [s.course, s.yearLevel].filter(Boolean).join(' '), s.gwa.toFixed(4)]);
-    });
-
-    ws.columns.forEach(col => { col.width = 24; });
-
-    // 3. Save the file and expose a download URL
-    const fileName = `deans-list-${Date.now()}.xlsx`;
+    const fileName = `deans-list-${Date.now()}.pdf`;
     const filePath = path.join(OUTPUT_DIR, fileName);
+    const generatedAt = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
     try {
-      await outWorkbook.xlsx.writeFile(filePath);
-    } catch (writeErr) {
-      console.error('[deans-list] Failed to write output file:', writeErr);
-      return res.status(500).json({ message: 'Generated the list but failed to save the output file. Check server disk/permissions.' });
+      await generateDeansListPdf({
+        filePath,
+        students: qualifiers,
+        college,
+        semester,
+        generatedAt,
+      });
+    } catch (pdfErr) {
+      console.error('[deans-list] Failed to generate PDF:', pdfErr);
+      return res.status(500).json({ message: 'Generated the list but failed to create the PDF file. Check server disk/permissions.' });
     }
 
-    const fileUrl = `/generated/deans-list/${fileName}`;
+    const fileUrl = `${req.protocol}://${req.get('host')}/generated/deans-list/${fileName}`;
 
-    // 4. Response shape matches what DeansListGenerator.tsx expects
-    //    (studentId, name, course, yearLevel, gwa, units)
     return res.json({
-      students: students.map(s => ({
-        studentId: s.studentId,
+      students: qualifiers.map(s => ({
         name: s.name,
         course: s.course,
-        yearLevel: s.yearLevel,
         gwa: s.gwa,
-        units: s.units,
+        units: 0,
       })),
-      totalSheetsRead: allStudents.length,
-      totalQualified: students.length,
+      totalRowsRead: entries.length,
+      skippedRows: skipped,
+      totalQualified: qualifiers.length,
+      batchId,
       fileUrl,
     });
   } catch (err) {
-    console.error("Dean's List generation error:", err); // full stack, not just the message
+    console.error("Dean's List generation error:", err);
     return res.status(500).json({
       message: 'Failed to process the uploaded file.',
       ...(process.env.NODE_ENV !== 'production' ? { detail: err.message } : {}),
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/deans-list/publish   body: { batchId }
+// Makes this batch the ACTIVE list. Students see it on their dashboard.
+// (Replaces the previously published batch of the same college.)
+// ─────────────────────────────────────────────────────────────
+router.post('/publish', authenticate, express.json(), async (req, res) => {
+  const batchId = req.body?.batchId;
+  if (!batchId) return res.status(400).json({ message: 'Missing batchId.' });
+
+  try {
+    const { data: batchRows, error: findErr } = await supabase
+      .from(TABLE)
+      .select('college, qualified')
+      .eq('batch_id', batchId);
+    if (findErr) throw findErr;
+    if (!batchRows || batchRows.length === 0) {
+      return res.status(404).json({ message: 'Batch not found. Please Generate the list again.' });
+    }
+
+    const college = batchRows[0].college || '';
+
+    // Un-publish the older list(s) of this college
+    const { error: offErr } = await supabase
+      .from(TABLE)
+      .update({ is_published: false })
+      .eq('is_published', true)
+      .eq('college', college);
+    if (offErr) throw offErr;
+
+    const { error: onErr } = await supabase
+      .from(TABLE)
+      .update({ is_published: true, published_at: new Date().toISOString() })
+      .eq('batch_id', batchId);
+    if (onErr) throw onErr;
+
+    // Reflect the result in each student's Academic Standing (Student Dashboard)
+    const standing = await syncAcademicStanding(batchId);
+
+    return res.json({
+      published: batchRows.length,
+      qualified: batchRows.filter(r => r.qualified).length,
+      standing,
+    });
+  } catch (err) {
+    console.error('[deans-list] publish failed:', err);
+    return res.status(500).json({
+      message: 'Failed to publish the Dean\'s List.',
+      ...(process.env.NODE_ENV !== 'production' ? { detail: err.message } : {}),
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/deans-list/my-status
+// Used by the Student Dashboard. Finds the logged-in student's Student ID, then
+// checks it against the currently published Dean's List.
+// ─────────────────────────────────────────────────────────────
+router.get('/my-status', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId || req.user?.sub || null;
+    const idNumber = req.user?.idNumber || req.user?.studentNo || req.user?.student_no || null;
+
+    let profileQuery = supabase.from('student_profiles').select('student_no, full_name, program');
+    if (userId) profileQuery = profileQuery.eq('user_id', userId);
+    else if (idNumber) profileQuery = profileQuery.eq('student_no', String(idNumber));
+    else return res.status(401).json({ message: 'Cannot identify the logged-in student.' });
+
+    const { data: profile, error: pErr } = await profileQuery.maybeSingle();
+    if (pErr) throw pErr;
+    if (!profile) return res.status(404).json({ message: 'Student profile not found.' });
+
+    // Is there any published list at all?
+    const { data: latest, error: lErr } = await supabase
+      .from(TABLE)
+      .select('semester_label, college, published_at')
+      .eq('is_published', true)
+      .order('published_at', { ascending: false })
+      .limit(1);
+    if (lErr) throw lErr;
+
+    if (!latest || latest.length === 0) {
+      return res.json({ published: false });
+    }
+
+    // 1) Match by Student ID
+    let entry = null;
+    const idKey = normId(profile.student_no);
+    if (idKey) {
+      const { data: byId, error: iErr } = await supabase
+        .from(TABLE)
+        .select('full_name, course, gwa, qualified, semester_label')
+        .eq('is_published', true)
+        .eq('id_key', idKey)
+        .limit(1);
+      if (iErr) throw iErr;
+      entry = byId?.[0] || null;
+    }
+
+    // 2) Fallback: rows in the Excel that had NO Student ID -> match by name
+    if (!entry) {
+      const { data: byName, error: nErr } = await supabase
+        .from(TABLE)
+        .select('full_name, course, gwa, qualified, semester_label')
+        .eq('is_published', true)
+        .is('id_key', null)
+        .eq('name_key', normName(profile.full_name));
+      if (nErr) throw nErr;
+      if (byName && byName.length > 0) {
+        entry = byName.length === 1
+          ? byName[0]
+          : (byName.find(m => courseMatches(m.course, profile.program)) || byName[0]);
+      }
+    }
+
+    return res.json({
+      published: true,
+      semester: entry?.semester_label || latest[0].semester_label,
+      listed: !!entry,
+      qualified: !!entry?.qualified,
+      gwa: entry ? Number(entry.gwa) : null,
+    });
+  } catch (err) {
+    console.error('[deans-list] my-status failed:', err);
+    return res.status(500).json({ message: 'Failed to load your Dean\'s List status.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// History (saved in the database, survives refresh / logout / restart)
+// ─────────────────────────────────────────────────────────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Builds a fresh PDF from stored rows and returns its public URL.
+async function createPdfUrl(req, { students, college, semester }) {
+  const fileName = `deans-list-${Date.now()}.pdf`;
+  const filePath = path.join(OUTPUT_DIR, fileName);
+  const generatedAt = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+  await generateDeansListPdf({ filePath, students, college, semester, generatedAt });
+  return `${req.protocol}://${req.get('host')}/generated/deans-list/${fileName}`;
+}
+
+// GET /api/deans-list/history  ->  newest batches first
+router.get('/history', authenticate, async (req, res) => {
+  try {
+    const rows = await fetchAll(() =>
+      supabase
+        .from(TABLE)
+        .select('batch_id, semester_label, college, qualified, is_published, published_at, created_at')
+        .order('created_at', { ascending: false })
+        .order('id')
+    );
+
+    const map = new Map();
+    for (const r of rows) {
+      let b = map.get(r.batch_id);
+      if (!b) {
+        b = {
+          batchId: r.batch_id,
+          semesterLabel: r.semester_label,
+          college: r.college || '',
+          totalStudents: 0,
+          totalQualifiers: 0,
+          isPublished: false,
+          publishedAt: null,
+          generatedAt: r.created_at,
+        };
+        map.set(r.batch_id, b);
+      }
+      b.totalStudents += 1;
+      if (r.qualified) b.totalQualifiers += 1;
+      if (r.is_published) { b.isPublished = true; b.publishedAt = r.published_at; }
+    }
+
+    return res.json({ batches: [...map.values()].slice(0, 50) });
+  } catch (err) {
+    console.error('[deans-list] history failed:', err);
+    return res.status(500).json({ message: 'Failed to load the history.' });
+  }
+});
+
+// GET /api/deans-list/history/:batchId  ->  the qualifiers of one saved batch
+router.get('/history/:batchId', authenticate, async (req, res) => {
+  const { batchId } = req.params;
+  if (!UUID_RE.test(batchId)) return res.status(400).json({ message: 'Invalid batch id.' });
+
+  try {
+    const rows = await fetchAll(() =>
+      supabase
+        .from(TABLE)
+        .select('full_name, course, gwa, qualified, semester_label, college, is_published, published_at, created_at')
+        .eq('batch_id', batchId)
+        .order('gwa', { ascending: true })
+        .order('id')
+    );
+    if (!rows.length) return res.status(404).json({ message: 'Batch not found.' });
+
+    const qualifiers = rows.filter(r => r.qualified);
+    return res.json({
+      batch: {
+        batchId,
+        semesterLabel: rows[0].semester_label,
+        college: rows[0].college || '',
+        generatedAt: rows[0].created_at,
+        isPublished: rows.some(r => r.is_published),
+      },
+      students: qualifiers.map(r => ({
+        name: r.full_name,
+        course: r.course || '',
+        gwa: Number(r.gwa),
+        units: 0,
+      })),
+    });
+  } catch (err) {
+    console.error('[deans-list] history item failed:', err);
+    return res.status(500).json({ message: 'Failed to load this batch.' });
+  }
+});
+
+// POST /api/deans-list/history/:batchId/pdf  ->  { fileUrl } (re-creates the CTU letterhead PDF)
+router.post('/history/:batchId/pdf', authenticate, async (req, res) => {
+  const { batchId } = req.params;
+  if (!UUID_RE.test(batchId)) return res.status(400).json({ message: 'Invalid batch id.' });
+
+  try {
+    const rows = await fetchAll(() =>
+      supabase
+        .from(TABLE)
+        .select('full_name, course, gwa, semester_label, college')
+        .eq('batch_id', batchId)
+        .eq('qualified', true)
+        .order('gwa', { ascending: true })
+        .order('id')
+    );
+
+    // Need semester/college even if nobody qualified
+    let semester = rows[0]?.semester_label;
+    let college = rows[0]?.college;
+    if (semester === undefined) {
+      const { data: any1, error } = await supabase
+        .from(TABLE).select('semester_label, college').eq('batch_id', batchId).limit(1);
+      if (error) throw error;
+      if (!any1 || !any1.length) return res.status(404).json({ message: 'Batch not found.' });
+      semester = any1[0].semester_label;
+      college = any1[0].college;
+    }
+
+    const students = rows.map(r => ({
+      name: r.full_name,
+      course: r.course || '',
+      gwa: Number(r.gwa),
+    }));
+
+    const fileUrl = await createPdfUrl(req, { students, college: college || '', semester });
+    return res.json({ fileUrl });
+  } catch (err) {
+    console.error('[deans-list] history pdf failed:', err);
+    return res.status(500).json({ message: 'Failed to create the PDF for this batch.' });
   }
 });
 

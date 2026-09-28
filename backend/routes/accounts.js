@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Only department chairs (or dean/admin) can view/manage account approvals
 function requireChairRole(req, res, next) {
-  const allowedRoles = ['department_chair', 'dean', 'admin'];
+  const allowedRoles = ['department_chair', 'dean', 'admin', 'college_dean'];
   if (!allowedRoles.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
@@ -32,10 +32,6 @@ function requireValidRole(req, res, next) {
 }
 
 // GET /api/accounts/:role — all pending/active/rejected profiles for that role.
-// Chairs only see accounts in one of their assigned departments (from the
-// JWT's `departmentIds` array — a chair can cover more than one department).
-// Scoping is by department_id (a real foreign key on each role's profile
-// table), not any free-text program column, since that drifts out of sync.
 router.get('/:role', authenticate, requireChairRole, requireValidRole, async (req, res) => {
   const { role } = req.params;
   const { table, profilesRole } = ROLE_CONFIG[role];
@@ -45,16 +41,13 @@ router.get('/:role', authenticate, requireChairRole, requireValidRole, async (re
     return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
   }
 
-  // !inner is required when filtering on the embedded relation's column —
-  // without it, PostgREST filters the embedded array's *contents* but
-  // still returns the parent profile row even when nothing matches,
-  // which would leak accounts from other departments into the response.
+  // Explicitly select id_number, department, and program on profiles
   let query = supabase
     .from('profiles')
     .select(
       isChairScoped
-        ? `id, full_name, email, status, created_at, ${table}!inner ( * )`
-        : `id, full_name, email, status, created_at, ${table} ( * )`
+        ? `id, full_name, email, id_number, department, program, status, created_at, ${table}!inner ( * )`
+        : `id, full_name, email, id_number, department, program, status, created_at, ${table} ( * )`
     )
     .eq('role', profilesRole)
     .order('created_at', { ascending: false });
@@ -69,7 +62,6 @@ router.get('/:role', authenticate, requireChairRole, requireValidRole, async (re
 });
 
 // PATCH /api/accounts/:role/:id/status — set 'active' | 'rejected'.
-// Chairs can only act on accounts in one of their assigned departments.
 router.patch('/:role/:id/status', authenticate, requireChairRole, requireValidRole, async (req, res) => {
   const { role, id } = req.params;
   const { status } = req.body;
@@ -84,14 +76,6 @@ router.patch('/:role/:id/status', authenticate, requireChairRole, requireValidRo
       return res.status(400).json({ error: 'Your chair account has no department assigned. Contact the dean/admin.' });
     }
 
-    // Query the role's own profile table directly by its FK to profiles,
-    // rather than embedding it through `profiles`. None of these tables
-    // have a UNIQUE constraint on that FK column (only alumni_profiles
-    // does, coincidentally), so PostgREST can't reliably infer a
-    // one-to-one relationship and may return the embed as an ARRAY.
-    // Reading `.department_id` off an array silently returns undefined,
-    // which would make every departmentIds.includes(undefined) check
-    // fail — a 403 for every account, regardless of actual department.
     const { data: roleProfile, error: fetchError } = await supabase
       .from(table)
       .select('department_id')
@@ -117,9 +101,6 @@ router.patch('/:role/:id/status', authenticate, requireChairRole, requireValidRo
 
   if (error) return res.status(400).json({ error: error.message });
 
-  // Keep faculty_profiles.status in sync as a display convenience — the
-  // real access gate is always profiles.status, this is just so the two
-  // fields don't visibly contradict each other elsewhere in the app.
   if (role === 'faculty') {
     const facultyStatus = status === 'active' ? 'Active' : 'Rejected';
     await supabase.from('faculty_profiles').update({ status: facultyStatus }).eq('user_id', id);

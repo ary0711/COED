@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import {
   Upload,
@@ -10,13 +11,13 @@ import {
   FileSpreadsheet,
   Info,
   Search,
-  ArrowUpDown,
   Award,
   Users,
   TrendingUp,
   Printer,
   AlertTriangle,
   History,
+  Send,
 } from 'lucide-react';
 
 // How many data rows (excluding the header row) to show in the
@@ -31,20 +32,21 @@ interface DeansListStudent {
   units: number;
 }
 
-// A single past "batch" that was generated during this session.
-// TODO(backend): once a persistence endpoint exists (e.g.
-// GET/POST /api/deans-list/history), swap the in-memory `history` state
-// below for a fetch on mount + an append/refresh after each successful
-// generate, so this list survives page refreshes/logins instead of only
-// living for the current session.
+// A saved "batch" (comes from the database, so it survives refresh / logout).
 interface DeansListHistoryItem {
-  id: string;
+  batchId: string;
   semesterLabel: string;
   college: string;
+  totalStudents: number;
   totalQualifiers: number;
-  generatedAt: string;
-  fileUrl: string;
-  students: DeansListStudent[];
+  isPublished: boolean;
+  publishedAt: string | null;
+  generatedAt: string; // ISO date
+}
+
+interface PublishResult {
+  type: 'success' | 'error';
+  text: string;
 }
 
 interface DeansListGeneratorProps {
@@ -55,7 +57,7 @@ interface DeansListGeneratorProps {
 const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 const MAX_FILE_SIZE_MB = 10;
 
-export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps) {
+export function DeansListGenerator({ userId }: DeansListGeneratorProps) {
   // ── Form state ──
   const [academicYear, setAcademicYear] = useState('2025–2026');
   const [semester, setSemester] = useState('2nd Semester');
@@ -71,16 +73,19 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
   const [downloadUrl, setDownloadUrl] = useState('');
   const [generatedAt, setGeneratedAt] = useState<string>('');
 
+  // ── Publish state (updates students' Academic Standing) ──
+  const [batchId, setBatchId] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+
   // ── Results table controls ──
   const [query, setQuery] = useState('');
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortAsc] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Pre-upload file preview state ──
-  // Lets the faculty eyeball the columns/rows they're about to submit,
-  // so they can catch a wrong file or misaligned columns before the
-  // official Dean's List (with letterhead) gets generated/downloaded.
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<string[][]>([]);
   const [previewTotalRows, setPreviewTotalRows] = useState(0);
@@ -88,12 +93,46 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
   const [previewError, setPreviewError] = useState('');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
-  // ── Generation history (session-only for now — see TODO on the
-  // DeansListHistoryItem interface above) ──
+  // ── Generation history (saved in the database) ──
   const [history, setHistory] = useState<DeansListHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [viewingId, setViewingId] = useState('');
+  const [downloadingId, setDownloadingId] = useState('');
 
   const semesterLabel = `${semester} AY ${academicYear}`;
+
+  // The semester shown on the results/letterhead. It follows the batch being
+  // viewed (e.g. from History), not whatever is currently typed in the form.
+  const [resultsLabel, setResultsLabel] = useState('');
+  const displayLabel = resultsLabel || semesterLabel;
+
+  const formatHistoryDate = (iso: string) =>
+    new Date(iso).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/deans-list/history', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to load the history.');
+      setHistory(data.batches || []);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to load the history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validateFile = (f: File): string | null => {
     const ext = '.' + f.name.split('.').pop()?.toLowerCase();
@@ -146,7 +185,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
         const cleanRows = dataRows
           .filter(r => r.some((cell: any) => String(cell ?? '').trim() !== ''))
           .slice(0, PREVIEW_ROW_LIMIT)
-          .map(r => cleanHeader.map((_, i) => String(r[i] ?? '').trim()));
+          .map(r => cleanHeader.map((_: any, i: number) => String(r[i] ?? '').trim()));
         const totalDataRows = dataRows.filter(r => r.some((cell: any) => String(cell ?? '').trim() !== '')).length;
 
         setPreviewHeaders(cleanHeader);
@@ -177,6 +216,8 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     setResults(null);
     setError('');
     setDownloadUrl('');
+    setBatchId('');
+    setPublishResult(null);
     parsePreview(f);
   };
 
@@ -192,12 +233,14 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     if (f) applyFile(f);
   };
 
-  // Backend does the actual computation (grade rules, filtering, and file
-  // generation with the CTU letterhead/logo). This just uploads + renders.
+  // Backend does the computation (grade rules, filtering, PDF with the CTU
+  // letterhead). Generate does NOT change the students' Academic Standing —
+  // that only happens when the faculty clicks "Publish to Students".
   const handleGenerate = async () => {
     if (!file) return;
     setLoading(true);
     setError('');
+    setPublishResult(null);
     try {
       const token = localStorage.getItem('token');
       const formData = new FormData();
@@ -219,28 +262,23 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
 
       const data = await res.json();
       // Expected response shape:
-      // { students: DeansListStudent[], fileUrl: string (download link) }
+      // { students: DeansListStudent[], fileUrl: string, batchId: string }
       const students: DeansListStudent[] = data.students || [];
       const url: string = data.fileUrl || '';
+      const newBatchId: string = data.batchId || '';
       const generatedTimestamp = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 
       setResults(students);
       setDownloadUrl(url);
       setGeneratedAt(generatedTimestamp);
+      setBatchId(newBatchId);
 
-      // Record this batch in the (session-only) history list, newest first.
-      setHistory(prev => [
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          semesterLabel,
-          college,
-          totalQualifiers: students.length,
-          generatedAt: generatedTimestamp,
-          fileUrl: url,
-          students,
-        },
-        ...prev,
-      ]);
+      // Open the freshly generated PDF in a new tab right away so the
+      // faculty member can immediately verify it.
+      if (url) viewInNewTab(url);
+
+      setResultsLabel(semesterLabel);
+      loadHistory(); // the new batch is already saved on the server
     } catch (err: any) {
       setError(err.message || 'Something went wrong while processing the file.');
     } finally {
@@ -248,32 +286,120 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     }
   };
 
-  const downloadFile = (url: string, filenameBase: string) => {
+  // Publishes the current batch: the backend updates each qualifier's
+  // Academic Standing to "Dean's Lister" so it shows on their Student Dashboard.
+  const handlePublish = async () => {
+    if (!batchId) return;
+
+    setPublishing(true);
+    setPublishResult(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/deans-list/publish', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ batchId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to publish.');
+
+      const { published = 0, qualified = 0, standing } = data;
+      const unmatched: string[] = standing?.unmatched || [];
+      let text = `Dean's List published. ${qualified} of ${published} students qualified, and ${standing?.updated ?? 0} Academic Standing record${standing?.updated === 1 ? ' was' : 's were'} updated.`;
+      if (standing?.reset > 0) text += ` ${standing.reset} student${standing.reset === 1 ? ' was' : 's were'} returned to Good Standing.`;
+      if (unmatched.length > 0) text += ` Student ID not found in the system: ${unmatched.join(', ')}.`;
+      setPublishResult({ type: 'success', text });
+      loadHistory();
+    } catch (err: any) {
+      setPublishResult({ type: 'error', text: err.message || 'Something went wrong while publishing.' });
+    } finally {
+      setPublishing(false);
+      setShowPublishModal(false);
+    }
+  };
+
+  // Opens a generated PDF in a new browser tab using the browser's own PDF viewer.
+  const viewInNewTab = (url: string) => {
     if (!url) return;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Deans-List-${filenameBase.replace(/\s+/g, '-')}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const handleDownload = () => downloadFile(downloadUrl, semesterLabel);
-
-  // Loads a past batch from history back into the main results table/view
-  // (does not re-fetch from the server — reuses the data already held in memory).
-  const viewHistoryItem = (item: DeansListHistoryItem) => {
-    setResults(item.students);
-    setDownloadUrl(item.fileUrl);
-    setGeneratedAt(item.generatedAt);
-    setCollege(item.college);
-    setShowHistoryModal(false);
+  // Asks the server to (re)create the CTU-letterhead PDF of a saved batch.
+  const fetchBatchPdf = async (id: string): Promise<string> => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/deans-list/history/${id}/pdf`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.fileUrl) throw new Error(data.message || 'Failed to create the PDF.');
+    return data.fileUrl as string;
   };
 
-  // Faculty picks "Save as PDF" as the destination inside the browser's own
-  // print dialog — no extra PDF library needed. The print-only CSS below
-  // makes sure ONLY the letterhead + table shows up in that PDF/printout,
-  // not the upload form, sidebar, or search/sort toolbar.
+  // Download button in the toolbar: uses the existing PDF, or re-creates it
+  // for a batch that was opened from History.
+  const handleDownload = async () => {
+    if (downloadUrl) return viewInNewTab(downloadUrl);
+    if (!batchId) return;
+    setDownloadingId(batchId);
+    try {
+      const url = await fetchBatchPdf(batchId);
+      setDownloadUrl(url);
+      viewInNewTab(url);
+    } catch (err: any) {
+      setPublishResult({ type: 'error', text: err.message || 'Failed to create the PDF.' });
+    } finally {
+      setDownloadingId('');
+    }
+  };
+
+  // Download button inside the History list
+  const downloadHistoryItem = async (item: DeansListHistoryItem) => {
+    setDownloadingId(item.batchId);
+    setHistoryError('');
+    try {
+      viewInNewTab(await fetchBatchPdf(item.batchId));
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to create the PDF.');
+    } finally {
+      setDownloadingId('');
+    }
+  };
+
+  // Loads a saved batch from the server back into the main results view.
+  const viewHistoryItem = async (item: DeansListHistoryItem) => {
+    setViewingId(item.batchId);
+    setHistoryError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/deans-list/history/${item.batchId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to load this batch.');
+
+      setResults(data.students || []);
+      setDownloadUrl('');
+      setGeneratedAt(formatHistoryDate(item.generatedAt));
+      setCollege(item.college);
+      setResultsLabel(item.semesterLabel);
+      setBatchId(item.batchId);
+      setPublishResult(null);
+      setQuery('');
+      setShowHistoryModal(false);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to load this batch.');
+    } finally {
+      setViewingId('');
+    }
+  };
+
+  // Browser print dialog -> "Save as PDF". The print CSS below shows only the
+  // letterhead + table.
   const handlePrint = () => window.print();
 
   const reset = () => {
@@ -282,6 +408,9 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
     setResults(null);
     setError('');
     setDownloadUrl('');
+    setBatchId('');
+    setResultsLabel('');
+    setPublishResult(null);
     setQuery('');
     clearPreview();
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -310,10 +439,9 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
   return (
     <div>
       {/*
-        Print isolation: only #dl-print-area (letterhead + stats + table)
-        should appear when the faculty prints or "Save as PDF"s the page.
-        Everything else on the page (upload form, sidebar, toolbar, nav,
-        browser chrome we can't touch) is hidden for the print media type.
+        Print isolation: only #dl-print-area (letterhead + table) appears when
+        printing / "Save as PDF". Header and footer images are position: fixed
+        so they repeat on every printed page.
       */}
       <style>{`
         @media print {
@@ -330,12 +458,24 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             width: 100%;
             margin: 0;
             padding: 0;
+            padding-top: 130px;
             padding-bottom: 110px;
             box-shadow: none !important;
             border: none !important;
           }
           #dl-print-area .no-print {
             display: none !important;
+          }
+          #dl-print-area .print-header-fixed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            background: white;
+            z-index: 10;
           }
           #dl-print-area .print-footer-fixed {
             position: fixed;
@@ -344,6 +484,14 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             right: 0;
             width: 100%;
             margin-top: 0 !important;
+          }
+          #dl-print-area table tbody tr:nth-of-type(15n) {
+            page-break-after: always;
+            break-after: page;
+          }
+          #dl-print-area table tbody tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           @page {
             margin: 1.5cm;
@@ -354,10 +502,10 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
       <div className="mb-6 no-print flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Dean's List Generator</h1>
-          <p className="text-sm text-gray-500 mt-1">Upload a grade sheet to automatically identify qualifiers and produce an official, letterhead-ready list.</p>
+          <p className="text-sm text-gray-500 mt-1">Upload a list (Student ID, Full Name, Course, GWA) to identify qualifiers, produce the official list, and publish it to the students' dashboards.</p>
         </div>
         <button
-          onClick={() => setShowHistoryModal(true)}
+          onClick={() => { setShowHistoryModal(true); loadHistory(); }}
           className="flex items-center gap-1.5 px-3.5 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shrink-0"
         >
           <History size={16} /> View History {history.length > 0 && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{history.length}</span>}
@@ -482,10 +630,10 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
             </div>
           </div>
 
-          {/* Floating preview modal — pops up when "View file preview" is clicked */}
-          {showPreviewModal && (
+          {/* Floating preview modal */}
+          {showPreviewModal && typeof document !== 'undefined' && createPortal(
             <div
-              className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 no-print"
+              className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 no-print"
               onClick={() => setShowPreviewModal(false)}
             >
               <div
@@ -557,18 +705,19 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                       </p>
                     )}
                     <p className="text-[11px] text-blue-700">
-                      Check that your columns line up (Name, Course, Grades/GWA) before generating.
+                      Check that the columns "Student ID", "Full Name", "Course" and "GWA" are present before generating.
                     </p>
                   </div>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
 
-          {/* History modal — lists batches generated during this session */}
-          {showHistoryModal && (
+          {/* History modal */}
+          {showHistoryModal && typeof document !== 'undefined' && createPortal(
             <div
-              className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 no-print"
+              className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 no-print"
               onClick={() => setShowHistoryModal(false)}
             >
               <div
@@ -585,35 +734,53 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </div>
 
                 <div className="overflow-y-auto flex-1">
-                  {history.length === 0 ? (
+                  {historyError && (
+                    <div className="m-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+                      <XCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{historyError}</span>
+                    </div>
+                  )}
+
+                  {historyLoading && history.length === 0 ? (
+                    <div className="p-10 flex items-center justify-center gap-2 text-gray-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading history...
+                    </div>
+                  ) : history.length === 0 ? (
                     <div className="p-10 text-center text-gray-400 text-sm">
-                      No batches generated yet this session.
-                      <p className="text-xs text-gray-300 mt-1">Batches you generate will show up here for quick reference.</p>
+                      No batches generated yet.
+                      <p className="text-xs text-gray-300 mt-1">Every list you generate is saved here.</p>
                     </div>
                   ) : (
                     <ul className="divide-y divide-gray-100">
                       {history.map(item => (
-                        <li key={item.id} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+                        <li key={item.batchId} className="px-5 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{item.college}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-gray-900 truncate">{item.college || 'College'}</p>
+                              {item.isPublished && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">
+                                  Published
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-500 truncate">{item.semesterLabel}</p>
                             <p className="text-[11px] text-gray-400 mt-0.5">
-                              {item.totalQualifiers} qualifier{item.totalQualifiers !== 1 ? 's' : ''} · {item.generatedAt}
+                              {item.totalQualifiers} of {item.totalStudents} qualified · {formatHistoryDate(item.generatedAt)}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               onClick={() => viewHistoryItem(item)}
-                              className="px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-100 transition-colors"
+                              disabled={viewingId === item.batchId}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-100 disabled:opacity-60 transition-colors"
                             >
-                              View
+                              {viewingId === item.batchId && <Loader2 size={12} className="animate-spin" />} View
                             </button>
                             <button
-                              onClick={() => downloadFile(item.fileUrl, item.semesterLabel)}
-                              disabled={!item.fileUrl}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-[#1E3A8A] text-white rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                              onClick={() => downloadHistoryItem(item)}
+                              disabled={downloadingId === item.batchId}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-[#1E3A8A] text-white rounded-lg text-xs font-medium hover:bg-blue-800 disabled:opacity-60 transition-colors"
                             >
-                              <Download size={12} /> Download
+                              {downloadingId === item.batchId ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Download
                             </button>
                           </div>
                         </li>
@@ -625,12 +792,75 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 {history.length > 0 && (
                   <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
                     <p className="text-[11px] text-gray-400">
-                      This history only lasts for your current session — it will clear if you refresh or leave the page.
+                      History is saved in the system. Click View to open a past list, then Publish to make it the active Dean's List.
                     </p>
                   </div>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
+          )}
+
+          {/* Publish confirmation modal */}
+          {showPublishModal && typeof document !== 'undefined' && createPortal(
+            <div
+              className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 no-print"
+              onClick={() => { if (!publishing) setShowPublishModal(false); }}
+            >
+              <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="publish-modal-title"
+              >
+                <div className="px-6 pt-6 pb-4 flex items-start gap-4">
+                  <div className="w-11 h-11 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                    <Send size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="publish-modal-title" className="text-lg font-semibold text-gray-900">
+                      Publish Dean's List?
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      You are about to publish <span className="font-semibold text-gray-900">{results?.length ?? 0}</span> qualifier{(results?.length ?? 0) !== 1 ? 's' : ''} for{' '}
+                      <span className="font-semibold text-gray-900">{displayLabel}</span>.
+                    </p>
+                  </div>
+                </div>
+
+                <ul className="mx-6 mb-5 space-y-2 text-sm text-gray-600 bg-gray-50 border border-gray-100 rounded-xl p-4">
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">•</span><span>Qualifiers will be marked as <span className="font-medium text-gray-900">Dean's Lister</span> on their Student Dashboard.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">•</span><span>Students from the previously published list who no longer qualify will return to <span className="font-medium text-gray-900">Good Standing</span>.</span></li>
+                </ul>
+
+                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => setShowPublishModal(false)}
+                    disabled={publishing}
+                    className="px-4 py-2 border border-gray-200 bg-white text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePublish}
+                    disabled={publishing}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {publishing ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Publishing...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={14} /> Publish
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
           )}
 
           {/* Results — this whole block is the printable/PDF-able area */}
@@ -645,22 +875,35 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </p>
               </div>
 
-              {/* CTU Header image — appears on screen preview and on the printed/PDF output */}
-              <div className="px-4 sm:px-6 pt-4">
+              {/* Publish result — screen only */}
+              {publishResult && (
+                <div
+                  className={`px-4 sm:px-6 py-3 text-sm border-b no-print ${
+                    publishResult.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
+                      : 'bg-red-50 text-red-700 border-red-100'
+                  }`}
+                >
+                  {publishResult.text}
+                </div>
+              )}
+
+              {/* CTU Header image */}
+              <div className="px-4 sm:px-6 pt-4 print-header-fixed">
                 <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain" />
               </div>
 
-              {/* Letterhead-style header — this is what should appear on the PDF */}
+              {/* Letterhead-style title block */}
               <div className="px-4 sm:px-6 pt-2 pb-4 border-b border-gray-100 text-center">
                 <p className="text-xs text-gray-400 tracking-wide uppercase">Cebu Technological University</p>
                 <h2 className="text-base sm:text-lg font-bold text-gray-900 mt-1">Dean's List</h2>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">{college} · {semesterLabel}</p>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">{college} · {displayLabel}</p>
                 {generatedAt && (
                   <p className="hidden print:block text-[10px] text-gray-400 mt-2">Generated {generatedAt}</p>
                 )}
               </div>
 
-              {/* Summary stat cards — screen only; keeps the printed page clean/formal */}
+              {/* Summary stat cards — screen only */}
               {stats && (
                 <div className="grid grid-cols-3 gap-3 sm:gap-4 px-4 sm:px-6 py-4 bg-gray-50/60 border-b border-gray-100 no-print">
                   <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 text-center">
@@ -682,37 +925,43 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
               )}
 
               {/* Table toolbar — screen only */}
-              <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
-                <div className="relative w-full sm:w-64">
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3 no-print">
+                <div className="relative flex-1 min-w-[200px] max-w-xs">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search name or course..."
-                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
                   />
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => setSortAsc(s => !s)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors"
-                  >
-                    <ArrowUpDown size={14} /> GWA {sortAsc ? '↑' : '↓'}
-                  </button>
+
+                {/* Buttons never get clipped: if space runs out, this whole group drops to the next line */}
+                <div className="flex flex-wrap items-center gap-2 max-w-full ml-auto">
                   <button
                     onClick={handlePrint}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-600 hover:bg-gray-100 transition-colors shrink-0 whitespace-nowrap"
                     title="Opens your browser's print dialog — choose 'Save as PDF' as the destination to export a PDF"
                   >
-                    <Printer size={14} /> Print / Save as PDF
+                    <Printer size={14} /> <span>Print / PDF</span>
                   </button>
                   <button
                     onClick={handleDownload}
-                    disabled={!downloadUrl}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-lg text-xs sm:text-sm hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                    disabled={(!downloadUrl && !batchId) || downloadingId === batchId && !!batchId}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-lg text-xs sm:text-sm hover:bg-blue-800 disabled:opacity-50 transition-colors shrink-0 whitespace-nowrap"
+                    title="Open the official PDF with the CTU letterhead"
                   >
-                    <Download size={14} /> Download (CTU Letterhead)
+                    {downloadingId && downloadingId === batchId ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} <span>Download</span>
+                  </button>
+                  <button
+                    onClick={() => setShowPublishModal(true)}
+                    disabled={!batchId || publishing}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs sm:text-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 whitespace-nowrap"
+                    title="Updates the Academic Standing of the qualifiers so it shows on their Student Dashboard"
+                  >
+                    {publishing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    <span>{publishing ? 'Publishing...' : 'Publish to Students'}</span>
                   </button>
                 </div>
               </div>
@@ -739,7 +988,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                           <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{s.name}</td>
                           <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{s.course}</td>
                           <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
-                            <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold ${
+                            <span className={`inline-block min-w-[3.25rem] text-center tabular-nums px-2 sm:px-3 py-1 rounded-full text-xs font-bold ${
                               s.gwa <= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                             }`}>
                               {s.gwa.toFixed(2)}
@@ -758,7 +1007,7 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
                 </div>
               )}
 
-              {/* CTU Footer image — fixed to the bottom of every printed page */}
+              {/* CTU Footer image */}
               <div className="px-4 sm:px-6 pb-4 mt-6 print-footer-fixed">
                 <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain" />
               </div>
@@ -773,9 +1022,8 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
               <CheckCircle className="w-5 h-5 text-blue-600" /> Qualification Rule
             </h3>
             <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>GWA of 1.75 or higher standing (no grade below 2.0)</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>No failing, INC, or dropped subjects</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Regular student, full load for the semester</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>GWA of 1.75 or better qualifies</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Students in the list above 1.75 are shown as "Not qualified"</span></li>
             </ul>
           </div>
 
@@ -784,11 +1032,21 @@ export function DeansListGenerator({ userId, userName }: DeansListGeneratorProps
               <Info className="w-5 h-5 text-blue-600" /> File Requirements
             </h3>
             <ul className="space-y-3 text-sm text-gray-600">
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Columns: Name, Course, Grades/GWA</span></li>
-              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>First row must be the header row</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>One row per student</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Columns: Student ID, Full Name, Course, GWA (header row can have a title above it)</span></li>
+              <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>The Student ID must be the same as the student's ID in the system (format the column as Text)</span></li>
               <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>Accepted formats: .xlsx, .xls, .csv</span></li>
               <li className="flex gap-2"><span className="text-blue-600 font-bold">•</span><span>The downloaded file already includes the CTU logo and letterhead</span></li>
             </ul>
+          </div>
+
+          <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-6">
+            <h3 className="text-base font-semibold text-emerald-900 mb-2 flex items-center gap-2">
+              <Send className="w-5 h-5 text-emerald-600" /> Publish to Students
+            </h3>
+            <p className="text-sm text-emerald-800">
+              Generating only creates the list. Click <span className="font-semibold">Publish to Students</span> after checking it so each qualifier's Academic Standing becomes "Dean's Lister" on their dashboard.
+            </p>
           </div>
 
           <div className="bg-amber-50 rounded-2xl border border-amber-100 p-6">
