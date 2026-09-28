@@ -4698,8 +4698,9 @@ export function ResearchAchievements() {
 
       {/* Review & Inspect Modal (View-Only; No editing allowed) */}
       {viewingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+  <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60" onClick={() => setViewingItem(null)} />
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-[10000]">
             <button
               onClick={() => setViewingItem(null)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
@@ -4879,8 +4880,9 @@ export function ResearchAchievements() {
 
       {/* Reject Modal */}
       {rejectFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100">
+  <div className="fixed top-0 left-0 right-0 bottom-0 z-[10001] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60" onClick={() => setRejectFor(null)} />
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100 relative z-[10002]">
             <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
             <p className="text-xs text-gray-500 mb-4">
               Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
@@ -4968,7 +4970,7 @@ function DocxPreviewModal({
   }, [file.url, isDocx]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
+    <div className="fixed inset-0 z-[10005] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
           <div className="flex items-center gap-2 min-w-0 pr-2">
