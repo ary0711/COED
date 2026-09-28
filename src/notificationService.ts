@@ -27,34 +27,20 @@ function isEnabled(
   preferences: NotificationPreference | null,
   type: NotificationType
 ): boolean {
-  // If no saved preference exists, default to ON
-  if (!preferences) {
-    return true;
-  }
+  if (!preferences) return true; // Default to ON if no record exists
 
-  // If the master toggle "Allow Notifications" is turned OFF, block everything
+  // Master switch check
   if (preferences.allow_all === false) {
     return false;
   }
 
   switch (type) {
-    case 'inquiry':
-      return preferences.inquiries;
-
-    case 'report':
-      return preferences.reports;
-
-    case 'announcement':
-      return preferences.announcements;
-
-    case 'staff_update':
-      return preferences.staff_updates;
-
-    case 'system':
-      return preferences.system_notifs;
-
-    default:
-      return true;
+    case 'inquiry': return preferences.inquiries;
+    case 'report': return preferences.reports;
+    case 'announcement': return preferences.announcements;
+    case 'staff_update': return preferences.staff_updates;
+    case 'system': return preferences.system_notifs;
+    default: return true;
   }
 }
 

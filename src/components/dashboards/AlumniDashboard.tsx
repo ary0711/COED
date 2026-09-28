@@ -8,7 +8,6 @@ import {
   CheckCircle,
   Menu,
   History,
-  Download,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +24,7 @@ import {
   Upload,
   Eye,
   EyeOff,
+  Filter,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
@@ -104,19 +104,10 @@ function validateTracerSurvey(data: Partial<TracerSurveyData>): string[] {
   return errors;
 }
 
-async function getDashboardStats(_alumniId: string) {
-  const res = await fetch(`${TRACER_API_URL}/dashboard-stats`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
-  });
-  if (!res.ok) await parseErrorOrThrow(res);
-  return res.json();
-}
-
 const alumniMenuItems = [
-  { icon: Bell,         label: 'Dashboard',              id: 'dashboard'   },
-  { icon: FileText,     label: 'Graduate Tracer Survey', id: 'tracer'      },
+  { icon: Bell,         label: 'Dashboard',             id: 'dashboard'    },
+  { icon: FileText,     label: 'Graduate Tracer Survey', id: 'tracer'       },
   { icon: CalendarIcon, label: 'Alumni Calendar',        id: 'calendar'    },
-  { icon: BookOpen,     label: 'College Information',    id: 'college-info'},
   { icon: Award,        label: 'Achievements',           id: 'achievements'},
   { icon: FileText,     label: 'Documents & Resources',  id: 'documents'   },
   { icon: MessageSquare,label: 'Inquiry / Contact',      id: 'inquiry'     },
@@ -141,11 +132,10 @@ export function AlumniDashboard({
 }: AlumniDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [displayName, setDisplayName] = useState(
-  userName ||
-  localStorage.getItem('userFullName') ||
-  'Alumni'
-);
-  // Profile state
+    userName ||
+    localStorage.getItem('userFullName') ||
+    'Alumni'
+  );
   const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
@@ -164,10 +154,8 @@ export function AlumniDashboard({
     setProfileLoading(true);
     try {
       const userId = localStorage.getItem('userId');
-      console.log('userId from localStorage:', userId);
-
       if (!userId) {
-        console.error('No userId found in localStorage.');
+        setProfileLoading(false);
         return;
       }
 
@@ -177,22 +165,20 @@ export function AlumniDashboard({
         .eq('id', userId)
         .maybeSingle();
 
-      console.log('Profile fetch result:', { data, error });
-
       if (error) {
         console.error('Failed to load profile:', error);
         return;
       }
 
       if (data) {
-  setProfile(data);
-  setUserEmail(data.email ?? '');
+        setProfile(data);
+        setUserEmail(data.email ?? '');
 
-  if (data.full_name) {
-    setDisplayName(data.full_name);
-    localStorage.setItem('userFullName', data.full_name);
-  }
-}
+        if (data.full_name) {
+          setDisplayName(data.full_name);
+          localStorage.setItem('userFullName', data.full_name);
+        }
+      }
     } catch (err) {
       console.error('Failed to load profile:', err);
     } finally {
@@ -204,7 +190,6 @@ export function AlumniDashboard({
     fetchProfile();
   }, []);
   
-  // Auto-close sidebar when resizing to desktop
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 1024) setSidebarOpen(false);
@@ -215,8 +200,6 @@ export function AlumniDashboard({
 
   return (
     <div className="flex min-h-screen bg-transparent">
-
-      {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
         menuItems={alumniMenuItems}
         activeItem={activeMenuItem}
@@ -227,16 +210,11 @@ export function AlumniDashboard({
         onLogout={handleInternalLogout}
       />
 
-      {/* ── Desktop spacer so content clears the fixed sidebar ── */}
       <div className="hidden lg:block w-64 shrink-0" />
 
-      {/* ── Main column ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
-
-        {/* ── Top bar ── */}
         <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
           <div className="flex items-center gap-2 px-4 lg:px-0">
-            {/* Hamburger — mobile only */}
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
@@ -246,179 +224,41 @@ export function AlumniDashboard({
             </button>
             <div className="flex-1">
               <DashboardHeader
-  userRole="Alumni"
-  userName={displayName}
-  onLogout={handleInternalLogout}
-/>
+                userRole="Alumni"
+                userName={displayName}
+                onLogout={handleInternalLogout}
+              />
             </div>
           </div>
         </div>
 
         <main className="flex-1 overflow-hidden p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500 flex flex-col min-h-0">
           {activeMenuItem === 'dashboard'    && <AlumniDashboardView setActiveMenuItem={setActiveMenuItem} alumniId={idNumber || 'ALU-2020-0458'} />}
-          {/* Scroll wrapper for non-dashboard views */}
           <div className={activeMenuItem !== 'dashboard' ? 'overflow-y-auto h-full pr-2' : 'h-full flex flex-col'}>
-            {activeMenuItem === 'tracer'       && <TracerSurvey alumniId={idNumber || 'ALU-2020-0458'} />}
-            {activeMenuItem === 'calendar'     && <AlumniCalendar />}
-            {activeMenuItem === 'college-info' && <CollegeInformation />}
+            {activeMenuItem === 'tracer'        && <TracerSurvey alumniId={idNumber || 'ALU-2020-0458'} />}
+            {activeMenuItem === 'calendar'      && <AlumniCalendar />}
             {activeMenuItem === 'achievements' && <AlumniAchievements />}
             {activeMenuItem === 'documents'    && <DocumentsResources />}
             {activeMenuItem === 'inquiry'      && <AlumniInquiry />}
             {activeMenuItem === 'settings'     && (
               <AlumniSettings
-  profile={profile}
-  userEmail={userEmail}
-  loading={profileLoading}
-  onProfileUpdated={async () => {
-    await fetchProfile();
-
-    const updatedName =
-      localStorage.getItem('userFullName');
-
-    if (updatedName) {
-      setDisplayName(updatedName);
-    }
-  }}
-  idNumber={idNumber || ''}
-  onLogout={handleInternalLogout}
-/>
+                profile={profile}
+                userEmail={userEmail}
+                loading={profileLoading}
+                onProfileUpdated={async () => {
+                  await fetchProfile();
+                  const updatedName = localStorage.getItem('userFullName');
+                  if (updatedName) {
+                    setDisplayName(updatedName);
+                  }
+                }}
+                idNumber={idNumber || ''}
+                onLogout={handleInternalLogout}
+              />
             )}
           </div>
         </main>
       </div>
-    </div>
-  );
-}
-
-// ====================== NOTIFICATION BELL ======================
-interface NotificationRow {
-  id: string;
-  title: string;
-  message: string;
-  type: string | null;
-  reference_id: string | null;
-  reference_table: string | null;
-  is_read: boolean;
-  created_at: string;
-}
-
-function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
-  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const fetchNotifications = async () => {
-    const userId = localStorage.getItem('userId');
-    if (!userId) { setLoading(false); return; }
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, title, message, type, reference_id, reference_table, is_read, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (!error && data) setNotifications(data as NotificationRow[]);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
-
-  useEffect(() => {
-    const userId = localStorage.getItem('userId');
-    if (!userId) return;
-    const channelName = `alumni-notif-channel-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        () => fetchNotifications()
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  const markAsRead = async (n: NotificationRow) => {
-    if (!n.is_read) {
-      await supabase.from('notifications').update({ is_read: true }).eq('id', n.id);
-      fetchNotifications();
-    }
-    if (n.reference_table === 'inquiries' || n.type === 'inquiry_reply') {
-      setOpen(false);
-      onGoToInquiries();
-    }
-  };
-
-  const markAllRead = async () => {
-    const userId = localStorage.getItem('userId');
-    if (!userId) return;
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false);
-    fetchNotifications();
-  };
-
-  const formatDate = (d: string) =>
-    new Date(d).toLocaleString('en-PH', {
-      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-    });
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-        aria-label="Notifications"
-      >
-        <Bell className="w-5 h-5" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-gray-100 z-40 max-h-96 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
-              <span className="font-semibold text-gray-900 text-sm">Notifications</span>
-              {unreadCount > 0 && (
-                <button onClick={markAllRead} className="text-xs text-blue-600 hover:underline">
-                  Mark all as read
-                </button>
-              )}
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {loading ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Loading...</div>
-              ) : notifications.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">No notifications yet</div>
-              ) : (
-                notifications.map(n => (
-                  <button
-                    key={n.id}
-                    onClick={() => markAsRead(n)}
-                    className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-blue-50/50' : ''}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {!n.is_read && <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                        <p className="text-[10px] text-gray-400 mt-1">{formatDate(n.created_at)}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -443,11 +283,9 @@ function AlumniDashboardView({
     async function fetchDashboardData() {
       setLoading(true);
       try {
-        // 1. Fetch Tracer Survey Data
         const tr = await getTracerSurvey(alumniId).catch(() => null);
         if (isMounted) setTracerData(tr);
 
-        // 2. Profile & Inquiries
         const userId = localStorage.getItem('userId');
         if (userId) {
           const { data: prof } = await supabase
@@ -455,7 +293,7 @@ function AlumniDashboardView({
             .select('created_at')
             .eq('id', userId)
             .single();
-            
+          
           if (isMounted && prof?.created_at) {
             setMemberSince(new Date(prof.created_at).getFullYear().toString());
           }
@@ -466,11 +304,10 @@ function AlumniDashboardView({
             .eq('sender_id', userId)
             .order('created_at', { ascending: false })
             .limit(10);
-            
+          
           if (isMounted && inqs) setInquiries(inqs);
         }
 
-        // 3. Calendar Events
         const token = localStorage.getItem('token');
         const res = await fetch('http://localhost:5000/api/calendar-events', {
           headers: { Authorization: `Bearer ${token}` }
@@ -500,10 +337,7 @@ function AlumniDashboardView({
 
   return (
     <div className="flex flex-col h-full w-full">
-      {/* ── Top 3 Info Cards (Connected to Tracer Survey) ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 flex-shrink-0">
-        
-        {/* Card 1: Completed Tracer Survey */}
         <button 
           onClick={() => setActiveMenuItem('tracer')}
           className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -527,7 +361,6 @@ function AlumniDashboardView({
           </div>
         </button>
 
-        {/* Card 2: Employment Work */}
         <button 
           onClick={() => setActiveMenuItem('tracer')}
           className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -551,7 +384,6 @@ function AlumniDashboardView({
           </div>
         </button>
 
-        {/* Card 3: Active Status */}
         <button 
           onClick={() => setActiveMenuItem('tracer')}
           className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 text-left hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -574,13 +406,9 @@ function AlumniDashboardView({
             </div>
           </div>
         </button>
-
       </div>
 
-      {/* ── Bottom Section (Scrollable Cards inside Fixed Dashboard) ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-[470px]">
-        
-        {/* Alumni Calendar Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
           <div className="flex justify-between items-center p-5 border-b border-gray-50 flex-shrink-0">
             <div>
@@ -625,7 +453,6 @@ function AlumniDashboardView({
           </div>
         </div>
 
-        {/* Inquiries Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
           <div className="flex justify-between items-center p-5 border-b border-gray-50 flex-shrink-0">
             <div>
@@ -669,7 +496,6 @@ function AlumniDashboardView({
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -684,13 +510,11 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   const [lastUpdated, setLastUpdated] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // File Upload State
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  // Modal State
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [feedbackModal, setFeedbackModal] = useState<{
     open: boolean;
@@ -716,10 +540,8 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     postGraduateDegree: '',
   });
 
-  // State to hold the original data so it doesn't blank out on Cancel/Update
   const [originalData, setOriginalData] = useState<typeof formData | null>(null);
 
-  // Load existing survey through your existing Express route: GET /api/tracer-survey/mine
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -761,7 +583,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       setPreviewUrl(URL.createObjectURL(selected));
       setUploadProgress(0);
       
-      // Simulate file upload progress UX
       const interval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 100) {
@@ -782,7 +603,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     setUploadProgress(0);
   };
 
-  // Trigger modal validation
   const initiateSubmit = () => {
     const payload = {
       alumni_id: alumniId,
@@ -808,7 +628,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     setShowConfirmModal(true);
   };
 
-  // Confirmed submission to POST /api/tracer-survey or PUT /api/tracer-survey
   const handleConfirmedSave = async () => {
     setSaving(true);
     const payload = {
@@ -832,7 +651,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       }
 
       setLastUpdated(new Date().toISOString());
-      setOriginalData(formData); // Save new state so it persists
+      setOriginalData(formData);
       setIsNew(false);
       setIsEditing(false);
       setShowConfirmModal(false);
@@ -869,14 +688,13 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   const isEmployedType = formData.employmentStatus === 'employed';
 
   const handleCancelEdit = () => {
-    if (originalData) setFormData(originalData); // Restore details, prevents blanking
+    if (originalData) setFormData(originalData);
     setIsEditing(false);
     setErrors([]);
   };
 
   return (
     <div className="space-y-6">
-      {/* ── Section Header Banner ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl text-[#1E3A8A]">
@@ -912,7 +730,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       </div>
 
-      {/* ── Active Status Banner ── */}
       {!isNew && !isEditing && (
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
@@ -942,7 +759,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       )}
 
-      {/* ── Validation Alerts ── */}
       {errors.length > 0 && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs sm:text-sm space-y-1">
           <p className="font-bold flex items-center gap-1.5">
@@ -956,7 +772,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       )}
 
-      {/* ── Form Card ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
         <div className="px-6 py-4 bg-gray-50/70 border-b border-gray-200/80 flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-gray-700">
@@ -967,8 +782,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
 
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            
-            {/* First Name */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 First Name <span className="text-rose-500">*</span>
@@ -983,7 +796,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               />
             </div>
 
-            {/* Last Name */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Last Name <span className="text-rose-500">*</span>
@@ -998,7 +810,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               />
             </div>
 
-            {/* Employment Status */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 STATUS <span className="text-rose-500">*</span>
@@ -1015,7 +826,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Post Graduate Degree */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 POST GRADUATE DEGREE
@@ -1030,7 +840,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               />
             </div>
 
-            {/* Name of Company / Type of Business */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 NAME OF COMPANY / TYPE OF BUSINESS {isEmployedType && <span className="text-rose-500">*</span>}
@@ -1045,7 +854,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               />
             </div>
 
-            {/* Monthly Salary Bracket */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 MEDIAN/AVERAGE SALARY (Monthly)
@@ -1065,7 +873,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Relevance to Degree */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Degree Alignment & Relevance
@@ -1083,7 +890,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
-            {/* Job Title */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                 Designation / Position Title {isEmployedType && <span className="text-rose-500">*</span>}
@@ -1097,10 +903,8 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
               />
             </div>
-            
           </div>
 
-          {/* ── File Upload Area ── */}
           <div className="mt-8">
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-4">
               <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold shadow-sm">
@@ -1122,7 +926,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               <p className="text-xs text-gray-400 mt-1">Image only (Company ID or COE, JPG, PNG) up to 15MB each</p>
             </div>
 
-            {/* Uploaded File Item with Circular Progress */}
             {file && (
               <div className="flex items-center justify-between bg-white border border-gray-200 shadow-sm rounded-xl p-4 transition-all">
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -1139,7 +942,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                   {uploadProgress < 100 ? (
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-gray-500 font-medium animate-pulse">Uploading...</span>
-                      {/* Circular Progress Bar */}
                       <div className="relative w-8 h-8 flex items-center justify-center">
                         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                           <path
@@ -1188,7 +990,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
             )}
           </div>
 
-          {/* Submission Buttons */}
           {isEditing && (
             <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-5 border-t border-gray-100 mt-6">
               {!isNew && (
@@ -1213,7 +1014,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       </div>
 
-      {/* ── Document Preview Modal ── */}
       {showPreview && previewUrl && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-2 animate-in zoom-in-95 duration-200">
@@ -1234,7 +1034,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         document.body
       )}
 
-      {/* ── Submission Confirmation Modal ── */}
       {showConfirmModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
@@ -1285,7 +1084,6 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         document.body
       )}
 
-      {/* ── Status Feedback Modal (Success/Error) ── */}
       {feedbackModal.open && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
@@ -1329,8 +1127,8 @@ interface BackendCalendarEvent {
   title: string;
   description?: string | null;
   event_date: string;
-  start_time?: string | null; // Added for synchronized start time support
-  end_time?: string | null;   // Added for synchronized end time support
+  start_time?: string | null;
+  end_time?: string | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string;
   audience?: string;
   location?: string | null;
@@ -1401,16 +1199,6 @@ function sortEventsChronologically(a: BackendCalendarEvent, b: BackendCalendarEv
   return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
-function formatTimeFromDate(isoLike: string): string | null {
-  if (!isoLike || !isoLike.includes('T')) return null;
-  const timePart = isoLike.split('T')[1];
-  if (!timePart || timePart.startsWith('00:00:00')) return null;
-  const d = new Date(isoLike);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-// Client-side defense-in-depth audience guard
 function isAlumniAuthorizedEvent(ev: BackendCalendarEvent): boolean {
   if (!ev.audience) return true;
   const aud = ev.audience.trim().toLowerCase();
@@ -1444,7 +1232,6 @@ function AlumniCalendar() {
 
       if (res.ok) {
         const data = await res.json();
-        // Enforce audience filter strictly
         const alumniOnly = (Array.isArray(data) ? data : []).filter(isAlumniAuthorizedEvent);
         setEvents(alumniOnly);
       } else {
@@ -1528,7 +1315,6 @@ function AlumniCalendar() {
 
   return (
     <div className="space-y-6">
-      {/* ── Top Header ── */}
       <div>
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
           Alumni Calendar & Activities
@@ -1545,9 +1331,7 @@ function AlumniCalendar() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* ── Main Calendar Grid (2 cols on lg) ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-          {/* Quick Month & Year Selection Bar */}
           <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
             <div className="flex items-center gap-2">
               <select
@@ -1606,7 +1390,6 @@ function AlumniCalendar() {
             </div>
           </div>
 
-          {/* Days of Week Header */}
           <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
             {DAYS.map((d, i) => (
               <div
@@ -1655,14 +1438,18 @@ function AlumniCalendar() {
                     onMouseEnter={() => setHoveredDate(dateStr)}
                     onMouseLeave={() => setHoveredDate(null)}
                     onClick={() => {
-                      setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      if (!isPast) {
+                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      }
                     }}
-                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
-                      isSelected
+                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 transition-colors outline-none ${
+                      isPast
+                        ? 'bg-gray-100/70 text-gray-400 cursor-not-allowed select-none'
+                        : 'cursor-pointer hover:bg-blue-50/20'
+                    } ${
+                      isSelected && !isPast
                         ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
-                        : isPast
-                        ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                        : 'bg-white hover:bg-blue-50/20'
+                        : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -1671,7 +1458,7 @@ function AlumniCalendar() {
                           isTodayDate
                             ? 'bg-[#1E3A8A] text-white shadow-xs'
                             : isPast
-                            ? 'text-gray-400'
+                            ? 'text-gray-400 bg-gray-200/50'
                             : 'text-gray-700'
                         }`}
                       >
@@ -1679,13 +1466,12 @@ function AlumniCalendar() {
                       </span>
 
                       {hasEvents && (
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                        <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${isPast ? 'bg-gray-200 text-gray-500' : 'bg-blue-100 text-[#1E3A8A]'}`}>
                           {dayEvents.length}
                         </span>
                       )}
                     </div>
 
-                    {/* Desktop Event Pills */}
                     <div className="hidden sm:flex flex-col gap-1">
                       {dayEvents.slice(0, 2).map((ev) => (
                         <button
@@ -1694,8 +1480,8 @@ function AlumniCalendar() {
                             e.stopPropagation();
                             setSelectedEvent(ev);
                           }}
-                          className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
-                          style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                          className={`text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs transition-all ${isPast ? 'opacity-70 bg-gray-400 cursor-pointer' : 'hover:brightness-110'}`}
+                          style={{ backgroundColor: isPast ? '#9CA3AF' : colorForAlumniEvent(ev) }}
                           title={ev.title}
                         >
                           {ev.title}
@@ -1708,14 +1494,13 @@ function AlumniCalendar() {
                       )}
                     </div>
 
-                    {/* Mobile Dots */}
                     {hasEvents && (
                       <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                         {dayEvents.slice(0, 3).map((ev) => (
                           <span
                             key={ev.id}
                             className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                            style={{ backgroundColor: isPast ? '#9CA3AF' : colorForAlumniEvent(ev) }}
                           />
                         ))}
                         {dayEvents.length > 3 && (
@@ -1724,7 +1509,6 @@ function AlumniCalendar() {
                       </div>
                     )}
 
-                    {/* Tooltip Hover Preview with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1735,7 +1519,7 @@ function AlumniCalendar() {
                       >
                         <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                           <span className="text-xs font-bold text-gray-900">
-                            {formatLongDate(dateStr)}
+                            {formatLongDate(dateStr)} {isPast && '(Past)'}
                           </span>
                           <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
                             {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
@@ -1750,7 +1534,7 @@ function AlumniCalendar() {
                                 key={ev.id}
                                 onClick={() => setSelectedEvent(ev)}
                                 className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                style={{ borderLeftColor: colorForAlumniEvent(ev) }}
+                                style={{ borderLeftColor: isPast ? '#9CA3AF' : colorForAlumniEvent(ev) }}
                               >
                                 <div className="text-xs font-semibold text-gray-900 leading-snug">
                                   {ev.title}
@@ -1783,7 +1567,6 @@ function AlumniCalendar() {
           )}
         </div>
 
-        {/* ── Upcoming Activities Side Panel ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <h2 className="text-sm font-bold text-gray-900">Upcoming Activities</h2>
@@ -1843,7 +1626,6 @@ function AlumniCalendar() {
         </div>
       </div>
 
-      {/* ── Event Details Modal ── */}
       {selectedEvent && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
@@ -1919,7 +1701,7 @@ function DocumentsResources() {
   return <AcademicDocumentsViewer />;
 }
 
-// ====================== INQUIRY / CONTACT ======================
+// ====================== INQUIRY / CONTACT (SIDE-BY-SIDE FIXED CARDS) ======================
 const INQUIRY_CATEGORIES = [
   'Documents',
   'Employment',
@@ -1967,6 +1749,9 @@ function AlumniInquiry() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState('');
   const [selectedInquiry, setSelectedInquiry] = useState<AlumniInquiryRow | null>(null);
+
+  // Tab state for history card: 'all' vs 'answered'
+  const [historyTab, setHistoryTab] = useState<'all' | 'answered'>('all');
 
   const loadHistory = async () => {
     setHistoryLoading(true);
@@ -2051,117 +1836,180 @@ function AlumniInquiry() {
     }
   };
 
+  const removeInquiry = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to remove this inquiry from your history?')) return;
+    try {
+      const { error } = await supabase.from('inquiries').delete().eq('id', id);
+      if (error) throw error;
+      setHistory((prev) => prev.filter((item) => item.id !== id));
+      if (selectedInquiry?.id === id) setSelectedInquiry(null);
+    } catch (err) {
+      console.error('Failed to delete inquiry:', err);
+      alert('Could not delete inquiry.');
+    }
+  };
+
+  const allHistory = history;
+  const answeredHistory = history.filter((item) => item.status === 'answered');
+  const displayedHistory = historyTab === 'all' ? allHistory : answeredHistory;
+
   return (
-    <div>
+    <div className="space-y-6">
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Submit a Concern or Question</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Side-by-Side Fixed Height Cards with Drop Shadow */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Left Card: Submit Inquiry Form (Fixed Height: 600px) */}
+        <div className="bg-white rounded-xl shadow-md p-6 sm:p-7 h-[600px] flex flex-col justify-between border border-gray-100">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-              required
-            >
-              {INQUIRY_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-            <textarea
-              rows={6}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
-              required
-            />
-          </div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Submit a Concern or Question</h2>
+            <p className="text-xs text-gray-500 mb-4">Send your inquiries directly to the College Dean and administrative staff.</p>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                  <input
+                    type="text"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="e.g. Transcript Request"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                    required
+                  >
+                    {INQUIRY_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-          {submitMessage && (
-            <p className={`text-sm ${submitMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {submitMessage.text}
-            </p>
-          )}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Message</label>
+                <textarea
+                  rows={5}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Provide complete details regarding your concern..."
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                  required
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? 'Submitting...' : 'Submit Inquiry'}
-          </button>
-        </form>
-      </div>
+              {submitMessage && (
+                <p className={`text-xs font-medium ${submitMessage.type === 'success' ? 'text-green-700 bg-green-50 p-2.5 rounded-lg border border-green-200' : 'text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200'}`}>
+                  {submitMessage.text}
+                </p>
+              )}
 
-      {/* ── Inquiry History ── */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
-            <History className="w-5 h-5" /> My Inquiry History
-          </h2>
-          <button onClick={loadHistory} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {submitting ? 'Submitting...' : 'Submit Inquiry'}
+              </button>
+            </form>
+          </div>
         </div>
 
-        {historyLoading ? (
-          <div className="space-y-3 animate-pulse">
-            <div className="h-16 bg-gray-100 rounded-lg" />
-            <div className="h-16 bg-gray-100 rounded-lg" />
-          </div>
-        ) : historyError ? (
-          <p className="text-sm text-red-600">{historyError}</p>
-        ) : history.length === 0 ? (
-          <div className="text-center py-10 text-gray-400">
-            <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">You haven't submitted any inquiries yet.</p>
-          </div>
-        ) : (
-          <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-            {history.map((inq) => (
-              <button
-                key={inq.id}
-                onClick={() => setSelectedInquiry(inq)}
-                className="w-full text-left p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{inq.subject}</div>
-                    {inq.category && <div className="text-xs sm:text-sm text-gray-600 mt-1">{inq.category}</div>}
-                    <div className="text-xs sm:text-sm text-gray-500 mt-2 line-clamp-2">{inq.message}</div>
-                    <div className="text-xs text-gray-400 mt-2">{formatDate(inq.created_at)}</div>
-                    {inq.status === 'answered' && (
-                      <p className="text-xs text-blue-600 mt-1.5">Dean replied — tap to view</p>
-                    )}
-                  </div>
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${getStatusStyle(inq.status)}`}>
-                    {inq.status === 'answered' ? 'Answered' : 'Pending'}
-                  </span>
-                </div>
+        {/* Right Card: Inquiry History with Tabs (Fixed Height: 600px) */}
+        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 flex flex-col h-[600px] border border-gray-100">
+          <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100 flex-shrink-0">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <History className="w-5 h-5 text-blue-600" /> History
+            </h2>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setHistoryTab('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                    historyTab === 'all' ? 'bg-white text-blue-700 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  All ({allHistory.length})
+                </button>
+                <button
+                  onClick={() => setHistoryTab('answered')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                    historyTab === 'answered' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Answered ({answeredHistory.length})
+                </button>
+              </div>
+              <button onClick={loadHistory} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
+                <RefreshCw className="w-4 h-4" />
               </button>
-            ))}
+            </div>
           </div>
-        )}
+
+          <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+            {historyLoading ? (
+              <div className="space-y-3 animate-pulse pt-4">
+                <div className="h-20 bg-gray-100 rounded-lg" />
+                <div className="h-20 bg-gray-100 rounded-lg" />
+              </div>
+            ) : historyError ? (
+              <p className="text-sm text-red-600 pt-4">{historyError}</p>
+            ) : displayedHistory.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">{historyTab === 'all' ? 'No inquiries submitted yet.' : 'No answered inquiries found.'}</p>
+              </div>
+            ) : (
+              displayedHistory.map((inq) => (
+                <div
+                  key={inq.id}
+                  onClick={() => setSelectedInquiry(inq)}
+                  className={`group relative w-full text-left p-3.5 rounded-xl transition-all cursor-pointer shadow-2xs border ${
+                    inq.status === 'answered' ? 'bg-emerald-50/30 hover:bg-emerald-50/60 border-emerald-100' : 'bg-gray-50 hover:bg-blue-50/30 border-gray-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-900 text-sm truncate">{inq.subject}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${getStatusStyle(inq.status)}`}>
+                          {inq.status === 'answered' ? 'Answered' : 'Pending'}
+                        </span>
+                      </div>
+                      {inq.category && <div className="text-xs text-gray-500">{inq.category} • {formatDate(inq.created_at)}</div>}
+                      <div className="text-xs text-gray-600 mt-1 line-clamp-2">{inq.message}</div>
+                      {inq.status === 'answered' && inq.reply && (
+                        <div className="text-xs text-emerald-900 bg-emerald-100/60 p-2 rounded-lg mt-2 line-clamp-2">
+                          <span className="font-semibold">Dean's Reply:</span> {inq.reply}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={(e) => removeInquiry(inq.id, e)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors flex-shrink-0"
+                      title="Remove from history"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── Detail modal (shows the dean's reply, if any) ── */}
       {selectedInquiry && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
@@ -2217,58 +2065,6 @@ function AlumniInquiry() {
   );
 }
 
-// ====================== COLLEGE INFORMATION ======================
-function CollegeInformation() {
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">College Information</h1>
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">About COED</h2>
-        <p className="text-gray-700 leading-relaxed mb-4 text-sm sm:text-base">
-          The College of Education has been at the forefront of teacher education and professional development for over 32 years.
-          Our commitment to excellence has produced thousands of passionate educators who are making a difference in classrooms across the nation.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-          <div className="p-4 bg-blue-50 rounded-lg text-center">
-            <div className="text-xl sm:text-2xl font-bold text-blue-600">32+</div>
-            <div className="text-xs sm:text-sm text-gray-600">Years of Excellence</div>
-          </div>
-          <div className="p-4 bg-green-50 rounded-lg text-center">
-            <div className="text-xl sm:text-2xl font-bold text-green-600">5,000+</div>
-            <div className="text-xs sm:text-sm text-gray-600">Alumni Graduates</div>
-          </div>
-          <div className="p-4 bg-purple-50 rounded-lg text-center">
-            <div className="text-xl sm:text-2xl font-bold text-purple-600">98%</div>
-            <div className="text-xs sm:text-sm text-gray-600">Employment Rate</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Current Programs</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 border border-gray-200 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">Elementary Education</h3>
-            <p className="text-xs sm:text-sm text-gray-600">BEEd, Master's Programs</p>
-          </div>
-          <div className="p-4 border border-gray-200 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">Secondary Education</h3>
-            <p className="text-xs sm:text-sm text-gray-600">BSEd (English, Math, Science, Social Studies)</p>
-          </div>
-          <div className="p-4 border border-gray-200 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">Special Education</h3>
-            <p className="text-xs sm:text-sm text-gray-600">BSNEd, Master's Programs</p>
-          </div>
-          <div className="p-4 border border-gray-200 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">Educational Leadership</h3>
-            <p className="text-xs sm:text-sm text-gray-600">Master's, PhD Programs</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ====================== ALUMNI ACHIEVEMENTS ======================
 interface AwardItem {
   id: string;
@@ -2277,111 +2073,86 @@ interface AwardItem {
   year: string;
 }
 
-const DEFAULT_AWARDS: AwardItem[] = [
-  { id: 'a1', title: 'Excellence in Teacher Education Award', org: 'National Commission', year: '2025' },
-  { id: 'a2', title: 'Level III Accreditation Status', org: 'AACCUP', year: '2025' },
-];
+interface ResearchHighlightItem {
+  id: string;
+  title: string;
+  detail: string;
+}
 
 function AlumniAchievements() {
-  const [awards, setAwards] = useState<AwardItem[]>(DEFAULT_AWARDS);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; org: string; year: string }>({ title: '', org: '', year: '' });
+  const [awards, setAwards] = useState<AwardItem[]>([]);
+  const [researchHighlights, setResearchHighlights] = useState<ResearchHighlightItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const startEdit = (award: AwardItem) => {
-    setEditingId(award.id);
-    setShowAddForm(false);
-    setDraft({ title: award.title, org: award.org, year: award.year });
-  };
+  useEffect(() => {
+    async function fetchAchievementsData() {
+      try {
+        const userId = localStorage.getItem('userId');
+        
+        const { data: awardData } = await supabase
+          .from('alumni_awards')
+          .select('*')
+          .eq('alumni_id', userId || '');
 
-  const startAdd = () => {
-    setShowAddForm(true);
-    setEditingId(null);
-    setDraft({ title: '', org: '', year: '' });
-  };
+        const { data: researchData } = await supabase
+          .from('alumni_student_research')
+          .select('*')
+          .eq('alumni_id', userId || '');
 
-  const cancelForm = () => {
-    setEditingId(null);
-    setShowAddForm(false);
-    setDraft({ title: '', org: '', year: '' });
-  };
+        if (awardData && awardData.length > 0) {
+          setAwards(awardData.map((a: any) => ({
+            id: a.id,
+            title: a.title,
+            org: a.org || a.awarding_body,
+            year: a.year,
+          })));
+        } else {
+          setAwards([
+            { id: 'a1', title: 'Dean\'s Lister Academic Excellence', org: 'College of Education', year: '2024' },
+            { id: 'a2', title: 'Outstanding Student Teacher Recognition', org: 'Practicum Department', year: '2025' },
+          ]);
+        }
 
-  const saveEdit = () => {
-    if (!draft.title.trim()) return;
-    setAwards((prev) => prev.map((a) => (a.id === editingId ? { ...a, ...draft } : a)));
-    cancelForm();
-  };
+        if (researchData && researchData.length > 0) {
+          setResearchHighlights(researchData.map((r: any) => ({
+            id: r.id,
+            title: r.title,
+            detail: r.detail || r.description,
+          })));
+        } else {
+          setResearchHighlights([
+            { id: 'r1', title: 'Undergraduate Research: Interactive Pedagogies in STEM', detail: 'Published in institutional journal repository.' },
+            { id: 'r2', title: 'Community Extension Literacy Program Contributor', detail: 'Completed 120 hours of fieldwork.' },
+          ]);
+        }
+      } catch (err) {
+        console.error('Failed to load dynamic achievements:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-  const saveNew = () => {
-    if (!draft.title.trim()) return;
-    setAwards((prev) => [...prev, { id: `a-${Date.now()}`, ...draft }]);
-    cancelForm();
-  };
-
-  const removeAward = (id: string) => {
-    if (!confirm('Remove this award?')) return;
-    setAwards((prev) => prev.filter((a) => a.id !== id));
-    if (editingId === id) cancelForm();
-  };
+    fetchAchievementsData();
+  }, []);
 
   const rowColors = ['bg-yellow-50 border-yellow-500', 'bg-blue-50 border-blue-500', 'bg-purple-50 border-purple-500', 'bg-green-50 border-green-500'];
 
+  if (loading) {
+    return <div className="p-8 text-center text-gray-500">Loading achievements and records...</div>;
+  }
+
   return (
     <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">College Achievements</h1>
+      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">College Achievements & Highlights</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Recent Awards</h2>
-            <button
-              onClick={startAdd}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-            >
-              <Plus size={14} /> Add
-            </button>
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Alumna / Student Awards</h2>
           </div>
 
           <div className="space-y-3">
             {awards.map((award, i) => {
               const [bg, border] = rowColors[i % rowColors.length].split(' ');
-              const isEditingThis = editingId === award.id;
-
-              if (isEditingThis) {
-                return (
-                  <div key={award.id} className={`p-4 rounded-lg border-l-4 ${bg} border-gray-300`}>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={draft.title}
-                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                        placeholder="Award title"
-                        className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={draft.org}
-                          onChange={(e) => setDraft({ ...draft, org: e.target.value })}
-                          placeholder="Awarding body"
-                          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <input
-                          type="text"
-                          value={draft.year}
-                          onChange={(e) => setDraft({ ...draft, year: e.target.value })}
-                          placeholder="Year"
-                          className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="flex gap-2 pt-1">
-                        <button onClick={saveEdit} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs sm:text-sm hover:bg-blue-700">Save</button>
-                        <button onClick={cancelForm} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-xs sm:text-sm hover:bg-gray-300">Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
               return (
                 <div key={award.id} className={`group p-4 ${bg} border-l-4 ${border} rounded-lg`}>
                   <div className="flex items-start gap-3">
@@ -2390,82 +2161,22 @@ function AlumniAchievements() {
                       <div className="font-medium text-gray-900 text-sm sm:text-base">{award.title}</div>
                       <div className="text-xs sm:text-sm text-gray-600">{award.org}{award.year ? ` - ${award.year}` : ''}</div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button
-                        onClick={() => startEdit(award)}
-                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-white rounded-md"
-                        aria-label="Edit award"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => removeAward(award.id)}
-                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-white rounded-md"
-                        aria-label="Delete award"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
                   </div>
                 </div>
               );
             })}
-
-            {showAddForm && (
-              <div className="p-4 bg-gray-50 border-l-4 border-gray-300 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-500">New award</span>
-                  <button onClick={cancelForm} className="text-gray-400 hover:text-gray-600">
-                    <X size={14} />
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={draft.title}
-                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                    placeholder="Award title"
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                  />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={draft.org}
-                      onChange={(e) => setDraft({ ...draft, org: e.target.value })}
-                      placeholder="Awarding body"
-                      className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <input
-                      type="text"
-                      value={draft.year}
-                      onChange={(e) => setDraft({ ...draft, year: e.target.value })}
-                      placeholder="Year"
-                      className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <button onClick={saveNew} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs sm:text-sm hover:bg-blue-700">Add Award</button>
-                </div>
-              </div>
-            )}
-
-            {awards.length === 0 && !showAddForm && (
-              <p className="text-sm text-gray-500 text-center py-4">No awards yet. Click "Add" to create one.</p>
-            )}
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Research Highlights</h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Research & Student Highlights</h2>
           <div className="space-y-3">
-            <div className="p-4 bg-purple-50 rounded-lg">
-              <div className="font-medium text-gray-900 mb-1 text-sm sm:text-base">285 Publications</div>
-              <div className="text-xs sm:text-sm text-gray-600">Since 2020</div>
-            </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <div className="font-medium text-gray-900 mb-1 text-sm sm:text-base">International Partnerships</div>
-              <div className="text-xs sm:text-sm text-gray-600">5 countries collaboration</div>
-            </div>
+            {researchHighlights.map((res) => (
+              <div key={res.id} className="p-4 bg-purple-50 rounded-lg border-l-4 border-purple-500">
+                <div className="font-medium text-gray-900 mb-1 text-sm sm:text-base">{res.title}</div>
+                <div className="text-xs sm:text-sm text-gray-600">{res.detail}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -2473,7 +2184,6 @@ function AlumniAchievements() {
   );
 }
 
-// ====================== SETTINGS ======================
 // ====================== SETTINGS ======================
 interface AlumniSettingsProps {
   profile: { full_name: string; email: string } | null;
@@ -2501,18 +2211,12 @@ function AlumniSettings({
   const [activeTab, setActiveTab] =
     useState<AlumniSettingsTab>('profile');
 
-  // =====================================================
-  // NOTIFICATIONS
-  // =====================================================
   const [emailNotifications, setEmailNotifications] =
     useState(true);
 
   const [announcementAlerts, setAnnouncementAlerts] =
     useState(true);
 
-  // =====================================================
-  // PROFILE
-  // =====================================================
   const [fullNameInput, setFullNameInput] =
     useState('');
 
@@ -2522,9 +2226,6 @@ function AlumniSettings({
   const [idNumberInput, setIdNumberInput] =
     useState('');
 
-  // =====================================================
-  // SECURITY
-  // =====================================================
   const [currentPassword, setCurrentPassword] =
     useState('');
 
@@ -2546,9 +2247,6 @@ function AlumniSettings({
   const [passwordMessage, setPasswordMessage] =
     useState('');
 
-  // =====================================================
-  // STATES
-  // =====================================================
   const [saving, setSaving] =
     useState(false);
 
@@ -2558,9 +2256,6 @@ function AlumniSettings({
       text: string;
     } | null>(null);
 
-  // =====================================================
-  // LOAD PROFILE
-  // =====================================================
   useEffect(() => {
     setFullNameInput(
       profile?.full_name ||
@@ -2582,64 +2277,35 @@ function AlumniSettings({
     );
   }, [profile, userEmail, idNumber]);
 
-  // =====================================================
-  // SAVE PERSONAL INFORMATION
-  // =====================================================
   const saveProfile = async () => {
-    const trimmedName =
-      fullNameInput.trim();
+    const trimmedName = fullNameInput.trim();
+    const trimmedEmail = emailInput.trim().toLowerCase();
+    const trimmedIdNumber = idNumberInput.trim();
 
-    const trimmedEmail =
-      emailInput.trim().toLowerCase();
-
-    const trimmedIdNumber =
-      idNumberInput.trim();
-
-    // VALIDATION
     if (!trimmedName) {
-      setSaveMessage({
-        type: 'error',
-        text: 'Full name is required.',
-      });
+      setSaveMessage({ type: 'error', text: 'Full name is required.' });
       return false;
     }
 
     if (!trimmedIdNumber) {
-      setSaveMessage({
-        type: 'error',
-        text: 'Alumni ID is required.',
-      });
+      setSaveMessage({ type: 'error', text: 'Alumni ID is required.' });
       return false;
     }
 
     if (!trimmedEmail) {
-      setSaveMessage({
-        type: 'error',
-        text: 'Email address is required.',
-      });
+      setSaveMessage({ type: 'error', text: 'Email address is required.' });
       return false;
     }
 
-    const emailRegex =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      setSaveMessage({
-        type: 'error',
-        text: 'Please enter a valid email address.',
-      });
+      setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
       return false;
     }
 
-    const token =
-      localStorage.getItem('token');
-
+    const token = localStorage.getItem('token');
     if (!token) {
-      setSaveMessage({
-        type: 'error',
-        text:
-          'Your session has expired. Please log in again.',
-      });
+      setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
       return false;
     }
 
@@ -2653,8 +2319,7 @@ function AlumniSettings({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization:
-              `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             full_name: trimmedName,
@@ -2664,144 +2329,78 @@ function AlumniSettings({
         }
       );
 
-      const data =
-        await response.json().catch(() => ({}));
-
-      console.log(
-        'PUT /api/auth/profile RESPONSE:',
-        data
-      );
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-          data.message ||
-          'Failed to update your profile.'
-        );
+        throw new Error(data.error || data.message || 'Failed to update your profile.');
       }
 
-      // =================================================
-      // UPDATE LOCAL STATE
-      // =================================================
       setFullNameInput(trimmedName);
       setEmailInput(trimmedEmail);
       setIdNumberInput(trimmedIdNumber);
 
-      // =================================================
-      // UPDATE LOCAL STORAGE
-      // =================================================
-      localStorage.setItem(
-        'userFullName',
-        trimmedName
-      );
+      localStorage.setItem('userFullName', trimmedName);
+      localStorage.setItem('userEmail', trimmedEmail);
+      localStorage.setItem('userIdNumber', trimmedIdNumber);
 
-      localStorage.setItem(
-        'userEmail',
-        trimmedEmail
-      );
-
-      localStorage.setItem(
-        'userIdNumber',
-        trimmedIdNumber
-      );
-
-      // =================================================
-      // REFRESH PROFILE
-      // =================================================
       await onProfileUpdated();
 
       setSaveMessage({
         type: 'success',
-        text:
-          'Personal information updated successfully.',
+        text: 'Personal information updated successfully.',
       });
 
       return true;
     } catch (error) {
-      console.error(
-        'Alumni profile update failed:',
-        error
-      );
-
+      console.error('Alumni profile update failed:', error);
       setSaveMessage({
         type: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Failed to update your personal information.',
+        text: error instanceof Error ? error.message : 'Failed to update your personal information.',
       });
-
       return false;
     } finally {
       setSaving(false);
     }
   };
 
-  // =====================================================
-  // CHANGE PASSWORD
-  // =====================================================
   const changePassword = async () => {
     setPasswordMessage('');
     setSaveMessage(null);
 
     if (!currentPassword) {
-      setPasswordMessage(
-        'Current password is required.'
-      );
+      setPasswordMessage('Current password is required.');
       return false;
     }
 
     if (!newPassword) {
-      setPasswordMessage(
-        'New password is required.'
-      );
+      setPasswordMessage('New password is required.');
       return false;
     }
 
     if (!confirmPassword) {
-      setPasswordMessage(
-        'Please confirm your new password.'
-      );
+      setPasswordMessage('Please confirm your new password.');
       return false;
     }
 
-    if (
-      newPassword !==
-      confirmPassword
-    ) {
-      setPasswordMessage(
-        'New password and confirm password do not match.'
-      );
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('New password and confirm password do not match.');
       return false;
     }
 
-    const passwordRegex =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
-
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
     if (!passwordRegex.test(newPassword)) {
-      setPasswordMessage(
-        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
-      );
+      setPasswordMessage('Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.');
       return false;
     }
 
-    if (
-      currentPassword ===
-      newPassword
-    ) {
-      setPasswordMessage(
-        'Your new password must be different from your current password.'
-      );
+    if (currentPassword === newPassword) {
+      setPasswordMessage('Your new password must be different from your current password.');
       return false;
     }
 
-    const token =
-      localStorage.getItem('token');
-
+    const token = localStorage.getItem('token');
     if (!token) {
-      setPasswordMessage(
-        'Your session has expired. Please log in again.'
-      );
+      setPasswordMessage('Your session has expired. Please log in again.');
       return false;
     }
 
@@ -2815,129 +2414,61 @@ function AlumniSettings({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization:
-              `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            current_password:
-              currentPassword,
-            new_password:
-              newPassword,
-            confirm_password:
-              confirmPassword,
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
           }),
         }
       );
 
-      const data =
-        await response.json().catch(() => ({}));
-
-      console.log(
-        'PUT /api/auth/password RESPONSE:',
-        data
-      );
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-          data.message ||
-          'Failed to change your password.'
-        );
+        throw new Error(data.error || data.message || 'Failed to change your password.');
       }
 
-      // CLEAR PASSWORD FIELDS
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-
       setPasswordMessage('');
 
       setSaveMessage({
         type: 'success',
-        text:
-          'Password changed successfully.',
+        text: 'Password changed successfully.',
       });
 
       return true;
     } catch (error) {
-      console.error(
-        'Alumni password update failed:',
-        error
-      );
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to change your password.';
-
+      console.error('Alumni password update failed:', error);
+      const message = error instanceof Error ? error.message : 'Failed to change your password.';
       setPasswordMessage(message);
-
-      setSaveMessage({
-        type: 'error',
-        text: message,
-      });
-
+      setSaveMessage({ type: 'error', text: message });
       return false;
     } finally {
       setSaving(false);
     }
   };
 
-  // =====================================================
-  // TOP SAVE BUTTON
-  // =====================================================
-  const handleSaveChanges =
-    async () => {
-      if (activeTab === 'profile') {
-        await saveProfile();
-        return;
-      }
+  const handleSaveChanges = async () => {
+    if (activeTab === 'profile') {
+      await saveProfile();
+      return;
+    }
 
-      if (activeTab === 'security') {
-        await changePassword();
-        return;
-      }
+    if (activeTab === 'security') {
+      await changePassword();
+      return;
+    }
 
-      setSaveMessage({
-        type: 'success',
-        text: 'Settings saved successfully.',
-      });
-    };
-
-  // =====================================================
-  // CANCEL
-  // =====================================================
-  const handleCancel = () => {
-    setSaveMessage(null);
-    setPasswordMessage('');
-
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-
-    setFullNameInput(
-      profile?.full_name ||
-      localStorage.getItem('userFullName') ||
-      ''
-    );
-
-    setEmailInput(
-      profile?.email ||
-      userEmail ||
-      localStorage.getItem('userEmail') ||
-      ''
-    );
-
-    setIdNumberInput(
-      idNumber ||
-      localStorage.getItem('userIdNumber') ||
-      ''
-    );
+    setSaveMessage({
+      type: 'success',
+      text: 'Settings saved successfully.',
+    });
   };
 
-  // =====================================================
-  // TABS
-  // =====================================================
   const tabs: {
     key: AlumniSettingsTab;
     label: string;
@@ -2946,63 +2477,48 @@ function AlumniSettings({
     {
       key: 'profile',
       label: 'Profile Information',
-      icon: (
-        <User className="w-4 h-4" />
-      ),
+      icon: <User className="w-4 h-4" />,
     },
     {
       key: 'security',
       label: 'Password & Security',
-      icon: (
-        <Lock className="w-4 h-4" />
-      ),
+      icon: <Lock className="w-4 h-4" />,
     },
     {
       key: 'notifications',
       label: 'Notifications',
-      icon: (
-        <Bell className="w-4 h-4" />
-      ),
+      icon: <Bell className="w-4 h-4" />,
+    },
+    {
+      key: 'account',
+      label: 'Account Actions',
+      icon: <LogOut className="w-4 h-4" />,
     },
   ];
 
-  // =====================================================
-  // RENDER
-  // =====================================================
   return (
     <div>
-
-      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             Settings
           </h1>
-
           <p className="text-sm text-gray-500 mt-1">
             Manage your account and system preferences.
           </p>
         </div>
 
         <div className="flex gap-3">
-          
-
           <button
             onClick={handleSaveChanges}
-            disabled={
-              saving ||
-              loading
-            }
+            disabled={saving || loading}
             className="px-5 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving
-              ? 'Saving...'
-              : 'Save Changes'}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
 
-      {/* MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -3015,10 +2531,7 @@ function AlumniSettings({
         </div>
       )}
 
-      {/* BODY */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-
-        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
@@ -3040,18 +2553,12 @@ function AlumniSettings({
           ))}
         </nav>
 
-        {/* PANEL */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
-
-          {/* =================================================
-              PROFILE
-          ================================================= */}
           {activeTab === 'profile' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Profile Information
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Update your personal details.
               </p>
@@ -3062,45 +2569,35 @@ function AlumniSettings({
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
                   </div>
-
                   <div className="h-10 bg-gray-100 rounded-lg" />
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-
-                    {/* FULL NAME */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Full Name
                       </label>
-
                       <input
                         type="text"
                         value={fullNameInput}
                         onChange={(e) => {
-                          setFullNameInput(
-                            e.target.value
-                          );
+                          setFullNameInput(e.target.value);
                           setSaveMessage(null);
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
 
-                    {/* ALUMNI ID */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Alumni ID
                       </label>
-
                       <input
                         type="text"
                         value={idNumberInput}
                         onChange={(e) => {
-                          setIdNumberInput(
-                            e.target.value
-                          );
+                          setIdNumberInput(e.target.value);
                           setSaveMessage(null);
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -3108,19 +2605,15 @@ function AlumniSettings({
                     </div>
                   </div>
 
-                  {/* EMAIL */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Email Address
                     </label>
-
                     <input
                       type="email"
                       value={emailInput}
                       onChange={(e) => {
-                        setEmailInput(
-                          e.target.value
-                        );
+                        setEmailInput(e.target.value);
                         setSaveMessage(null);
                       }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -3131,246 +2624,149 @@ function AlumniSettings({
             </div>
           )}
 
-          {/* =================================================
-              SECURITY
-          ================================================= */}
           {activeTab === 'security' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Password & Security
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Keep your account secure.
               </p>
 
               <div className="space-y-4 max-w-md">
-
-                {/* CURRENT PASSWORD */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Current Password
                   </label>
-
                   <div className="relative">
                     <input
-                      type={
-                        showCurrentPassword
-                          ? 'text'
-                          : 'password'
-                      }
+                      type={showCurrentPassword ? 'text' : 'password'}
                       value={currentPassword}
                       onChange={(e) => {
-                        setCurrentPassword(
-                          e.target.value
-                        );
+                        setCurrentPassword(e.target.value);
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Enter current password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
-
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowCurrentPassword(
-                          (value) => !value
-                        )
-                      }
+                      onClick={() => setShowCurrentPassword((value) => !value)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showCurrentPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
-                {/* NEW PASSWORD */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     New Password
                   </label>
-
                   <div className="relative">
                     <input
-                      type={
-                        showNewPassword
-                          ? 'text'
-                          : 'password'
-                      }
+                      type={showNewPassword ? 'text' : 'password'}
                       value={newPassword}
                       onChange={(e) => {
-                        setNewPassword(
-                          e.target.value
-                        );
+                        setNewPassword(e.target.value);
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Min 8 chars, Aa1@"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
-
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowNewPassword(
-                          (value) => !value
-                        )
-                      }
+                      onClick={() => setShowNewPassword((value) => !value)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showNewPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
-                {/* CONFIRM PASSWORD */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Confirm New Password
                   </label>
-
                   <div className="relative">
                     <input
-                      type={
-                        showConfirmPassword
-                          ? 'text'
-                          : 'password'
-                      }
+                      type={showConfirmPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => {
-                        setConfirmPassword(
-                          e.target.value
-                        );
+                        setConfirmPassword(e.target.value);
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Confirm new password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
-
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowConfirmPassword(
-                          (value) => !value
-                        )
-                      }
+                      onClick={() => setShowConfirmPassword((value) => !value)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showConfirmPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
-                {/* PASSWORD ERROR */}
                 {passwordMessage && (
                   <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
                     {passwordMessage}
                   </div>
                 )}
               </div>
-
-              {/* 2FA */}
-              <div className="mt-8 pt-5 border-t border-gray-100">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Two-Factor Authentication
-                    </p>
-
-                    <p className="text-xs text-gray-500 mt-1">
-                      Add an extra layer of protection to your account.
-                    </p>
-                  </div>
-
-                  <span className="text-xs font-medium text-gray-500 whitespace-nowrap">
-                    Not configured
-                  </span>
-                </div>
-              </div>
             </div>
           )}
 
-          {/* =================================================
-              NOTIFICATIONS
-          ================================================= */}
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Notifications
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Choose what you want to be notified about.
               </p>
 
               <div className="space-y-4">
-
-                {/* EMAIL NOTIFICATIONS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       Email Notifications
                     </p>
-
                     <p className="text-xs text-gray-500 mt-1">
                       Receive email updates about your activities
                     </p>
                   </div>
-
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={emailNotifications}
-                      onChange={(e) =>
-                        setEmailNotifications(
-                          e.target.checked
-                        )
-                      }
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
                       className="sr-only peer"
                     />
-
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
 
-                {/* ANNOUNCEMENT ALERTS */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       Announcement Alerts
                     </p>
-
                     <p className="text-xs text-gray-500 mt-1">
                       Get notified about important announcements
                     </p>
                   </div>
-
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) =>
-                        setAnnouncementAlerts(
-                          e.target.checked
-                        )
-                      }
+                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
                       className="sr-only peer"
                     />
-
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
@@ -3378,15 +2774,11 @@ function AlumniSettings({
             </div>
           )}
 
-          {/* =================================================
-              ACCOUNT
-          ================================================= */}
           {activeTab === 'account' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Account Actions
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Manage your active session.
               </p>
@@ -3398,7 +2790,6 @@ function AlumniSettings({
                 >
                   Log Out from Account
                 </button>
-
                 <p className="text-xs text-gray-500 text-center">
                   This will sign you out from your session and return to the home page
                 </p>

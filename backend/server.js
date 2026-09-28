@@ -51,6 +51,10 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
 app.use('/api/announcements', require('./routes/announcements'));
 
+
+app.use('/api/inquiries', require('./routes/inquiries'));
+console.log('✅ Inquiry routes loaded');
+
 app.use(
   '/api/accomplishment-reports',
   require('./routes/accomplishmentReports')

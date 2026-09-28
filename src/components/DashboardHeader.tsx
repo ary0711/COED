@@ -1,8 +1,18 @@
 // ─── DashboardHeader.tsx ───────────────────────────────────────────────────────
-import { Bell, Menu } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  Check,
+  Filter,
+  Megaphone,
+  Menu,
+  MessageCircleQuestion,
+  type LucideIcon,
+} from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { Notification } from '../notification';
 
+// Full date/time shown when a notification is expanded
 function formatManilaTime(dateString: string) {
   return new Date(dateString).toLocaleString('en-PH', {
     timeZone: 'Asia/Manila',
@@ -15,6 +25,87 @@ function formatManilaTime(dateString: string) {
     hour12: true,
   });
 }
+
+// Short relative time shown on each row ("2 mins ago", "Yesterday")
+function timeAgo(dateString: string): string {
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  if (Number.isNaN(diffMs)) return '';
+
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'min' : 'mins'} ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (days < 30) return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
+
+  return new Date(dateString).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+  });
+}
+
+// =====================================================
+// NOTIFICATION KINDS (icon instead of avatar)
+// =====================================================
+type Kind = 'inquiry' | 'announcement' | 'activity' | 'general';
+
+const KIND_STYLES: Record<
+  Kind,
+  { label: string; icon: LucideIcon; badge: string }
+> = {
+  inquiry: {
+    label: 'Inquiry',
+    icon: MessageCircleQuestion,
+    badge: 'bg-blue-50 text-blue-600',
+  },
+  announcement: {
+    label: 'Announcement',
+    icon: Megaphone,
+    badge: 'bg-amber-50 text-amber-600',
+  },
+  activity: {
+    label: 'Activity',
+    icon: Activity,
+    badge: 'bg-emerald-50 text-emerald-600',
+  },
+  general: {
+    label: 'General',
+    icon: Bell,
+    badge: 'bg-slate-100 text-slate-500',
+  },
+};
+
+// Decides the kind from the notification's category / type / title.
+// Adjust the keywords below to match the exact values in your database.
+function getKind(notification: Notification): Kind {
+  const n = notification as Notification & {
+    category?: string;
+    type?: string;
+  };
+
+  const text = `${n.category ?? ''} ${n.type ?? ''} ${n.title ?? ''}`.toLowerCase();
+
+  if (text.includes('inquir')) return 'inquiry';
+  if (text.includes('announce')) return 'announcement';
+  if (
+    text.includes('activit') ||
+    text.includes('task') ||
+    text.includes('update') ||
+    text.includes('success')
+  ) {
+    return 'activity';
+  }
+
+  return 'general';
+}
+
+type Tab = 'all' | 'unread';
 
 interface DashboardHeaderProps {
   userRole: string;
@@ -39,6 +130,9 @@ export function DashboardHeader({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('all');
+  const [kindFilter, setKindFilter] = useState<Kind | 'all'>('all');
+  const [showFilter, setShowFilter] = useState(false);
 
   // =====================================================
   // CURRENT USER DISPLAY STATE
@@ -52,6 +146,12 @@ export function DashboardHeader({
   const unreadCount = notifications.filter(
     (n) => !n.is_read
   ).length;
+
+  const visibleNotifications = notifications.filter((n) => {
+    if (activeTab === 'unread' && n.is_read) return false;
+    if (kindFilter !== 'all' && getKind(n) !== kindFilter) return false;
+    return true;
+  });
 
   const getToken = () => localStorage.getItem('token');
 
@@ -204,6 +304,15 @@ export function DashboardHeader({
   }
 
   // =====================================================
+  // MARK ALL AS READ (uses the same per-item endpoint)
+  // =====================================================
+  async function markAllAsRead() {
+    const unread = notifications.filter((n) => !n.is_read);
+
+    await Promise.all(unread.map((n) => markAsRead(n.id)));
+  }
+
+  // =====================================================
   // GENERATE INITIALS
   // =====================================================
   const initials = displayName
@@ -214,6 +323,13 @@ export function DashboardHeader({
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const emptyMessage =
+    kindFilter !== 'all'
+      ? 'No notifications match this filter.'
+      : activeTab === 'unread'
+        ? 'You’re all caught up.'
+        : 'No notifications yet. New activity will show up here.';
 
   return (
     <div className="sticky top-0 z-40 bg-white w-full border-b border-gray-200/60 shadow-sm">
@@ -262,71 +378,189 @@ export function DashboardHeader({
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-[350px] max-w-[90vw] bg-white rounded-2xl shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
+              <div className="absolute right-0 mt-2 w-[420px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
 
-                <div className="p-4 border-b border-gray-100">
-                  <h3 className="font-bold text-gray-900 text-sm">
+                {/* Title + mark all as read */}
+                <div className="flex items-center justify-between px-5 pt-5">
+                  <h3 className="text-xl font-semibold text-slate-900">
                     Notifications
                   </h3>
+
+                  <button
+                    onClick={markAllAsRead}
+                    disabled={unreadCount === 0}
+                    className="text-sm text-blue-600 hover:text-blue-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Mark all as read
+                  </button>
                 </div>
 
-                {notifications.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-gray-500">
-                    No notifications.
+                {/* Tabs + filter */}
+                <div className="relative mt-4 flex items-center justify-between border-b border-slate-200 px-5">
+                  <div className="flex items-center gap-6">
+                    <button
+                      onClick={() => setActiveTab('all')}
+                      className={`-mb-px border-b-2 pb-3 text-sm font-medium transition-colors ${
+                        activeTab === 'all'
+                          ? 'border-slate-900 text-slate-900'
+                          : 'border-transparent text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      All Notifications
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab('unread')}
+                      className={`-mb-px border-b-2 pb-3 text-sm font-medium transition-colors ${
+                        activeTab === 'unread'
+                          ? 'border-slate-900 text-slate-900'
+                          : 'border-transparent text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Unread{' '}
+                      <span className="text-slate-400 font-normal">
+                        ({unreadCount})
+                      </span>
+                    </button>
                   </div>
-                ) : (
-                  notifications.map(
-                    (notification) => (
-                      <div
-                        key={notification.id}
-                        onClick={() => {
-                          if (!notification.is_read) {
-                            markAsRead(
-                              notification.id
-                            );
-                          }
 
-                          setExpandedId(
-                            expandedId ===
-                              notification.id
-                              ? null
-                              : notification.id
+                  <div className="relative pb-3">
+                    <button
+                      onClick={() => setShowFilter(!showFilter)}
+                      className={`p-1 rounded-md transition-colors ${
+                        kindFilter !== 'all'
+                          ? 'text-blue-600 bg-blue-50'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                      }`}
+                      aria-label="Filter by type"
+                    >
+                      <Filter className="w-4 h-4" />
+                    </button>
+
+                    {showFilter && (
+                      <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg z-10">
+                        {(
+                          [
+                            'all',
+                            'inquiry',
+                            'announcement',
+                            'activity',
+                          ] as const
+                        ).map((option) => {
+                          const OptionIcon =
+                            option === 'all'
+                              ? Bell
+                              : KIND_STYLES[option].icon;
+
+                          return (
+                            <button
+                              key={option}
+                              onClick={() => {
+                                setKindFilter(option);
+                                setShowFilter(false);
+                              }}
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              <OptionIcon className="w-4 h-4 text-slate-500" />
+                              <span className="flex-1">
+                                {option === 'all'
+                                  ? 'All types'
+                                  : KIND_STYLES[option].label}
+                              </span>
+                              {kindFilter === option && (
+                                <Check className="w-4 h-4 text-blue-600" />
+                              )}
+                            </button>
                           );
-                        }}
-                        className={`p-3.5 border-b border-gray-50 cursor-pointer transition-all hover:bg-gray-50 ${
-                          !notification.is_read
-                            ? 'bg-blue-50/50 border-l-4 border-l-blue-600'
-                            : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="font-semibold text-gray-900 text-xs">
-                            {notification.title}
-                          </h4>
-
-                          {!notification.is_read && (
-                            <div className="w-2 h-2 rounded-full bg-blue-600 mt-1 shrink-0" />
-                          )}
-                        </div>
-
-                        {expandedId ===
-                          notification.id && (
-                          <div className="mt-2">
-                            <p className="text-xs text-gray-600 leading-relaxed">
-                              {notification.message}
-                            </p>
-                          </div>
-                        )}
-
-                        <p className="text-[10px] text-gray-400 mt-1.5">
-                          {formatManilaTime(
-                            notification.created_at
-                          )}
-                        </p>
+                        })}
                       </div>
-                    )
-                  )
-                )}
+                    )}
+                  </div>
+                </div>
+
+                {/* List */}
+                <div className="max-h-[420px] min-h-[200px] overflow-y-auto">
+                  {visibleNotifications.length === 0 ? (
+                    <p className="px-5 py-10 text-center text-sm text-slate-500">
+                      {emptyMessage}
+                    </p>
+                  ) : (
+                    visibleNotifications.map((notification) => {
+                      const kind = getKind(notification);
+                      const { icon: Icon, badge, label } = KIND_STYLES[kind];
+                      const isExpanded = expandedId === notification.id;
+
+                      return (
+                        <div
+                          key={notification.id}
+                          onClick={() => {
+                            if (!notification.is_read) {
+                              markAsRead(notification.id);
+                            }
+
+                            setExpandedId(
+                              isExpanded ? null : notification.id
+                            );
+                          }}
+                          className={`flex items-start gap-3 px-5 py-3.5 cursor-pointer transition-colors hover:bg-slate-100 ${
+                            !notification.is_read ? 'bg-slate-50' : ''
+                          }`}
+                        >
+                          {/* Kind icon */}
+                          <div
+                            title={label}
+                            aria-label={label}
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${badge}`}
+                          >
+                            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                          </div>
+
+                          {/* Content */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <h4
+                                className={`truncate text-sm text-slate-900 ${
+                                  notification.is_read
+                                    ? 'font-medium'
+                                    : 'font-semibold'
+                                }`}
+                              >
+                                {notification.title}
+                              </h4>
+
+                              {!notification.is_read && (
+                                <span
+                                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                                  aria-label="Unread"
+                                />
+                              )}
+                            </div>
+
+                            <div className="mt-0.5 flex items-start justify-between gap-3">
+                              <p
+                                className={`text-xs leading-relaxed text-slate-500 ${
+                                  isExpanded ? '' : 'truncate'
+                                }`}
+                              >
+                                {notification.message}
+                              </p>
+
+                              <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">
+                                {timeAgo(notification.created_at)}
+                              </span>
+                            </div>
+
+                            {isExpanded && (
+                              <p className="mt-1.5 text-[10px] text-slate-400">
+                                {label} · {formatManilaTime(notification.created_at)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
           </div>

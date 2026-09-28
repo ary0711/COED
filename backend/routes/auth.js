@@ -1511,18 +1511,17 @@ router.put('/password', authenticate, async (req, res) => {
 // NOTIFICATION PREFERENCES
 // =========================================================
 router.put('/preferences', authenticate, async (req, res) => {
-  // Gikuha nato ang tanang fields nga gipadala sa frontend
   const { allow_all, announcements, staff_updates, reports, inquiries, system_notifs } = req.body;
 
   const { data, error } = await supabase
     .from('notification_preferences')
     .update({ 
-      allow_all: allow_all,
-      announcements: announcements,
-      staff_updates: staff_updates, // Na-align na sa staff_updates sa frontend
-      reports: reports,
-      inquiries: inquiries,
-      system_notifs: system_notifs
+      allow_all,
+      announcements,
+      staff_updates,
+      reports,
+      inquiries,
+      system_notifs
     })
     .eq('user_id', req.user.userId)
     .select();

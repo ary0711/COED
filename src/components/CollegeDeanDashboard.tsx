@@ -9479,6 +9479,28 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
   const [email, setEmail] = useState('');
   const [positionRole] = useState('College Dean');
 
+  // --- Security State ---
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  
+  // --- Notifications State ---
+  const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
+
+  // --- Academic Settings State ---
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [semester, setSemester] = useState('Second Semester');
+  const [collegeDept, setCollegeDept] = useState('College of Education');
+
+  // --- General UI State ---
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Load Profile on mount
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
@@ -9514,26 +9536,34 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
     loadProfile();
   }, []);
 
-  // --- Security State ---
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  
-  // --- Notifications State ---
-  const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
+  // Load Notification Preferences on mount
+  useEffect(() => {
+    const loadPreferences = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
 
-  // --- Academic Settings State ---
-  const [academicYear, setAcademicYear] = useState('2025-2026');
-  const [semester, setSemester] = useState('Second Semester');
-  const [collegeDept, setCollegeDept] = useState('College of Education');
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (data.preferences) {
+          setNotifs({
+            allowAll: data.preferences.allow_all ?? true,
+            inquiries: data.preferences.inquiries ?? true,
+            reports: data.preferences.reports ?? true,
+            announcements: data.preferences.announcements ?? true,
+            staffUpdates: data.preferences.staff_updates ?? false,
+            systemNotifs: data.preferences.system_notifs ?? true,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load notification preferences:', error);
+      }
+    };
 
-  // --- General UI State ---
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    loadPreferences();
+  }, []);
 
   useEffect(() => {
     if (message) {
@@ -9620,6 +9650,7 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
       return;
     }
 
+
     setSaving(true);
     setMessage(null);
 
@@ -9652,42 +9683,42 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
   };
 
  const saveNotifications = async () => {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    setMessage({ type: 'error', text: 'Expired na ang imong session. Palihog pag-sign in usab.' });
-    return;
-  }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
 
-  setSaving(true);
-  setMessage(null);
+    setSaving(true);
+    setMessage(null);
 
-  try {
-    const response = await fetch('http://localhost:5000/api/auth/preferences', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        allow_all: notifs.allowAll,
-        inquiries: notifs.inquiries,
-        reports: notifs.reports,
-        announcements: notifs.announcements,
-        staff_updates: notifs.staffUpdates,
-        system_notifs: notifs.systemNotifs,
-      }),
-    });
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          allow_all: notifs.allowAll,
+          inquiries: notifs.inquiries,
+          reports: notifs.reports,
+          announcements: notifs.announcements,
+          staff_updates: notifs.staffUpdates,
+          system_notifs: notifs.systemNotifs,
+        }),
+      });
 
-    const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
 
-        setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
-        } catch (error: any) {
-          setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
-        } finally {
-          setSaving(false);
-        }
-};
+      setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveAcademicSettings = async () => {
     if (!academicYear.trim() || !collegeDept.trim()) {
