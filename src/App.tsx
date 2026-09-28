@@ -240,7 +240,9 @@ export default function App() {
           {currentPage === 'departments' && <DepartmentsPage onNavigate={handleNavigate} />}
           {currentPage === 'clubs' && <ClubsPage />}
           {currentPage === 'research' && <ResearchPage />}
-          {currentPage === 'achievements' && <AchievementsPage />}
+         {currentPage === 'achievements' && (
+  <AchievementsPage onNavigate={handleNavigate} />
+)}
           {currentPage === 'accreditation' && <AccreditationPage />}
           {currentPage === 'contact' && <ContactPage />}
           {currentPage === 'login' && (

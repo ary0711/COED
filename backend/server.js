@@ -45,7 +45,12 @@ app.get('/api/auth/profile-test', (req, res) => {
     message: 'Auth route is working.'
   });
 });
+const researchSubmissionsRoutes = require('./routes/researchSubmissions');
 
+app.use(
+  '/api/research-submissions',
+  researchSubmissionsRoutes
+);
 app.use('/api/students', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));

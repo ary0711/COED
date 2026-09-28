@@ -2061,85 +2061,79 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </nav>
 
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
-          {activeTab === 'profile' && (
+  {activeTab === 'profile' && (
+    <div>
+      <h2 className="text-lg font-semibold text-gray-900">
+        Profile Information
+      </h2>
+
+      <p className="text-sm text-gray-500 mb-6">
+        Update your personal details.
+      </p>
+
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 bg-gray-100 rounded-lg" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="h-10 bg-gray-100 rounded-lg" />
+            <div className="h-10 bg-gray-100 rounded-lg" />
+          </div>
+        </div>
+      ) : !profile ? (
+        <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+          Your profile information could not be loaded.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Full Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Full Name
+            </label>
+
+            <input
+              type="text"
+              value={fullNameInput}
+              onChange={(e) => setFullNameInput(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Student ID + Email */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Student ID */}
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Profile Information
-              </h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Update your personal details.
-              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Student ID
+              </label>
 
-              {loading ? (
-                <div className="animate-pulse space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="h-10 bg-gray-100 rounded-lg" />
-                    <div className="h-10 bg-gray-100 rounded-lg" />
-                  </div>
-                  <div className="h-10 bg-gray-100 rounded-lg" />
-                </div>
-              ) : !profile ? (
-                <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-                  Your profile information could not be loaded.
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={fullNameInput}
-                        onChange={(e) => setFullNameInput(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Username
-                      </label>
-                      <input
-                        type="text"
-                        value={usernameInput}
-                        onChange={(e) => setUsernameInput(e.target.value)}
-                        placeholder="Enter username"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Student ID
-                      </label>
-                      <input
-                        type="text"
-                        value={studentNoInput}
-                        onChange={(e) => setStudentNoInput(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Email Address
-                      </label>
-                      <input
-                        type="email"
-                        value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
+              <input
+                type="text"
+                value={studentNoInput}
+                onChange={(e) => setStudentNoInput(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
             </div>
-          )}
+
+            {/* Email Address */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )}
+        
 
           {activeTab === 'security' && (
             <div>
