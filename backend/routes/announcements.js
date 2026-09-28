@@ -152,10 +152,40 @@ router.post('/', authenticate, async (req, res) => {
 
   const posterLabel = ROLE_DISPLAY_LABEL[req.user.role] ?? req.user.role;
 
-  const notifications = [];
+ const notifications = [];
+  
   for (const role of rolesToNotify) {
+    // 1. Get the list of all targeted user IDs for this role
     const userIds = await getRecipientUserIds(role, departmentScope);
-    for (const userId of userIds) {
+    
+    if (userIds.length === 0) continue;
+
+    // 2. Fetch the notification preferences for these specific users
+    const { data: preferences, error: prefError } = await supabase
+      .from('notification_preferences')
+      .select('user_id, announcements')
+      .in('user_id', userIds);
+
+    if (prefError) {
+      console.error('Error fetching preferences:', prefError.message);
+    }
+
+    // Convert preferences array into an easy-to-read lookup map
+    const prefMap = new Map();
+    if (preferences) {
+      preferences.forEach(p => prefMap.set(p.user_id, p.announcements));
+    }
+
+    // 3. Filter the userIds array: Only keep users whose preference is NOT strictly false
+    const optedInUserIds = userIds.filter(userId => {
+      const userPref = prefMap.get(userId);
+      // If the setting exists and is explicitly false, drop them.
+      // If it's true, or they haven't set a preference yet (undefined), include them.
+      return userPref !== false; 
+    });
+
+    // 4. Create the notification payloads ONLY for opted-in users
+    for (const userId of optedInUserIds) {
       notifications.push({
         user_id: userId,
         title: `${announcement.title} (from ${posterLabel})`,
@@ -168,6 +198,7 @@ router.post('/', authenticate, async (req, res) => {
     }
   }
 
+  // 5. Finally, insert the filtered notifications into the database
   if (notifications.length > 0) {
     await supabase.from('notifications').insert(notifications);
   }

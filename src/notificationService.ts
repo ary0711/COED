@@ -15,6 +15,7 @@ interface NotificationOptions {
 
 interface NotificationPreference {
   user_id: string;
+  allow_all?: boolean;
   inquiries: boolean;
   reports: boolean;
   announcements: boolean;
@@ -22,17 +23,18 @@ interface NotificationPreference {
   system_notifs: boolean;
 }
 
-// =========================================================
-// MAP NOTIFICATION TYPE TO USER PREFERENCE
-// =========================================================
-
 function isEnabled(
   preferences: NotificationPreference | null,
   type: NotificationType
 ): boolean {
-  // No saved preference = notifications are ON
+  // If no saved preference exists, default to ON
   if (!preferences) {
     return true;
+  }
+
+  // If the master toggle "Allow Notifications" is turned OFF, block everything
+  if (preferences.allow_all === false) {
+    return false;
   }
 
   switch (type) {
@@ -67,6 +69,7 @@ async function getNotificationPreference(
     .from('notification_preferences')
     .select(`
       user_id,
+      allow_all,
       inquiries,
       reports,
       announcements,
@@ -199,6 +202,7 @@ export async function notifyRole(
     .from('notification_preferences')
     .select(`
       user_id,
+      allow_all,
       inquiries,
       reports,
       announcements,

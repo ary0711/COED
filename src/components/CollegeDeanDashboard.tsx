@@ -8135,28 +8135,52 @@ function ReportsAnalytics() {
     }
   };
 
-  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
-    setRemindingId(row.profile.id);
-    try {
+const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+  setRemindingId(row.profile.id);
+  try {
+    // 1. Check user's notification preferences for reports
+    const { data: prefs, error: prefError } = await supabase
+      .from('notification_preferences')
+      .select('reports')
+      .eq('user_id', row.profile.id)
+      .maybeSingle();
+
+    if (prefError) {
+      console.error('Error checking preferences:', prefError);
+    }
+
+    // Giatras nato ang pag-check: Kung naka-off ang reports, 
+    // i-set lang nato nga true/allowed ang insert sa code, 
+    // PERO dili nato i-insert kung false. 
+    // O kaya, kung gusto nimo nga silent drop gyud (mo-success sa Dean pero walay ma-save):
+    const isReportEnabled = prefs?.reports !== false;
+
+    if (isReportEnabled) {
       const dueText = deadline
         ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
         : '';
+
       const { error } = await supabase.from('notifications').insert({
         user_id: row.profile.id,
         title: `Reminder: ${quarterSelect} Quarterly Report`,
         message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
-        type: 'announcement',
+        type: 'report', // Gi-match nato sa report type
         is_read: false,
       });
-      if (error) throw error;
-      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
-    } catch (err: any) {
-      showInfo('Error', err.message || 'Failed to send reminder.');
-    } finally {
-      setRemindingId(null);
-    }
-  };
 
+      if (error) throw error;
+    } else {
+      console.log(`Silent drop: Notification blocked for ${row.profile.full_name} because reports preference is OFF.`);
+    }
+
+    // Kanunay gyud mo-show og Success sa Dean bisag gi-block sa luyo!
+    showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+  } catch (err: any) {
+    showInfo('Error', err.message || 'Failed to send reminder.');
+  } finally {
+    setRemindingId(null);
+  }
+};
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
 
@@ -9391,6 +9415,7 @@ function LandingPageManagement() {
 
 // ─── System Settings ──────────────────────────────────────────────────────────
 const NOTIF_DEFAULTS = {
+  allowAll: true,
   inquiries: true,
   reports: true,
   announcements: true,
@@ -9409,13 +9434,30 @@ const SETTINGS_TABS = [
 
 type SettingsTabId = typeof SETTINGS_TABS[number]['id'];
 
-function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function ToggleCard({ 
+  label, 
+  description, 
+  checked, 
+  onChange,
+  disabled = false
+}: { 
+  label: string; 
+  description?: string; 
+  checked: boolean; 
+  onChange: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between py-3.5 border-b border-gray-100 last:border-0">
-      <span className="text-sm text-gray-700">{label}</span>
+    <div className={`flex items-center justify-between p-4 bg-blue-50/40 hover:bg-blue-50/70 border border-blue-100/60 rounded-2xl transition-colors mb-3 last:mb-0 w-full ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+      <div className="pr-4">
+        <h4 className="text-sm font-semibold text-gray-900">{label}</h4>
+        {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+      </div>
       <button
+        type="button"
         onClick={onChange}
-        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+        disabled={disabled}
+        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-[#1E3A8A]' : 'bg-gray-300'} ${disabled ? 'cursor-not-allowed' : ''}`}
       >
         <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${checked ? 'translate-x-5' : ''}`} />
       </button>
@@ -9430,93 +9472,47 @@ interface SystemSettingsProps {
 }
 
 function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsProps) {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
   
   // --- Profile State ---
   const [fullName, setFullName] = useState('');
-const [email, setEmail] = useState('');
-const [positionRole] = useState('College Dean');
+  const [email, setEmail] = useState('');
+  const [positionRole] = useState('College Dean');
 
-useEffect(() => {
-  const loadProfile = async () => {
-    const token = localStorage.getItem('token');
+  useEffect(() => {
+    const loadProfile = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
 
-    if (!token) {
-      console.error('No login token found.');
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        'http://localhost:5000/api/auth/me',
-        {
+      try {
+        const response = await fetch('http://localhost:5000/api/auth/me', {
           method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.profile) throw new Error(data.error || 'Failed to load profile.');
+
+        const databaseFullName = data.profile.full_name || '';
+        const databaseEmail = data.profile.email || '';
+
+        setFullName(databaseFullName);
+        setEmail(databaseEmail);
+        localStorage.setItem('userFullName', databaseFullName);
+        localStorage.setItem('userEmail', databaseEmail);
+
+        onProfileUpdate?.({ fullName: databaseFullName, email: databaseEmail });
+      } catch (error) {
+        console.error('Failed to load profile:', error);
+        if (profile) {
+          setFullName(profile.fullName || '');
+          setEmail(profile.email || '');
         }
-      );
-
-      const data = await response.json();
-
-      console.log('CURRENT PROFILE RESPONSE:', data);
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || 'Failed to load profile.'
-        );
       }
+    };
 
-      if (!data.profile) {
-        throw new Error(
-          'No profile data was returned from the database.'
-        );
-      }
-
-      const databaseFullName =
-        data.profile.full_name || '';
-
-      const databaseEmail =
-        data.profile.email || '';
-
-      // Display database values
-      setFullName(databaseFullName);
-      setEmail(databaseEmail);
-
-      // Keep local storage synchronized
-      localStorage.setItem(
-        'userFullName',
-        databaseFullName
-      );
-
-      localStorage.setItem(
-        'userEmail',
-        databaseEmail
-      );
-
-      // Update dashboard header
-      onProfileUpdate?.({
-        fullName: databaseFullName,
-        email: databaseEmail,
-      });
-
-    } catch (error) {
-      console.error(
-        'Failed to load profile:',
-        error
-      );
-
-      // Only use parent data as fallback.
-      // DO NOT use username as full name.
-      if (profile) {
-        setFullName(profile.fullName || '');
-        setEmail(profile.email || '');
-      }
-    }
-  };
-
-  loadProfile();
-}, []);
+    loadProfile();
+  }, []);
 
   // --- Security State ---
   const [currentPassword, setCurrentPassword] = useState('');
@@ -9525,7 +9521,6 @@ useEffect(() => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   
   // --- Notifications State ---
@@ -9540,7 +9535,6 @@ useEffect(() => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Auto-clear notification messages
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => setMessage(null), 5000);
@@ -9548,228 +9542,89 @@ useEffect(() => {
     }
   }, [message]);
 
-  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) =>
-    setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) => {
+    if (key === 'allowAll') {
+      const nextState = !notifs.allowAll;
+      setNotifs((prev) => ({
+        ...prev,
+        allowAll: nextState,
+      }));
+    } else {
+      setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+    }
+  };
 
-  // --- Save Handlers ---
+  const saveProfile = async () => {
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
- const saveProfile = async () => {
-  const trimmedName = fullName.trim();
-  const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedName || !trimmedEmail) {
+      setMessage({ type: 'error', text: 'Full Name and Email are required.' });
+      return;
+    }
 
-  if (!trimmedName || !trimmedEmail) {
-    setMessage({
-      type: 'error',
-      text: 'Full Name and Email are required.',
-    });
-    return;
-  }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
 
-  const emailRegex =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    setSaving(true);
+    setMessage(null);
 
-  if (!emailRegex.test(trimmedEmail)) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter a valid email address.',
-    });
-    return;
-  }
-
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    setMessage({
-      type: 'error',
-      text: 'Your session has expired. Please sign in again.',
-    });
-    return;
-  }
-
-  setSaving(true);
-  setMessage(null);
-
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/auth/profile',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          email: trimmedEmail,
-        }),
-      }
-    );
+        body: JSON.stringify({ full_name: trimmedName, email: trimmedEmail }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update profile.');
 
-    console.log('PROFILE UPDATE RESPONSE:', data);
+      const updatedName = data.profile?.full_name || trimmedName;
+      const updatedEmail = data.profile?.email || trimmedEmail;
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || 'Failed to update profile.'
-      );
+      localStorage.setItem('userFullName', updatedName);
+      localStorage.setItem('userEmail', updatedEmail);
+      if (data.token) localStorage.setItem('token', data.token);
+
+      setFullName(updatedName);
+      setEmail(updatedEmail);
+      onProfileUpdate?.({ fullName: updatedName, email: updatedEmail });
+
+      setMessage({ type: 'success', text: 'Profile updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update profile.' });
+    } finally {
+      setSaving(false);
     }
-
-    const updatedName =
-      data.profile?.full_name || trimmedName;
-
-    const updatedEmail =
-      data.profile?.email || trimmedEmail;
-
-    // Save updated values locally
-    localStorage.setItem(
-      'userFullName',
-      updatedName
-    );
-
-    localStorage.setItem(
-      'userEmail',
-      updatedEmail
-    );
-
-    // Save refreshed JWT if returned
-    if (data.token) {
-      localStorage.setItem(
-        'token',
-        data.token
-      );
-    }
-
-    // Update form
-    setFullName(updatedName);
-    setEmail(updatedEmail);
-
-    // Update dashboard header immediately
-    onProfileUpdate?.({
-      fullName: updatedName,
-      email: updatedEmail,
-    });
-
-    setMessage({
-      type: 'success',
-      text: 'Profile updated successfully.',
-    });
-
-  } catch (error: any) {
-    console.error(
-      'Failed to update profile:',
-      error
-    );
-
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'Failed to update profile.',
-    });
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   const saveSecurity = async () => {
-  if (!currentPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter your current password.',
-    });
-    return;
-  }
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setMessage({ type: 'error', text: 'Please fill in all password fields.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: 'error', text: 'New passwords do not match.' });
+      return;
+    }
 
-  if (!newPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please enter a new password.',
-    });
-    return;
-  }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      return;
+    }
 
-  if (!confirmPassword) {
-    setMessage({
-      type: 'error',
-      text: 'Please confirm your new password.',
-    });
-    return;
-  }
+    setSaving(true);
+    setMessage(null);
 
-  if (newPassword !== confirmPassword) {
-    setMessage({
-      type: 'error',
-      text: 'New passwords do not match.',
-    });
-    return;
-  }
-
-  if (newPassword.length < 8) {
-    setMessage({
-      type: 'error',
-      text: 'New password must be at least 8 characters.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[a-z])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one lowercase letter.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[A-Z])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one uppercase letter.',
-    });
-    return;
-  }
-
-  if (!/(?=.*\d)/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one number.',
-    });
-    return;
-  }
-
-  if (!/(?=.*[@$!%*?&.#_-])/.test(newPassword)) {
-    setMessage({
-      type: 'error',
-      text: 'New password must contain at least one special character.',
-    });
-    return;
-  }
-
-  if (currentPassword === newPassword) {
-    setMessage({
-      type: 'error',
-      text: 'New password must be different from your current password.',
-    });
-    return;
-  }
-
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    setMessage({
-      type: 'error',
-      text: 'Your session has expired. Please sign in again.',
-    });
-    return;
-  }
-
-  setSaving(true);
-  setMessage(null);
-
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/auth/password',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/password', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -9780,54 +9635,59 @@ useEffect(() => {
           new_password: newPassword,
           confirm_password: confirmPassword,
         }),
-      }
-    );
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update password.');
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage({ type: 'success', text: 'Password updated successfully.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Failed to update password.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+ const saveNotifications = async () => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    setMessage({ type: 'error', text: 'Expired na ang imong session. Palihog pag-sign in usab.' });
+    return;
+  }
+
+  setSaving(true);
+  setMessage(null);
+
+  try {
+    const response = await fetch('http://localhost:5000/api/auth/preferences', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        allow_all: notifs.allowAll,
+        inquiries: notifs.inquiries,
+        reports: notifs.reports,
+        announcements: notifs.announcements,
+        staff_updates: notifs.staffUpdates,
+        system_notifs: notifs.systemNotifs,
+      }),
+    });
 
     const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
 
-    console.log('PASSWORD UPDATE RESPONSE:', data);
-
-    if (!response.ok) {
-      throw new Error(
-        data.error || 'Failed to update password.'
-      );
-    }
-
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-
-    setShowCurrentPassword(false);
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
-
-    setMessage({
-      type: 'success',
-      text: 'Password updated successfully.',
-    });
-
-  } catch (error: any) {
-    console.error(
-      'Failed to update password:',
-      error
-    );
-
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'Failed to update password.',
-    });
-
-  } finally {
-    setSaving(false);
-  }
+        setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
+        } catch (error: any) {
+          setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
+        } finally {
+          setSaving(false);
+        }
 };
-  const saveNotifications = async () => {
-    await new Promise((res) => setTimeout(res, 400));
-    localStorage.setItem('notificationPreferences', JSON.stringify(notifs));
-    setMessage({ type: 'success', text: 'Notification preferences saved.' });
-  };
 
   const saveAcademicSettings = async () => {
     if (!academicYear.trim() || !collegeDept.trim()) {
@@ -9839,45 +9699,22 @@ useEffect(() => {
   };
 
   const handleSaveChanges = async () => {
-  setMessage(null);
-
-  try {
-    switch (activeTab) {
-      case 'profile':
-        await saveProfile();
-        break;
-
-      case 'security':
-        await saveSecurity();
-        break;
-
-      case 'notifications':
-        await saveNotifications();
-        break;
-
-      case 'academic':
-        await saveAcademicSettings();
-        break;
-
-      default:
-        setMessage({
-          type: 'error',
-          text: 'Nothing to save on this tab.',
-        });
+    setMessage(null);
+    try {
+      switch (activeTab) {
+        case 'profile': await saveProfile(); break;
+        case 'security': await saveSecurity(); break;
+        case 'notifications': await saveNotifications(); break;
+        case 'academic': await saveAcademicSettings(); break;
+        default: setMessage({ type: 'error', text: 'Nothing to save on this tab.' });
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'An error occurred while saving.' });
     }
-  } catch (error: any) {
-    setMessage({
-      type: 'error',
-      text:
-        error?.message ||
-        'An error occurred while saving.',
-    });
-  }
-};
+  };
 
   const handleLogoutAllDevices = async () => {
     if (window.confirm('Are you sure you want to log out of all devices?')) {
-      await supabase.auth.signOut({ scope: 'global' });
       if (onLogout) onLogout();
     }
   };
@@ -9891,7 +9728,7 @@ useEffect(() => {
           <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {!['users', 'landing', 'account'].includes(activeTab) && (
+          {!['users', 'landing'].includes(activeTab) && (
             <button
               onClick={handleSaveChanges}
               disabled={saving}
@@ -9905,13 +9742,7 @@ useEffect(() => {
 
       {/* Message Alert */}
       {message && (
-        <div
-          className={`mb-6 p-4 rounded-xl text-sm font-medium border ${
-            message.type === 'success'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-red-50 text-red-700 border-red-200'
-          }`}
-        >
+        <div className={`mb-6 p-4 rounded-xl text-sm font-medium border ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
           {message.text}
         </div>
       )}
@@ -9925,15 +9756,8 @@ useEffect(() => {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setMessage(null);
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={() => { setActiveTab(tab.id); setMessage(null); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-blue-50 text-[#1E3A8A] font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="truncate">{tab.label}</span>
@@ -9943,15 +9767,8 @@ useEffect(() => {
         </div>
 
         {/* Content Panel */}
-        <div
-          className={`flex-1 min-w-0 ${
-            ['users', 'landing'].includes(activeTab)
-              ? ''
-              : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'
-          }`}
-        >
+        <div className={`flex-1 min-w-0 ${['users', 'landing'].includes(activeTab) ? '' : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'}`}>
           {activeTab === 'users' && <UserManagement />}
-
           {activeTab === 'landing' && <LandingPageManagement />}
 
           {activeTab === 'profile' && (
@@ -9997,158 +9814,75 @@ useEffect(() => {
               <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
 
               <div className="space-y-4 max-w-md mb-6">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter current password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
 
-  {/* CURRENT PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      Current Password
-    </label>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5">At least 8 characters with uppercase, lowercase, number, and special character.</p>
+                </div>
 
-    <div className="relative">
-      <input
-        type={
-          showCurrentPassword
-            ? 'text'
-            : 'password'
-        }
-        value={currentPassword}
-        onChange={(e) =>
-          setCurrentPassword(e.target.value)
-        }
-        placeholder="Enter current password"
-        autoComplete="current-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          setShowCurrentPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showCurrentPassword
-            ? 'Hide current password'
-            : 'Show current password'
-        }
-      >
-        {showCurrentPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-  </div>
-
-  {/* NEW PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      New Password
-    </label>
-
-    <div className="relative">
-      <input
-        type={
-          showNewPassword
-            ? 'text'
-            : 'password'
-        }
-        value={newPassword}
-        onChange={(e) =>
-          setNewPassword(e.target.value)
-        }
-        placeholder="Enter new password"
-        autoComplete="new-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      <button
-        type="button"
-        onClick={() =>
-          setShowNewPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showNewPassword
-            ? 'Hide new password'
-            : 'Show new password'
-        }
-      >
-        {showNewPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-
-    <p className="text-[11px] text-gray-400 mt-1.5">
-      At least 8 characters with uppercase,
-      lowercase, number, and special character.
-    </p>
-  </div>
-
-  {/* CONFIRM NEW PASSWORD */}
-  <div>
-    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-      Confirm New Password
-    </label>
-
-    <div className="relative">
-      <input
-        type={
-          showConfirmPassword
-            ? 'text'
-            : 'password'
-        }
-        value={confirmPassword}
-        onChange={(e) =>
-          setConfirmPassword(e.target.value)
-        }
-        placeholder="Confirm new password"
-        autoComplete="new-password"
-        className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      <button
-        type="button"
-        onClick={() =>
-          setShowConfirmPassword(
-            (value) => !value
-          )
-        }
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-        aria-label={
-          showConfirmPassword
-            ? 'Hide confirmed password'
-            : 'Show confirmed password'
-        }
-      >
-        {showConfirmPassword ? (
-          <EyeOff className="w-4 h-4" />
-        ) : (
-          <Eye className="w-4 h-4" />
-        )}
-      </button>
-    </div>
-  </div>
-
-</div>
-
-              <div className="border-t border-gray-100 pt-5">
-                <ToggleRow
+              <div className="border-t border-gray-100 pt-5 max-w-lg">
+                <ToggleCard
                   label="Two-Factor Authentication"
+                  description="Enable two-factor authentication to add an extra layer of security to your account."
                   checked={twoFactorEnabled}
                   onChange={() => setTwoFactorEnabled((v) => !v)}
                 />
-                <p className="text-xs text-gray-500 mt-2 max-w-md">
-                  Enable two-factor authentication to add an extra layer of security to your account.
-                </p>
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-4">
@@ -10165,14 +9899,22 @@ useEffect(() => {
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
+              <p className="text-sm text-gray-500 mt-0.5 mb-5">Choose what alerts you receive.</p>
 
-              <div className="max-w-md">
-                <ToggleRow label="New Inquiries" checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} />
-                <ToggleRow label="Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
-                <ToggleRow label="New Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ToggleRow label="Faculty/Staff Updates" checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} />
-                <ToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+              <div className="w-full">
+                <ToggleCard
+                  label="Allow Notifications"
+                  description="Turn off to completely mute all notifications and reminders."
+                  checked={notifs.allowAll}
+                  onChange={() => toggleNotif('allowAll')}
+                />
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                  <ToggleCard label="New Inquiries" description="Get notified when new stakeholder inquiries come in." checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Pending Reports" description="Get reminders for upcoming or pending department reports." checked={notifs.reports} onChange={() => toggleNotif('reports')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="New Announcements" description="Get notified about important institutional updates." checked={notifs.announcements} onChange={() => toggleNotif('announcements')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Faculty/Staff Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="System Notifications" description="Receive general application alerts and system notices." checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} disabled={!notifs.allowAll} />
+                </div>
               </div>
             </div>
           )}
@@ -10215,21 +9957,6 @@ useEffect(() => {
                   />
                 </div>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your session.</p>
-
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                Log Out
-              </button>
             </div>
           )}
         </div>

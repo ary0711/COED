@@ -612,6 +612,7 @@ router.get('/me', authenticate, async (req, res) => {
       }
     }
 
+    // ... (inside your GET /me route)
     if (!profile) {
       return res.status(404).json({
         success: false,
@@ -620,13 +621,27 @@ router.get('/me', authenticate, async (req, res) => {
       });
     }
 
+    // NEW CODE: Fetch the notification preferences
+    const { data: preferences, error: prefError } = await supabase
+      .from('notification_preferences')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+
+    if (prefError) {
+      console.warn('Could not load preferences for user:', prefError.message);
+    }
+
+    // UPDATE: Include the preferences in the response
     return res.json({
       success: true,
       user: currentUser,
-      profile
+      profile,
+      preferences: preferences || null 
     });
 
   } catch (error) {
+// ...
     console.error(
       'GET /me ERROR:',
       error
@@ -1489,5 +1504,35 @@ router.put('/password', authenticate, async (req, res) => {
       error: error.message || 'Failed to update password.'
     });
   }
+
+  
 });
-module.exports = router;
+// =========================================================
+// NOTIFICATION PREFERENCES
+// =========================================================
+router.put('/preferences', authenticate, async (req, res) => {
+  // Gikuha nato ang tanang fields nga gipadala sa frontend
+  const { allow_all, announcements, staff_updates, reports, inquiries, system_notifs } = req.body;
+
+  const { data, error } = await supabase
+    .from('notification_preferences')
+    .update({ 
+      allow_all: allow_all,
+      announcements: announcements,
+      staff_updates: staff_updates, // Na-align na sa staff_updates sa frontend
+      reports: reports,
+      inquiries: inquiries,
+      system_notifs: system_notifs
+    })
+    .eq('user_id', req.user.userId)
+    .select();
+
+  if (error) {
+    console.error("Supabase Update Error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+  
+  return res.json({ message: 'Preferences updated successfully', data });
+});
+
+module.exports = router; 
