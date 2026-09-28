@@ -1304,7 +1304,7 @@ router.get('/users', authenticate, async (req, res) => {
     return res.status(403).json({ error: 'Only administrators can access this resource.' });
   }
 
-  const { data, error } = await supabase
+    const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .order('created_at', { ascending: false });
@@ -1312,7 +1312,19 @@ router.get('/users', authenticate, async (req, res) => {
   if (error) {
     return res.status(500).json({ error: error.message });
   }
-  return res.json(data ?? []);
+
+  const { data: accounts } = await supabase
+    .from('users')
+    .select('id, username');
+
+  const usernameById = new Map((accounts ?? []).map((a) => [a.id, a.username]));
+
+  const merged = (data ?? []).map((p) => ({
+    ...p,
+    username: usernameById.get(p.id) ?? p.username ?? null,
+  }));
+
+  return res.json(merged);
 });
 
 router.get('/profile-test', (req, res) => {

@@ -164,6 +164,13 @@ router.get('/me', authenticate, async (req, res) => {
       });
     }
 
+        // Kuhaa ang username gikan sa users table
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('username')
+      .eq('id', profile.id)
+      .maybeSingle();
+
     // =====================================================
     // GET STUDENT-SPECIFIC INFORMATION
     // =====================================================
@@ -256,6 +263,8 @@ router.get('/me', authenticate, async (req, res) => {
       // Shared profile information
       userId:
         profile.id,
+
+      username: userRow?.username || '',
 
       fullName:
         profile.full_name ||
@@ -359,10 +368,11 @@ router.patch('/me', authenticate, async (req, res) => {
       });
     }
 
-    const {
+        const {
       full_name,
       email,
-      student_no
+      student_no,
+      username
     } = req.body;
 
     // =====================================================
@@ -403,6 +413,42 @@ router.patch('/me', authenticate, async (req, res) => {
 
     const cleanStudentNo =
       student_no.trim();
+
+    // =====================================================
+    // SAVE USERNAME (users table = source of truth)
+    // =====================================================
+    if (typeof username === 'string' && username.trim()) {
+      const cleanUsername = username.trim().toLowerCase();
+
+      const { data: taken } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', cleanUsername)
+        .neq('id', profileId)
+        .maybeSingle();
+
+      if (taken) {
+        return res.status(409).json({
+          error: 'This username is already taken.'
+        });
+      }
+
+      const { error: usernameError } = await supabase
+        .from('users')
+        .update({ username: cleanUsername })
+        .eq('id', profileId);
+
+      if (usernameError) {
+        return res.status(400).json({
+          error: usernameError.message
+        });
+      }
+
+      await supabase
+        .from('profiles')
+        .update({ username: cleanUsername })
+        .eq('id', profileId);
+    }
 
     // =====================================================
     // STEP 1
