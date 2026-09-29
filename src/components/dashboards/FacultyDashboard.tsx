@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-
 import {
   BookOpen,
   Award,
@@ -147,8 +146,8 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500 w-full flex-1 flex flex-col">
           {activeMenuItem === 'dashboard'         && <FacultyDashboardView setActiveMenuItem={setActiveMenuItem} userId={userId} />}
           {activeMenuItem === 'teaching-load'     && <TeachingLoad />}
-          {activeMenuItem === 'research'          && <ResearchExtension userId={userId} />}
-          {activeMenuItem === 'achievements'       && <FacultyAchievements />}
+          {activeMenuItem === 'research'          && <ResearchExtension userId={userId} userName={userName} />}
+          {activeMenuItem === 'achievements'      && <FacultyAchievements userName={userName} />}
           {activeMenuItem === 'deans-list'         && <DeansListGenerator userId={userId} userName={userName} />}
           {activeMenuItem === 'academic-resources' && <AcademicResources />}
           {activeMenuItem === 'reports'             && <ReportsSection userId={userId} userName={userName} />}

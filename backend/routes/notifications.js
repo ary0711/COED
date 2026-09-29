@@ -27,6 +27,8 @@ const asArray = (v) => (Array.isArray(v) ? v : []);
 
 const isDeanOrAdmin = (req) => ['dean', 'admin'].includes(req.user.role);
 const isChair = (req) => ['department_chair', 'dept_chair', 'chair'].includes(req.user.role);
+const isFaculty = (req) => req.user.role === 'faculty';
+const canNotifyDean = (req) => isChair(req) || isFaculty(req);
 const canSend = (req) => isDeanOrAdmin(req) || isChair(req);
 
 // Some accounts (e.g. the Dean) have a different id in `users` than in `profiles`.
@@ -262,9 +264,9 @@ const DEAN_ROLES = ['dean', 'college_dean'];
 
 // ── POST /api/notifications/notify-dean  (Chair only) ────────
 router.post('/notify-dean', authenticate, async (req, res) => {
-  if (!isChair(req)) {
-    return res.status(403).json({ error: 'Only department chairs can use this.' });
-  }
+  if (!canNotifyDean(req)) {
+  return res.status(403).json({ error: 'Only department chairs and faculty can use this.' });
+}
 
   const { title, message, type = 'report' } = req.body;
   const prefColumn = PREF_COLUMN[type];

@@ -85,7 +85,7 @@ function getFileIcon(filename: string, className = 'w-4 h-4') {
   return <FileGenericIcon className={className} />;
 }
 
-export function FacultyAchievements() {
+export function FacultyAchievements({ userName = 'A faculty member' }: { userName?: string }) {
   const [tab, setTab] = useState<'submit' | 'approved' | 'history'>('submit');
   const [awardTitle, setAwardTitle] = useState('');
   const [awardCategory, setAwardCategory] = useState('');
@@ -229,10 +229,10 @@ export function FacultyAchievements() {
       setSubmissions((prev) => [data, ...prev]);
       try {
   await notifyDean({
-    title: 'New Achievement Submitted',
-    message: awardTitle.trim(),
-    type: 'system',
-  });
+  title: 'New Achievement Submitted',
+  message: `${userName} submitted: ${awardTitle.trim()}`,
+  type: 'system',
+});
 } catch (e) {
   console.error('Achievement saved but Dean notification failed:', e);
 }
