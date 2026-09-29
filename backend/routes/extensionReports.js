@@ -12,20 +12,27 @@ function requireDean(req, res, next) {
 }
 
 // GET /api/extension-reports/my-draft
+// Returns all active unsubmitted drafts for this user
 router.get('/my-draft', authenticate, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { data, error } = await supabase
+    const { quarter, year } = req.query;
+
+    let query = supabase
       .from('extension_reports')
       .select('*')
       .eq('submitted_by', userId)
       .eq('status', 'draft')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq('is_archived.is.null,is_archived.eq.false', false)
+      .order('updated_at', { ascending: false });
+
+    if (quarter) query = query.eq('quarter', quarter);
+    if (year) query = query.eq('year', String(year));
+
+    const { data, error } = await query;
 
     if (error) return res.status(500).json({ error: error.message });
-    return res.json(data ?? null);
+    return res.json(data ?? []);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -39,7 +46,6 @@ router.get('/mine', authenticate, async (req, res) => {
       .from('extension_reports')
       .select('*')
       .eq('submitted_by', userId)
-      .neq('status', 'draft')
       .order('created_at', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -170,50 +176,53 @@ router.patch('/:id/archive', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/extension-reports - Prevents duplicate quarter/year reports
+// POST /api/extension-reports
 router.post('/', authenticate, async (req, res) => {
-  const { quarter, year } = req.body;
-  const userId = req.user?.userId || req.user?.id;
-
   try {
-    if (quarter && year) {
-      const { data: existing } = await supabase
-        .from('extension_reports')
-        .select('*')
-        .eq('submitted_by', userId)
-        .eq('quarter', quarter)
-        .eq('year', year)
-        .maybeSingle();
+    const userId = req.user?.userId || req.user?.id;
+    const { quarter, year, ...body } = req.body;
 
-      if (existing) {
-        const { data: updated, error: updateError } = await supabase
-          .from('extension_reports')
-          .update({
-            ...req.body,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id)
-          .select()
-          .single();
-
-        if (updateError) return res.status(500).json({ error: updateError.message });
-        return res.status(200).json(updated);
-      }
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required.' });
     }
 
-    const payload = {
-      ...req.body,
-      submitted_by: userId,
-      updated_at: new Date().toISOString(),
-    };
+    if (!quarter || !year) {
+      return res.status(400).json({ error: 'Quarter and Year are required.' });
+    }
 
+    // 1. Enforce 1 Report Per User + Quarter + Year
+    const { data: existing } = await supabase
+      .from('extension_reports')
+      .select('id, status')
+      .eq('submitted_by', userId)
+      .eq('quarter', quarter)
+      .eq('year', String(year))
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(409).json({ 
+        error: `An extension report for ${quarter} Quarter ${year} already exists (Status: ${existing.status}).`,
+        existingId: existing.id,
+        status: existing.status
+      });
+    }
+
+    // 2. Insert new record
     const { data, error } = await supabase
       .from('extension_reports')
-      .insert(payload)
+      .insert([{
+        ...body,
+        quarter,
+        year: String(year),
+        submitted_by: userId,
+        status: req.body.status || 'draft',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }])
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) throw error;
     return res.status(201).json(data);
   } catch (err) {
     return res.status(500).json({ error: err.message });

@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { notifyDean } from '../notificationsApi';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -25,6 +24,7 @@ import {
   ArchiveRestore,
   ExternalLink,
 } from 'lucide-react';
+import { notifyDean } from '../notificationsApi';
 
 // ============================================================================
 // 1. API CONSTANTS & TYPES
@@ -45,6 +45,8 @@ export interface UnifiedTrackItem {
   type: ReportType;
   title: string;
   periodOrQuarter: string;
+  quarter?: string;
+  year?: string;
   status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
   progress: number;
   submittedAt?: string | null;
@@ -108,7 +110,7 @@ function mapToUnified(type: ReportType, raw: any): UnifiedTrackItem | null {
   if (!raw || !raw.id) return null;
   const isWfh = type === 'wfh';
   const periodOrQuarter = isWfh
-    ? (raw.reporting_period || 'Work-from-Home Period')
+    ? (raw.reporting_period || `${raw.quarter || '1st'} Quarter, ${raw.year || new Date().getFullYear()}`)
     : `${raw.quarter || '1st'} Quarter, ${raw.year || new Date().getFullYear()}`;
 
   const title =
@@ -123,6 +125,8 @@ function mapToUnified(type: ReportType, raw: any): UnifiedTrackItem | null {
     type,
     title,
     periodOrQuarter,
+    quarter: raw.quarter || '1st',
+    year: String(raw.year || new Date().getFullYear()),
     status: raw.status || 'draft',
     progress: raw.progress ?? (raw.status === 'approved' ? 100 : raw.status === 'submitted' ? 100 : 0),
     submittedAt: raw.date_submitted || raw.updated_at || raw.created_at,
@@ -184,10 +188,6 @@ const PRINT_LAYOUT_STYLES = `
     }
   }
 `;
-
-// ============================================================================
-// 2. MY DRAFTS PANEL
-// ============================================================================
 function MyDraftsPanel({
   onEdit,
 }: {
@@ -203,25 +203,39 @@ function MyDraftsPanel({
     try {
       const headers = { Authorization: `Bearer ${getToken()}` };
       const [accRes, extRes, wfhRes] = await Promise.all([
-        fetch(`${ACCOMPLISHMENT_API_URL}/my-draft`, { headers }),
-        fetch(`${EXTENSION_API_URL}/my-draft`, { headers }),
-        fetch(`${WFH_API_URL}/my-draft`, { headers }),
+        fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers }),
+        fetch(`${EXTENSION_API_URL}/mine`, { headers }),
+        fetch(`${WFH_API_URL}/mine`, { headers }),
       ]);
 
-      const accData = accRes.ok ? await accRes.json() : null;
-      const extData = extRes.ok ? await extRes.json() : null;
-      const wfhData = wfhRes.ok ? await wfhRes.json() : null;
+      const accData: any[] = accRes.ok ? await accRes.json() : [];
+      const extData: any[] = extRes.ok ? await extRes.json() : [];
+      const wfhData: any[] = wfhRes.ok ? await wfhRes.json() : [];
 
       const list: UnifiedTrackItem[] = [];
-      const acc = mapToUnified('accomplishment', accData);
-      if (acc && acc.status === 'draft') list.push(acc);
 
-      const ext = mapToUnified('extension', extData);
-      if (ext && ext.status === 'draft') list.push(ext);
+      (Array.isArray(accData) ? accData : []).forEach((r) => {
+        if (r && r.status === 'draft' && !r.is_archived) {
+          const u = mapToUnified('accomplishment', r);
+          if (u) list.push(u);
+        }
+      });
 
-      const wfh = mapToUnified('wfh', wfhData);
-      if (wfh && wfh.status === 'draft') list.push(wfh);
+      (Array.isArray(extData) ? extData : []).forEach((r) => {
+        if (r && r.status === 'draft' && !r.is_archived) {
+          const u = mapToUnified('extension', r);
+          if (u) list.push(u);
+        }
+      });
 
+      (Array.isArray(wfhData) ? wfhData : []).forEach((r) => {
+        if (r && r.status === 'draft' && !r.is_archived) {
+          const u = mapToUnified('wfh', r);
+          if (u) list.push(u);
+        }
+      });
+
+      list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       setDrafts(list);
     } catch {
       setLoadError('Could not reach the server to retrieve your drafts.');
@@ -304,7 +318,7 @@ function MyDraftsPanel({
 }
 
 // ============================================================================
-// 3. TRACK STATUS PANEL (WITH FULL-VIEWPORT PORTAL CONFIRMATION MODAL)
+// 3. TRACK STATUS PANEL
 // ============================================================================
 type StatusFilterType = 'all' | 'under_review' | 'approved' | 'rejected' | 'archived';
 
@@ -646,7 +660,7 @@ function ReportTrackerPanel({
 }
 
 // ============================================================================
-// 4. ACCOMPLISHMENT REPORT COMPONENT
+// 4. ACCOMPLISHMENT REPORT COMPONENT (STRICT LIFECYCLE & IDENTITY)
 // ============================================================================
 interface GenericRow {
   [key: string]: string;
@@ -790,13 +804,14 @@ export function AccomplishmentReport({
 }) {
   const [quarter, setQuarter] = useState('1st');
   const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [reportId, setReportId] = useState<string | null>(targetReportId || null);
+  const [status, setStatus] = useState<'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('draft');
+  const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
+
   const [programChair, setProgramChair] = useState(userName);
   const [program, setProgram] = useState('');
   const [otherAccomplishments, setOtherAccomplishments] = useState('');
   const [dateSubmitted, setDateSubmitted] = useState('');
-  const [reportId, setReportId] = useState<string | null>(targetReportId || null);
-  const [status, setStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
-  const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -826,7 +841,105 @@ export function AccomplishmentReport({
   const [otherInitiatives, setOtherInitiatives] = useState<GenericRow[]>([emptyRow(['title_activity','date_conducted','venue','sponsoring_agency','students_involved','role_students','faculty_involved','role_faculty'])]);
   const [awards, setAwards] = useState<GenericRow[]>([emptyRow(['title_award','nature_award','granting_agency','date_awarding'])]);
 
-  const isFormLocked = readOnly || status === 'submitted' || status === 'approved';
+  // Request guard to prevent race conditions when changing quarter
+  const activePeriodRef = useRef<string>('');
+
+  const resetBlankForm = useCallback((newQuarter: string, newYear: string) => {
+    setReportId(null);
+    setStatus('draft');
+    setDeanRemarks(null);
+    setProgramChair(userName);
+    setProgram('');
+    setOtherAccomplishments('');
+    setDateSubmitted('');
+    setDismissedSubmissionIds([]);
+    setDocEntries([]);
+    setPi1([emptyRow(['date_exam','no_first_time','no_passers','passing_pct_first','total_takers','total_passers','overall_pct'])]);
+    setPi2([emptyRow(['no_graduates','no_employed','percentage'])]);
+    setPi3([emptyRow(['class_section','no_enrolled','name_adviser'])]);
+    setPi4([emptyRow(['name_faculty','courses_taught','status_syllabus','remarks'])]);
+    setPi5([emptyRow(['name_faculty','nature_cert','granting_agency','date_granted'])]);
+    setPi6([emptyRow(['name_faculty','program_enrolled','total_units','units_this_sem','institution'])]);
+    setPi7([emptyRow(['name_faculty','title_training','date','venue','sponsoring_agency','role'])]);
+    setPi8([emptyRow(['name_faculty','title_im','type_im','courses_utilizing','ip_protection'])]);
+    setMfo3pi1([emptyRow(['title_research','proponents','nature_utilization','partner_community','address'])]);
+    setMfo3pi2([emptyRow(['title_research','proponents','date_completed','funding_source'])]);
+    setMfo3pi3([emptyRow(['title_research','proponents','name_publication','date_published','funding_source'])]);
+    setMfo3pi4([emptyRow(['title_research','proponents','date','sponsoring_agency','venue'])]);
+    setMfo4pi1([emptyRow(['title_project','proponents','partner','project_locale'])]);
+    setMfo4pi2([emptyRow(['title_training','no_beneficiaries','length_training','total_manhours','partner_agency'])]);
+    setOtherInitiatives([emptyRow(['title_activity','date_conducted','venue','sponsoring_agency','students_involved','role_students','faculty_involved','role_faculty'])]);
+    setAwards([emptyRow(['title_award','nature_award','granting_agency','date_awarding'])]);
+    setLastSavedAt(null);
+  }, [userName]);
+
+  // Precise loader for the selected period
+  const loadPeriodReport = useCallback(async (targetQ: string, targetY: string, explicitId?: string) => {
+    const periodKey = explicitId ? `id:${explicitId}` : `${targetQ}-${targetY}`;
+    activePeriodRef.current = periodKey;
+
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
+      if (!res.ok) return;
+
+      const list: any[] = await res.json();
+      if (activePeriodRef.current !== periodKey) return; // Prevent race conditions
+
+      let matched: any = null;
+      if (explicitId) {
+        matched = list.find((r) => r.id === explicitId);
+      } else {
+        matched = list.find((r) => r.quarter === targetQ && String(r.year) === String(targetY));
+      }
+
+      if (matched) {
+        setReportId(matched.id);
+        setQuarter(matched.quarter || targetQ);
+        setYear(String(matched.year || targetY));
+        setStatus(matched.status || 'draft');
+        setDeanRemarks(matched.dean_remarks || null);
+        setProgramChair(matched.program_chair ?? userName);
+        setProgram(matched.program ?? '');
+        setOtherAccomplishments(matched.other_accomplishments ?? '');
+        setDateSubmitted(matched.date_submitted ?? '');
+        setDismissedSubmissionIds(Array.isArray(matched.dismissed_submission_ids) ? matched.dismissed_submission_ids : []);
+
+        if (matched.pi1_data?.length) setPi1(matched.pi1_data);
+        if (matched.pi2_data?.length) setPi2(matched.pi2_data);
+        if (matched.pi3_data?.length) setPi3(matched.pi3_data);
+        if (matched.pi4_data?.length) setPi4(matched.pi4_data);
+        if (matched.pi5_data?.length) setPi5(matched.pi5_data);
+        if (matched.pi6_data?.length) setPi6(matched.pi6_data);
+        if (matched.pi7_data?.length) setPi7(matched.pi7_data);
+        if (matched.pi8_data?.length) setPi8(matched.pi8_data);
+        if (matched.mfo3_pi1_data?.length) setMfo3pi1(matched.mfo3_pi1_data);
+        if (matched.mfo3_pi2_data?.length) setMfo3pi2(matched.mfo3_pi2_data);
+        if (matched.mfo3_pi3_data?.length) setMfo3pi3(matched.mfo3_pi3_data);
+        if (matched.mfo3_pi4_data?.length) setMfo3pi4(matched.mfo3_pi4_data);
+        if (matched.mfo4_pi1_data?.length) setMfo4pi1(matched.mfo4_pi1_data);
+        if (matched.mfo4_pi2_data?.length) setMfo4pi2(matched.mfo4_pi2_data);
+        if (matched.other_data?.length) setOtherInitiatives(matched.other_data);
+        if (matched.awards_data?.length) setAwards(matched.awards_data);
+        if (matched.doc_entries_data?.length) setDocEntries(matched.doc_entries_data);
+        setLastSavedAt(matched.updated_at ?? matched.created_at ?? null);
+      } else {
+        // No report exists for this quarter + year: start clean
+        resetBlankForm(targetQ, targetY);
+      }
+    } catch {
+      // silent
+    }
+  }, [userName, resetBlankForm]);
+
+  useEffect(() => {
+    loadPeriodReport(quarter, year, targetReportId);
+  }, [loadPeriodReport, targetReportId]);
+
+  // Status-driven lifecycle lock
+  const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
+  const isApproved = status === 'approved';
+  const isRevisionMode = status === 'rejected';
 
   const computeProgress = () => {
     const allRows = [pi1,pi2,pi3,pi4,pi5,pi6,pi7,pi8,mfo3pi1,mfo3pi2,mfo3pi3,mfo3pi4,mfo4pi1,mfo4pi2,otherInitiatives,awards];
@@ -840,76 +953,7 @@ export function AccomplishmentReport({
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
   const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
 
-  // Fetch report data on initial load
-  const loadReportData = useCallback(async (quarterParam?: string, yearParam?: string) => {
-    try {
-      const headers = { Authorization: `Bearer ${getToken()}` };
-      let reportData: any = null;
-
-      if (targetReportId) {
-        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
-        if (res.ok) {
-          const list: any[] = await res.json();
-          reportData = list.find((r) => r.id === targetReportId);
-        }
-      }
-
-      if (!reportData && (quarterParam || quarter) && (yearParam || year)) {
-        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
-        if (res.ok) {
-          const list: any[] = await res.json();
-          reportData = list.find((r) => r.quarter === (quarterParam || quarter) && r.year === (yearParam || year));
-        }
-      }
-
-      if (!reportData) {
-        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/my-draft`, { headers });
-        if (res.ok) {
-          reportData = await res.json();
-        }
-      }
-
-      if (reportData && reportData.id) {
-        setReportId(reportData.id);
-        setQuarter(reportData.quarter || '1st');
-        setYear(reportData.year || new Date().getFullYear().toString());
-        setProgramChair(reportData.program_chair ?? userName);
-        setProgram(reportData.program ?? '');
-        setOtherAccomplishments(reportData.other_accomplishments ?? '');
-        setDateSubmitted(reportData.date_submitted ?? '');
-        setStatus(reportData.status || 'draft');
-        setDeanRemarks(reportData.dean_remarks || null);
-        setDismissedSubmissionIds(Array.isArray(reportData.dismissed_submission_ids) ? reportData.dismissed_submission_ids : []);
-
-        if (reportData.pi1_data?.length) setPi1(reportData.pi1_data);
-        if (reportData.pi2_data?.length) setPi2(reportData.pi2_data);
-        if (reportData.pi3_data?.length) setPi3(reportData.pi3_data);
-        if (reportData.pi4_data?.length) setPi4(reportData.pi4_data);
-        if (reportData.pi5_data?.length) setPi5(reportData.pi5_data);
-        if (reportData.pi6_data?.length) setPi6(reportData.pi6_data);
-        if (reportData.pi7_data?.length) setPi7(reportData.pi7_data);
-        if (reportData.pi8_data?.length) setPi8(reportData.pi8_data);
-        if (reportData.mfo3_pi1_data?.length) setMfo3pi1(reportData.mfo3_pi1_data);
-        if (reportData.mfo3_pi2_data?.length) setMfo3pi2(reportData.mfo3_pi2_data);
-        if (reportData.mfo3_pi3_data?.length) setMfo3pi3(reportData.mfo3_pi3_data);
-        if (reportData.mfo3_pi4_data?.length) setMfo3pi4(reportData.mfo3_pi4_data);
-        if (reportData.mfo4_pi1_data?.length) setMfo4pi1(reportData.mfo4_pi1_data);
-        if (reportData.mfo4_pi2_data?.length) setMfo4pi2(reportData.mfo4_pi2_data);
-        if (reportData.other_data?.length) setOtherInitiatives(reportData.other_data);
-        if (reportData.awards_data?.length) setAwards(reportData.awards_data);
-        if (reportData.doc_entries_data?.length) setDocEntries(reportData.doc_entries_data);
-        setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
-      }
-    } catch {
-      showError('Could not load report.');
-    }
-  }, [targetReportId, quarter, year, userName]);
-
-  useEffect(() => {
-    loadReportData();
-  }, [loadReportData]);
-
-  // AUTO-POPULATE RESEARCH SUBMISSIONS WITHOUT DUPLICATION
+  // Auto-populate research submissions
   useEffect(() => {
     if (isFormLocked) return;
 
@@ -1006,6 +1050,8 @@ export function AccomplishmentReport({
 
   const persist = async (payload: Record<string, unknown>) => {
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
+    
+    // Strict isolation: if reportId is active, PUT to that exact ID. Otherwise, create a new record via POST
     if (reportId) {
       const res = await fetch(`${ACCOMPLISHMENT_API_URL}/${reportId}`, {
         method: 'PUT',
@@ -1041,7 +1087,7 @@ export function AccomplishmentReport({
       setLastSavedAt(data?.updated_at ?? new Date().toISOString());
       showSuccess('Draft saved successfully!');
     } catch (err: any) {
-      showError('Failed to save draft: ' + (err?.message || 'Server error'));
+      showError(err.message || 'Failed to save draft.');
     } finally {
       setSaving(false);
     }
@@ -1059,18 +1105,48 @@ export function AccomplishmentReport({
       showSuccess(isResubmit ? 'Resubmitted to Dean! Status: Under Review.' : 'Submitted to Dean! Status: Under Review.');
       onAfterSubmit?.();
     } catch (err: any) {
-      showError('Failed to submit report: ' + (err?.message || 'Server error'));
+      showError(err.message || 'Failed to submit report.');
     } finally {
       setSaving(false);
     }
   };
 
-  const addDocEntry = (category: string) => {
-    setDocEntries((prev) => [...prev, { id: makeId(), category, title: '', venue: '', date: '', description: '', photos: [] }]);
+  const handleQuarterChange = (newQ: string) => {
+    if (isRevisionMode) {
+      alert('This is a revision for an existing rejected report. The quarter cannot be reassigned. To submit for another quarter, click "Start New Quarter".');
+      return;
+    }
+    setQuarter(newQ);
+    resetBlankForm(newQ, year);
+    loadPeriodReport(newQ, year);
   };
-  const removeDocEntry = (id: string) => setDocEntries((prev) => prev.filter((e) => e.id !== id));
-  const updateDocEntryField = (id: string, field: keyof DocEntry, val: string) =>
+
+  const handleYearChange = (newY: string) => {
+    if (isRevisionMode) return;
+    setYear(newY);
+    if (newY.length === 4) {
+      resetBlankForm(quarter, newY);
+      loadPeriodReport(quarter, newY);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // Activity Documentation Helpers
+  // --------------------------------------------------------------------------
+  const addDocEntry = (category: string) => {
+    setDocEntries((prev) => [
+      ...prev,
+      { id: makeId(), category, title: '', venue: '', date: '', description: '', photos: [] },
+    ]);
+  };
+
+  const removeDocEntry = (id: string) => {
+    setDocEntries((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const updateDocEntryField = (id: string, field: keyof DocEntry, val: string) => {
     setDocEntries((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: val } : e)));
+  };
 
   const handleEntryFilesSelected = async (entryId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1110,6 +1186,7 @@ export function AccomplishmentReport({
     }
   };
 
+  // Check if a row has any filled fields
   const hasPopulatedData = (rows: GenericRow[]) =>
     rows.some((row) => Object.values(row).some((val) => Boolean(val && val.trim())));
 
@@ -1119,14 +1196,35 @@ export function AccomplishmentReport({
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{errorMsg}</div>}
 
-      {status === 'rejected' && deanRemarks && (
+      {/* Completed Quarter Banner */}
+      {isApproved && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-emerald-800 text-xs sm:text-sm font-semibold">
+            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            {quarter} Quarter, {year} is already approved and locked as official history.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const nextQ = quarter === '1st' ? '2nd' : quarter === '2nd' ? '3rd' : quarter === '3rd' ? '4th' : '1st';
+              handleQuarterChange(nextQ);
+            }}
+            className="px-3 py-1.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1E40AF] transition-colors whitespace-nowrap"
+          >
+            Start Next Quarter
+          </button>
+        </div>
+      )}
+
+      {/* Revision Banner */}
+      {isRevisionMode && deanRemarks && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <h4 className="font-bold text-sm text-red-900">Report Returned by Dean</h4>
+            <h4 className="font-bold text-sm text-red-900">Report Returned by Dean (Review & Modify Mode)</h4>
             <p className="text-xs text-red-700 mt-1">{deanRemarks}</p>
             <p className="text-[11px] text-red-600 mt-2 font-medium">
-              Update the fields below and click <strong>"Resubmit to Dean"</strong>. The same report ID will be updated.
+              Update the entries below and click <strong>"Resubmit to Dean"</strong>. Your original report ID ({reportId?.slice(0, 8)}) will be retained and resubmitted.
             </p>
           </div>
         </div>
@@ -1172,13 +1270,13 @@ export function AccomplishmentReport({
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" /> {status === 'rejected' ? 'Resubmit to Dean' : 'Submit to Dean'}
+                    <Send className="w-4 h-4" /> {isRevisionMode ? 'Resubmit to Dean' : 'Submit to Dean'}
                   </>
                 )}
               </button>
             </>
           )}
-          {status === 'submitted' && (
+          {(status === 'submitted' || status === 'under_review') && (
             <span className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold">
               <Clock className="w-4 h-4" /> Under Review
             </span>
@@ -1201,20 +1299,16 @@ export function AccomplishmentReport({
         </div>
       </div>
 
-      {/* Metadata with Period Change Handling */}
+      {/* Metadata with Period Controls */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Quarter</label>
             <select
               value={quarter}
-              onChange={(e) => {
-                const nextQ = e.target.value;
-                setQuarter(nextQ);
-                loadReportData(nextQ, year);
-              }}
-              disabled={isFormLocked}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
+              onChange={(e) => handleQuarterChange(e.target.value)}
+              disabled={isFormLocked || isRevisionMode}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white disabled:bg-gray-50"
             >
               <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
             </select>
@@ -1224,13 +1318,9 @@ export function AccomplishmentReport({
             <input
               type="text"
               value={year}
-              onChange={(e) => {
-                const nextY = e.target.value;
-                setYear(nextY);
-                if (nextY.length === 4) loadReportData(quarter, nextY);
-              }}
-              disabled={isFormLocked}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+              onChange={(e) => handleYearChange(e.target.value)}
+              disabled={isFormLocked || isRevisionMode}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm disabled:bg-gray-50"
             />
           </div>
           <div>
@@ -1638,7 +1728,7 @@ export function AccomplishmentReport({
 }
 
 // ============================================================================
-// 5. EXTENSION REPORT (COMPLETE PRINTING & EXTENSION AUTO-FILL)
+// 5. EXTENSION REPORT COMPONENT (STRICT LIFECYCLE & IDENTITY)
 // ============================================================================
 interface ExtensionReportRow {
   source_submission_id?: string;
@@ -1678,12 +1768,12 @@ export function ExtensionReport({
 }) {
   const [quarter, setQuarter] = useState('1st');
   const [year, setYear] = useState(new Date().getFullYear().toString());
-  const [rows, setRows] = useState<ExtensionReportRow[]>([{ ...EMPTY_EXTENSION_ROW }]);
-  const [status, setStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
   const [reportId, setReportId] = useState<string | null>(targetReportId || null);
+  const [status, setStatus] = useState<'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('draft');
   const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
-  const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>([]);
 
+  const [rows, setRows] = useState<ExtensionReportRow[]>([{ ...EMPTY_EXTENSION_ROW }]);
+  const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -1697,60 +1787,70 @@ export function ExtensionReport({
   const [notedByName2, setNotedByName2] = useState('EINGILBERT C. BENOLIRAO');
   const [notedByTitle2, setNotedByTitle2] = useState('Campus Director');
 
-  const isFormLocked = readOnly || status === 'submitted' || status === 'approved';
+  const activePeriodRef = useRef<string>('');
 
-  const loadReportData = useCallback(async (quarterParam?: string, yearParam?: string) => {
+  const resetBlankForm = useCallback((newQuarter: string, newYear: string) => {
+    setReportId(null);
+    setStatus('draft');
+    setDeanRemarks(null);
+    setRows([{ ...EMPTY_EXTENSION_ROW }]);
+    setDismissedSubmissionIds([]);
+    setPreparedByName(userName);
+    setPreparedByTitle('Extension Chairperson');
+    setLastSavedAt(null);
+  }, [userName]);
+
+  const loadPeriodReport = useCallback(async (targetQ: string, targetY: string, explicitId?: string) => {
+    const periodKey = explicitId ? `id:${explicitId}` : `${targetQ}-${targetY}`;
+    activePeriodRef.current = periodKey;
+
     try {
       const headers = { Authorization: `Bearer ${getToken()}` };
-      let reportData: any = null;
+      const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
+      if (!res.ok) return;
 
-      if (targetReportId) {
-        const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
-        if (res.ok) {
-          const list: any[] = await res.json();
-          reportData = list.find((r) => r.id === targetReportId);
-        }
+      const list: any[] = await res.json();
+      if (activePeriodRef.current !== periodKey) return;
+
+      let matched: any = null;
+      if (explicitId) {
+        matched = list.find((r) => r.id === explicitId);
+      } else {
+        matched = list.find((r) => r.quarter === targetQ && String(r.year) === String(targetY));
       }
 
-      if (!reportData && (quarterParam || quarter) && (yearParam || year)) {
-        const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
-        if (res.ok) {
-          const list: any[] = await res.json();
-          reportData = list.find((r) => r.quarter === (quarterParam || quarter) && r.year === (yearParam || year));
-        }
-      }
-
-      if (!reportData) {
-        const res = await fetch(`${EXTENSION_API_URL}/my-draft`, { headers });
-        if (res.ok) reportData = await res.json();
-      }
-
-      if (reportData && reportData.id) {
-        setReportId(reportData.id);
-        setQuarter(reportData.quarter || '1st');
-        setYear(reportData.year || new Date().getFullYear().toString());
-        setRows(reportData.rows?.length > 0 ? reportData.rows : [{ ...EMPTY_EXTENSION_ROW }]);
-        setStatus(reportData.status || 'draft');
-        setDeanRemarks(reportData.dean_remarks || null);
-        setDismissedSubmissionIds(Array.isArray(reportData.dismissed_submission_ids) ? reportData.dismissed_submission_ids : []);
-        setPreparedByName(reportData.prepared_by_name ?? userName);
-        setPreparedByTitle(reportData.prepared_by_title ?? 'Extension Chairperson');
-        setNotedByName1(reportData.noted_by_name_1 ?? 'TERESITA CLEOPOLDA B. SARILE');
-        setNotedByTitle1(reportData.noted_by_title_1 ?? 'Chair, Extension Services');
-        setNotedByName2(reportData.noted_by_name_2 ?? 'EINGILBERT C. BENOLIRAO');
-        setNotedByTitle2(reportData.noted_by_title_2 ?? 'Campus Director');
-        setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
+      if (matched) {
+        setReportId(matched.id);
+        setQuarter(matched.quarter || targetQ);
+        setYear(String(matched.year || targetY));
+        setStatus(matched.status || 'draft');
+        setDeanRemarks(matched.dean_remarks || null);
+        setRows(matched.rows?.length > 0 ? matched.rows : [{ ...EMPTY_EXTENSION_ROW }]);
+        setDismissedSubmissionIds(Array.isArray(matched.dismissed_submission_ids) ? matched.dismissed_submission_ids : []);
+        setPreparedByName(matched.prepared_by_name ?? userName);
+        setPreparedByTitle(matched.prepared_by_title ?? 'Extension Chairperson');
+        setNotedByName1(matched.noted_by_name_1 ?? 'TERESITA CLEOPOLDA B. SARILE');
+        setNotedByTitle1(matched.noted_by_title_1 ?? 'Chair, Extension Services');
+        setNotedByName2(matched.noted_by_name_2 ?? 'EINGILBERT C. BENOLIRAO');
+        setNotedByTitle2(matched.noted_by_title_2 ?? 'Campus Director');
+        setLastSavedAt(matched.updated_at ?? matched.created_at ?? null);
+      } else {
+        resetBlankForm(targetQ, targetY);
       }
     } catch {
       // silent
     }
-  }, [targetReportId, quarter, year, userName]);
+  }, [userName, resetBlankForm]);
 
   useEffect(() => {
-    loadReportData();
-  }, [loadReportData]);
+    loadPeriodReport(quarter, year, targetReportId);
+  }, [loadPeriodReport, targetReportId]);
 
-  // AUTO-POPULATE EXTENSION SUBMISSIONS
+  const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
+  const isApproved = status === 'approved';
+  const isRevisionMode = status === 'rejected';
+
+  // Auto-populate extension submissions
   useEffect(() => {
     if (isFormLocked) return;
 
@@ -1882,6 +1982,25 @@ export function ExtensionReport({
     }
   };
 
+  const handleQuarterChange = (newQ: string) => {
+    if (isRevisionMode) {
+      alert('This is a revision for an existing rejected report. The quarter cannot be reassigned.');
+      return;
+    }
+    setQuarter(newQ);
+    resetBlankForm(newQ, year);
+    loadPeriodReport(newQ, year);
+  };
+
+  const handleYearChange = (newY: string) => {
+    if (isRevisionMode) return;
+    setYear(newY);
+    if (newY.length === 4) {
+      resetBlankForm(quarter, newY);
+      loadPeriodReport(quarter, newY);
+    }
+  };
+
   useEffect(() => {
     if (externalPrintTrigger) {
       setShowPrint(true);
@@ -1895,11 +2014,30 @@ export function ExtensionReport({
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{errorMsg}</div>}
 
-      {status === 'rejected' && deanRemarks && (
+      {isApproved && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-emerald-800 text-xs sm:text-sm font-semibold">
+            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            {quarter} Quarter, {year} is already approved and locked as official history.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const nextQ = quarter === '1st' ? '2nd' : quarter === '2nd' ? '3rd' : quarter === '3rd' ? '4th' : '1st';
+              handleQuarterChange(nextQ);
+            }}
+            className="px-3 py-1.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1E40AF] transition-colors whitespace-nowrap"
+          >
+            Start Next Quarter
+          </button>
+        </div>
+      )}
+
+      {isRevisionMode && deanRemarks && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-bold text-sm text-red-900">Extension Report Returned by Dean</h4>
+            <h4 className="font-bold text-sm text-red-900">Extension Report Returned by Dean (Review & Modify)</h4>
             <p className="text-xs text-red-700 mt-1">{deanRemarks}</p>
           </div>
         </div>
@@ -1921,11 +2059,11 @@ export function ExtensionReport({
                 {saving ? 'Saving...' : 'Save Draft'}
               </button>
               <button type="button" onClick={() => handleSave('submitted')} disabled={saving} className="px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50">
-                {saving ? 'Submitting...' : status === 'rejected' ? 'Resubmit to Dean' : 'Submit to Dean'}
+                {saving ? 'Submitting...' : isRevisionMode ? 'Resubmit to Dean' : 'Submit to Dean'}
               </button>
             </>
           )}
-          {status === 'submitted' && (
+          {(status === 'submitted' || status === 'under_review') && (
             <span className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
               <Clock className="w-4 h-4" /> Under Review
             </span>
@@ -1943,13 +2081,9 @@ export function ExtensionReport({
           <label className="block text-xs font-semibold text-gray-600 mb-1">Quarter</label>
           <select
             value={quarter}
-            onChange={(e) => {
-              const nextQ = e.target.value;
-              setQuarter(nextQ);
-              loadReportData(nextQ, year);
-            }}
-            disabled={isFormLocked}
-            className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+            onChange={(e) => handleQuarterChange(e.target.value)}
+            disabled={isFormLocked || isRevisionMode}
+            className="px-3 py-1.5 border rounded-lg text-sm bg-white disabled:bg-gray-50"
           >
             <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
           </select>
@@ -1959,13 +2093,9 @@ export function ExtensionReport({
           <input
             type="text"
             value={year}
-            onChange={(e) => {
-              const nextY = e.target.value;
-              setYear(nextY);
-              if (nextY.length === 4) loadReportData(quarter, nextY);
-            }}
-            disabled={isFormLocked}
-            className="px-3 py-1.5 border rounded-lg text-sm w-24"
+            onChange={(e) => handleYearChange(e.target.value)}
+            disabled={isFormLocked || isRevisionMode}
+            className="px-3 py-1.5 border rounded-lg text-sm w-24 disabled:bg-gray-50"
           />
         </div>
       </div>
@@ -2128,7 +2258,7 @@ export function ExtensionReport({
 }
 
 // ============================================================================
-// 6. WORK FROM HOME (WFH) REPORT COMPONENT (FIXED SUBMISSION & PHOTOS)
+// 6. WORK FROM HOME (WFH) REPORT COMPONENT (STRICT LIFECYCLE & IDENTITY)
 // ============================================================================
 interface DailyAccomplishment {
   date: string;
@@ -2171,7 +2301,12 @@ export function WfhReport({
   externalPrintTrigger?: boolean;
   onPrintHandled?: () => void;
 }) {
+  const [quarter, setQuarter] = useState('1st');
+  const [year, setYear] = useState(new Date().getFullYear().toString());
   const [reportId, setReportId] = useState<string | null>(targetReportId || null);
+  const [status, setStatus] = useState<'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('draft');
+  const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
+
   const [reportingPeriod, setReportingPeriod] = useState('');
   const [name, setName] = useState(userName);
   const [positionRank, setPositionRank] = useState('');
@@ -2211,66 +2346,107 @@ export function WfhReport({
   const [notedByTitle, setNotedByTitle] = useState('Dean');
   const [notedByDate, setNotedByDate] = useState('');
 
-  const [status, setStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
-  const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  const isFormLocked = readOnly || status === 'submitted' || status === 'approved';
+  const activePeriodRef = useRef<string>('');
+
+  const resetBlankForm = useCallback((newQuarter: string, newYear: string) => {
+    setReportId(null);
+    setStatus('draft');
+    setDeanRemarks(null);
+    setReportingPeriod('');
+    setName(userName);
+    setPositionRank('');
+    setCollegeOffice('');
+    setProgramUnit('');
+    setAdminDesignation('');
+    setWorkingHours('8:00 A.M. – 12:00 NOON | 1:00 P.M. – 5:00 P.M.');
+    setDailyAccomplishments([{ date: '', activities: '', output: '' }]);
+    setSupportingDocs({
+      online_class: false,
+      teams_zoom: false,
+      lms_activity: false,
+      lesson_plan: false,
+      consultation_log: false,
+      research_output: false,
+      extension_report: false,
+      meeting_attendance: false,
+      office_report: false,
+      other: false,
+    });
+    setOtherDocsSpecify('');
+    setPhotos([]);
+    setPreparedByName(userName);
+    setPreparedByDate('');
+    setVerifiedByName('');
+    setNotedByName('');
+    setLastSavedAt(null);
+  }, [userName]);
+
+  const loadPeriodReport = useCallback(async (targetQ: string, targetY: string, explicitId?: string) => {
+    const periodKey = explicitId ? `id:${explicitId}` : `${targetQ}-${targetY}`;
+    activePeriodRef.current = periodKey;
+
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      const res = await fetch(`${WFH_API_URL}/mine`, { headers });
+      if (!res.ok) return;
+
+      const list: any[] = await res.json();
+      if (activePeriodRef.current !== periodKey) return;
+
+      let matched: any = null;
+      if (explicitId) {
+        matched = list.find((r: any) => r.id === explicitId);
+      } else {
+        matched = list.find((r: any) => r.quarter === targetQ && String(r.year) === String(targetY));
+      }
+
+      if (matched) {
+        setReportId(matched.id);
+        setQuarter(matched.quarter || targetQ);
+        setYear(String(matched.year || targetY));
+        setStatus(matched.status || 'draft');
+        setDeanRemarks(matched.dean_remarks || null);
+        setReportingPeriod(matched.reporting_period ?? '');
+        setName(matched.name ?? userName);
+        setPositionRank(matched.position_rank ?? '');
+        setCollegeOffice(matched.college_office ?? '');
+        setProgramUnit(matched.program_unit ?? '');
+        setAdminDesignation(matched.admin_designation ?? '');
+        setWorkingHours(matched.working_hours ?? '8:00 A.M. – 12:00 NOON | 1:00 P.M. – 5:00 P.M.');
+        if (matched.daily_accomplishments?.length) setDailyAccomplishments(matched.daily_accomplishments);
+        if (matched.supporting_docs) setSupportingDocs(matched.supporting_docs);
+        setOtherDocsSpecify(matched.other_docs_specify ?? '');
+        if (matched.photos?.length) setPhotos(matched.photos);
+        setPreparedByName(matched.prepared_by_name ?? userName);
+        setPreparedByDate(matched.prepared_by_date ?? '');
+        setVerifiedByName(matched.verified_by_name ?? '');
+        setVerifiedByTitle(matched.verified_by_title ?? 'Program Chairperson / Immediate Supervisor');
+        setVerifiedByDate(matched.verified_by_date ?? '');
+        setNotedByName(matched.noted_by_name ?? '');
+        setNotedByTitle(matched.noted_by_title ?? 'Dean');
+        setNotedByDate(matched.noted_by_date ?? '');
+        setLastSavedAt(matched.updated_at ?? null);
+      } else {
+        resetBlankForm(targetQ, targetY);
+      }
+    } catch {
+      // silent
+    }
+  }, [userName, resetBlankForm]);
 
   useEffect(() => {
-    const loadReportData = async () => {
-      try {
-        const headers = { Authorization: `Bearer ${getToken()}` };
-        let data: any = null;
+    loadPeriodReport(quarter, year, targetReportId);
+  }, [loadPeriodReport, targetReportId]);
 
-        if (targetReportId) {
-          const res = await fetch(`${WFH_API_URL}/mine`, { headers });
-          if (res.ok) {
-            const list: any[] = await res.json();
-            data = list.find((r: any) => r.id === targetReportId);
-          }
-        }
-
-        if (!data) {
-          const res = await fetch(`${WFH_API_URL}/my-draft`, { headers });
-          if (res.ok) data = await res.json();
-        }
-
-        if (data && data.id) {
-          setReportId(data.id);
-          setReportingPeriod(data.reporting_period ?? '');
-          setName(data.name ?? userName);
-          setPositionRank(data.position_rank ?? '');
-          setCollegeOffice(data.college_office ?? '');
-          setProgramUnit(data.program_unit ?? '');
-          setAdminDesignation(data.admin_designation ?? '');
-          setWorkingHours(data.working_hours ?? '8:00 A.M. – 12:00 NOON | 1:00 P.M. – 5:00 P.M.');
-          if (data.daily_accomplishments?.length) setDailyAccomplishments(data.daily_accomplishments);
-          if (data.supporting_docs) setSupportingDocs(data.supporting_docs);
-          setOtherDocsSpecify(data.other_docs_specify ?? '');
-          if (data.photos?.length) setPhotos(data.photos);
-          setPreparedByName(data.prepared_by_name ?? userName);
-          setPreparedByDate(data.prepared_by_date ?? '');
-          setVerifiedByName(data.verified_by_name ?? '');
-          setVerifiedByTitle(data.verified_by_title ?? 'Program Chairperson / Immediate Supervisor');
-          setVerifiedByDate(data.verified_by_date ?? '');
-          setNotedByName(data.noted_by_name ?? '');
-          setNotedByTitle(data.noted_by_title ?? 'Dean');
-          setNotedByDate(data.noted_by_date ?? '');
-          setStatus(data.status ?? 'draft');
-          setDeanRemarks(data.dean_remarks || null);
-          setLastSavedAt(data.updated_at ?? null);
-        }
-      } catch {
-        // silent
-      }
-    };
-    loadReportData();
-  }, [userId, userName, targetReportId]);
+  const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
+  const isApproved = status === 'approved';
+  const isRevisionMode = status === 'rejected';
 
   const addRow = () => {
     setDailyAccomplishments((prev) => [...prev, { date: '', activities: '', output: '' }]);
@@ -2329,18 +2505,11 @@ export function WfhReport({
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Derive quarter and year so Dean Analytics can locate and filter the report
-  const now = new Date();
-  const currentMonthIdx = now.getMonth();
-  const derivedQuarter = currentMonthIdx < 3 ? '1st' : currentMonthIdx < 6 ? '2nd' : currentMonthIdx < 9 ? '3rd' : '4th';
-  const derivedYear = now.getFullYear().toString();
-
   const getPayload = (submitStatus: string) => ({
     user_id: userId,
-    submitted_by: userId,
-    quarter: derivedQuarter,
-    year: derivedYear,
-    reporting_period: reportingPeriod.trim() || `Quarter ${derivedQuarter} - ${derivedYear}`,
+    quarter,
+    year,
+    reporting_period: reportingPeriod.trim() || `${quarter} Quarter - ${year}`,
     name: name.trim() || userName,
     position_rank: positionRank,
     college_office: collegeOffice,
@@ -2420,12 +2589,24 @@ export function WfhReport({
     }
   };
 
-  useEffect(() => {
-    if (externalPrintTrigger) {
-      setShowPrint(true);
-      onPrintHandled?.();
+  const handleQuarterChange = (newQ: string) => {
+    if (isRevisionMode) {
+      alert('This is a revision for an existing rejected report. The quarter cannot be reassigned.');
+      return;
     }
-  }, [externalPrintTrigger, onPrintHandled]);
+    setQuarter(newQ);
+    resetBlankForm(newQ, year);
+    loadPeriodReport(newQ, year);
+  };
+
+  const handleYearChange = (newY: string) => {
+    if (isRevisionMode) return;
+    setYear(newY);
+    if (newY.length === 4) {
+      resetBlankForm(quarter, newY);
+      loadPeriodReport(quarter, newY);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -2433,11 +2614,30 @@ export function WfhReport({
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{errorMsg}</div>}
 
-      {status === 'rejected' && deanRemarks && (
+      {isApproved && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-emerald-800 text-xs sm:text-sm font-semibold">
+            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            {quarter} Quarter, {year} is already approved and locked as official history.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const nextQ = quarter === '1st' ? '2nd' : quarter === '2nd' ? '3rd' : quarter === '3rd' ? '4th' : '1st';
+              handleQuarterChange(nextQ);
+            }}
+            className="px-3 py-1.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1E40AF] transition-colors whitespace-nowrap"
+          >
+            Start Next Quarter
+          </button>
+        </div>
+      )}
+
+      {isRevisionMode && deanRemarks && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-bold text-sm text-red-900">WFH Report Returned by Dean</h4>
+            <h4 className="font-bold text-sm text-red-900">WFH Report Returned by Dean (Review & Modify)</h4>
             <p className="text-xs text-red-700 mt-1">{deanRemarks}</p>
           </div>
         </div>
@@ -2465,13 +2665,13 @@ export function WfhReport({
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" /> {status === 'rejected' ? 'Resubmit to Dean' : 'Submit to Dean'}
+                    <Send className="w-4 h-4" /> {isRevisionMode ? 'Resubmit to Dean' : 'Submit to Dean'}
                   </>
                 )}
               </button>
             </>
           )}
-          {status === 'submitted' && (
+          {(status === 'submitted' || status === 'under_review') && (
             <span className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
               <Clock className="w-4 h-4" /> Under Review
             </span>
@@ -2487,6 +2687,27 @@ export function WfhReport({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <h3 className="font-semibold text-gray-800 text-sm border-b border-gray-100 pb-2">Faculty Information</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+          <div>
+            <label className="block font-medium text-gray-600 mb-1">Quarter</label>
+            <select
+              value={quarter}
+              onChange={(e) => handleQuarterChange(e.target.value)}
+              disabled={isFormLocked || isRevisionMode}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white disabled:bg-gray-50"
+            >
+              <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
+            </select>
+          </div>
+          <div>
+            <label className="block font-medium text-gray-600 mb-1">Year</label>
+            <input
+              type="text"
+              value={year}
+              onChange={(e) => handleYearChange(e.target.value)}
+              disabled={isFormLocked || isRevisionMode}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
+            />
+          </div>
           <div>
             <label className="block font-medium text-gray-600 mb-1">Reporting Period</label>
             <input type="text" value={reportingPeriod} onChange={(e) => setReportingPeriod(e.target.value)} disabled={isFormLocked} placeholder="e.g. August 7 and 14, 2026" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" />
@@ -2815,17 +3036,17 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
   };
 
   const handleAfterSubmit = async (label: string) => {
-  try {
-    await notifyDean({
-      title: `Chair Report Submitted`,
-      message: `${userName} submitted the ${label}.`,
-      type: 'report',
-    });
-  } catch (e) {
-    console.error('Report submitted but Dean notification failed:', e);
-  }
-  setTab('track');
-};
+    try {
+      await notifyDean({
+        title: `Chair Report Submitted`,
+        message: `${userName} submitted the ${label}.`,
+        type: 'report',
+      });
+    } catch (e) {
+      console.error('Report submitted but Dean notification failed:', e);
+    }
+    setTab('track');
+  };
 
   return (
     <div>
