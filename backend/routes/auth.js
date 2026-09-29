@@ -625,7 +625,7 @@ router.get('/me', authenticate, async (req, res) => {
     const { data: preferences, error: prefError } = await supabase
       .from('notification_preferences')
       .select('*')
-      .eq('user_id', currentUser.id)
+      .eq('user_id', profile.id)
       .maybeSingle();
 
     if (prefError) {
@@ -1523,9 +1523,6 @@ router.put('/password', authenticate, async (req, res) => {
 // NOTIFICATION PREFERENCES
 // =========================================================
 router.put('/preferences', authenticate, async (req, res) => {
-  const { allow_all, announcements, staff_updates, reports, inquiries, system_notifs } = req.body;
-
-  // notification_preferences is keyed by profiles.id (FK), not users.id
   let profileId = req.user.profileId;
   if (!profileId && req.user.email) {
     const { data } = await supabase
@@ -1535,12 +1532,15 @@ router.put('/preferences', authenticate, async (req, res) => {
   }
   if (!profileId) return res.status(404).json({ error: 'Profile not found.' });
 
+  const allowed = ['allow_all', 'announcements', 'staff_updates', 'reports', 'inquiries', 'system_notifs'];
+  const payload = { user_id: profileId };
+  allowed.forEach((k) => {
+    if (typeof req.body[k] === 'boolean') payload[k] = req.body[k];
+  });
+
   const { data, error } = await supabase
     .from('notification_preferences')
-    .upsert(
-      { user_id: profileId, allow_all, announcements, staff_updates, reports, inquiries, system_notifs },
-      { onConflict: 'user_id' }
-    )
+    .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single();
 

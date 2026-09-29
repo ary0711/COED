@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { sendBackendNotification } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
@@ -2327,30 +2328,27 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   }
 };
 
-  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
-  setRemindingId(row.profile.id);
-  try {
-    const res = await fetch('http://localhost:5000/api/chair/reminders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify({
-        facultyId: row.profile.id,
+    const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+    setRemindingId(row.profile.id);
+    try {
+      const result = await sendBackendNotification({
         title: `Reminder: ${quarterSelect} Quarterly Report`,
         message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report to the Chairman.`,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      showInfo('Error', data.error || 'Failed to send reminder.');
-      return;
+        type: 'report',
+        user_ids: [row.profile.id],
+      });
+
+      if (result.sent === 0 && result.muted > 0) {
+        showInfo('Reminder Not Delivered', `${row.profile.full_name} has turned off report reminders.`);
+      } else {
+        showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+      }
+    } catch (err: any) {
+      showInfo('Error', err.message || 'Failed to send reminder.');
+    } finally {
+      setRemindingId(null);
     }
-    showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
-  } catch {
-    showInfo('Error', 'Could not reach the server.');
-  } finally {
-    setRemindingId(null);
-  }
-};
+  };
 
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
@@ -2583,12 +2581,10 @@ function AcademicRecordsView() {
    System Settings (Department Chair)
 ───────────────────────────────────────────── */
 const CHAIR_NOTIF_DEFAULTS = {
-  facultyReports: true,
-  pendingReports: true,
-  studentApprovals: true,
-  departmentActivities: true,
+  reports: true,       
   announcements: true,
-  systemNotifs: true,
+  staff_updates: true,  
+  system_notifs: true,
 };
 
 const CHAIR_SETTINGS_TABS = [
@@ -2618,7 +2614,6 @@ function ChairToggleRow({ label, checked, onChange }: { label: string; checked: 
 function ChairSystemSettings({
   userName,
   departmentNames,
-  onLogout,
   onProfileUpdate,
 }: {
   userName: string;
@@ -2655,6 +2650,7 @@ function ChairSystemSettings({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
+  const [allowAll, setAllowAll] = useState(true);
   const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
   const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
     setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
@@ -2704,6 +2700,16 @@ function ChairSystemSettings({
           localStorage.setItem('userFullName', loadedName);
           localStorage.setItem('userEmail', loadedEmail);
         }
+
+         if (data.preferences) {
+          setAllowAll(data.preferences.allow_all ?? true);
+          setNotifs({
+            reports:       data.preferences.reports       ?? true,
+            announcements: data.preferences.announcements ?? true,
+            staff_updates: data.preferences.staff_updates ?? true,
+            system_notifs: data.preferences.system_notifs ?? true,
+          });
+         }
       } catch (error) {
         console.error('Failed to load Chair profile:', error);
         setProfileMessage({
@@ -2720,6 +2726,7 @@ function ChairSystemSettings({
     loadProfile();
   }, [userName]);
 
+
   const saveProfile = async () => {
     const token = localStorage.getItem('token');
 
@@ -2730,6 +2737,7 @@ function ChairSystemSettings({
       });
       return;
     }
+
 
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
@@ -2908,7 +2916,42 @@ function ChairSystemSettings({
     }
   };
 
-  const handleSaveChanges = async () => {
+    const saveNotifications = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    setSaving(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ allow_all: allowAll, ...notifs }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update preferences.');
+
+      setSuccessTitle('Notification Preferences Updated');
+      setSuccessText(
+        allowAll
+          ? 'Your notification preferences have been saved.'
+          : 'All notifications are now muted.'
+      );
+      setShowSuccessMessage(true);
+    } catch (error) {
+      console.error('Chair notification update failed:', error);
+      setSuccessTitle('Update Failed');
+      setSuccessText(error instanceof Error ? error.message : 'Failed to update preferences.');
+      setShowSuccessMessage(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+    const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
       return;
@@ -2919,11 +2962,9 @@ function ChairSystemSettings({
       return;
     }
 
-    setSaving(true);
-    try {
-      await new Promise(res => setTimeout(res, 600));
-    } finally {
-      setSaving(false);
+    if (activeTab === 'notifications') {
+      await saveNotifications();
+      return;
     }
   };
 
@@ -3150,18 +3191,32 @@ function ChairSystemSettings({
             </div>
           )}
 
-          {activeTab === 'notifications' && (
+                    {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
 
-              <div>
-                <ChairToggleRow label="Faculty Report Submissions" checked={notifs.facultyReports} onChange={() => toggleNotif('facultyReports')} />
-                <ChairToggleRow label="Pending Reports" checked={notifs.pendingReports} onChange={() => toggleNotif('pendingReports')} />
-                <ChairToggleRow label="Student Registration/Approval" checked={notifs.studentApprovals} onChange={() => toggleNotif('studentApprovals')} />
-                <ChairToggleRow label="Department Activities" checked={notifs.departmentActivities} onChange={() => toggleNotif('departmentActivities')} />
+              <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl mb-4">
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Turn off to completely mute all notifications and reminders.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAllowAll(v => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${allowAll ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${allowAll ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+
+              <div className={!allowAll ? 'opacity-50 pointer-events-none' : ''}>
+                <ChairToggleRow label="Faculty Reports & Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
                 <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ChairToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+                <ChairToggleRow label="Student Approvals & Department Activities" checked={notifs.staff_updates} onChange={() => toggleNotif('staff_updates')} />
+                <ChairToggleRow label="System Notifications" checked={notifs.system_notifs} onChange={() => toggleNotif('system_notifs')} />
               </div>
             </div>
           )}

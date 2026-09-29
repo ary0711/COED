@@ -18,7 +18,7 @@ const PREF_COLUMN = {
   staff_update: 'staff_updates',
   system: 'system_notifs',
 };
-const SENDABLE_ROLES = ['student', 'alumni', 'faculty', 'department_chair', 'chair', 'staff'];
+const SENDABLE_ROLES = ['student', 'alumni', 'faculty', 'department_chair', 'chair'];
 
 const chunk = (arr, n = 100) =>
   Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
@@ -26,6 +26,8 @@ const chunk = (arr, n = 100) =>
 const asArray = (v) => (Array.isArray(v) ? v : []);
 
 const isDeanOrAdmin = (req) => ['dean', 'admin'].includes(req.user.role);
+const isChair = (req) => ['department_chair', 'dept_chair', 'chair'].includes(req.user.role);
+const canSend = (req) => isDeanOrAdmin(req) || isChair(req);
 
 // Some accounts (e.g. the Dean) have a different id in `users` than in `profiles`.
 // Notifications are keyed by profiles.id, so always match on BOTH ids.
@@ -45,9 +47,35 @@ async function ownIds(req) {
 }
 
 // Resolve the audience (roles + optional program/department + specific accounts)
-async function resolveRecipients({ roles, departments, user_ids }, senderIds) {
+// Users belonging to the given departments (via their role-profile tables)
+async function userIdsInDepartments(departmentIds) {
+  const ids = new Set();
+  for (const table of ['student_profiles', 'faculty_profiles', 'alumni_profiles']) {
+    const { data } = await supabase
+      .from(table)
+      .select('user_id')
+      .in('department_id', departmentIds);
+    (data ?? []).forEach((r) => r.user_id && ids.add(r.user_id));
+  }
+  const { data: chairs } = await supabase
+    .from('users')
+    .select('id')
+    .overlaps('department_ids', departmentIds);
+  (chairs ?? []).forEach((u) => ids.add(u.id));
+  return ids;
+}
+
+// Resolve the audience (roles + optional program/department + specific accounts)
+async function resolveRecipients(
+  { roles, departments, department_ids, user_ids },
+  senderIds,
+  restrictToRoles = null
+) {
   const validRoles = asArray(roles).filter((r) => SENDABLE_ROLES.includes(r));
   const wanted = new Set(asArray(departments).map((d) => String(d).toLowerCase()));
+  const deptIds = asArray(department_ids).filter(Boolean);
+  const deptUsers = deptIds.length ? await userIdsInDepartments(deptIds) : null;
+  const hasDeptFilter = wanted.size > 0 || deptUsers !== null;
   const recipients = new Set();
 
   if (validRoles.length > 0) {
@@ -59,22 +87,24 @@ async function resolveRecipients({ roles, departments, user_ids }, senderIds) {
     if (error) return { error };
 
     (data ?? []).forEach((p) => {
-      const match =
-        wanted.size === 0 ||
+      const textMatch =
         wanted.has(String(p.program || '').toLowerCase()) ||
         wanted.has(String(p.department || '').toLowerCase());
-      if (match) recipients.add(p.id);
+      const idMatch = deptUsers ? deptUsers.has(p.id) : false;
+      if (!hasDeptFilter || textMatch || idMatch) recipients.add(p.id);
     });
   }
 
   for (const ids of chunk(asArray(user_ids))) {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, role')
       .in('id', ids)
       .eq('status', 'active');
     if (error) return { error };
-    (data ?? []).forEach((p) => recipients.add(p.id));
+    (data ?? []).forEach((p) => {
+      if (!restrictToRoles || restrictToRoles.includes(p.role)) recipients.add(p.id);
+    });
   }
 
   asArray(senderIds).forEach((id) => recipients.delete(id));
@@ -154,8 +184,16 @@ router.patch('/:id/read', authenticate, async (req, res) => {
 // ── POST /api/notifications/preview  (Dean / Admin only) ─────
 // Returns how many people would receive the notification, without sending.
 router.post('/preview', authenticate, async (req, res) => {
+    if (!canSend(req)) {
+    return res.status(403).json({ error: 'You are not allowed to send notifications.' });
+  }
+
+  // Chairs can only remind specific faculty accounts, never broadcast
+  const restrictRoles = isDeanOrAdmin(req) ? null : ['faculty'];
   if (!isDeanOrAdmin(req)) {
-    return res.status(403).json({ error: 'Only the Dean or Admin can send notifications.' });
+    req.body.roles = [];
+    req.body.departments = [];
+    req.body.department_ids = [];
   }
 
   const { type = 'announcement' } = req.body;
@@ -173,8 +211,16 @@ router.post('/preview', authenticate, async (req, res) => {
 
 // ── POST /api/notifications/send  (Dean / Admin only) ────────
 router.post('/send', authenticate, async (req, res) => {
+    if (!canSend(req)) {
+    return res.status(403).json({ error: 'You are not allowed to send notifications.' });
+  }
+
+  // Chairs can only remind specific faculty accounts, never broadcast
+  const restrictRoles = isDeanOrAdmin(req) ? null : ['faculty'];
   if (!isDeanOrAdmin(req)) {
-    return res.status(403).json({ error: 'Only the Dean or Admin can send notifications.' });
+    req.body.roles = [];
+    req.body.departments = [];
+    req.body.department_ids = [];
   }
 
   const { title, message, type = 'announcement' } = req.body;
@@ -185,7 +231,7 @@ router.post('/send', authenticate, async (req, res) => {
   }
   if (!prefColumn) return res.status(400).json({ error: 'Invalid notification type.' });
 
-  const resolved = await resolveRecipients(req.body, await ownIds(req));
+    const resolved = await resolveRecipients(req.body, await ownIds(req), restrictRoles);
   if (resolved.error) return res.status(500).json({ error: resolved.error.message });
   if (!resolved.hasTargets) {
     return res.status(400).json({ error: 'Choose at least one recipient group or account.' });

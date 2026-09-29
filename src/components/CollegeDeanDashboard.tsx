@@ -10,6 +10,7 @@ import { DepartmentsPage } from './coed/DepartmentsPage';
 import { AchievementsPage } from './coed/AchievementsPage';
 import { AccreditationPage } from './coed/AccreditationPage';
 import { ContactPage } from './coed/ContactPage';
+import { sendBackendNotification } from '../notificationsApi';
 import { Footer } from './coed/Footer';
 import HomePageEditor from './pages/HomePageEditor';
 import AnnouncementsContent from './AnnouncementsContent';
@@ -1874,6 +1875,13 @@ const AUDIENCE_LABELS: Record<string, string> = {
   faculty: 'Faculty & Staff Only',
 };
 
+const AUDIENCE_TO_ROLES: Record<string, string[]> = {
+  all: ['student', 'alumni', 'faculty', 'department_chair', 'staff'],
+  students: ['student'],
+  alumni: ['alumni'],
+  faculty: ['faculty', 'department_chair', 'staff'],
+};
+
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -2219,6 +2227,27 @@ export default function CalendarActivities() {
         const err = await res.json().catch(() => ({}));
         setFormError(`Failed to ${isEditing ? 'update' : 'save'} event: ` + (err.error || res.statusText));
         return;
+      }
+
+            // Notify the audience only for NEW events (backend respects mute settings)
+      if (!isEditing) {
+        try {
+          const when = new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+          });
+          const timeText = form.start_time ? ` at ${formatSingleTime(form.start_time)}` : '';
+          const placeText = form.location.trim() ? ` · ${form.location.trim()}` : '';
+
+          await sendBackendNotification({
+            title: `New Event: ${form.title.trim()}`,
+            message: `${when}${timeText}${placeText}`,
+            type: 'system',
+            roles: AUDIENCE_TO_ROLES[form.audience] ?? AUDIENCE_TO_ROLES.all,
+            department_ids: form.target_department_id ? [form.target_department_id] : [],
+          });
+        } catch (notifErr) {
+          console.error('Event saved but notification failed:', notifErr);
+        }
       }
 
       await fetchEvents();
@@ -4358,6 +4387,8 @@ export function ResearchAchievements() {
         return;
       }
       const data = await res.json();
+
+    
       setSubmissions(data ?? []);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
@@ -4383,6 +4414,30 @@ export function ResearchAchievements() {
         const err = await res.json().catch(() => ({}));
         setLoadError(err.error || 'Failed to update submission status.');
         return;
+      }
+
+            // Notify the submitter about the decision
+      const recipientId = (submission as any).submitted_by ?? (submission as any).user_id;
+      if (recipientId) {
+        try {
+          const label = typeLabel(submission.type);
+          await sendBackendNotification({
+            title: status === 'approved'
+              ? `${label} Approved`
+              : `${label} Needs Revision`,
+            message: status === 'approved'
+              ? `Your ${label.toLowerCase()} submission "${submission.title}" has been approved.`
+              : `Your ${label.toLowerCase()} submission "${submission.title}" was rejected.${
+                  dean_remarks ? ` Remarks: ${dean_remarks}` : ''
+                }`,
+            type: 'system',
+            user_ids: [recipientId],
+          });
+        } catch (notifErr) {
+          console.error('Status updated but notification failed:', notifErr);
+        }
+      } else {
+        console.warn('No submitter id on submission; notification skipped.', submission);
       }
 
       setSubmissions(prev =>
@@ -8184,49 +8239,29 @@ await sendNotification({
 const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
   setRemindingId(row.profile.id);
   try {
-    // 1. Check user's notification preferences for reports
-    const { data: prefs, error: prefError } = await supabase
-      .from('notification_preferences')
-      .select('reports')
-      .eq('user_id', row.profile.id)
-      .maybeSingle();
+    const dueText = deadline
+      ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+      : '';
 
-    if (prefError) {
-      console.error('Error checking preferences:', prefError);
-    }
+    const result = await sendBackendNotification({
+      title: `Reminder: ${quarterSelect} Quarterly Report`,
+      message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
+      type: 'report',
+      user_ids: [row.profile.id],
+    });
 
-    // Giatras nato ang pag-check: Kung naka-off ang reports, 
-    // i-set lang nato nga true/allowed ang insert sa code, 
-    // PERO dili nato i-insert kung false. 
-    // O kaya, kung gusto nimo nga silent drop gyud (mo-success sa Dean pero walay ma-save):
-    const isReportEnabled = prefs?.reports !== false;
-
-    if (isReportEnabled) {
-      const dueText = deadline
-        ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
-        : '';
-
-      const { error } = await supabase.from('notifications').insert({
-        user_id: row.profile.id,
-        title: `Reminder: ${quarterSelect} Quarterly Report`,
-        message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
-        type: 'report', // Gi-match nato sa report type
-        is_read: false,
-      });
-
-      if (error) throw error;
+    if (result.sent === 0 && result.muted > 0) {
+      showInfo('Reminder Not Delivered', `${row.profile.full_name} has turned off report reminders.`);
     } else {
-      console.log(`Silent drop: Notification blocked for ${row.profile.full_name} because reports preference is OFF.`);
+      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
     }
-
-    // Kanunay gyud mo-show og Success sa Dean bisag gi-block sa luyo!
-    showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
   } catch (err: any) {
     showInfo('Error', err.message || 'Failed to send reminder.');
   } finally {
     setRemindingId(null);
   }
 };
+
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
 
