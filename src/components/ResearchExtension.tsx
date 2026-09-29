@@ -514,6 +514,16 @@ export function ResearchExtension({ userId }: { userId: string }) {
         xhr.send(formData);
       });
 
+      try {
+  await notifyDean({
+    title: `${isEdit ? 'Updated' : 'New'} ${researchType === 'research' ? 'Research' : 'Extension'} Submission`,
+    message: title.trim(),
+    type: 'system',
+  });
+} catch (e) {
+  console.error('Submission saved but Dean notification failed:', e);
+}
+
       await fetchSubmissions();
       resetForm();
       setView('overview');

@@ -253,6 +253,7 @@ router.post('/send', authenticate, async (req, res) => {
     const { error } = await supabase.from('notifications').insert(part);
     if (error) return res.status(500).json({ error: error.message });
   }
+  
 
   return res.json({ success: true, sent: rows.length, muted: prefs.muted });
 });
