@@ -3036,17 +3036,17 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
   };
 
   const handleAfterSubmit = async (label: string) => {
-    try {
-      await notifyDean({
-        title: `Chair Report Submitted`,
-        message: `${userName} submitted the ${label}.`,
-        type: 'report',
-      });
-    } catch (e) {
-      console.error('Report submitted but Dean notification failed:', e);
-    }
-    setTab('track');
-  };
+  try {
+    await notifyDean({
+      title: `Report Submitted: ${label}`,
+      message: `${userName} submitted the ${label}.`,
+      type: 'report',
+    });
+  } catch (e) {
+    console.error('Report submitted but Dean notification failed:', e);
+  }
+  setTab('track');
+};
 
   return (
     <div>

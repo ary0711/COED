@@ -134,7 +134,7 @@ function getFileIcon(filename: string, className = 'w-4 h-4') {
   return <FileGenericIcon className={className} />;
 }
 
-export function ResearchExtension({ userId }: { userId: string }) {
+export function ResearchExtension({ userId, userName = 'A faculty member' }: { userId: string; userName?: string }) {
   // Navigation State
   const [view, setView] = useState<'overview' | 'create' | 'track'>('overview');
   const [overviewTab, setOverviewTab] = useState<'all' | 'research' | 'extension'>('all');
