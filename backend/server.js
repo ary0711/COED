@@ -45,7 +45,12 @@ app.get('/api/auth/profile-test', (req, res) => {
     message: 'Auth route is working.'
   });
 });
+const researchSubmissionsRoutes = require('./routes/researchSubmissions');
 
+app.use(
+  '/api/research-submissions',
+  researchSubmissionsRoutes
+);
 app.use('/api/students', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
@@ -76,6 +81,7 @@ app.use(
 );
 
 app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/chair', require('./routes/chair'));
 app.use('/api/me', require('./routes/me'));
 app.use('/api/departments', require('./routes/departments'));
 

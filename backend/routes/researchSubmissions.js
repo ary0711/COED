@@ -23,7 +23,47 @@ const upload = multer({
 });
 
 const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
+// =====================================================
+// PUBLIC: GET APPROVED RESEARCH FOR RESEARCH PAGE
+// =====================================================
+router.get('/public/approved', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('research_submissions')
+      .select(`
+        id,
+        title,
+        type,
+        category,
+        description,
+        publication_link,
+        authors,
+        created_at,
+        updated_at,
+        status
+      `)
+      .eq('status', 'approved')
+      .eq('type', 'research')
+      .order('created_at', { ascending: false });
 
+    if (error) {
+      console.error('Public approved research error:', error);
+
+      return res.status(500).json({
+        error: 'Failed to load approved research.',
+        details: error.message,
+      });
+    }
+
+    return res.json(data || []);
+  } catch (error) {
+    console.error('Public approved research server error:', error);
+
+    return res.status(500).json({
+      error: 'Server error while loading approved research.',
+    });
+  }
+});
 // Updated to exactly match the frontend dash format to prevent validation errors
 const ALLOWED_SDGS = [
   'SDG 1 – No Poverty',

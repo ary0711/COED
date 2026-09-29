@@ -67,6 +67,7 @@ interface AchievementPageProps {
   previewStatistics?: any[];
   previewTopnotchers?: any[];
   previewCollegeAchievements?: any[];
+  onNavigate?: (page: string) => void;
 }
 
 export function AchievementsPage({
@@ -77,8 +78,8 @@ export function AchievementsPage({
   previewStatistics,
   previewTopnotchers,
   previewCollegeAchievements,
+  onNavigate,
 }: AchievementPageProps) {
-
   
   
   const [selectedYear, setSelectedYear] = useState('2025');
@@ -426,9 +427,13 @@ if (!previewMode && loading) {
               </h2>
               <p className="text-blue-100 mb-6 leading-relaxed">
  {displayBanner?.description}              </p>
-              <button className="px-6 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold">
-              {displayPageContent?.button_text}
-              </button>
+              <button
+  type="button"
+  onClick={() => onNavigate?.('contact')}
+  className="px-6 py-3 bg-white text-[#1E3A8A] rounded-lg hover:bg-blue-50 transition-colors font-semibold"
+>
+  {displayPageContent?.button_text}
+</button>
             </div>
             <div className="grid grid-cols-2 gap-4">
 

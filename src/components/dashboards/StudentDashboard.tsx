@@ -17,6 +17,8 @@ import {
   Eye,
   Loader2,
   EyeOff,
+  Trash2,
+  History,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { createPortal } from 'react-dom';
@@ -26,7 +28,7 @@ import { supabase } from '../../supabaseClient';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 const studentMenuItems = [
-  { icon: Bell,         label: 'Dashboard',               id: 'dashboard'    },
+  { icon: Bell,         label: 'Dashboard',             id: 'dashboard'    },
   { icon: User,         label: 'Faculty & Departments',   id: 'faculty'      },
   { icon: BookOpen,     label: 'Academic Resources',      id: 'resources'    },
   { icon: Award,        label: 'Calendar Activities',     id: 'achievements' },
@@ -41,11 +43,9 @@ const ME_API_URL = 'http://localhost:5000/api/students/me';
 const PROFILE_REFRESH_MS = 30000;
 
 function getStoredStudentId(): string {
-  // First priority: value stored during login
   const storedId = localStorage.getItem('userIdNumber')?.trim();
   if (storedId) return storedId;
 
-  // Second priority: read idNumber from JWT
   const token = localStorage.getItem('token');
   if (!token) return '';
 
@@ -70,7 +70,6 @@ const PROGRAM_OPTIONS = [
 ];
 
 // Categories available when a student files an inquiry/concern.
-// Kept in sync with the dean-side dashboard so category badges match.
 const INQUIRY_CATEGORIES = [
   'Academic',
   'Enrollment',
@@ -85,6 +84,7 @@ const INQUIRY_CATEGORIES = [
 interface StudentProfile {
   student_id: string;
   full_name: string;
+  username?: string;
   student_no: string;
   email: string;
   year_level: number;
@@ -96,7 +96,6 @@ interface StudentProfile {
   department_name: string | null;
 }
 
-// Shape of a row from the shared `inquiries` table, scoped to this student
 interface StudentInquiry {
   id: string;
   subject: string;
@@ -108,7 +107,6 @@ interface StudentInquiry {
   replied_at: string | null;
 }
 
-// Shape of a row from the shared `notifications` table
 interface NotificationRow {
   id: string;
   title: string;
@@ -136,15 +134,13 @@ interface RealCalendarEvent {
 }
 
 const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
-
-// ── Dean's List result for the logged-in student (from the published list) ──
 const DEANS_LIST_STATUS_URL = 'http://localhost:5000/api/deans-list/my-status';
 
 interface DeansListStatus {
-  published: boolean;        // is there a published Dean's List at all?
-  semester?: string;         // e.g. "2nd Semester AY 2025–2026"
-  listed?: boolean;          // is this student on the published list?
-  qualified?: boolean;       // GWA 1.75 or better
+  published: boolean;
+  semester?: string;
+  listed?: boolean;
+  qualified?: boolean;
   gwa?: number | null;
 }
 
@@ -203,20 +199,17 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   };
   const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
 
-  // ── Logged-in student's profile data ──
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // silent = true means "refresh in the background": no loading skeletons.
   const fetchProfile = async (silent = false) => {
     if (!silent) setProfileLoading(true);
     setProfileError(null);
 
     try {
       const token = localStorage.getItem('token');
-
       if (!token) {
         setProfileError('No logged-in user found. Please sign in again.');
         return;
@@ -237,7 +230,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         return;
       }
 
-      // Nested data
       const profileData = data.profile || {};
       const studentProfileData = data.studentProfile || data.student_profile || {};
 
@@ -249,6 +241,13 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         localStorage.getItem('userFullName') ||
         '';
 
+      const resolvedUsername =
+        data.username ||
+        profileData.username ||
+        studentProfileData.username ||
+        localStorage.getItem('userUsername') ||
+        '';
+
       const resolvedEmail =
         data.email ||
         data.userEmail ||
@@ -257,8 +256,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         localStorage.getItem('userEmail') ||
         '';
 
-      // Student ID priority: studentNo > student_no > student_profiles.student_no
-      // > idNumber > id_number > profiles.id_number > localStorage > JWT
       const resolvedStudentNo =
         data.studentNo ||
         data.student_no ||
@@ -292,6 +289,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
       setProfile({
         student_id: resolvedUserId,
         full_name: resolvedFullName,
+        username: resolvedUsername,
         student_no: resolvedStudentNo,
         email: resolvedEmail,
         year_level: resolvedYearLevel,
@@ -305,8 +303,8 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
 
       setUserEmail(resolvedEmail);
 
-      // Keep local storage synchronized
       if (resolvedFullName) localStorage.setItem('userFullName', resolvedFullName);
+      if (resolvedUsername) localStorage.setItem('userUsername', resolvedUsername);
       if (resolvedEmail) localStorage.setItem('userEmail', resolvedEmail);
       if (resolvedStudentNo) localStorage.setItem('userIdNumber', resolvedStudentNo);
 
@@ -319,12 +317,8 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
     }
   };
 
-  // Load once, then keep the profile fresh: when the tab regains focus and
-  // every PROFILE_REFRESH_MS. This is what makes a published Dean's List
-  // result (Academic Standing) appear without a manual page reload.
   useEffect(() => {
     fetchProfile();
-
     const refresh = () => fetchProfile(true);
     window.addEventListener('focus', refresh);
     const timer = setInterval(refresh, PROFILE_REFRESH_MS);
@@ -335,12 +329,10 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
     };
   }, []);
 
-  // Also refresh whenever the student goes back to the Dashboard menu
   useEffect(() => {
     if (activeMenuItem === 'dashboard') fetchProfile(true);
   }, [activeMenuItem]);
 
-  // Auto-close sidebar when resizing to desktop
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 1024) setSidebarOpen(false);
@@ -351,8 +343,6 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
 
   return (
     <div className="flex min-h-screen bg-gray-100">
-
-      {/* ── Sidebar — slide-in on mobile, fixed on desktop ── */}
       <Sidebar
         menuItems={studentMenuItems}
         activeItem={activeMenuItem}
@@ -363,16 +353,11 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         onLogout={handleInternalLogout}
       />
 
-      {/* ── Desktop spacer so content clears the fixed sidebar ── */}
       <div className="hidden lg:block w-64 shrink-0" />
 
-      {/* ── Main column ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-        {/* ── Top bar ── */}
         <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 px-4 lg:px-0">
-            {/* Hamburger — mobile only */}
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
@@ -391,7 +376,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         </div>
 
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard'   && (
+          {activeMenuItem === 'dashboard'    && (
             <StudentDashboardView
               selectedProgram={selectedProgram}
               profile={profile}
@@ -400,11 +385,11 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
               setActiveMenuItem={setActiveMenuItem}
             />
           )}
-          {activeMenuItem === 'faculty'     && <FacultyDepartments profile={profile} />}
-          {activeMenuItem === 'resources'   && <AcademicResources />}
+          {activeMenuItem === 'faculty'      && <FacultyDepartments profile={profile} />}
+          {activeMenuItem === 'resources'    && <AcademicResources />}
           {activeMenuItem === 'achievements'&& <AchievementsActivities />}
-          {activeMenuItem === 'inquiry'     && <InquiryContact />}
-          {activeMenuItem === 'settings'    && (
+          {activeMenuItem === 'inquiry'      && <InquiryContact />}
+          {activeMenuItem === 'settings'     && (
             <StudentSettings
               selectedProgram={selectedProgram}
               setSelectedProgram={setSelectedProgram}
@@ -560,7 +545,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
   const [inquiries, setInquiries] = useState<StudentInquiry[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
-  // ── Dean's List result (Qualified / Not Qualified) ──
   const [dlStatus, setDlStatus] = useState<DeansListStatus | null>(null);
   const [dlLoading, setDlLoading] = useState(true);
 
@@ -580,7 +564,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
     }
   };
 
-  // Load once, and keep it fresh so a newly published list shows up without a reload
   useEffect(() => {
     fetchDeansListStatus();
     const refresh = () => fetchDeansListStatus(true);
@@ -592,9 +575,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
     };
   }, []);
 
-  // What the Academic Standing card shows:
-  //  - a Dean's List is published  -> "Qualified" or "Not Qualified" (from the list)
-  //  - nothing published yet       -> whatever is saved on the student's profile
   const published = !!dlStatus?.published;
   const isQualified = published
     ? !!dlStatus?.qualified
@@ -631,7 +611,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
         const token = localStorage.getItem('token');
         const userId = localStorage.getItem('userId');
 
-        // Load Upcoming Activities
         const evRes = await fetch(CALENDAR_API_URL_STUDENT, { headers: { Authorization: `Bearer ${token}` } });
         if (evRes.ok) {
           const data = await evRes.json();
@@ -643,7 +622,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
           setUpcomingEvents(studentOnly);
         }
 
-        // Load Active Inquiries
         if (userId) {
           const { data: inqData } = await supabase
             .from('inquiries')
@@ -665,10 +643,7 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
 
   return (
     <div>
-      {/* ── Stat cards (Non-clickable) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
-
-        {/* Card 1: Student ID */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 mb-3">
             <User className="w-5 h-5" />
@@ -679,7 +654,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
           <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Student ID</div>
         </div>
 
-        {/* Card 2: Year Level & Program */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
             <GraduationCap className="w-5 h-5" />
@@ -695,7 +669,6 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
           </div>
         </div>
 
-        {/* Card 3: Academic Standing (Dean's List result: Qualified / Not Qualified) */}
         <div
           className={`rounded-xl shadow-sm border p-4 sm:p-5 flex flex-col justify-center cursor-default ${
             isQualified
@@ -734,16 +707,12 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
             </div>
           )}
         </div>
-
       </div>
 
-      {/* ── Bottom Action Cards (Clickable) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Inquiry Card */}
         <div
           onClick={() => setActiveMenuItem('inquiry')}
-          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[450px]"
         >
           <div className="flex justify-between items-center mb-6 shrink-0">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Inquiry & Contact</h2>
@@ -779,10 +748,9 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
           </div>
         </div>
 
-        {/* Calendar Card */}
         <div
           onClick={() => setActiveMenuItem('achievements')}
-          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[490px]"
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 cursor-pointer hover:shadow-md transition-all flex flex-col h-[450px]"
         >
           <div className="flex justify-between items-center mb-6 shrink-0">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Upcoming Activities</h2>
@@ -842,7 +810,6 @@ function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
 
         const studentProg = profile.program || profile.department_name || '';
 
-        // Smart string matcher to link Faculty/Chairs to the Student's Program
         const isMatch = (targetStr: string, stProg: string) => {
           const t = (targetStr || '').toLowerCase();
           const s = (stProg || '').toLowerCase();
@@ -861,7 +828,6 @@ function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
           return isMatch(targetStr, studentProg);
         });
 
-        // Sort so the Chairman always appears at the top
         matched.sort((a, b) => {
           if (a.role === 'department_chair' && b.role !== 'department_chair') return -1;
           if (a.role !== 'department_chair' && b.role === 'department_chair') return 1;
@@ -961,13 +927,12 @@ function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
   );
 }
 
-
-// ====================== ACADEMIC RESOURCES  ======================
+// ====================== ACADEMIC RESOURCES ======================
 function AcademicResources() {
   return <AcademicDocumentsViewer />;
 }
 
-// ====================== ACHIEVEMENTS & ACTIVITIES ======================
+// ====================== ACHIEVEMENTS & ACTIVITIES (CALENDAR) ======================
 const ROLE_DISPLAY_LABEL_STUDENT: Record<string, string> = {
   dean: 'Dean',
   admin: 'Admin',
@@ -1093,7 +1058,6 @@ function AchievementsActivities() {
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
       <div>
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
           Calendar & Activities
@@ -1110,9 +1074,7 @@ function AchievementsActivities() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* ── Main Calendar Grid (2 Cols on lg) ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
-          {/* Month Navigation Toolbar */}
           <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
             <div className="flex items-center gap-2">
               <select
@@ -1171,7 +1133,6 @@ function AchievementsActivities() {
             </div>
           </div>
 
-          {/* Days Header */}
           <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
             {DAYS.map((d, i) => (
               <div
@@ -1220,14 +1181,18 @@ function AchievementsActivities() {
                     onMouseEnter={() => setHoveredDate(dateStr)}
                     onMouseLeave={() => setHoveredDate(null)}
                     onClick={() => {
-                      setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      if (!isPast) {
+                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                      }
                     }}
-                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
-                      isSelected
+                    className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 transition-colors outline-none ${
+                      isPast
+                        ? 'bg-gray-100/70 text-gray-400 cursor-not-allowed select-none'
+                        : 'cursor-pointer hover:bg-blue-50/20'
+                    } ${
+                      isSelected && !isPast
                         ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
-                        : isPast
-                        ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                        : 'bg-white hover:bg-blue-50/20'
+                        : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -1236,7 +1201,7 @@ function AchievementsActivities() {
                           isTodayDate
                             ? 'bg-[#1E3A8A] text-white shadow-xs'
                             : isPast
-                            ? 'text-gray-400'
+                            ? 'text-gray-400 bg-gray-200/50'
                             : 'text-gray-700'
                         }`}
                       >
@@ -1244,13 +1209,12 @@ function AchievementsActivities() {
                       </span>
 
                       {hasEvents && (
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                        <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${isPast ? 'bg-gray-200 text-gray-500' : 'bg-blue-100 text-[#1E3A8A]'}`}>
                           {dayEvents.length}
                         </span>
                       )}
                     </div>
 
-                    {/* Desktop Event Pills */}
                     <div className="hidden sm:flex flex-col gap-1">
                       {dayEvents.slice(0, 2).map((ev) => (
                         <button
@@ -1259,8 +1223,8 @@ function AchievementsActivities() {
                             e.stopPropagation();
                             setSelectedEvent(ev);
                           }}
-                          className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
-                          style={{ backgroundColor: colorForStudentEvent(ev) }}
+                          className={`text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs transition-all ${isPast ? 'opacity-70 bg-gray-400 cursor-pointer' : 'hover:brightness-110'}`}
+                          style={{ backgroundColor: isPast ? '#9CA3AF' : colorForStudentEvent(ev) }}
                           title={ev.title}
                         >
                           {ev.title}
@@ -1273,14 +1237,13 @@ function AchievementsActivities() {
                       )}
                     </div>
 
-                    {/* Mobile Indicators */}
                     {hasEvents && (
                       <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                         {dayEvents.slice(0, 3).map((ev) => (
                           <span
                             key={ev.id}
                             className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: colorForStudentEvent(ev) }}
+                            style={{ backgroundColor: isPast ? '#9CA3AF' : colorForStudentEvent(ev) }}
                           />
                         ))}
                         {dayEvents.length > 3 && (
@@ -1289,7 +1252,6 @@ function AchievementsActivities() {
                       </div>
                     )}
 
-                    {/* Hover / Tap Popover with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1300,7 +1262,7 @@ function AchievementsActivities() {
                       >
                         <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                           <span className="text-xs font-bold text-gray-900">
-                            {formatLongDate(dateStr)}
+                            {formatLongDate(dateStr)} {isPast && '(Past)'}
                           </span>
                           <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
                             {dayEvents.length} {dayEvents.length === 1 ? 'activity' : 'activities'}
@@ -1315,7 +1277,7 @@ function AchievementsActivities() {
                                 key={ev.id}
                                 onClick={() => setSelectedEvent(ev)}
                                 className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                style={{ borderLeftColor: colorForStudentEvent(ev) }}
+                                style={{ borderLeftColor: isPast ? '#9CA3AF' : colorForStudentEvent(ev) }}
                               >
                                 <div className="text-xs font-semibold text-gray-900 leading-snug">
                                   {ev.title}
@@ -1343,7 +1305,6 @@ function AchievementsActivities() {
           )}
         </div>
 
-        {/* ── Upcoming Activities Side Panel ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <h2 className="text-sm font-bold text-gray-900">Upcoming Activities</h2>
@@ -1403,7 +1364,6 @@ function AchievementsActivities() {
         </div>
       </div>
 
-      {/* ── Event Details Modal ── */}
       {selectedEvent && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-200">
@@ -1476,6 +1436,7 @@ function InquiryContact() {
   const [inquiries, setInquiries] = useState<StudentInquiry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [selectedInquiry, setSelectedInquiry] = useState<StudentInquiry | null>(null);
+  const [historyTab, setHistoryTab] = useState<'all' | 'answered'>('all');
 
   const fetchInquiries = async () => {
     setLoadingHistory(true);
@@ -1499,7 +1460,6 @@ function InquiryContact() {
     fetchInquiries();
   }, []);
 
-  // Realtime — reflect the dean's reply as soon as it's saved
   useEffect(() => {
     const channelName = `student-inquiries-channel-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
@@ -1559,116 +1519,185 @@ function InquiryContact() {
     }
   };
 
+  const removeInquiry = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to remove this inquiry from your history?')) return;
+    try {
+      const { error } = await supabase.from('inquiries').delete().eq('id', id);
+      if (error) throw error;
+      setInquiries((prev) => prev.filter((item) => item.id !== id));
+      if (selectedInquiry?.id === id) setSelectedInquiry(null);
+    } catch (err) {
+      console.error('Failed to delete inquiry:', err);
+      alert('Could not delete inquiry.');
+    }
+  };
+
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleString('en-PH', {
       timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
     });
 
+  const getStatusStyle = (status: string) =>
+    status === 'answered' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700';
+
+  const allHistory = inquiries;
+  const answeredHistory = inquiries.filter((item) => item.status === 'answered');
+  const displayedHistory = historyTab === 'all' ? allHistory : answeredHistory;
+
   return (
-    <div>
+    <div className="space-y-6">
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Inquiry / Contact</h1>
 
-      {/* ── Submit form ── */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Submit a Concern or Question</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-            >
-              {INQUIRY_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
-            <textarea
-              rows={6}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
-              required
-            />
-          </div>
+      {/* Side-by-Side Fixed Height Cards with Drop Shadow */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="bg-white rounded-xl shadow-md p-6 sm:p-8 h-[600px] flex flex-col justify-between border border-gray-100">
+          <div className="flex-1 flex flex-col">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Submit a Concern or Question</h2>
+            <p className="text-xs text-gray-500 mb-5">Send your inquiries directly to the College Dean and administrative staff.</p>
+            
+            <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Subject</label>
+                    <input
+                      type="text"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      placeholder="e.g. Transcript Request"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Category</label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                      required
+                    >
+                      {INQUIRY_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-          {submitError && <p className="text-sm text-red-600">{submitError}</p>}
-          {submitSuccess && <p className="text-sm text-green-600">Your inquiry has been submitted successfully!</p>}
+                <div className="flex-1 flex flex-col">
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Message</label>
+                  <textarea
+                    rows={8}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Provide complete details regarding your concern..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm flex-1"
+                    required
+                  />
+                </div>
+              </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? 'Submitting...' : 'Submit Inquiry'}
-          </button>
-        </form>
-      </div>
+              <div className="space-y-3 pt-2">
+                {submitError && <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">{submitError}</p>}
+                {submitSuccess && <p className="text-xs text-green-600 bg-green-50 p-2.5 rounded-lg border border-green-200">Your inquiry has been submitted successfully!</p>}
 
-      {/* ── History of past inquiries ── */}
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Your Inquiry History</h2>
-          <button onClick={fetchInquiries} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  {submitting ? 'Submitting...' : 'Submit Inquiry'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
 
-        {loadingHistory ? (
-          <div className="flex items-center justify-center py-10 text-gray-400 text-sm">Loading history...</div>
-        ) : inquiries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-            <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
-            <p className="text-sm text-gray-400">You haven't submitted any inquiries yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {inquiries.map((inq) => (
-              <button
-                key={inq.id}
-                onClick={() => setSelectedInquiry(inq)}
-                className="w-full text-left p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-3 mb-1">
-                  <span className="font-medium text-gray-900 text-sm sm:text-base truncate">{inq.subject}</span>
-                  {inq.status === 'pending' ? (
-                    <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
-                  ) : (
-                    <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Answered</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mb-1">
-                  {inq.category && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{inq.category}</span>
-                  )}
-                  <span className="text-xs text-gray-400">{formatDate(inq.created_at)}</span>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-500 truncate">{inq.message}</p>
-                {inq.status === 'answered' && (
-                  <p className="text-xs text-blue-600 mt-1.5 truncate">Dean replied — tap to view</p>
-                )}
+        <div className="bg-white rounded-xl shadow-md p-5 sm:p-6 flex flex-col h-[600px] border border-gray-100">
+          <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100 flex-shrink-0">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <History className="w-5 h-5 text-blue-600" /> History
+            </h2>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setHistoryTab('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                    historyTab === 'all' ? 'bg-white text-blue-700 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  All ({allHistory.length})
+                </button>
+                <button
+                  onClick={() => setHistoryTab('answered')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                    historyTab === 'answered' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Answered ({answeredHistory.length})
+                </button>
+              </div>
+              <button onClick={fetchInquiries} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Refresh">
+                <RefreshCw className="w-4 h-4" />
               </button>
-            ))}
+            </div>
           </div>
-        )}
+
+          <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+            {loadingHistory ? (
+              <div className="space-y-3 animate-pulse pt-4">
+                <div className="h-20 bg-gray-100 rounded-lg" />
+                <div className="h-20 bg-gray-100 rounded-lg" />
+              </div>
+            ) : displayedHistory.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">{historyTab === 'all' ? 'No inquiries submitted yet.' : 'No answered inquiries found.'}</p>
+              </div>
+            ) : (
+              displayedHistory.map((inq) => (
+                <div
+                  key={inq.id}
+                  onClick={() => setSelectedInquiry(inq)}
+                  className={`group relative w-full text-left p-3.5 rounded-xl transition-all cursor-pointer shadow-2xs border ${
+                    inq.status === 'answered' ? 'bg-emerald-50/30 hover:bg-emerald-50/60 border-emerald-100' : 'bg-gray-50 hover:bg-blue-50/30 border-gray-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-900 text-sm truncate">{inq.subject}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${getStatusStyle(inq.status)}`}>
+                          {inq.status === 'answered' ? 'Answered' : 'Pending'}
+                        </span>
+                      </div>
+                      {inq.category && <div className="text-xs text-gray-500">{inq.category} • {formatDate(inq.created_at)}</div>}
+                      <div className="text-xs text-gray-600 mt-1 line-clamp-2">{inq.message}</div>
+                      {inq.status === 'answered' && inq.reply && (
+                        <div className="text-xs text-emerald-900 bg-emerald-100/60 p-2 rounded-lg mt-2 line-clamp-2">
+                          <span className="font-semibold">Dean's Reply:</span> {inq.reply}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={(e) => removeInquiry(inq.id, e)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors flex-shrink-0"
+                      title="Remove from history"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── Detail modal (shows the dean's reply, if any) ── */}
       {selectedInquiry && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div className="min-w-0">
@@ -1737,16 +1766,19 @@ interface StudentSettingsProps {
 function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
   const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
 
-  // Notifications
-  const [emailNotifications, setEmailNotifications] = useState(true);
+  // Notifications toggles
+  const [allNotifications, setAllNotifications] = useState(true);
+  const [inquiryAlerts, setInquiryAlerts] = useState(true);
   const [announcementAlerts, setAnnouncementAlerts] = useState(true);
+  const [calendarAlerts, setCalendarAlerts] = useState(true);
 
-  // Profile
+  // Profile inputs
   const [fullNameInput, setFullNameInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
   const [studentNoInput, setStudentNoInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
 
-  // Security
+  // Security inputs
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -1759,25 +1791,33 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [passwordMessage, setPasswordMessage] = useState('');
 
-  // Load profile from dashboard
   useEffect(() => {
     const storedStudentId = getStoredStudentId();
 
     if (!profile) {
       setFullNameInput('');
+      setUsernameInput(localStorage.getItem('userUsername') || '');
       setStudentNoInput(storedStudentId);
       setEmailInput(userEmail || localStorage.getItem('userEmail') || '');
       return;
     }
 
     setFullNameInput(profile.full_name || '');
+    setUsernameInput(profile.username || localStorage.getItem('userUsername') || '');
     setStudentNoInput(profile.student_no || storedStudentId || '');
     setEmailInput(profile.email || userEmail || localStorage.getItem('userEmail') || '');
   }, [profile, userEmail]);
 
-  // Save personal information
+  const handleAllNotificationsToggle = (checked: boolean) => {
+    setAllNotifications(checked);
+    setInquiryAlerts(checked);
+    setAnnouncementAlerts(checked);
+    setCalendarAlerts(checked);
+  };
+
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
+    const trimmedUsername = usernameInput.trim();
     const trimmedStudentNo = studentNoInput.trim();
     const trimmedEmail = emailInput.trim();
 
@@ -1797,14 +1837,12 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (!emailRegex.test(trimmedEmail)) {
       setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
       return false;
     }
 
     const token = localStorage.getItem('token');
-
     if (!token) {
       setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
       return false;
@@ -1822,6 +1860,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         },
         body: JSON.stringify({
           full_name: trimmedName,
+          username: trimmedUsername,
           email: trimmedEmail,
           student_no: trimmedStudentNo,
         }),
@@ -1834,21 +1873,21 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
       }
 
       setFullNameInput(trimmedName);
+      setUsernameInput(trimmedUsername);
       setStudentNoInput(trimmedStudentNo);
       setEmailInput(trimmedEmail);
 
       localStorage.setItem('userFullName', trimmedName);
+      localStorage.setItem('userUsername', trimmedUsername);
       localStorage.setItem('userEmail', trimmedEmail);
       localStorage.setItem('userIdNumber', trimmedStudentNo);
 
-      // Refresh dashboard
       await onProfileUpdated();
 
       setSaveMessage({ type: 'success', text: 'Personal information updated successfully.' });
       return true;
     } catch (error) {
       console.error('Student profile update failed:', error);
-
       setSaveMessage({
         type: 'error',
         text: error instanceof Error ? error.message : 'Failed to update your personal information.',
@@ -1859,7 +1898,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
   };
 
-  // Change password
   const changePassword = async () => {
     setPasswordMessage('');
     setSaveMessage(null);
@@ -1885,7 +1923,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
 
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
-
     if (!passwordRegex.test(newPassword)) {
       setPasswordMessage(
         'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
@@ -1899,7 +1936,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
 
     const token = localStorage.getItem('token');
-
     if (!token) {
       setPasswordMessage('Your session has expired. Please log in again.');
       return false;
@@ -1937,9 +1973,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
       return true;
     } catch (error) {
       console.error('Student password update failed:', error);
-
       const message = error instanceof Error ? error.message : 'Failed to change your password.';
-
       setPasswordMessage(message);
       setSaveMessage({ type: 'error', text: message });
 
@@ -1949,7 +1983,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
   };
 
-  // Top save button
   const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
@@ -1972,8 +2005,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
 
   return (
     <div>
-
-      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
@@ -1995,7 +2026,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </div>
       </div>
 
-      {/* MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -2008,10 +2038,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
         </div>
       )}
 
-      {/* BODY */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
-
-        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
@@ -2033,95 +2060,91 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
           ))}
         </nav>
 
-        {/* PANEL */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+  {activeTab === 'profile' && (
+    <div>
+      <h2 className="text-lg font-semibold text-gray-900">
+        Profile Information
+      </h2>
 
-          {/* PROFILE */}
-          {activeTab === 'profile' && (
+      <p className="text-sm text-gray-500 mb-6">
+        Update your personal details.
+      </p>
+
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 bg-gray-100 rounded-lg" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="h-10 bg-gray-100 rounded-lg" />
+            <div className="h-10 bg-gray-100 rounded-lg" />
+          </div>
+        </div>
+      ) : !profile ? (
+        <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+          Your profile information could not be loaded.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Full Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Full Name
+            </label>
+
+            <input
+              type="text"
+              value={fullNameInput}
+              onChange={(e) => setFullNameInput(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Student ID + Email */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Student ID */}
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Profile Information
-              </h2>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Student ID
+              </label>
 
-              <p className="text-sm text-gray-500 mb-6">
-                Update your personal details.
-              </p>
-
-              {loading ? (
-                <div className="animate-pulse space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="h-10 bg-gray-100 rounded-lg" />
-                    <div className="h-10 bg-gray-100 rounded-lg" />
-                  </div>
-                  <div className="h-10 bg-gray-100 rounded-lg" />
-                </div>
-              ) : !profile ? (
-                <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-                  Your profile information could not be loaded.
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-
-                    {/* FULL NAME */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={fullNameInput}
-                        onChange={(e) => setFullNameInput(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-
-                    {/* STUDENT ID */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Student ID
-                      </label>
-                      <input
-                        type="text"
-                        value={studentNoInput}
-                        onChange={(e) => setStudentNoInput(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-
-                  </div>
-
-                  {/* EMAIL */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
-                  </div>
-                </>
-              )}
+              <input
+                type="text"
+                value={studentNoInput}
+                onChange={(e) => setStudentNoInput(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
             </div>
-          )}
 
-          {/* SECURITY */}
+            {/* Email Address */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )}
+        
+
           {activeTab === 'security' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Password & Security
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Keep your account secure.
               </p>
 
               <div className="space-y-4 max-w-md">
-
-                {/* CURRENT */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Current Password
@@ -2148,7 +2171,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                   </div>
                 </div>
 
-                {/* NEW */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     New Password
@@ -2175,7 +2197,6 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                   </div>
                 </div>
 
-                {/* CONFIRM */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Confirm New Password
@@ -2202,76 +2223,75 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                   </div>
                 </div>
 
-                {/* ERROR */}
                 {passwordMessage && (
                   <div className="px-4 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
                     {passwordMessage}
                   </div>
                 )}
-
-              </div>
-
-              {/* 2FA */}
-              <div className="mt-6 pt-5 border-t border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Two-Factor Authentication
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Add an extra layer of protection to your account.
-                    </p>
-                  </div>
-                  <span className="text-xs font-medium text-gray-500">
-                    Not configured
-                  </span>
-                </div>
               </div>
             </div>
           )}
 
-          {/* NOTIFICATIONS */}
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Notifications
               </h2>
-
               <p className="text-sm text-gray-500 mb-6">
                 Choose what you want to be notified about.
               </p>
 
               <div className="space-y-4">
-
-                {/* EMAIL NOTIFICATIONS */}
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                {/* Master All Notifications Toggle */}
+                <div className="flex items-center justify-between p-4 bg-blue-50/50 border border-blue-100 rounded-lg mb-2">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Email Notifications
+                    <p className="text-sm font-semibold text-gray-900">
+                      All Notifications
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Receive email updates about your activities
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Master toggle to turn all notifications on or off
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={emailNotifications}
-                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      checked={allNotifications}
+                      onChange={(e) => handleAllNotificationsToggle(e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
 
-                {/* ANNOUNCEMENT ALERTS */}
+                {/* Inquiry Answered Alert */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      Announcement Alerts
+                      Inquiries
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      Get notified about important announcements
+                      Get notified when your inquiry receives an answer from the Dean
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inquiryAlerts}
+                      onChange={(e) => setInquiryAlerts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                  </label>
+                </div>
+
+                {/* Announcement Alerts */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcements
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important institutional announcements
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
@@ -2285,13 +2305,31 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                   </label>
                 </div>
 
+                {/* Calendar Events Alerts */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Calendar Events
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about new calendar schedules and upcoming activities
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={calendarAlerts}
+                      onChange={(e) => setCalendarAlerts(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                  </label>
+                </div>
               </div>
             </div>
           )}
-
         </div>
       </div>
-
     </div>
   );
 }

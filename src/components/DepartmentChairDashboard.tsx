@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { sendBackendNotification } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
@@ -50,11 +51,12 @@ import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
 import { AcademicDocumentsViewer } from './AcademicDocumentsViewer';
 import AnnouncementsContent from './AnnouncementsContent';
-
+import { WfhReport } from './WfhReport';
 import { AccomplishmentReport } from './dashboards/AccomplishmentReport';
 import { ExtensionReport } from './dashboards/ExtensionReport';
 import { ResearchExtension } from './ResearchExtension';
 import { FacultyAchievements } from './FacultyAchievements';
+import { ReportsSection } from './ReportsSection';
 
 import { supabase } from '../supabaseClient';
 
@@ -182,9 +184,9 @@ export function DepartmentChairDashboard({
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
           {activeMenuItem === 'dashboard'          && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
-          {activeMenuItem === 'chairReports'        && <ChairReportsView userId={userId} userName={userName} />}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
+          {activeMenuItem === 'chairReports' && (<ReportsSection userId={userId} userName={userName} />)}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
@@ -217,70 +219,46 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true);
-      try {
-        // 1. Fetch total faculty for summary count and card list
-        const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-        
-        // Fetch current reports to get real statuses
-        const { data: reports } = await supabase.from('accomplishment_reports').select('submitted_by, status, updated_at');
-        
-        if (profiles) {
-          const matchedFaculty = profiles.filter((p: any) => {
-            const userProg = (p.program || p.department || '').trim();
-            return isProgramMatch(userProg, departmentNames);
-          }).map(p => {
-            const fReport = reports?.find(r => r.submitted_by === p.id);
-            let rStatus = 'Pending';
-            if (fReport) {
-              if (fReport.status === 'submitted') rStatus = 'Submitted';
-              else if (fReport.status === 'approved') rStatus = 'Approved';
-              else if (fReport.status === 'rejected') rStatus = 'Rejected';
-              else rStatus = 'Draft';
-            }
-            return {
-              id: p.id,
-              name: p.full_name,
-              email: p.email,
-              reportStatus: rStatus,
-              lastUpdated: fReport ? new Date(fReport.updated_at).toLocaleDateString() : 'No data'
-            }
-          });
-          setFacultyList(matchedFaculty);
-          setFacultyCount(matchedFaculty.length);
-        }
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    const headers = { Authorization: `Bearer ${token}` };
 
-        // 2. Fetch All Accounts for Dashboard card
-        const { data: allAccounts } = await supabase
-          .from('profiles')
-          .select('id, full_name, role, status, created_at')
-          .order('created_at', { ascending: false });
-
-        if (allAccounts) setAccountsData(allAccounts);
-
-        // 3. Fetch Calendar Data
-        const { data: calData } = await supabase.from('calendar_events').select('event_date');
-        if (calData) {
-          const today = new Date().toISOString().split('T')[0];
-          setUpcomingCount(calData.filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length);
-        }
-
-        // 4. Fetch Report Stats
-        if (reports) {
-          setReportStats({ 
-            submitted: reports.filter(r => r.status === 'submitted' || r.status === 'approved').length, 
-            pending: profiles ? profiles.length - reports.filter(r => r.status === 'submitted' || r.status === 'approved').length : 0 
-          });
-        }
-      } catch (err) {
-        console.error("Error loading dashboard data", err);
-      } finally {
-        setLoading(false);
+    try {
+      // Faculty, reports, ug account approvals (backend)
+      const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
+      if (res.ok) {
+        const stats = await res.json();
+        setFacultyCount(stats.facultyCount);
+        setFacultyList(
+          stats.facultyList.map((f: any) => ({
+            ...f,
+            lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
+          }))
+        );
+        setReportStats(stats.reportStats);
+        setAccountsData(stats.accounts);
+      } else {
+        console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
       }
-    };
-    fetchDashboardData();
-  }, [departmentNames]);
+
+      // Upcoming activities (parehas sa Calendar page)
+      const calRes = await fetch(CALENDAR_API_URL, { headers });
+      if (calRes.ok) {
+        const events = await calRes.json();
+        const today = new Date().toISOString().split('T')[0];
+        setUpcomingCount(
+          (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
+        );
+      }
+    } catch (err) {
+      console.error('Error loading dashboard data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchDashboardData();
+}, [departmentNames]);
 
   // Derived state for the account approvals tabs
   const pendingAccounts = accountsData.filter(a => a.status === 'pending');
@@ -292,9 +270,9 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
                           : rejectedAccounts;
 
   return (
-    <div className="flex flex-col h-full lg:h-[calc(100vh-140px)]">
+    <div className="flex flex-col lg:h-[calc(100vh-140px)]">
       <div className="mb-6 flex-shrink-0">
-        <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           <div className="transition-transform"><SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
@@ -302,10 +280,10 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0 pb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:flex-1 lg:min-h-0 pb-4">
         
         {/* FACULTY MONITORING (Left Side) */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:h-full min-h-[400px] max-h-[520px] lg:max-h-none overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2></div>
             <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{facultyList.length} updates</span>
@@ -1723,43 +1701,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
 }
 
 /* ─────────────────────────────────────────────
-   Chair Reports View
-───────────────────────────────────────────── */
-function ChairReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [activeReportTab, setActiveReportTab] = useState<'accomplishment' | 'extension'>('accomplishment');
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-2 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
-        <button
-          onClick={() => setActiveReportTab('accomplishment')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeReportTab === 'accomplishment' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          Accomplishment Report
-        </button>
-        <button
-          onClick={() => setActiveReportTab('extension')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            activeReportTab === 'extension' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          Extension Report
-        </button>
-      </div>
-
-      {activeReportTab === 'accomplishment' && (
-        <AccomplishmentReport userId={userId} userName={userName} />
-      )}
-      {activeReportTab === 'extension' && (
-        <ExtensionReport userId={userId} userName={userName} />
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
    Account Approvals View
 ───────────────────────────────────────────── */
 const ACCOUNTS_API_URL = 'http://localhost:5000/api/accounts';
@@ -2334,103 +2275,74 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   const getToken = () => localStorage.getItem('token');
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [q, y] = quarterSelect.split(' ');
-    const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
-    const quarter = quarterMap[q] || '1st';
-    const year = y || String(new Date().getFullYear());
+  setLoading(true);
+  const [q, y] = quarterSelect.split(' ');
+  const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+  const quarter = quarterMap[q] || '1st';
+  const year = y || String(new Date().getFullYear());
 
-    try {
-      const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-      let personnelList = profiles || [];
-
-      // EXCEPTION LOGIC: Strictly filter based on chairman's program using Smart Matcher
-      if (departmentNames && departmentNames.length > 0) {
-        personnelList = personnelList.filter((u: any) => {
-          const userProg = (u.program || u.department || '').trim();
-          return isProgramMatch(userProg, departmentNames);
-        });
-      } else {
-        personnelList = []; 
-      }
-
-      // Fetch Reports directly from Supabase for resilience
-      const [ { data: accData }, { data: extData }, { data: wfhData } ] = await Promise.all([
-        supabase.from('accomplishment_reports').select('*').eq('quarter', quarter).eq('year', year),
-        supabase.from('extension_reports').select('*').eq('quarter', quarter).eq('year', year),
-        supabase.from('wfh_reports').select('*').neq('status', 'draft')
-      ]);
-
-      const accMap = new Map((accData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
-      const extMap = new Map((extData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
-      const wfhMap = new Map((wfhData || []).filter(r => r.status !== 'draft').map(r => [r.user_id, r]));
-
-      const consolidated = personnelList.map((p: any) => {
-        const departmentName = p.department || p.program || 'General';
-        const acc = accMap.get(p.id) ?? null;
-        const ext = extMap.get(p.id) ?? null;
-        const wfh = wfhMap.get(p.id) ?? null;
-
-        let effectiveStatus = 'not_started';
-        let progress = 0;
-
-        if (acc || ext || wfh) {
-          const statuses = [acc?.status, ext?.status, wfh?.status].filter(Boolean);
-          if (statuses.includes('submitted')) effectiveStatus = 'submitted';
-          else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
-          else if (statuses.includes('approved')) effectiveStatus = 'approved';
-
-          const validProgress: number[] = [];
-          if (typeof acc?.progress === 'number') validProgress.push(acc.progress);
-          if (typeof ext?.progress === 'number') validProgress.push(ext.progress);
-          if (wfh) validProgress.push(wfh.status === 'approved' ? 100 : 75);
-          progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
-        }
-
-        return { profile: p, departmentName, accomplishmentReport: acc, extensionReport: ext, wfhReport: wfh, effectiveStatus, effectiveProgress: progress, lastUpdated: acc?.updated_at || null };
-      });
-
-      setRows(consolidated);
-    } catch (err: any) {
-      showInfo('Error', err?.message || 'Failed to load reports.');
-    } finally {
-      setLoading(false);
+  try {
+    const res = await fetch(
+      `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
+      { headers: { Authorization: `Bearer ${getToken()}` } }
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      showInfo('Error', data?.error || 'Failed to load reports.');
+      setRows([]);
+      return;
     }
-  }, [quarterSelect, departmentNames]);
+    setRows(data ?? []);
+  } catch {
+    showInfo('Error', 'Could not reach the server.');
+    setRows([]);
+  } finally {
+    setLoading(false);
+  }
+}, [quarterSelect]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
-    setActionId(id);
-    const table = type === 'accomplishment' ? 'accomplishment_reports' : type === 'extension' ? 'extension_reports' : 'wfh_reports';
-    try {
-      const { error } = await supabase.from(table).update({ status, dean_remarks: remarks }).eq('id', id);
-      if (error) {
-        showInfo('Error', error.message);
-        return;
-      }
-      showInfo('Success', `Report successfully marked as ${status}.`);
-      setSelectedReport(null);
-      setRejectFor(null);
-      await fetchData();
-    } catch {
-      showInfo('Error', 'Could not reach the server.');
-    } finally {
-      setActionId(null);
+  setActionId(id);
+  try {
+    const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ status, remarks }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showInfo('Error', data.error || 'Failed to update report.');
+      return;
     }
-  };
+    showInfo('Success', `Report successfully marked as ${status}.`);
+    setSelectedReport(null);
+    setRejectFor(null);
+    setRemarksInput('');
+    await fetchData();
+  } catch {
+    showInfo('Error', 'Could not reach the server.');
+  } finally {
+    setActionId(null);
+  }
+};
 
-  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+    const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
     setRemindingId(row.profile.id);
     try {
-      await supabase.from('notifications').insert({
-        user_id: row.profile.id,
+      const result = await sendBackendNotification({
         title: `Reminder: ${quarterSelect} Quarterly Report`,
         message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report to the Chairman.`,
-        type: 'announcement',
-        is_read: false,
+        type: 'report',
+        user_ids: [row.profile.id],
       });
-      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+
+      if (result.sent === 0 && result.muted > 0) {
+        showInfo('Reminder Not Delivered', `${row.profile.full_name} has turned off report reminders.`);
+      } else {
+        showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+      }
     } catch (err: any) {
       showInfo('Error', err.message || 'Failed to send reminder.');
     } finally {
@@ -2669,12 +2581,10 @@ function AcademicRecordsView() {
    System Settings (Department Chair)
 ───────────────────────────────────────────── */
 const CHAIR_NOTIF_DEFAULTS = {
-  facultyReports: true,
-  pendingReports: true,
-  studentApprovals: true,
-  departmentActivities: true,
+  reports: true,       
   announcements: true,
-  systemNotifs: true,
+  staff_updates: true,  
+  system_notifs: true,
 };
 
 const CHAIR_SETTINGS_TABS = [
@@ -2704,7 +2614,6 @@ function ChairToggleRow({ label, checked, onChange }: { label: string; checked: 
 function ChairSystemSettings({
   userName,
   departmentNames,
-  onLogout,
   onProfileUpdate,
 }: {
   userName: string;
@@ -2741,6 +2650,7 @@ function ChairSystemSettings({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
+  const [allowAll, setAllowAll] = useState(true);
   const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
   const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
     setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
@@ -2790,6 +2700,16 @@ function ChairSystemSettings({
           localStorage.setItem('userFullName', loadedName);
           localStorage.setItem('userEmail', loadedEmail);
         }
+
+         if (data.preferences) {
+          setAllowAll(data.preferences.allow_all ?? true);
+          setNotifs({
+            reports:       data.preferences.reports       ?? true,
+            announcements: data.preferences.announcements ?? true,
+            staff_updates: data.preferences.staff_updates ?? true,
+            system_notifs: data.preferences.system_notifs ?? true,
+          });
+         }
       } catch (error) {
         console.error('Failed to load Chair profile:', error);
         setProfileMessage({
@@ -2806,6 +2726,7 @@ function ChairSystemSettings({
     loadProfile();
   }, [userName]);
 
+
   const saveProfile = async () => {
     const token = localStorage.getItem('token');
 
@@ -2816,6 +2737,7 @@ function ChairSystemSettings({
       });
       return;
     }
+
 
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
@@ -2994,7 +2916,42 @@ function ChairSystemSettings({
     }
   };
 
-  const handleSaveChanges = async () => {
+    const saveNotifications = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    setSaving(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ allow_all: allowAll, ...notifs }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update preferences.');
+
+      setSuccessTitle('Notification Preferences Updated');
+      setSuccessText(
+        allowAll
+          ? 'Your notification preferences have been saved.'
+          : 'All notifications are now muted.'
+      );
+      setShowSuccessMessage(true);
+    } catch (error) {
+      console.error('Chair notification update failed:', error);
+      setSuccessTitle('Update Failed');
+      setSuccessText(error instanceof Error ? error.message : 'Failed to update preferences.');
+      setShowSuccessMessage(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+    const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
       return;
@@ -3005,11 +2962,9 @@ function ChairSystemSettings({
       return;
     }
 
-    setSaving(true);
-    try {
-      await new Promise(res => setTimeout(res, 600));
-    } finally {
-      setSaving(false);
+    if (activeTab === 'notifications') {
+      await saveNotifications();
+      return;
     }
   };
 
@@ -3236,18 +3191,32 @@ function ChairSystemSettings({
             </div>
           )}
 
-          {activeTab === 'notifications' && (
+                    {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-2">Choose which alerts you receive.</p>
+              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
 
-              <div>
-                <ChairToggleRow label="Faculty Report Submissions" checked={notifs.facultyReports} onChange={() => toggleNotif('facultyReports')} />
-                <ChairToggleRow label="Pending Reports" checked={notifs.pendingReports} onChange={() => toggleNotif('pendingReports')} />
-                <ChairToggleRow label="Student Registration/Approval" checked={notifs.studentApprovals} onChange={() => toggleNotif('studentApprovals')} />
-                <ChairToggleRow label="Department Activities" checked={notifs.departmentActivities} onChange={() => toggleNotif('departmentActivities')} />
+              <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl mb-4">
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Turn off to completely mute all notifications and reminders.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAllowAll(v => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${allowAll ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${allowAll ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+
+              <div className={!allowAll ? 'opacity-50 pointer-events-none' : ''}>
+                <ChairToggleRow label="Faculty Reports & Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
                 <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ChairToggleRow label="System Notifications" checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} />
+                <ChairToggleRow label="Student Approvals & Department Activities" checked={notifs.staff_updates} onChange={() => toggleNotif('staff_updates')} />
+                <ChairToggleRow label="System Notifications" checked={notifs.system_notifs} onChange={() => toggleNotif('system_notifs')} />
               </div>
             </div>
           )}

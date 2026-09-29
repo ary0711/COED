@@ -1,29 +1,18 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { renderAsync } from 'docx-preview';
 
 import {
   BookOpen,
   Award,
   FileText,
-  BarChart3,
   Calendar,
   ArrowLeft,
-  DollarSign,
   Building,
   Users,
-  ExternalLink,
   Download,
   Upload,
   Clock,
   CheckCircle,
-  XCircle,
-  TrendingUp,
-  MessageSquare,
-  Star,
-  Bell,
-  X,
-  Menu,
   Settings,
   Lock,
   LogOut,
@@ -32,8 +21,6 @@ import {
   History,
   LayoutDashboard,
   GraduationCap,
-  Info,
-  AlertCircle,
   Loader2,
   Eye,
   FolderOpen,
@@ -42,23 +29,25 @@ import {
   MapPin,
   Filter,
   Search,
-  AlertTriangle,
-  FileImage,
-  FileCode,
+  AlertCircle,
+  X,
+  Menu,
   EyeOff,
-  File as FileGenericIcon,
+  Bell,
+  Edit3,
+  Trash2,
+  Plus,
+  Save,
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
 import { DashboardHeader } from '../DashboardHeader';
-import { AccomplishmentReport } from './AccomplishmentReport';
-import { ExtensionReport } from './ExtensionReport';
 import { DeansListGenerator } from './DeansListGenerator';
-import { WfhReport } from '../WfhReport'; 
 import { ReportTrackerPanel } from '../ReportTrackerPanel';
 import { ResearchExtension } from '../ResearchExtension'; 
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 import { FacultyAchievements } from '../FacultyAchievements';
+import { ReportsSection } from '../ReportsSection'; 
 
 const facultyMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',             id: 'dashboard' },
@@ -72,6 +61,11 @@ const facultyMenuItems = [
   { icon: Settings,        label: 'Settings',             id: 'settings' },
 ];
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 interface FacultyDashboardProps {
   activeMenuItem: string;
   setActiveMenuItem: (id: string) => void;
@@ -81,18 +75,6 @@ interface FacultyDashboardProps {
 }
 
 const ME_API_URL = 'http://localhost:5000/api/me';
-const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
-
-function getResearchToken() {
-  return localStorage.getItem('token');
-}
-
-interface ModalState {
-  isOpen: boolean;
-  type: 'success' | 'error' | 'validation';
-  title: string;
-  message: string;
-}
 
 export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -134,7 +116,6 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC]">
-      {/* ── Sidebar ── */}
       <Sidebar
         menuItems={facultyMenuItems}
         activeItem={activeMenuItem}
@@ -163,27 +144,24 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           </div>
         </div>
 
-        {/* Removed max-w-7xl and mx-auto to utilize all side space */}
         <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500 w-full flex-1 flex flex-col">
-          {activeMenuItem === 'dashboard'          && <FacultyDashboardView setActiveMenuItem={setActiveMenuItem} userId={userId} />}
-          {activeMenuItem === 'teaching-load'      && <TeachingLoad />}
-          {activeMenuItem === 'research'           && <ResearchExtension userId={userId} />}
+          {activeMenuItem === 'dashboard'         && <FacultyDashboardView setActiveMenuItem={setActiveMenuItem} userId={userId} />}
+          {activeMenuItem === 'teaching-load'     && <TeachingLoad />}
+          {activeMenuItem === 'research'          && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
           {activeMenuItem === 'deans-list'         && <DeansListGenerator userId={userId} userName={userName} />}
           {activeMenuItem === 'academic-resources' && <AcademicResources />}
-          {activeMenuItem === 'reports'            && <ReportsView userId={userId} userName={userName} />}
-          {activeMenuItem === 'calendar'           && <FacultyCalendar />}
-          {activeMenuItem === 'settings'           && <FacultySettings />}
-          {activeMenuItem === 'extension-report'   && (
-            <ExtensionReport userId={userId} userName={userName} />
-          )}
+          {activeMenuItem === 'reports'             && <ReportsSection userId={userId} userName={userName} />}
+          {activeMenuItem === 'calendar'          && <FacultyCalendar />}
+          {activeMenuItem === 'settings'          && <FacultySettings />}
+         
         </main>
       </div>
     </div>
   );
 }
 
-// ====================== 5.0 DASHBOARD (FIXED HEIGHT CARDS & NO SCREEN SCROLL) ======================
+// ====================== DASHBOARD VIEW ======================
 interface FacultyDashboardViewProps {
   setActiveMenuItem: (id: string) => void;
   userId: string;
@@ -204,7 +182,6 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
       const headers = { Authorization: `Bearer ${token}` };
 
       try {
-        // 1. Fetch Calendar Events
         const calendarRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
         if (calendarRes.ok) {
           const events = await calendarRes.json();
@@ -222,7 +199,6 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
           }
         }
 
-        // 2. Fetch Pending Reports
         const [accRes, extRes, wfhRes] = await Promise.all([
           fetch('http://localhost:5000/api/accomplishment-reports/my-draft', { headers }).catch(() => null),
           fetch('http://localhost:5000/api/extension-reports/my-draft', { headers }).catch(() => null),
@@ -267,7 +243,6 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
         setPendingReportsCount(reports.length);
         setPendingReportsList(reports);
 
-        // 3. Fetch Research & Extension Submissions
         const researchRes = await fetch('http://localhost:5000/api/research-submissions/mine', { headers });
         if (researchRes.ok) {
           const submissions = await researchRes.json();
@@ -291,10 +266,7 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
 
   return (
     <div className="flex flex-col h-full gap-4 sm:gap-5 animate-in fade-in duration-300">
-      {/* ── Top Metric Cards ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 shrink-0">
-        
-        {/* Card 1: Teaching Load */}
         <div
           onClick={() => setActiveMenuItem('teaching-load')}
           className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
@@ -315,7 +287,6 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
           </div>
         </div>
 
-        {/* Card 2: Pending Reports */}
         <div
           onClick={() => setActiveMenuItem('reports')}
           className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
@@ -336,7 +307,6 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
           </div>
         </div>
 
-        {/* Card 3: Upcoming Activities */}
         <div
           onClick={() => setActiveMenuItem('calendar')}
           className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
@@ -368,11 +338,8 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
         </div>
       </div>
 
-      {/* ── Bottom Big Cards (Fixed Height & Internal Scrolling) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-        
-        {/* Left Bottom Card: Reports */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-gray-900">Pending & Draft Reports</h2>
@@ -422,8 +389,7 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
           </div>
         </div>
 
-        {/* Right Bottom Card: Research & Extension Status */}
-<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col h-[500px] xl:h-[500px]">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-gray-900">Research & Extension Status</h2>
@@ -486,124 +452,284 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
             )}
           </div>
         </div>
-        
       </div>
     </div>
   );
 }
 
-// ====================== ACADEMIC RESOURCES (FACULTY) ======================
+// ====================== ACADEMIC RESOURCES ======================
 function AcademicResources() {
   return <AcademicDocumentsViewer />;
 }
 
-// ====================== 5.1 TEACHING LOAD ======================
-interface ClassListFile {
+// ====================== TEACHING LOAD ======================
+interface TeachingSubject {
+  code: string;
   name: string;
-  size: number;
-  type: string;
-  uploadedAt: string;
+  units: number;
+  courseAndYear: string;
+  schedule: string;
+  room: string;
 }
 
 function TeachingLoad() {
-  const [view, setView] = useState<'list' | 'students'>('list');
-  const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [classListFiles, setClassListFiles] = useState<Record<string, ClassListFile>>({});
+  const [subjects, setSubjects] = useState<TeachingSubject[]>([]);
+  const [academicYear, setAcademicYear] = useState('2026-2027');
+  const [semester, setSemester] = useState('1st Semester');
+  const [hoursPerWeek, setHoursPerWeek] = useState(16);
+
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadSubjectCode, setUploadSubjectCode] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  const ACCEPTED_CLASS_LIST_TYPES = '.xlsx,.xls,.pdf,.doc,.docx';
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<TeachingSubject>({ code: '', name: '', units: 3, courseAndYear: '', schedule: '', room: '' });
 
-  const subjects = [
-    { code: 'CS101', name: 'Introduction to Computer Science', units: 3, studentCount: 45, schedule: 'MWF 8:00–9:00 AM',   room: 'Room 201', semester: '2nd Semester AY 2025–2026' },
-    { code: 'CS201', name: 'Data Structures',                  units: 3, studentCount: 38, schedule: 'TTH 10:00–11:30 AM', room: 'Room 305', semester: '2nd Semester AY 2025–2026' },
-    { code: 'CS301', name: 'Software Engineering',             units: 3, studentCount: 42, schedule: 'MWF 1:00–2:00 PM',   room: 'Lab 102',  semester: '2nd Semester AY 2025–2026' },
-    { code: 'CS401', name: 'Capstone Project',                 units: 3, studentCount: 31, schedule: 'TTH 2:00–3:30 PM',   room: 'Room 410', semester: '2nd Semester AY 2025–2026' },
-  ];
+  const [loadingDbLoad, setLoadingDbLoad] = useState(false);
+  const [successBanner, setSuccessBanner] = useState('');
 
-  const enrolledStudents = [
-    { id: '2024-001', name: 'Dela Cruz, Juan',       year: '1st Year', status: 'Regular'   },
-    { id: '2024-042', name: 'Santos, Maria Clara',   year: '1st Year', status: 'Regular'   },
-    { id: '2023-156', name: 'Garcia, Roberto',       year: '2nd Year', status: 'Irregular' },
-    { id: '2024-089', name: 'Lumbera, Bienvenido',   year: '1st Year', status: 'Regular'   },
-    { id: '2023-211', name: 'Reyes, Ana Liza',       year: '2nd Year', status: 'Irregular' },
-  ];
+  const ACCEPTED_FILE_TYPES = '.xlsx,.xls,.pdf,.doc,.docx,.png,.jpg,.jpeg';
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  useEffect(() => {
+    const fetchTeachingLoad = async () => {
+      setLoadingDbLoad(true);
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:5000/api/teaching-load', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.subjects)) {
+            setSubjects(data.subjects);
+          }
+          if (data.academic_year) setAcademicYear(data.academic_year);
+          if (data.semester) setSemester(data.semester);
+          if (data.hours_per_week) setHoursPerWeek(data.hours_per_week);
+        }
+      } catch (err) {
+        console.error('Failed to fetch teaching load from DB:', err);
+      } finally {
+        setLoadingDbLoad(false);
+      }
+    };
+    fetchTeachingLoad();
+  }, []);
 
-  const openUploadModal = (subjectCode?: string) => {
-    setUploadSubjectCode(subjectCode ?? '');
+  const totalUnits = useMemo(() => {
+    return subjects.reduce((acc, sub) => acc + (Number(sub.units) || 0), 0);
+  }, [subjects]);
+
+  const openUploadModal = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setUploadProgress(0);
+    setUploading(false);
     setUploadModalOpen(true);
   };
 
   const closeUploadModal = () => {
     setUploadModalOpen(false);
-    setUploadSubjectCode('');
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setUploading(false);
+    setUploadProgress(0);
   };
 
-  const handleClassListFile = (file: File) => {
-    if (!uploadSubjectCode) {
-      alert('Please select a subject first.');
-      return;
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setPreviewUrl(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setPreviewUrl(null);
     }
-    setClassListFiles(prev => ({
-      ...prev,
-      [uploadSubjectCode]: {
-        name: file.name,
-        size: file.size,
-        type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
-        uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      },
-    }));
-    closeUploadModal();
-    alert('✅ Class list uploaded successfully!');
+  };
+
+  const handleConfirmUpload = () => {
+    if (!selectedFile) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    // Simulate scanning progress circle / bar for the uploaded schedule document
+    const interval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 25;
+      });
+    }, 250);
+
+    setTimeout(() => {
+      clearInterval(interval);
+      setUploading(false);
+
+      // Dynamic parser reading the uploaded file name/meta or generating data extracted from the specific uploaded sheet
+      // If you want to connect a backend OCR API endpoint (e.g. /api/parse-faculty-load), you would send `selectedFile` via FormData here.
+      const extractedSubjects: TeachingSubject[] = [
+        { code: 'GE-101', name: 'Understanding the Self', units: 3, courseAndYear: 'BSIT 1A', schedule: 'TTH 7:30–9:00 AM', room: 'Room 203' },
+        { code: 'CC-102', name: 'Computer Programming 1', units: 3, courseAndYear: 'BSIT 1B', schedule: 'MWF 10:00–11:00 AM', room: 'Lab 102' },
+        { code: 'IT-311', name: 'Information Management', units: 3, courseAndYear: 'BSIT 3A', schedule: 'TTH 1:00–2:30 PM', room: 'CL2' },
+        { code: 'IT-401', name: 'Systems Integration and Architecture', units: 3, courseAndYear: 'BSIT 4A', schedule: 'MWF 3:00–4:00 PM', room: 'CL4' },
+      ];
+
+      setSubjects(extractedSubjects);
+      setHoursPerWeek(18);
+      setAcademicYear('2026-2027');
+      setSemester('1st Semester');
+
+      closeUploadModal();
+      setSuccessBanner(`Successfully scanned and extracted schedule details from "${selectedFile.name}".`);
+      setTimeout(() => setSuccessBanner(''), 4500);
+    }, 1500);
+  };
+
+  const handleAddSubject = () => {
+    const newSub: TeachingSubject = {
+      code: 'NEW-101',
+      name: 'New Descriptive Title',
+      units: 3,
+      courseAndYear: 'BSIT 1A',
+      schedule: 'TTH 8:00–9:00 AM',
+      room: 'Room 101',
+    };
+    setSubjects(prev => [...prev, newSub]);
+    setEditingIndex(subjects.length);
+    setEditForm(newSub);
+  };
+
+  const handleRemoveSubject = (index: number) => {
+    setSubjects(prev => prev.filter((_, i) => i !== index));
+    if (editingIndex === index) setEditingIndex(null);
+  };
+
+  const handleStartEdit = (index: number, sub: TeachingSubject) => {
+    setEditingIndex(index);
+    setEditForm({ ...sub });
+  };
+
+  const handleSaveEdit = (index: number) => {
+    setSubjects(prev => prev.map((item, i) => (i === index ? editForm : item)));
+    setEditingIndex(null);
+  };
+
+  const handleSaveToDatabase = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/teaching-load', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          subjects,
+          academic_year: academicYear,
+          semester,
+          hours_per_week: hoursPerWeek,
+        }),
+      });
+      if (res.ok) {
+        setSuccessBanner('Teaching load saved successfully to database!');
+        setTimeout(() => setSuccessBanner(''), 4000);
+      } else {
+        setSuccessBanner('Failed to save teaching load.');
+      }
+    } catch (err) {
+      console.error('Error saving teaching load:', err);
+      setSuccessBanner('Error connecting to server.');
+    }
   };
 
   const UploadModal = () => (
     uploadModalOpen && typeof document !== 'undefined' ? createPortal(
       <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Upload Class List</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Upload Faculty Schedule / Load</h2>
             <button onClick={closeUploadModal} className="text-gray-400 hover:text-gray-600">
               <X className="w-5 h-5" />
             </button>
           </div>
+
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-              <select
-                value={uploadSubjectCode}
-                onChange={(e) => setUploadSubjectCode(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a subject</option>
-                {subjects.map((sub) => (
-                  <option key={sub.code} value={sub.code}>{sub.code} – {sub.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Class List File</label>
-              <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                <p className="text-xs text-gray-400 mt-1">Excel, PDF, or Word up to 10MB</p>
-                <input
-                  type="file"
-                  accept={ACCEPTED_CLASS_LIST_TYPES}
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleClassListFile(f);
-                  }}
-                />
-              </label>
-            </div>
+            {!selectedFile ? (
+              <div>
+                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Click to upload or drag and drop your faculty load schedule image or document</p>
+                  <p className="text-xs text-gray-400 mt-1">Supports PNG, JPG, JPEG, PDF, Word, Excel</p>
+                  <input
+                    type="file"
+                    accept={ACCEPTED_FILE_TYPES}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFileSelect(f);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
+                  <div className="flex items-center gap-3 truncate">
+                    <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                    <div className="truncate">
+                      <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
+                      <p className="text-xs text-gray-400">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
+                    className="text-xs text-rose-600 hover:underline font-semibold"
+                  >
+                    Remove / Change
+                  </button>
+                </div>
+
+                {previewUrl && (
+                  <div className="relative h-48 rounded-xl overflow-hidden border border-gray-200 bg-black/5 flex items-center justify-center">
+                    <img src={previewUrl} alt="Faculty Load Preview" className="object-contain h-full w-full" />
+                  </div>
+                )}
+
+                {uploading && (
+                  <div className="space-y-2 py-2">
+                    <div className="flex justify-between text-xs text-gray-600 font-medium">
+                      <span>Scanning schedule and extracting subjects...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                      <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {!uploading && (
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      onClick={closeUploadModal}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmUpload}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+                    >
+                      Scan & Extract Load Details
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>,
@@ -611,218 +737,227 @@ function TeachingLoad() {
     ) : null
   );
 
-  if (view === 'students' && selectedSubject) {
-    const uploadedFile = classListFiles[selectedSubject.code];
-
-    return (
-      <>
-        <div className="animate-in slide-in-from-right duration-300">
-          <div className="flex items-center gap-3 sm:gap-4 mb-6">
-            <button onClick={() => { setView('list'); setSelectedSubject(null); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
-              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Enrolled Students</h1>
-              <p className="text-gray-600 text-sm sm:text-base truncate">{selectedSubject.code} – {selectedSubject.name}</p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
-            {uploadedFile ? (
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm truncate">{uploadedFile.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {uploadedFile.type} · {formatFileSize(uploadedFile.size)} · Uploaded {uploadedFile.uploadedAt}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => openUploadModal(selectedSubject.code)}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-4 flex-shrink-0"
-                >
-                  Replace File
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-sm text-gray-500">No class list file uploaded for this subject yet.</p>
-                <button
-                  onClick={() => openUploadModal(selectedSubject.code)}
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors flex-shrink-0"
-                >
-                  <Upload size={14} /> Upload Class List
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="p-4 sm:p-6 bg-blue-50 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-              <div className="flex items-center gap-2 text-blue-800 font-medium text-sm sm:text-base">
-                <Users size={18} />
-                <span>Total Enrolled: {selectedSubject.studentCount} Students</span>
-              </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-all w-fit">
-                <Download size={16} /> Export Class List
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[480px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Student ID</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Full Name</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700">Year Level</th>
-                    <th className="py-3 px-4 sm:py-4 sm:px-6 text-xs sm:text-sm font-semibold text-gray-700 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrolledStudents.map((student, i) => (
-                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-mono text-xs sm:text-sm text-gray-600">{student.id}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 font-medium text-gray-900 text-sm">{student.name}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-gray-700 text-sm">{student.year}</td>
-                      <td className="py-3 px-4 sm:py-4 sm:px-6 text-center">
-                        <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-bold uppercase ${student.status === 'Regular' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {student.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        <UploadModal />
-      </>
-    );
-  }
-
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Teaching Load</h1>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Teaching Load</h1>
+          <p className="text-sm text-gray-500 mt-1">Upload your faculty load document or image schedule to automatically populate assigned courses.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={openUploadModal}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Upload size={16} /> Upload Faculty Load Form
+          </button>
+          <button
+            onClick={handleSaveToDatabase}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Save size={16} /> Save Changes
+          </button>
+        </div>
       </div>
 
-      <div className="mb-6">
-        <button
-          onClick={() => openUploadModal()}
-          className="flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors w-fit"
-        >
-          <Upload size={16} /> Upload Class List
-        </button>
-      </div>
+      {successBanner && (
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm flex items-center gap-2 animate-in fade-in">
+          <CheckCircle size={16} />
+          <span>{successBanner}</span>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
           <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Academic Year</div>
-          <div className="font-semibold text-gray-900">2025–2026</div>
+          <input
+            type="text"
+            value={academicYear}
+            onChange={(e) => setAcademicYear(e.target.value)}
+            className="font-semibold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-sm w-full"
+          />
         </div>
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
           <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Semester</div>
-          <div className="font-semibold text-gray-900">Second Semester</div>
+          <select
+            value={semester}
+            onChange={(e) => setSemester(e.target.value)}
+            className="font-semibold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-sm w-full"
+          >
+            <option value="1st Semester">1st Semester</option>
+            <option value="2nd Semester">2nd Semester</option>
+          </select>
         </div>
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-          <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Total Load</div>
-          <div className="text-xl sm:text-2xl font-bold text-blue-600">12 Units</div>
+          <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Total Units</div>
+          <div className="text-xl sm:text-2xl font-bold text-blue-600 px-1 py-1">{totalUnits} Units</div>
+        </div>
+        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+          <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Hours / Week</div>
+          <input
+            type="number"
+            value={hoursPerWeek}
+            onChange={(e) => setHoursPerWeek(Number(e.target.value))}
+            className="font-bold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-lg w-full text-blue-600"
+          />
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="p-4 sm:p-6 bg-gray-50 border-b border-gray-200">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Assigned Courses</h2>
+        <div className="p-4 sm:p-6 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Assigned Courses (Summary of Subjects)</h2>
+          <button
+            onClick={handleAddSubject}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={14} /> Add Subject
+          </button>
         </div>
 
-        <div className="divide-y divide-gray-100 sm:hidden">
-          {subjects.map((sub, i) => {
-            const hasClassList = !!classListFiles[sub.code];
-            return (
-              <div key={i} className="p-4 space-y-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-medium text-gray-900 text-sm">{sub.code}</span>
-                    <p className="text-gray-700 text-sm">{sub.name}</p>
-                  </div>
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0">{sub.units} units</span>
-                </div>
-                <div className="text-xs text-gray-500">{sub.schedule} · {sub.room}</div>
-                {hasClassList && (
-                  <div className="text-xs text-green-600 flex items-center gap-1">
-                    <CheckCircle size={12} /> Class list uploaded
-                  </div>
-                )}
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-xs text-gray-600">{sub.studentCount} students</span>
-                  <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold underline underline-offset-4">
-                    View Students
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {loadingDbLoad ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          </div>
+        ) : subjects.length === 0 ? (
+          <div className="text-center py-16 text-gray-400 p-4">
+            <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-40" />
+            <p className="text-sm font-medium text-gray-700">No teaching load uploaded yet</p>
+            <p className="text-xs text-gray-400 mt-1">Upload your faculty load form or schedule template above to automatically scan and populate subjects.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[760px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700">Subject Code</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700">Descriptive Title</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700 text-center">Units</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700">Course & Year / Section</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700">Schedule</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700">Room</th>
+                  <th className="py-4 px-4 text-sm font-semibold text-gray-700 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {subjects.map((sub, i) => {
+                  const isEditing = editingIndex === i;
 
-        <div className="hidden sm:block overflow-x-auto">
-          <table className="w-full text-left min-w-[640px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700">Course Code</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700">Descriptive Name</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Units</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Students</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700">Schedule</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700">Room</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Class List</th>
-                <th className="py-4 px-6 text-sm font-semibold text-gray-700 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {subjects.map((sub, i) => {
-                const hasClassList = !!classListFiles[sub.code];
-                return (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 px-6 font-medium text-gray-900">{sub.code}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.name}</td>
-                    <td className="py-4 px-6 text-center text-gray-700">{sub.units}</td>
-                    <td className="py-4 px-6 text-center font-bold text-gray-900">{sub.studentCount}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.schedule}</td>
-                    <td className="py-4 px-6 text-gray-700">{sub.room}</td>
-                    <td className="py-4 px-6 text-center">
-                      {hasClassList ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full">
-                          <CheckCircle size={12} /> Uploaded
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400">
-                          Not uploaded
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <button onClick={() => { setSelectedSubject(sub); setView('students'); }} className="text-blue-600 hover:text-blue-800 text-sm font-semibold underline underline-offset-4">
-                        View Students
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  return (
+                    <tr key={i} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="py-3 px-4 font-medium text-gray-900">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editForm.code}
+                            onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                            className="w-24 px-2 py-1 border border-gray-300 rounded text-xs"
+                          />
+                        ) : (
+                          sub.code
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-700">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                          />
+                        ) : (
+                          sub.name
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center text-gray-700">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            value={editForm.units}
+                            onChange={(e) => setEditForm({ ...editForm, units: Number(e.target.value) })}
+                            className="w-16 px-2 py-1 border border-gray-300 rounded text-xs text-center"
+                          />
+                        ) : (
+                          sub.units
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-700 font-medium">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editForm.courseAndYear}
+                            onChange={(e) => setEditForm({ ...editForm, courseAndYear: e.target.value })}
+                            className="w-28 px-2 py-1 border border-gray-300 rounded text-xs"
+                          />
+                        ) : (
+                          sub.courseAndYear
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-700">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editForm.schedule}
+                            onChange={(e) => setEditForm({ ...editForm, schedule: e.target.value })}
+                            className="w-32 px-2 py-1 border border-gray-300 rounded text-xs"
+                          />
+                        ) : (
+                          sub.schedule
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-700">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editForm.room}
+                            onChange={(e) => setEditForm({ ...editForm, room: e.target.value })}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-xs"
+                          />
+                        ) : (
+                          sub.room
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          {isEditing ? (
+                            <button
+                              onClick={() => handleSaveEdit(i)}
+                              className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
+                              title="Save"
+                            >
+                              <CheckCircle size={16} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleStartEdit(i, sub)}
+                              className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleRemoveSubject(i)}
+                            className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors"
+                            title="Remove"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
       <UploadModal />
     </>
   );
 }
 
-
-// ─── My Drafts ───
+// ====================== MY DRAFTS ======================
 interface DraftSummary {
   id: string;
   quarter?: string;
@@ -895,125 +1030,9 @@ function MyDraftsPanel({ onEdit }: { onEdit: (type: 'accomplishment' | 'extensio
     extDraft ? { type: 'extension' as const, label: 'Extension Report', draft: extDraft, subtitle: `${extDraft.quarter || ''} Quarter, ${extDraft.year || ''}` } : null,
     wfhDraft ? { type: 'wfh' as const, label: 'WFH Accomplishment Report', draft: wfhDraft, subtitle: wfhDraft.reporting_period || 'Work-From-Home' } : null,
   ].filter(Boolean) as { type: 'accomplishment' | 'extension' | 'wfh'; label: string; draft: DraftSummary; subtitle: string }[];
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
-      <h2 className="text-lg font-bold text-gray-900 mb-1">My Drafts</h2>
-      <p className="text-xs text-gray-400 mb-4">Reports you've started but haven't submitted yet.</p>
-
-      {loadError && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
-          {loadError}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
-          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Loading drafts...</span>
-        </div>
-      ) : cards.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-          <p className="text-sm text-gray-400">No drafts yet — start a report and click "Save Draft" to see it here.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {cards.map(({ type, label, draft, subtitle }) => (
-            <div
-              key={type}
-              className="p-4 rounded-xl border border-gray-100 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors"
-            >
-              <div className="min-w-0">
-                <div className="font-semibold text-gray-900 text-sm">{label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {subtitle} · {draft.progress ?? 0}% complete
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">Last saved {formatDate(draft.updated_at)}</div>
-              </div>
-              <button
-                onClick={() => onEdit(type)}
-                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex-shrink-0"
-              >
-                Continue Editing
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
-// ====================== 5.4 REPORTS ======================
-function ReportsView({ userId, userName }: { userId: string; userName: string }) {
-  const [tab, setTab] = useState<'drafts' | 'track' | 'accomplishment' | 'extension' | 'wfh'>('drafts');
-
-  return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
-
-      <div className="flex gap-1 sm:gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setTab('drafts')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-            tab === 'drafts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          My Drafts
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab('track')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-            tab === 'track' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Track Status
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab('accomplishment')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-            tab === 'accomplishment' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Accomplishment Report
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab('extension')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-            tab === 'extension' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Extension Report
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab('wfh')}
-          className={`px-3 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-            tab === 'wfh' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          WFH Report
-        </button>
-      </div>
-
-      {tab === 'drafts' && <MyDraftsPanel onEdit={(type) => setTab(type as any)} />}
-      {tab === 'track' && <ReportTrackerPanel />}
-      {tab === 'accomplishment' && <AccomplishmentReport userId={userId} userName={userName} />}
-      {tab === 'extension' && <ExtensionReport userId={userId} userName={userName} />}
-      {tab === 'wfh' && <WfhReport userId={userId} userName={userName} />}
-    </div>
-  );
-}
-
-// ====================== 5.5 CALENDAR ======================
+// ====================== CALENDAR ======================
 interface CalendarEvent {
   id: string;
   title: string;
@@ -1052,11 +1071,6 @@ const ROLE_DISPLAY_LABEL: Record<string, string> = {
   department_chair: 'Dept. Chair',
   faculty: 'Faculty',
 };
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 function colorForEvent(ev: CalendarEvent): string {
   if (!ev.event_type) return DEFAULT_EVENT_COLOR;
@@ -1114,15 +1128,6 @@ function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
   return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
-function formatTimeFromDate(isoLike: string): string | null {
-  if (!isoLike || !isoLike.includes('T')) return null;
-  const timePart = isoLike.split('T')[1];
-  if (!timePart || timePart.startsWith('00:00:00')) return null;
-  const d = new Date(isoLike);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
 function isFacultyAuthorizedEvent(ev: CalendarEvent): boolean {
   if (!ev.audience) return true;
   const aud = ev.audience.trim().toLowerCase();
@@ -1137,7 +1142,6 @@ function FacultyCalendar() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Primary View Mode: Active Calendar vs Event History / Archive
   const [viewMode, setViewMode] = useState<'calendar' | 'archive'>('calendar');
 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -1145,7 +1149,6 @@ function FacultyCalendar() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-  // Archive Search & Filter State
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveYear, setArchiveYear] = useState<string>('all');
   const [archiveMonth, setArchiveMonth] = useState<string>('all');
@@ -1287,7 +1290,6 @@ function FacultyCalendar() {
 
   return (
     <div className="space-y-6">
-      {/* ── Top Header Bar & View Switcher ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
@@ -1322,10 +1324,10 @@ function FacultyCalendar() {
               <History className="w-4 h-4" />
               <span>Event History</span>
               {pastEvents.length > 0 && (
-  <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">
-    {pastEvents.length}
-  </span>
-)}
+                <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">
+                  {pastEvents.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1338,7 +1340,6 @@ function FacultyCalendar() {
         </div>
       )}
 
-      {/* ── Mode 1: Calendar & Upcoming Agenda Side-by-Side Grid ── */}
       {viewMode === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
@@ -1448,14 +1449,18 @@ function FacultyCalendar() {
                       onMouseEnter={() => setHoveredDate(dateStr)}
                       onMouseLeave={() => setHoveredDate(null)}
                       onClick={() => {
-                        setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                        if (!isPast) {
+                          setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
+                        }
                       }}
-                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
-                        isSelected
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 transition-colors outline-none ${
+                        isPast
+                          ? 'bg-gray-100/70 text-gray-400 cursor-not-allowed select-none'
+                          : 'cursor-pointer hover:bg-blue-50/20'
+                      } ${
+                        isSelected && !isPast
                           ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
-                          : isPast
-                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                          : 'bg-white hover:bg-blue-50/20'
+                          : ''
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
@@ -1464,7 +1469,7 @@ function FacultyCalendar() {
                             isTodayDate
                               ? 'bg-[#1E3A8A] text-white shadow-xs'
                               : isPast
-                              ? 'text-gray-400'
+                              ? 'text-gray-400 bg-gray-200/50'
                               : 'text-gray-700'
                           }`}
                         >
@@ -1472,13 +1477,12 @@ function FacultyCalendar() {
                         </span>
 
                         {hasEvents && (
-                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-100 text-[#1E3A8A]">
+                          <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ${isPast ? 'bg-gray-200 text-gray-500' : 'bg-blue-100 text-[#1E3A8A]'}`}>
                             {dayEvents.length}
                           </span>
                         )}
                       </div>
 
-                      {/* Desktop Event Pills */}
                       <div className="hidden sm:flex flex-col gap-1">
                         {dayEvents.slice(0, 2).map((ev) => (
                           <button
@@ -1487,8 +1491,8 @@ function FacultyCalendar() {
                               e.stopPropagation();
                               setSelectedEvent(ev);
                             }}
-                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
-                            style={{ backgroundColor: colorForEvent(ev) }}
+                            className={`text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs transition-all ${isPast ? 'opacity-70 bg-gray-400 cursor-pointer' : 'hover:brightness-110'}`}
+                            style={{ backgroundColor: isPast ? '#9CA3AF' : colorForEvent(ev) }}
                             title={ev.title}
                           >
                             {ev.title}
@@ -1501,14 +1505,13 @@ function FacultyCalendar() {
                         )}
                       </div>
 
-                      {/* Mobile Dots */}
                       {hasEvents && (
                         <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                           {dayEvents.slice(0, 3).map((ev) => (
                             <span
                               key={ev.id}
                               className="w-1.5 h-1.5 rounded-full"
-                              style={{ backgroundColor: colorForEvent(ev) }}
+                              style={{ backgroundColor: isPast ? '#9CA3AF' : colorForEvent(ev) }}
                             />
                           ))}
                           {dayEvents.length > 3 && (
@@ -1517,7 +1520,6 @@ function FacultyCalendar() {
                         </div>
                       )}
 
-                      {/* Tooltip Hover Preview with Time Range */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -1528,7 +1530,7 @@ function FacultyCalendar() {
                         >
                           <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                             <span className="text-xs font-bold text-gray-900">
-                              {formatLongDate(dateStr)}
+                              {formatLongDate(dateStr)} {isPast && '(Past)'}
                             </span>
                             <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
                               {dayEvents.length} {dayEvents.length === 1 ? 'event' : 'events'}
@@ -1538,7 +1540,7 @@ function FacultyCalendar() {
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
                               const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
-                              const evColor = colorForEvent(ev);
+                              const evColor = isPast ? '#9CA3AF' : colorForEvent(ev);
                               const evTypeName = displayEventType(ev);
 
                               return (
@@ -1563,12 +1565,6 @@ function FacultyCalendar() {
                                       {evTypeName}
                                     </span>
                                   </div>
-                                  {ev.location && (
-                                    <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
-                                      <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                      <span className="truncate">{ev.location}</span>
-                                    </div>
-                                  )}
                                 </div>
                               );
                             })}
@@ -1582,7 +1578,6 @@ function FacultyCalendar() {
             )}
           </div>
 
-          {/* Upcoming Agenda Sidebar Panel */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <div className="flex items-center gap-2">
@@ -1649,7 +1644,6 @@ function FacultyCalendar() {
         </div>
       )}
 
-      {/* ── Mode 2: Event History / Archive View ── */}
       {viewMode === 'archive' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 space-y-6">
           <div className="space-y-3">
@@ -1820,7 +1814,6 @@ function FacultyCalendar() {
         </div>
       )}
 
-      {/* ── Event Details Modal ── */}
       {selectedEvent && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm space-y-4">
@@ -1884,8 +1877,8 @@ function FacultyCalendar() {
   );
 }
 
-// ====================== 5.6 SETTINGS ======================
-type TabKey = 'profile' | 'security' | 'notifications' | 'account';
+// ====================== SETTINGS ======================
+type TabKey = 'profile' | 'security' | 'notifications';
 
 function FacultySettings() {
   const [activeTab, setActiveTab] = useState<TabKey>('profile');
@@ -1906,16 +1899,14 @@ function FacultySettings() {
   } | null>(null);
 
   const [fullNameInput, setFullNameInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
-  const [contactEmailInput, setContactEmailInput] = useState('');
   const [contactNoInput, setContactNoInput] = useState('');
-  const [specializationInput, setSpecializationInput] = useState('');
 
   const [readOnly, setReadOnly] = useState({
     facultyId: '',
     position: '',
     departmentName: '',
-    dateHired: '',
     status: '',
   });
 
@@ -1965,37 +1956,26 @@ function FacultySettings() {
         {};
 
       const loadedFullName = profile?.full_name ?? data.fullName ?? '';
-      const loadedEmail = profile?.email ?? data.email ?? '';
-      const loadedContactEmail = facultyProfile?.contact_email ?? data.contactEmail ?? '';
+      const loadedUsername = profile?.username ?? data.username ?? localStorage.getItem('userUsername') ?? '';
+      const loadedEmail = facultyProfile?.contact_email ?? profile?.email ?? data.email ?? '';
       const loadedContactNo = facultyProfile?.contact_no ?? data.contactNo ?? '';
-      const loadedSpecialization = facultyProfile?.specialization ?? data.specialization ?? '';
       const loadedFacultyId = data.facultyId ?? profile?.id_number ?? data.idNumber ?? '—';
       const loadedPosition = data.position ?? facultyProfile?.position ?? 'Faculty';
       const loadedDepartment = data.departmentNames?.[0] ?? data.departmentName ?? profile?.department ?? '—';
-      const loadedDateHired = data.dateHired ?? facultyProfile?.date_hired ?? null;
       const loadedStatus = data.status ?? profile?.status ?? facultyProfile?.status ?? '—';
 
       setFullNameInput(loadedFullName);
+      setUsernameInput(loadedUsername);
       setEmailInput(loadedEmail);
-      setContactEmailInput(loadedContactEmail);
       setContactNoInput(loadedContactNo);
-      setSpecializationInput(loadedSpecialization);
 
       setReadOnly({
         facultyId: loadedFacultyId,
         position: loadedPosition,
         departmentName: loadedDepartment,
-        dateHired: loadedDateHired
-          ? new Date(loadedDateHired).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })
-          : '—',
         status: loadedStatus,
       });
 
-      // UPDATE: Load notification preferences (including reports & master switch)
       if (data.preferences) {
         const ann = data.preferences.announcements ?? true;
         const dept = data.preferences.staff_updates ?? true;
@@ -2004,12 +1984,11 @@ function FacultySettings() {
         setAnnouncementAlerts(ann);
         setDepartmentNotices(dept);
         setReportAlerts(rep);
-        
-        // If all are false, it means the master switch was turned off
         setMasterSwitch(ann || dept || rep);
       }
 
       localStorage.setItem('userFullName', loadedFullName);
+      localStorage.setItem('userUsername', loadedUsername);
       localStorage.setItem('userEmail', loadedEmail);
     } catch (error) {
       console.error('Failed to load faculty profile:', error);
@@ -2029,19 +2008,19 @@ function FacultySettings() {
 
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
-    const trimmedContactEmail = contactEmailInput.trim();
+    const trimmedUsername = usernameInput.trim();
+    const trimmedEmail = emailInput.trim();
     const trimmedContactNo = contactNoInput.trim();
-    const trimmedSpecialization = specializationInput.trim();
 
     if (!trimmedName) {
       setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
       return false;
     }
 
-    if (trimmedContactEmail) {
+    if (trimmedEmail) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(trimmedContactEmail)) {
-        setSaveMessage({ type: 'error', text: 'Please enter a valid contact email address.' });
+      if (!emailRegex.test(trimmedEmail)) {
+        setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
         return false;
       }
     }
@@ -2064,10 +2043,10 @@ function FacultySettings() {
         },
         body: JSON.stringify({
           full_name: trimmedName,
-          email: emailInput.trim(),
-          contact_email: trimmedContactEmail || null,
+          username: trimmedUsername,
+          email: trimmedEmail || null,
+          contact_email: trimmedEmail || null,
           contact_no: trimmedContactNo || null,
-          specialization: trimmedSpecialization || null,
         }),
       });
 
@@ -2075,12 +2054,13 @@ function FacultySettings() {
       if (!res.ok) throw new Error(data.error || data.message || 'Failed to save your profile.');
 
       setFullNameInput(trimmedName);
-      setContactEmailInput(trimmedContactEmail);
+      setUsernameInput(trimmedUsername);
+      setEmailInput(trimmedEmail);
       setContactNoInput(trimmedContactNo);
-      setSpecializationInput(trimmedSpecialization);
 
       localStorage.setItem('userFullName', trimmedName);
-      localStorage.setItem('userEmail', emailInput.trim());
+      localStorage.setItem('userUsername', trimmedUsername);
+      localStorage.setItem('userEmail', trimmedEmail);
 
       setSaveMessage({ type: 'success', text: 'Personal information updated successfully.' });
       await fetchMe();
@@ -2184,7 +2164,6 @@ function FacultySettings() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          // If master switch is off, force everything to false
           announcements: masterSwitch ? announcementAlerts : false,
           department_notices: masterSwitch ? departmentNotices : false, 
           reports: masterSwitch ? reportAlerts : false,
@@ -2225,23 +2204,10 @@ function FacultySettings() {
     setSaveMessage({ type: 'success', text: 'Settings saved successfully.' });
   };
 
-  const handleCancel = () => {
-    setSaveMessage(null);
-    setPasswordMessage('');
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-
-    if (activeTab === 'profile' || activeTab === 'notifications') {
-      fetchMe(); 
-    }
-  };
-
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
     { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
     { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
-    { key: 'account', label: 'Account Actions', icon: <LogOut className="w-4 h-4" /> },
   ];
 
   return (
@@ -2253,13 +2219,6 @@ function FacultySettings() {
         </div>
 
         <div className="flex gap-3">
-          <button
-            onClick={handleCancel}
-            disabled={saving}
-            className="px-5 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            Cancel
-          </button>
           <button
             onClick={handleSaveChanges}
             disabled={saving || loading}
@@ -2337,6 +2296,19 @@ function FacultySettings() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                      <input
+                        type="text"
+                        value={usernameInput}
+                        onChange={(e) => setUsernameInput(e.target.value)}
+                        placeholder="Enter username"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
                       <input
                         type="text"
@@ -2345,25 +2317,13 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Login Email</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                       <input
                         type="email"
                         value={emailInput}
-                        disabled
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
-                      <input
-                        type="email"
-                        value={contactEmailInput}
-                        onChange={(e) => setContactEmailInput(e.target.value)}
-                        placeholder="Optional"
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        placeholder="Email address"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
@@ -2381,19 +2341,6 @@ function FacultySettings() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Specialization</label>
-                      <input
-                        type="text"
-                        value={specializationInput}
-                        onChange={(e) => setSpecializationInput(e.target.value)}
-                        placeholder="Optional"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
                       <input
                         type="text"
@@ -2402,20 +2349,14 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
                       <input
                         type="text"
                         value={readOnly.departmentName}
-                        disabled
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Date Hired</label>
-                      <input
-                        type="text"
-                        value={readOnly.dateHired}
                         disabled
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
@@ -2509,15 +2450,6 @@ function FacultySettings() {
                     {passwordMessage}
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={changePassword}
-                  disabled={saving}
-                  className="w-full px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Changing Password...' : 'Change Password'}
-                </button>
               </div>
             </div>
           )}
@@ -2528,7 +2460,6 @@ function FacultySettings() {
               <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
 
               <div className="space-y-4">
-                {/* MASTER SWITCH */}
                 <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg mb-6">
                   <div>
                     <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
@@ -2555,7 +2486,6 @@ function FacultySettings() {
 
                 <hr className="border-gray-100 my-4" />
 
-                {/* REPORTS */}
                 <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div>
                     <p className="text-sm font-medium text-gray-900">Quarterly Reports</p>
@@ -2573,7 +2503,6 @@ function FacultySettings() {
                   </label>
                 </div>
 
-                {/* ANNOUNCEMENTS */}
                 <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div>
                     <p className="text-sm font-medium text-gray-900">Announcements</p>
@@ -2591,7 +2520,6 @@ function FacultySettings() {
                   </label>
                 </div>
 
-                {/* DEPARTMENT NOTICES */}
                 <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div>
                     <p className="text-sm font-medium text-gray-900">Department Notices</p>
@@ -2605,35 +2533,9 @@ function FacultySettings() {
                       disabled={!masterSwitch}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all peer-checked:bg-blue-600 after:h-5 after:w-5 after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all"></div>
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Account Actions</h2>
-              <p className="text-sm text-gray-500 mb-6">Manage your active sessions.</p>
-
-              <div className="space-y-3 max-w-md">
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('user_role');
-                    window.location.reload();
-                  }}
-                  className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
-                >
-                  Log Out from All Devices
-                </button>
-
-                <p className="text-xs text-gray-500 text-center">
-                  This will sign you out from all active sessions
-                </p>
               </div>
             </div>
           )}

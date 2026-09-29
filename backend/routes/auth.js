@@ -625,7 +625,7 @@ router.get('/me', authenticate, async (req, res) => {
     const { data: preferences, error: prefError } = await supabase
       .from('notification_preferences')
       .select('*')
-      .eq('user_id', currentUser.id)
+      .eq('user_id', profile.id)
       .maybeSingle();
 
     if (prefError) {
@@ -1304,7 +1304,7 @@ router.get('/users', authenticate, async (req, res) => {
     return res.status(403).json({ error: 'Only administrators can access this resource.' });
   }
 
-  const { data, error } = await supabase
+    const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .order('created_at', { ascending: false });
@@ -1312,7 +1312,19 @@ router.get('/users', authenticate, async (req, res) => {
   if (error) {
     return res.status(500).json({ error: error.message });
   }
-  return res.json(data ?? []);
+
+  const { data: accounts } = await supabase
+    .from('users')
+    .select('id, username');
+
+  const usernameById = new Map((accounts ?? []).map((a) => [a.id, a.username]));
+
+  const merged = (data ?? []).map((p) => ({
+    ...p,
+    username: usernameById.get(p.id) ?? p.username ?? null,
+  }));
+
+  return res.json(merged);
 });
 
 router.get('/profile-test', (req, res) => {
@@ -1511,26 +1523,28 @@ router.put('/password', authenticate, async (req, res) => {
 // NOTIFICATION PREFERENCES
 // =========================================================
 router.put('/preferences', authenticate, async (req, res) => {
-  const { allow_all, announcements, staff_updates, reports, inquiries, system_notifs } = req.body;
+  let profileId = req.user.profileId;
+  if (!profileId && req.user.email) {
+    const { data } = await supabase
+      .from('profiles').select('id')
+      .eq('email', req.user.email.toLowerCase()).maybeSingle();
+    profileId = data?.id;
+  }
+  if (!profileId) return res.status(404).json({ error: 'Profile not found.' });
+
+  const allowed = ['allow_all', 'announcements', 'staff_updates', 'reports', 'inquiries', 'system_notifs'];
+  const payload = { user_id: profileId };
+  allowed.forEach((k) => {
+    if (typeof req.body[k] === 'boolean') payload[k] = req.body[k];
+  });
 
   const { data, error } = await supabase
     .from('notification_preferences')
-    .update({ 
-      allow_all,
-      announcements,
-      staff_updates,
-      reports,
-      inquiries,
-      system_notifs
-    })
-    .eq('user_id', req.user.userId)
-    .select();
+    .upsert(payload, { onConflict: 'user_id' })
+    .select()
+    .single();
 
-  if (error) {
-    console.error("Supabase Update Error:", error);
-    return res.status(500).json({ error: error.message });
-  }
-  
+  if (error) return res.status(500).json({ error: error.message });
   return res.json({ message: 'Preferences updated successfully', data });
 });
 

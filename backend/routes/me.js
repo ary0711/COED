@@ -73,10 +73,17 @@ router.get('/', authenticate, async (req, res) => {
 
   // Student-specific extras — additive only, doesn't change the base
   // shape faculty/alumni/dean/admin already rely on.
-  if (role === 'student') {
+   if (role === 'student') {
     const { data: userRow } = await supabase
       .from('profiles')
       .select('email')
+      .eq('id', userId)
+      .maybeSingle();
+
+    // Username gikan sa users table (source of truth)
+    const { data: accountRow } = await supabase
+      .from('users')
+      .select('username')
       .eq('id', userId)
       .maybeSingle();
 
@@ -88,26 +95,7 @@ router.get('/', authenticate, async (req, res) => {
     response.enrollmentStatus = profile.enrollment_status ?? null;
     response.gpa = profile.gpa ?? null;
     response.email = userRow?.email ?? null;
-  }
-
-  // Faculty-specific extras — additive only, same pattern as student.
-  if (role === 'faculty') {
-    const { data: userRow } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', userId)
-      .maybeSingle();
-
-    response.facultyId = profile.faculty_id ?? null;
-    response.departmentId = departmentId;
-    response.position = profile.position ?? null;
-    response.contactEmail = profile.contact_email ?? null;
-    response.contactNo = profile.contact_no ?? null;
-    response.specialization = profile.specialization ?? null;
-    response.dateHired = profile.date_hired ?? null;
-    response.status = profile.status ?? null;
-    response.profilePhotoUrl = profile.profile_photo_url ?? null;
-    response.email = userRow?.email ?? null;
+    response.username = accountRow?.username ?? '';
   }
 
   return res.json(response);
