@@ -218,70 +218,46 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true);
-      try {
-        // 1. Fetch total faculty for summary count and card list
-        const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-        
-        // Fetch current reports to get real statuses
-        const { data: reports } = await supabase.from('accomplishment_reports').select('submitted_by, status, updated_at');
-        
-        if (profiles) {
-          const matchedFaculty = profiles.filter((p: any) => {
-            const userProg = (p.program || p.department || '').trim();
-            return isProgramMatch(userProg, departmentNames);
-          }).map(p => {
-            const fReport = reports?.find(r => r.submitted_by === p.id);
-            let rStatus = 'Pending';
-            if (fReport) {
-              if (fReport.status === 'submitted') rStatus = 'Submitted';
-              else if (fReport.status === 'approved') rStatus = 'Approved';
-              else if (fReport.status === 'rejected') rStatus = 'Rejected';
-              else rStatus = 'Draft';
-            }
-            return {
-              id: p.id,
-              name: p.full_name,
-              email: p.email,
-              reportStatus: rStatus,
-              lastUpdated: fReport ? new Date(fReport.updated_at).toLocaleDateString() : 'No data'
-            }
-          });
-          setFacultyList(matchedFaculty);
-          setFacultyCount(matchedFaculty.length);
-        }
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    const headers = { Authorization: `Bearer ${token}` };
 
-        // 2. Fetch All Accounts for Dashboard card
-        const { data: allAccounts } = await supabase
-          .from('profiles')
-          .select('id, full_name, role, status, created_at')
-          .order('created_at', { ascending: false });
-
-        if (allAccounts) setAccountsData(allAccounts);
-
-        // 3. Fetch Calendar Data
-        const { data: calData } = await supabase.from('calendar_events').select('event_date');
-        if (calData) {
-          const today = new Date().toISOString().split('T')[0];
-          setUpcomingCount(calData.filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length);
-        }
-
-        // 4. Fetch Report Stats
-        if (reports) {
-          setReportStats({ 
-            submitted: reports.filter(r => r.status === 'submitted' || r.status === 'approved').length, 
-            pending: profiles ? profiles.length - reports.filter(r => r.status === 'submitted' || r.status === 'approved').length : 0 
-          });
-        }
-      } catch (err) {
-        console.error("Error loading dashboard data", err);
-      } finally {
-        setLoading(false);
+    try {
+      // Faculty, reports, ug account approvals (backend)
+      const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
+      if (res.ok) {
+        const stats = await res.json();
+        setFacultyCount(stats.facultyCount);
+        setFacultyList(
+          stats.facultyList.map((f: any) => ({
+            ...f,
+            lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
+          }))
+        );
+        setReportStats(stats.reportStats);
+        setAccountsData(stats.accounts);
+      } else {
+        console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
       }
-    };
-    fetchDashboardData();
-  }, [departmentNames]);
+
+      // Upcoming activities (parehas sa Calendar page)
+      const calRes = await fetch(CALENDAR_API_URL, { headers });
+      if (calRes.ok) {
+        const events = await calRes.json();
+        const today = new Date().toISOString().split('T')[0];
+        setUpcomingCount(
+          (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
+        );
+      }
+    } catch (err) {
+      console.error('Error loading dashboard data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchDashboardData();
+}, [departmentNames]);
 
   // Derived state for the account approvals tabs
   const pendingAccounts = accountsData.filter(a => a.status === 'pending');

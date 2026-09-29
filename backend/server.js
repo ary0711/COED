@@ -81,6 +81,7 @@ app.use(
 );
 
 app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/chair', require('./routes/chair'));
 app.use('/api/me', require('./routes/me'));
 app.use('/api/departments', require('./routes/departments'));
 
