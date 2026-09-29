@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { notifyDean } from '../notificationsApi';
 import { renderAsync } from 'docx-preview';
 import {
   Upload,

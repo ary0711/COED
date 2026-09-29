@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { notifyDean } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   Megaphone,
@@ -268,6 +269,18 @@ function ChairAnnouncementsView() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed to ${isEdit ? 'update' : 'post'} announcement`);
+      }
+
+            if (!isEdit) {
+        try {
+          await notifyDean({
+            title: `New Announcement Posted: ${form.title.trim()}`,
+            message: `Chair posted an announcement for ${targetRoles.join(', ')}.`,
+            type: 'announcement',
+          });
+        } catch (e) {
+          console.error('Announcement posted but Dean notification failed:', e);
+        }
       }
 
       await fetchAnnouncements();

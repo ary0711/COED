@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { notifyDean } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -2813,6 +2814,19 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
     setTab(type);
   };
 
+  const handleAfterSubmit = async (label: string) => {
+  try {
+    await notifyDean({
+      title: `Chair Report Submitted`,
+      message: `${userName} submitted the ${label}.`,
+      type: 'report',
+    });
+  } catch (e) {
+    console.error('Report submitted but Dean notification failed:', e);
+  }
+  setTab('track');
+};
+
   return (
     <div>
       <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-6">Reports</h1>
@@ -2880,7 +2894,7 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
           userId={userId}
           userName={userName}
           targetReportId={activeReportId}
-          onAfterSubmit={() => setTab('track')}
+          onAfterSubmit={() => handleAfterSubmit('Accomplishment Report')}
           externalPrintTrigger={printRequest === 'accomplishment'}
           onPrintHandled={() => setPrintRequest(null)}
         />
@@ -2892,7 +2906,7 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
           userId={userId}
           userName={userName}
           targetReportId={activeReportId}
-          onAfterSubmit={() => setTab('track')}
+          onAfterSubmit={() => handleAfterSubmit('Extension Report')}
           externalPrintTrigger={printRequest === 'extension'}
           onPrintHandled={() => setPrintRequest(null)}
         />
@@ -2904,7 +2918,7 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
           userId={userId}
           userName={userName}
           targetReportId={activeReportId}
-          onAfterSubmit={() => setTab('track')}
+          onAfterSubmit={() => handleAfterSubmit('WFH Report')}
           externalPrintTrigger={printRequest === 'wfh'}
           onPrintHandled={() => setPrintRequest(null)}
         />

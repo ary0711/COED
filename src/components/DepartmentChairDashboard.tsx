@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { sendBackendNotification } from '../notificationsApi';
+import { sendBackendNotification, notifyDean } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
@@ -869,6 +869,18 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
         const err = await res.json().catch(() => ({}));
         setFormError(err.error || `Failed to ${isEditing ? 'update' : 'save'} event (${res.statusText})`);
         return;
+      }
+
+            if (!isEditing) {
+        try {
+          await notifyDean({
+            title: `New Department Event: ${form.title.trim()}`,
+            message: `${departmentNames.join(', ') || 'Department'} · ${new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+            type: 'system',
+          });
+        } catch (e) {
+          console.error('Event saved but Dean notification failed:', e);
+        }
       }
 
       await fetchEvents();
@@ -1933,6 +1945,18 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         setLoadError('Failed to update status: ' + (err.error || res.statusText));
         return;
       }
+
+            try {
+        const who = accounts.find(a => a.id === id)?.name ?? 'An applicant';
+        await notifyDean({
+          title: `Account ${status === 'active' ? 'Approved' : 'Rejected'}`,
+          message: `${who} (${roleTab}) was ${status === 'active' ? 'approved' : 'rejected'} by the Department Chair.`,
+          type: 'staff_update',
+        });
+      } catch (e) {
+        console.error('Status updated but Dean notification failed:', e);
+      }
+      
       setAccounts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -2389,6 +2413,17 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
         showInfo('Error', data.error || 'Failed to update report.');
         return;
       }
+
+          try {
+      await notifyDean({
+        title: `Report ${status === 'approved' ? 'Approved' : 'Rejected'} by Chair`,
+        message: `${selectedReport?.profile?.full_name ?? 'A faculty member'}'s ${type} report was ${status}.`,
+        type: 'report',
+      });
+    } catch (e) {
+      console.error('Decision saved but Dean notification failed:', e);
+    }
+
       showInfo('Success', `Report successfully marked as ${status}.`);
       setSelectedReport(null);
       setRejectFor(null);

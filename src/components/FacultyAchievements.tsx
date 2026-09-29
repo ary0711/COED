@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { notifyDean } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   Award,
@@ -226,6 +227,15 @@ export function FacultyAchievements() {
 
       const data: AchievementSubmission = await res.json();
       setSubmissions((prev) => [data, ...prev]);
+      try {
+  await notifyDean({
+    title: 'New Achievement Submitted',
+    message: awardTitle.trim(),
+    type: 'system',
+  });
+} catch (e) {
+  console.error('Achievement saved but Dean notification failed:', e);
+}
       setAwardTitle('');
       setAwardCategory('');
       setAwardDate('');

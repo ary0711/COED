@@ -257,4 +257,51 @@ router.post('/send', authenticate, async (req, res) => {
   return res.json({ success: true, sent: rows.length, muted: prefs.muted });
 });
 
+const DEAN_ROLES = ['dean', 'college_dean'];
+
+// ── POST /api/notifications/notify-dean  (Chair only) ────────
+router.post('/notify-dean', authenticate, async (req, res) => {
+  if (!isChair(req)) {
+    return res.status(403).json({ error: 'Only department chairs can use this.' });
+  }
+
+  const { title, message, type = 'report' } = req.body;
+  const prefColumn = PREF_COLUMN[type];
+
+  if (!String(title || '').trim() || !String(message || '').trim()) {
+    return res.status(400).json({ error: 'Title and message are required.' });
+  }
+  if (!prefColumn) return res.status(400).json({ error: 'Invalid notification type.' });
+
+  const { data: deans, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .in('role', DEAN_ROLES)
+    .or('status.eq.active,status.is.null');
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const senderIds = await ownIds(req);
+  const ids = (deans ?? []).map((d) => d.id).filter((id) => !senderIds.includes(id));
+  if (ids.length === 0) return res.json({ success: true, sent: 0, muted: 0 });
+
+  const prefs = await applyPreferences(ids, prefColumn);
+  if (prefs.error) return res.status(500).json({ error: prefs.error.message });
+
+  const rows = prefs.allowed.map((id) => ({
+    user_id: id,
+    title: String(title).trim(),
+    message: String(message).trim(),
+    type,
+    is_read: false,
+  }));
+
+  if (rows.length > 0) {
+    const { error: insertError } = await supabase.from('notifications').insert(rows);
+    if (insertError) return res.status(500).json({ error: insertError.message });
+  }
+
+  return res.json({ success: true, sent: rows.length, muted: prefs.muted });
+});
+
 module.exports = router;
