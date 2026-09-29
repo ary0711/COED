@@ -1873,7 +1873,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
   all: 'General College Community',
   alumni: 'Alumni Only',
   students: 'Students Only',
-  faculty: 'Faculty & Staff Only',
+  faculty: 'Faculty Only',
 };
 
 const AUDIENCE_TO_ROLES: Record<string, string[]> = {
@@ -3152,7 +3152,7 @@ export default function CalendarActivities() {
                   <option value="all">Everyone (General College Community)</option>
                   <option value="alumni">Alumni Only (Homecoming, Tracer, Career, Reunions)</option>
                   <option value="students">Students Only (Academic, Enrollment, Exams)</option>
-                  <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
+                  <option value="faculty">Faculty Only (Meetings, Evaluations)</option>
                 </select>
               </div>
             </div>
@@ -9028,7 +9028,7 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
                   <ToggleCard label="New Inquiries" description="Get notified when new stakeholder inquiries come in." checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} disabled={!notifs.allowAll} />
                   <ToggleCard label="Pending Reports" description="Get reminders for upcoming or pending department reports." checked={notifs.reports} onChange={() => toggleNotif('reports')} disabled={!notifs.allowAll} />
                   <ToggleCard label="New Announcements" description="Get notified about important institutional updates." checked={notifs.announcements} onChange={() => toggleNotif('announcements')} disabled={!notifs.allowAll} />
-                  <ToggleCard label="Faculty/Staff Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Faculty Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
                   <ToggleCard label="System Notifications" description="Receive general application alerts and system notices." checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} disabled={!notifs.allowAll} />
                 </div>
               </div>
