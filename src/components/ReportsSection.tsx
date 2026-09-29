@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Trash2,
@@ -19,10 +20,13 @@ import {
   Clock,
   Eye,
   Edit3,
+  Archive,
+  ArchiveRestore,
+  ExternalLink,
 } from 'lucide-react';
 
 // ============================================================================
-// 1. BACKEND ROUTE CONSTANTS & INTERFACES
+// 1. API CONSTANTS & TYPES
 // ============================================================================
 const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
 const EXTENSION_API_URL      = 'http://localhost:5000/api/extension-reports';
@@ -45,6 +49,7 @@ export interface UnifiedTrackItem {
   submittedAt?: string | null;
   updatedAt: string;
   deanRemarks?: string | null;
+  isArchived: boolean;
   rawData: any;
 }
 
@@ -64,11 +69,20 @@ interface DocEntry {
   photos: DocPhotoItem[];
 }
 
-interface SubmissionOption {
+interface ResearchSubmission {
   id: string;
   title: string;
   type: 'research' | 'extension' | 'achievement';
-  date_received?: string | null;
+  authors?: string;
+  funding_source?: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
+  publication_link?: string;
+  budget?: string | number;
+  partner_organization?: string;
+  beneficiaries?: string;
+  sdg_alignment?: string;
   status: 'pending' | 'approved' | 'rejected';
 }
 
@@ -83,7 +97,12 @@ const DOC_CATEGORIES = [
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-// Maps any raw report from /mine or /my-draft into a normalized item
+function getEndpointForType(type: ReportType) {
+  if (type === 'accomplishment') return ACCOMPLISHMENT_API_URL;
+  if (type === 'extension') return EXTENSION_API_URL;
+  return WFH_API_URL;
+}
+
 function mapToUnified(type: ReportType, raw: any): UnifiedTrackItem | null {
   if (!raw || !raw.id) return null;
   const isWfh = type === 'wfh';
@@ -108,12 +127,65 @@ function mapToUnified(type: ReportType, raw: any): UnifiedTrackItem | null {
     submittedAt: raw.date_submitted || raw.updated_at || raw.created_at,
     updatedAt: raw.updated_at || raw.created_at || new Date().toISOString(),
     deanRemarks: raw.dean_remarks || null,
+    isArchived: Boolean(raw.is_archived || raw.archived),
     rawData: raw,
   };
 }
 
+const PRINT_LAYOUT_STYLES = `
+  @media print {
+    @page {
+      size: auto;
+      margin: 0.6in 0.6in 0.6in 0.6in;
+    }
+    body {
+      background: white !important;
+      color: black !important;
+      font-size: 11pt !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body * {
+      visibility: hidden;
+    }
+    #print-area, #print-area * {
+      visibility: visible;
+    }
+    #print-area {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      background: white !important;
+    }
+    .print-hide {
+      display: none !important;
+    }
+    .print-avoid-break {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+    table {
+      page-break-inside: auto;
+      width: 100% !important;
+      border-collapse: collapse !important;
+    }
+    tr {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+    thead {
+      display: table-header-group !important;
+    }
+  }
+`;
+
 // ============================================================================
-// 2. MY DRAFTS PANEL (Uses /my-draft)
+// 2. MY DRAFTS PANEL
 // ============================================================================
 function MyDraftsPanel({
   onEdit,
@@ -231,25 +303,29 @@ function MyDraftsPanel({
 }
 
 // ============================================================================
-// 3. TRACK STATUS PANEL (Uses /mine)
+// 3. TRACK STATUS PANEL (WITH FULL-VIEWPORT PORTAL CONFIRMATION MODAL)
 // ============================================================================
+type StatusFilterType = 'all' | 'under_review' | 'approved' | 'rejected' | 'archived';
+
 function ReportTrackerPanel({
   onOpenReport,
-  onPrintApproved,
+  onPrintReportDirectly,
 }: {
   onOpenReport: (type: ReportType, targetId?: string) => void;
-  onPrintApproved: (type: ReportType) => void;
+  onPrintReportDirectly: (type: ReportType, targetId: string) => void;
 }) {
   const [trackedReports, setTrackedReports] = useState<UnifiedTrackItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [activeFilter, setActiveFilter] = useState<StatusFilterType>('all');
+  const [archiveTarget, setArchiveTarget] = useState<UnifiedTrackItem | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   const fetchTracked = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       const headers = { Authorization: `Bearer ${getToken()}` };
-      // Calls the real /mine endpoints on your backend
       const [accRes, extRes, wfhRes] = await Promise.all([
         fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers }),
         fetch(`${EXTENSION_API_URL}/mine`, { headers }),
@@ -261,23 +337,19 @@ function ReportTrackerPanel({
       const wfhData: any[] = wfhRes.ok ? await wfhRes.json() : [];
 
       const list: UnifiedTrackItem[] = [];
-
       (Array.isArray(accData) ? accData : []).forEach((r) => {
         const u = mapToUnified('accomplishment', r);
         if (u) list.push(u);
       });
-
       (Array.isArray(extData) ? extData : []).forEach((r) => {
         const u = mapToUnified('extension', r);
         if (u) list.push(u);
       });
-
       (Array.isArray(wfhData) ? wfhData : []).forEach((r) => {
         const u = mapToUnified('wfh', r);
         if (u) list.push(u);
       });
 
-      // Sort by newest updated_at
       list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       setTrackedReports(list);
     } catch {
@@ -290,6 +362,40 @@ function ReportTrackerPanel({
   useEffect(() => {
     fetchTracked();
   }, [fetchTracked]);
+
+  const toggleArchiveStatus = async (item: UnifiedTrackItem, newArchiveState: boolean) => {
+    setArchiving(true);
+    try {
+      const baseUrl = getEndpointForType(item.type);
+      const res = await fetch(`${baseUrl}/${item.id}/archive`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ is_archived: newArchiveState }),
+      });
+
+      if (!res.ok) {
+        const putFallback = await fetch(`${baseUrl}/${item.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${getToken()}`,
+          },
+          body: JSON.stringify({ ...item.rawData, is_archived: newArchiveState }),
+        });
+        if (!putFallback.ok) throw new Error('Failed to update archive status.');
+      }
+
+      await fetchTracked();
+      setArchiveTarget(null);
+    } catch {
+      alert('Could not update report archive status. Please try again.');
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   const getStatusBadge = (status: UnifiedTrackItem['status']) => {
     switch (status) {
@@ -321,9 +427,17 @@ function ReportTrackerPanel({
     }
   };
 
+  const filteredReports = trackedReports.filter((item) => {
+    if (activeFilter === 'archived') return item.isArchived;
+    if (item.isArchived) return false;
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'under_review') return item.status === 'submitted' || item.status === 'under_review';
+    return item.status === activeFilter;
+  });
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Track Report Status</h2>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -332,11 +446,26 @@ function ReportTrackerPanel({
         </div>
         <button
           onClick={fetchTracked}
-          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors self-start sm:self-auto"
           title="Refresh tracking status"
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+      </div>
+
+      <div className="flex items-center gap-1 sm:gap-2 border-b border-gray-100 pb-3 overflow-x-auto text-xs font-semibold">
+        {(['all', 'under_review', 'approved', 'rejected', 'archived'] as StatusFilterType[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => setActiveFilter(f)}
+            className={`px-3 py-1.5 rounded-lg capitalize transition-colors flex items-center gap-1.5 ${
+              activeFilter === f ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {f === 'archived' && <Archive className="w-3.5 h-3.5" />}
+            {f === 'under_review' ? 'Under Review' : f === 'all' ? 'All Active' : f}
+          </button>
+        ))}
       </div>
 
       {loadError && (
@@ -350,15 +479,14 @@ function ReportTrackerPanel({
           <Loader2 className="w-5 h-5 animate-spin text-[#1E3A8A]" />
           <span className="text-sm font-medium">Checking submissions...</span>
         </div>
-      ) : trackedReports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Clock className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-          <p className="text-sm font-medium">No submitted reports found.</p>
-          <p className="text-xs text-gray-400 mt-1">Submit your draft to track Dean review and decisions here.</p>
+          <p className="text-sm font-medium">No reports found for this filter.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {trackedReports.map((item) => {
+          {filteredReports.map((item) => {
             const badge = getStatusBadge(item.status);
             const isApproved = item.status === 'approved';
             const isRejected = item.status === 'rejected';
@@ -373,12 +501,17 @@ function ReportTrackerPanel({
                     <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
                       {item.type}
                     </span>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border ${badge.containerClass}`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
-                      {badge.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {item.isArchived && (
+                        <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-[10px] font-bold rounded">
+                          Archived
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border ${badge.containerClass}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
+                        {badge.label}
+                      </span>
+                    </div>
                   </div>
 
                   <div>
@@ -389,7 +522,6 @@ function ReportTrackerPanel({
                     </p>
                   </div>
 
-                  {/* Rejection / Dean Feedback Box */}
                   {isRejected && item.deanRemarks && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">
                       <div className="font-bold flex items-center gap-1 mb-1">
@@ -398,21 +530,21 @@ function ReportTrackerPanel({
                       <p className="whitespace-pre-wrap leading-relaxed">{item.deanRemarks}</p>
                     </div>
                   )}
-
-                  {/* Workflow Lifecycle Visualizer */}
-                  <div className="pt-2">
-                    <div className="text-[10px] text-gray-400 font-semibold tracking-wider uppercase mb-1">
-                      Submitted → Under Review → Pending Dean Decision
-                    </div>
-                  </div>
                 </div>
 
-                {/* Actions strictly based on status */}
-                <div className="pt-4 mt-4 border-t border-gray-200/60 flex items-center justify-between gap-2">
+                <div className="pt-4 mt-4 border-t border-gray-200/60 flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] font-mono text-gray-400 truncate">ID: {item.id.slice(0, 8)}</span>
 
-                  <div className="flex items-center gap-2">
-                    {/* Approved: View Approved Report + Print Report */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {item.isArchived && (
+                      <button
+                        onClick={() => toggleArchiveStatus(item, false)}
+                        className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1"
+                      >
+                        <ArchiveRestore className="w-3.5 h-3.5" /> Unarchive
+                      </button>
+                    )}
+
                     {isApproved && (
                       <>
                         <button
@@ -422,16 +554,15 @@ function ReportTrackerPanel({
                           <Eye className="w-3.5 h-3.5" /> View
                         </button>
                         <button
-                          onClick={() => onPrintApproved(item.type)}
+                          onClick={() => onPrintReportDirectly(item.type, item.id)}
                           className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-1 shadow-xs"
                         >
-                          <Printer className="w-3.5 h-3.5" /> Print Report
+                          <Printer className="w-3.5 h-3.5" /> Print
                         </button>
                       </>
                     )}
 
-                    {/* Rejected: Review & Modify */}
-                    {isRejected && (
+                    {isRejected && !item.isArchived && (
                       <button
                         onClick={() => onOpenReport(item.type, item.id)}
                         className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1 shadow-xs"
@@ -440,7 +571,6 @@ function ReportTrackerPanel({
                       </button>
                     )}
 
-                    {/* Submitted / Under Review: Read-Only View */}
                     {!isApproved && !isRejected && (
                       <button
                         onClick={() => onOpenReport(item.type, item.id)}
@@ -449,12 +579,66 @@ function ReportTrackerPanel({
                         <Eye className="w-3.5 h-3.5" /> View Report
                       </button>
                     )}
+
+                    {(isApproved || isRejected) && !item.isArchived && (
+                      <button
+                        onClick={() => setArchiveTarget(item)}
+                        className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Archive Report"
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* FULL-VIEWPORT ARCHIVE CONFIRMATION MODAL */}
+      {archiveTarget && typeof document !== 'undefined' && createPortal(
+        <div
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div
+            className="fixed inset-0"
+            onClick={() => !archiving && setArchiveTarget(null)}
+          />
+          <div className="relative bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-amber-600">
+              <Archive className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-gray-900">Are you sure you want to archive this report?</h3>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              The report will be removed from your active reports but will not be deleted. You can find it again under Archived Reports.
+            </p>
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
+              <div className="font-semibold text-gray-800">{archiveTarget.title}</div>
+              <div className="text-gray-500 text-[11px] mt-0.5">{archiveTarget.periodOrQuarter}</div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                disabled={archiving}
+                onClick={() => setArchiveTarget(null)}
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={archiving}
+                onClick={() => toggleArchiveStatus(archiveTarget, true)}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF] transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                {archiving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Archive Report
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -472,6 +656,7 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-5 py-4 bg-[#1E3A8A] text-white font-semibold text-sm hover:bg-[#1E40AF] transition-colors"
       >
@@ -490,6 +675,7 @@ function EditableTable({
   readOnly,
   onImportClick,
   importButtonLabel,
+  onRemoveRow,
 }: {
   columns: { key: string; label: string; width?: string }[];
   rows: GenericRow[];
@@ -497,12 +683,20 @@ function EditableTable({
   readOnly?: boolean;
   onImportClick?: () => void;
   importButtonLabel?: string;
+  onRemoveRow?: (index: number, row: GenericRow) => void;
 }) {
   const emptyRow = () => columns.reduce((acc, col) => ({ ...acc, [col.key]: '' }), {});
   const updateCell = (rowIdx: number, key: string, value: string) =>
     onChange(rows.map((r, i) => (i === rowIdx ? { ...r, [key]: value } : r)));
   const addRow = () => onChange([...rows, emptyRow()]);
-  const deleteRow = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  const deleteRow = (idx: number) => {
+    const rowToDelete = rows[idx];
+    if (onRemoveRow) {
+      onRemoveRow(idx, rowToDelete);
+    } else {
+      onChange(rows.filter((_, i) => i !== idx));
+    }
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -537,9 +731,14 @@ function EditableTable({
                 </td>
               ))}
               {!readOnly && (
-                <td className="border border-gray-300 px-1 py-1 text-center">
-                  <button onClick={() => deleteRow(idx)} className="p-1 text-red-400 hover:bg-red-50 rounded">
-                    <Trash2 className="w-3 h-3" />
+                <td className="border border-gray-300 px-1 py-1 text-center align-middle">
+                  <button
+                    type="button"
+                    onClick={() => deleteRow(idx)}
+                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    title={row.source_submission_id ? 'Remove auto-filled research (Submission remains in database)' : 'Delete Row'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </td>
               )}
@@ -550,15 +749,17 @@ function EditableTable({
       {!readOnly && (
         <div className="mt-2 flex items-center gap-3 flex-wrap">
           <button
+            type="button"
             onClick={addRow}
-            className="flex items-center gap-1 text-xs text-[#1E3A8A] hover:bg-blue-50 px-2 py-1.5 rounded-lg transition-colors font-medium"
+            className="flex items-center gap-1 text-xs text-[#1E3A8A] hover:bg-blue-50 px-2 py-1.5 rounded-lg font-medium"
           >
             <Plus className="w-3.5 h-3.5" /> Add Row
           </button>
           {onImportClick && (
             <button
+              type="button"
               onClick={onImportClick}
-              className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors font-semibold"
+              className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-semibold"
             >
               <FolderPlus className="w-3.5 h-3.5" /> {importButtonLabel || 'Import Record'}
             </button>
@@ -602,10 +803,8 @@ export function AccomplishmentReport({
   const [errorMsg, setErrorMsg] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  const [allSubmissions, setAllSubmissions] = useState<SubmissionOption[]>([]);
-  const [activeImportTarget, setActiveImportTarget] = useState<string | null>(null);
   const [docEntries, setDocEntries] = useState<DocEntry[]>([]);
-  const [uploadingEntryId, setUploadingEntryId] = useState<string | null>(null);
+  const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>([]);
   const fileInputRefs = useRef<{ [id: string]: HTMLInputElement | null }>({});
 
   const emptyRow = (keys: string[]) => keys.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
@@ -640,88 +839,140 @@ export function AccomplishmentReport({
   const showSuccess = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
   const showError = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
 
+  // Fetch report data on initial load
+  const loadReportData = useCallback(async (quarterParam?: string, yearParam?: string) => {
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      let reportData: any = null;
+
+      if (targetReportId) {
+        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
+        if (res.ok) {
+          const list: any[] = await res.json();
+          reportData = list.find((r) => r.id === targetReportId);
+        }
+      }
+
+      if (!reportData && (quarterParam || quarter) && (yearParam || year)) {
+        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
+        if (res.ok) {
+          const list: any[] = await res.json();
+          reportData = list.find((r) => r.quarter === (quarterParam || quarter) && r.year === (yearParam || year));
+        }
+      }
+
+      if (!reportData) {
+        const res = await fetch(`${ACCOMPLISHMENT_API_URL}/my-draft`, { headers });
+        if (res.ok) {
+          reportData = await res.json();
+        }
+      }
+
+      if (reportData && reportData.id) {
+        setReportId(reportData.id);
+        setQuarter(reportData.quarter || '1st');
+        setYear(reportData.year || new Date().getFullYear().toString());
+        setProgramChair(reportData.program_chair ?? userName);
+        setProgram(reportData.program ?? '');
+        setOtherAccomplishments(reportData.other_accomplishments ?? '');
+        setDateSubmitted(reportData.date_submitted ?? '');
+        setStatus(reportData.status || 'draft');
+        setDeanRemarks(reportData.dean_remarks || null);
+        setDismissedSubmissionIds(Array.isArray(reportData.dismissed_submission_ids) ? reportData.dismissed_submission_ids : []);
+
+        if (reportData.pi1_data?.length) setPi1(reportData.pi1_data);
+        if (reportData.pi2_data?.length) setPi2(reportData.pi2_data);
+        if (reportData.pi3_data?.length) setPi3(reportData.pi3_data);
+        if (reportData.pi4_data?.length) setPi4(reportData.pi4_data);
+        if (reportData.pi5_data?.length) setPi5(reportData.pi5_data);
+        if (reportData.pi6_data?.length) setPi6(reportData.pi6_data);
+        if (reportData.pi7_data?.length) setPi7(reportData.pi7_data);
+        if (reportData.pi8_data?.length) setPi8(reportData.pi8_data);
+        if (reportData.mfo3_pi1_data?.length) setMfo3pi1(reportData.mfo3_pi1_data);
+        if (reportData.mfo3_pi2_data?.length) setMfo3pi2(reportData.mfo3_pi2_data);
+        if (reportData.mfo3_pi3_data?.length) setMfo3pi3(reportData.mfo3_pi3_data);
+        if (reportData.mfo3_pi4_data?.length) setMfo3pi4(reportData.mfo3_pi4_data);
+        if (reportData.mfo4_pi1_data?.length) setMfo4pi1(reportData.mfo4_pi1_data);
+        if (reportData.mfo4_pi2_data?.length) setMfo4pi2(reportData.mfo4_pi2_data);
+        if (reportData.other_data?.length) setOtherInitiatives(reportData.other_data);
+        if (reportData.awards_data?.length) setAwards(reportData.awards_data);
+        if (reportData.doc_entries_data?.length) setDocEntries(reportData.doc_entries_data);
+        setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
+      }
+    } catch {
+      showError('Could not load report.');
+    }
+  }, [targetReportId, quarter, year, userName]);
+
+  useEffect(() => {
+    loadReportData();
+  }, [loadReportData]);
+
+  // AUTO-POPULATE RESEARCH SUBMISSIONS WITHOUT DUPLICATION
+  useEffect(() => {
+    if (isFormLocked) return;
+
+    const autoPopulateResearch = async () => {
+      try {
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) return;
+
+        const submissions: ResearchSubmission[] = await res.json();
+        const researchSubmissions = (Array.isArray(submissions) ? submissions : []).filter(
+          (s) => s.type === 'research' && !dismissedSubmissionIds.includes(s.id)
+        );
+
+        setMfo3pi2((currentRows) => {
+          const existingSourceIds = new Set(
+            currentRows.map((r) => r.source_submission_id).filter(Boolean)
+          );
+
+          const newRowsToAdd: GenericRow[] = [];
+          for (const sub of researchSubmissions) {
+            if (!existingSourceIds.has(sub.id)) {
+              newRowsToAdd.push({
+                source_submission_id: sub.id,
+                title_research: sub.title || '',
+                proponents: sub.authors || userName,
+                date_completed: sub.end_date || sub.start_date || '',
+                funding_source: sub.funding_source || (sub.budget ? `Budget: ${sub.budget}` : 'Internal'),
+              });
+            }
+          }
+
+          if (newRowsToAdd.length === 0) return currentRows;
+
+          const isInitialEmpty =
+            currentRows.length === 1 &&
+            !currentRows[0].title_research &&
+            !currentRows[0].proponents &&
+            !currentRows[0].date_completed;
+
+          return isInitialEmpty ? newRowsToAdd : [...currentRows, ...newRowsToAdd];
+        });
+      } catch {
+        // silent
+      }
+    };
+
+    autoPopulateResearch();
+  }, [dismissedSubmissionIds, isFormLocked, userName]);
+
+  const handleRemoveResearchRow = (index: number, row: GenericRow) => {
+    if (row.source_submission_id) {
+      setDismissedSubmissionIds((prev) => [...prev, row.source_submission_id]);
+    }
+    setMfo3pi2((prev) => prev.filter((_, i) => i !== index));
+  };
+
   useEffect(() => {
     if (externalPrintTrigger) {
       setShowPrint(true);
       onPrintHandled?.();
     }
   }, [externalPrintTrigger, onPrintHandled]);
-
-  useEffect(() => {
-    const loadReportData = async () => {
-      try {
-        const headers = { Authorization: `Bearer ${getToken()}` };
-        let reportData: any = null;
-
-        if (targetReportId) {
-          // If a specific ID was clicked from Track Status (/mine), fetch from mine list or my-draft
-          const res = await fetch(`${ACCOMPLISHMENT_API_URL}/mine`, { headers });
-          if (res.ok) {
-            const list: any[] = await res.json();
-            reportData = list.find((r) => r.id === targetReportId);
-          }
-        }
-
-        if (!reportData) {
-          // Fallback to latest draft
-          const res = await fetch(`${ACCOMPLISHMENT_API_URL}/my-draft`, { headers });
-          if (res.ok) {
-            reportData = await res.json();
-          }
-        }
-
-        if (reportData && reportData.id) {
-          setReportId(reportData.id);
-          setQuarter(reportData.quarter || '1st');
-          setYear(reportData.year || new Date().getFullYear().toString());
-          setProgramChair(reportData.program_chair ?? userName);
-          setProgram(reportData.program ?? '');
-          setOtherAccomplishments(reportData.other_accomplishments ?? '');
-          setDateSubmitted(reportData.date_submitted ?? '');
-          setStatus(reportData.status || 'draft');
-          setDeanRemarks(reportData.dean_remarks || null);
-
-          if (reportData.pi1_data?.length) setPi1(reportData.pi1_data);
-          if (reportData.pi2_data?.length) setPi2(reportData.pi2_data);
-          if (reportData.pi3_data?.length) setPi3(reportData.pi3_data);
-          if (reportData.pi4_data?.length) setPi4(reportData.pi4_data);
-          if (reportData.pi5_data?.length) setPi5(reportData.pi5_data);
-          if (reportData.pi6_data?.length) setPi6(reportData.pi6_data);
-          if (reportData.pi7_data?.length) setPi7(reportData.pi7_data);
-          if (reportData.pi8_data?.length) setPi8(reportData.pi8_data);
-          if (reportData.mfo3_pi1_data?.length) setMfo3pi1(reportData.mfo3_pi1_data);
-          if (reportData.mfo3_pi2_data?.length) setMfo3pi2(reportData.mfo3_pi2_data);
-          if (reportData.mfo3_pi3_data?.length) setMfo3pi3(reportData.mfo3_pi3_data);
-          if (reportData.mfo3_pi4_data?.length) setMfo3pi4(reportData.mfo3_pi4_data);
-          if (reportData.mfo4_pi1_data?.length) setMfo4pi1(reportData.mfo4_pi1_data);
-          if (reportData.mfo4_pi2_data?.length) setMfo4pi2(reportData.mfo4_pi2_data);
-          if (reportData.other_data?.length) setOtherInitiatives(reportData.other_data);
-          if (reportData.awards_data?.length) setAwards(reportData.awards_data);
-          if (reportData.doc_entries_data?.length) setDocEntries(reportData.doc_entries_data);
-          setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
-        }
-      } catch (err: any) {
-        showError('Could not load report.');
-      }
-    };
-
-    const loadSubmissions = async () => {
-      try {
-        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setAllSubmissions((data ?? []).filter((s: any) => s.status === 'approved' || s.status === 'pending'));
-        }
-      } catch {
-        // silent
-      }
-    };
-
-    loadReportData();
-    loadSubmissions();
-  }, [userId, userName, targetReportId]);
 
   const getPayload = (submitStatus: string) => ({
     quarter,
@@ -745,13 +996,13 @@ export function AccomplishmentReport({
     other_data: otherInitiatives,
     awards_data: awards,
     doc_entries_data: docEntries,
+    dismissed_submission_ids: dismissedSubmissionIds,
     other_accomplishments: otherAccomplishments,
     date_submitted: submitStatus === 'submitted' ? (dateSubmitted || new Date().toISOString().split('T')[0]) : dateSubmitted,
     status: submitStatus,
     progress: computeProgress(),
   });
 
-  // Reuses existing reportId with PUT /:id, or creates a new row with POST /
   const persist = async (payload: Record<string, unknown>) => {
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
     if (reportId) {
@@ -830,7 +1081,6 @@ export function AccomplishmentReport({
       return;
     }
     const toUpload = Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, remaining);
-    setUploadingEntryId(entryId);
     try {
       const formData = new FormData();
       formData.append('entryId', entryId);
@@ -855,17 +1105,19 @@ export function AccomplishmentReport({
     } catch {
       showError('Could not upload images.');
     } finally {
-      setUploadingEntryId(null);
       if (fileInputRefs.current[entryId]) fileInputRefs.current[entryId]!.value = '';
     }
   };
 
+  const hasPopulatedData = (rows: GenericRow[]) =>
+    rows.some((row) => Object.values(row).some((val) => Boolean(val && val.trim())));
+
   return (
     <div className="space-y-4">
+      <style>{PRINT_LAYOUT_STYLES}</style>
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium">{errorMsg}</div>}
 
-      {/* Dean Rejection Banner */}
       {status === 'rejected' && deanRemarks && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -879,7 +1131,6 @@ export function AccomplishmentReport({
         </div>
       )}
 
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Accomplishment Report</h2>
@@ -891,6 +1142,7 @@ export function AccomplishmentReport({
 
         <div className="flex gap-2 flex-wrap">
           <button
+            type="button"
             onClick={() => setShowPrint(true)}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-50"
           >
@@ -900,6 +1152,7 @@ export function AccomplishmentReport({
           {!isFormLocked && (
             <>
               <button
+                type="button"
                 onClick={handleSaveDraft}
                 disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm hover:bg-blue-100 disabled:opacity-50"
@@ -907,6 +1160,7 @@ export function AccomplishmentReport({
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Draft'}
               </button>
               <button
+                type="button"
                 onClick={handleSubmit}
                 disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm hover:bg-[#1E40AF] disabled:opacity-50 shadow-xs"
@@ -936,7 +1190,6 @@ export function AccomplishmentReport({
         </div>
       </div>
 
-      {/* Progress */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-gray-700">Form Completion</span>
@@ -947,14 +1200,18 @@ export function AccomplishmentReport({
         </div>
       </div>
 
-      {/* Metadata */}
+      {/* Metadata with Period Change Handling */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Quarter</label>
             <select
               value={quarter}
-              onChange={(e) => setQuarter(e.target.value)}
+              onChange={(e) => {
+                const nextQ = e.target.value;
+                setQuarter(nextQ);
+                loadReportData(nextQ, year);
+              }}
               disabled={isFormLocked}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
             >
@@ -966,7 +1223,11 @@ export function AccomplishmentReport({
             <input
               type="text"
               value={year}
-              onChange={(e) => setYear(e.target.value)}
+              onChange={(e) => {
+                const nextY = e.target.value;
+                setYear(nextY);
+                if (nextY.length === 4) loadReportData(quarter, nextY);
+              }}
               disabled={isFormLocked}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
             />
@@ -995,7 +1256,6 @@ export function AccomplishmentReport({
         </div>
       </div>
 
-      {/* MFO 1 */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 1: Higher Education Services</div>
       <Section title="PI 1: First-time Licensure Examination Passers">
         <EditableTable columns={[{key:'date_exam',label:'LET Exam Date'},{key:'no_first_time',label:'First-time Takers'},{key:'no_passers',label:'Passers'},{key:'passing_pct_first',label:'Passing %'},{key:'total_takers',label:'Total Takers'},{key:'total_passers',label:'Total Passers'},{key:'overall_pct',label:'Overall %'}]} rows={pi1} onChange={setPi1} readOnly={isFormLocked} />
@@ -1022,13 +1282,18 @@ export function AccomplishmentReport({
         <EditableTable columns={[{key:'name_faculty',label:'Author(s)'},{key:'title_im',label:'IM Title'},{key:'type_im',label:'Type'},{key:'courses_utilizing',label:'Courses Utilizing'},{key:'ip_protection',label:'IP Protection'}]} rows={pi8} onChange={setPi8} readOnly={isFormLocked} />
       </Section>
 
-      {/* MFO 3: RESEARCH */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 3: Research</div>
       <Section title="PI 1: Research Output Utilized by Industry/Community">
         <EditableTable columns={[{key:'title_research',label:'Research Title'},{key:'proponents',label:'Proponents'},{key:'nature_utilization',label:'Utilization'},{key:'partner_community',label:'Partner Community'},{key:'address',label:'Address'}]} rows={mfo3pi1} onChange={setMfo3pi1} readOnly={isFormLocked} />
       </Section>
-      <Section title="PI 2: Research Output Completed Within Quarter">
-        <EditableTable columns={[{key:'title_research',label:'Title'},{key:'proponents',label:'Proponents'},{key:'date_completed',label:'Completed Date'},{key:'funding_source',label:'Funding Source'}]} rows={mfo3pi2} onChange={setMfo3pi2} readOnly={isFormLocked} />
+      <Section title="PI 2: Research Output Completed Within Quarter (Auto-populated from Submissions)">
+        <EditableTable
+          columns={[{key:'title_research',label:'Title'},{key:'proponents',label:'Proponents'},{key:'date_completed',label:'Completed Date'},{key:'funding_source',label:'Funding Source'}]}
+          rows={mfo3pi2}
+          onChange={setMfo3pi2}
+          onRemoveRow={handleRemoveResearchRow}
+          readOnly={isFormLocked}
+        />
       </Section>
       <Section title="PI 3: Refereed Journal Publications">
         <EditableTable columns={[{key:'title_research',label:'Title'},{key:'proponents',label:'Proponents'},{key:'name_publication',label:'Journal/Publication'},{key:'date_published',label:'Date Published'},{key:'funding_source',label:'Funding Source'}]} rows={mfo3pi3} onChange={setMfo3pi3} readOnly={isFormLocked} />
@@ -1037,7 +1302,6 @@ export function AccomplishmentReport({
         <EditableTable columns={[{key:'title_research',label:'Title'},{key:'proponents',label:'Proponents'},{key:'date',label:'Date'},{key:'sponsoring_agency',label:'Sponsoring Agency'},{key:'venue',label:'Venue'}]} rows={mfo3pi4} onChange={setMfo3pi4} readOnly={isFormLocked} />
       </Section>
 
-      {/* MFO 4: EXTENSION */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 4: Technical Advisory Extension Program</div>
       <Section title="PI 1: Active Partnerships with LGUs/NGOs/Industries">
         <EditableTable columns={[{key:'title_project',label:'Project Title'},{key:'proponents',label:'Proponents'},{key:'partner',label:'Partner'},{key:'project_locale',label:'Locale'}]} rows={mfo4pi1} onChange={setMfo4pi1} readOnly={isFormLocked} />
@@ -1049,7 +1313,6 @@ export function AccomplishmentReport({
         <EditableTable columns={[{key:'title_activity',label:'Activity Title'},{key:'date_conducted',label:'Date'},{key:'venue',label:'Venue'},{key:'sponsoring_agency',label:'Sponsor'},{key:'students_involved',label:'Students'},{key:'role_students',label:'Student Role'},{key:'faculty_involved',label:'Faculty'},{key:'role_faculty',label:'Faculty Role'}]} rows={otherInitiatives} onChange={setOtherInitiatives} readOnly={isFormLocked} />
       </Section>
 
-      {/* Other Accomplishments Narrative */}
       <Section title="Other Accomplishments Narrative">
         <textarea
           value={otherAccomplishments}
@@ -1061,7 +1324,6 @@ export function AccomplishmentReport({
         />
       </Section>
 
-      {/* Documentation Photos */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">DOCUMENTATION & EVIDENCE</div>
       {DOC_CATEGORIES.map((cat) => {
         const entries = docEntries.filter((e) => e.category === cat.key);
@@ -1079,7 +1341,7 @@ export function AccomplishmentReport({
                       className="px-3 py-1.5 border rounded-lg text-sm w-full"
                     />
                     {!isFormLocked && (
-                      <button onClick={() => removeDocEntry(entry.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
+                      <button type="button" onClick={() => removeDocEntry(entry.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -1115,7 +1377,7 @@ export function AccomplishmentReport({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {entry.photos.map((p, i) => (
                         <div key={i} className="border rounded-lg overflow-hidden bg-white">
-                          <img src={p.url} alt={`Ev ${i}`} className="w-full h-24 object-cover" />
+                          <img src={p.url} alt={`Evidence ${i + 1}`} className="w-full h-24 object-cover" />
                           <input
                             type="text"
                             value={p.caption}
@@ -1146,6 +1408,7 @@ export function AccomplishmentReport({
               ))}
               {!isFormLocked && (
                 <button
+                  type="button"
                   onClick={() => addDocEntry(cat.key)}
                   className="text-xs text-[#1E3A8A] font-semibold flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg"
                 >
@@ -1157,61 +1420,227 @@ export function AccomplishmentReport({
         );
       })}
 
-      {/* Print View Modal */}
-      {showPrint && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-8">
-            <div className="flex justify-between items-center pb-4 border-b mb-4">
-              <h3 className="font-bold text-gray-900">Print Preview — Accomplishment Report</h3>
+      {/* FULL-VIEWPORT PRINT PREVIEW MODAL */}
+      {showPrint && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 sm:p-8 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-4 border-b mb-6 print-hide">
+              <h3 className="font-bold text-gray-900 text-sm">Print Preview — Accomplishment Report</h3>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold flex items-center gap-1.5"
+                >
                   <Printer className="w-4 h-4" /> Print
                 </button>
-                <button onClick={() => setShowPrint(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setShowPrint(false)}
+                  className="p-2 hover:bg-gray-100 rounded-xl"
+                >
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
             </div>
-            <div id="print-area" className="text-xs leading-relaxed">
-              <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain mb-4" />
-              <div className="text-center font-bold uppercase mb-4">
-                Accomplishment Report — {quarter} Quarter, SY {year}
-                <div className="text-xs font-normal normal-case">Program: {program} | Submitted by: {programChair}</div>
+
+            <div id="print-area" className="text-black bg-white text-xs leading-relaxed max-w-[800px] mx-auto">
+              <div className="text-center mb-4">
+                <img
+                  src="/header-pics/ctu-header.png"
+                  alt="CTU Header"
+                  className="max-w-[480px] w-full mx-auto object-contain mb-2"
+                />
+                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">College of Education</div>
+                <h1 className="text-sm font-extrabold uppercase mt-1">PROGRAM ACCOMPLISHMENT REPORT</h1>
+                <div className="text-xs font-semibold text-gray-800">
+                  {quarter} Quarter, School Year {year}
+                </div>
+                <div className="text-[11px] text-gray-600 mt-1">
+                  Program: <span className="font-semibold text-black">{program || 'N/A'}</span> | Submitted by: <span className="font-semibold text-black">{programChair}</span>
+                </div>
               </div>
-              <p className="font-bold underline mt-4 mb-1">MFO 1: Higher Education Services (LET Passing)</p>
-              <table className="w-full border border-black border-collapse text-[11px] mb-4">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-black p-1">Exam Date</th>
-                    <th className="border border-black p-1">First-time Passers</th>
-                    <th className="border border-black p-1">Total Passers</th>
-                    <th className="border border-black p-1">Overall %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pi1.map((r, i) => (
-                    <tr key={i}>
-                      <td className="border border-black p-1">{r.date_exam}</td>
-                      <td className="border border-black p-1">{r.no_passers}</td>
-                      <td className="border border-black p-1">{r.total_passers}</td>
-                      <td className="border border-black p-1">{r.overall_pct}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain mt-8" />
+
+              <div className="space-y-4">
+                {hasPopulatedData(pi1) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 1 — PI 1: Licensure Examination Passers
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Exam Date</th>
+                          <th className="border border-black p-1">First-time Passers</th>
+                          <th className="border border-black p-1">Total Passers</th>
+                          <th className="border border-black p-1">Overall %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi1.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.date_exam || '—'}</td>
+                            <td className="border border-black p-1">{r.no_passers || '—'}</td>
+                            <td className="border border-black p-1">{r.total_passers || '—'}</td>
+                            <td className="border border-black p-1">{r.overall_pct || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(pi2) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 1 — PI 2: Employment of Graduates
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">No. of Graduates</th>
+                          <th className="border border-black p-1">No. Employed</th>
+                          <th className="border border-black p-1">Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi2.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.no_graduates || '—'}</td>
+                            <td className="border border-black p-1">{r.no_employed || '—'}</td>
+                            <td className="border border-black p-1">{r.percentage || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo3pi2) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 3 — PI 2: Research Output Completed Within Quarter
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Research Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Date Completed</th>
+                          <th className="border border-black p-1">Funding Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo3pi2.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.date_completed || '—'}</td>
+                            <td className="border border-black p-1">{r.funding_source || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo4pi1) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 4 — PI 1: Active Partnerships
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Project Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Partner</th>
+                          <th className="border border-black p-1">Locale</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo4pi1.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.title_project || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.partner || '—'}</td>
+                            <td className="border border-black p-1">{r.project_locale || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {otherAccomplishments && (
+                  <div className="print-avoid-break pt-2">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      Other Accomplishments Narrative
+                    </div>
+                    <p className="text-[10.5px] text-justify leading-relaxed whitespace-pre-wrap">{otherAccomplishments}</p>
+                  </div>
+                )}
+
+                {docEntries.some((e) => e.photos.length > 0) && (
+                  <div className="print-avoid-break pt-3">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                      Activity Documentation & Evidence
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {docEntries.flatMap((e) =>
+                        e.photos.map((p, pIdx) => (
+                          <div key={`${e.id}-${pIdx}`} className="border border-black p-1.5 flex flex-col items-center">
+                            <img src={p.url} alt="Documentation" className="max-h-48 object-contain mb-1" />
+                            <p className="text-[9px] text-center font-medium">{p.caption || e.title || 'Activity Photo'}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-8 print-avoid-break">
+                  <div className="flex justify-between items-start text-[11px] px-6">
+                    <div className="text-center w-60">
+                      <p className="text-left font-semibold mb-8">Prepared by:</p>
+                      <div className="border-b border-black w-full mb-1" />
+                      <p className="font-bold uppercase">{programChair}</p>
+                      <p className="text-[10px] text-gray-600">Program Chairperson</p>
+                    </div>
+                    <div className="text-center w-60">
+                      <p className="text-left font-semibold mb-8">Noted by:</p>
+                      <div className="border-b border-black w-full mb-1" />
+                      <p className="font-bold uppercase">Dean / Campus Director</p>
+                      <p className="text-[10px] text-gray-600">College of Education</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 text-center">
+                <img
+                  src="/header-pics/ctu-footer.png"
+                  alt="CTU Footer"
+                  className="max-w-[480px] w-full mx-auto object-contain"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
 // ============================================================================
-// 5. EXTENSION REPORT COMPONENT
+// 5. EXTENSION REPORT (COMPLETE PRINTING & EXTENSION AUTO-FILL)
 // ============================================================================
 interface ExtensionReportRow {
+  source_submission_id?: string;
   extension_project: string;
   highlights: string;
   partner_linkage: string;
@@ -1248,10 +1677,11 @@ export function ExtensionReport({
 }) {
   const [quarter, setQuarter] = useState('1st');
   const [year, setYear] = useState(new Date().getFullYear().toString());
-  const [rows, setRows] = useState<ExtensionReportRow[]>([{ ...EMPTY_EXTENSION_ROW }, { ...EMPTY_EXTENSION_ROW }]);
+  const [rows, setRows] = useState<ExtensionReportRow[]>([{ ...EMPTY_EXTENSION_ROW }]);
   const [status, setStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
   const [reportId, setReportId] = useState<string | null>(targetReportId || null);
   const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
+  const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -1268,60 +1698,117 @@ export function ExtensionReport({
 
   const isFormLocked = readOnly || status === 'submitted' || status === 'approved';
 
-  useEffect(() => {
-    if (externalPrintTrigger) {
-      setShowPrint(true);
-      onPrintHandled?.();
+  const loadReportData = useCallback(async (quarterParam?: string, yearParam?: string) => {
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      let reportData: any = null;
+
+      if (targetReportId) {
+        const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
+        if (res.ok) {
+          const list: any[] = await res.json();
+          reportData = list.find((r) => r.id === targetReportId);
+        }
+      }
+
+      if (!reportData && (quarterParam || quarter) && (yearParam || year)) {
+        const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
+        if (res.ok) {
+          const list: any[] = await res.json();
+          reportData = list.find((r) => r.quarter === (quarterParam || quarter) && r.year === (yearParam || year));
+        }
+      }
+
+      if (!reportData) {
+        const res = await fetch(`${EXTENSION_API_URL}/my-draft`, { headers });
+        if (res.ok) reportData = await res.json();
+      }
+
+      if (reportData && reportData.id) {
+        setReportId(reportData.id);
+        setQuarter(reportData.quarter || '1st');
+        setYear(reportData.year || new Date().getFullYear().toString());
+        setRows(reportData.rows?.length > 0 ? reportData.rows : [{ ...EMPTY_EXTENSION_ROW }]);
+        setStatus(reportData.status || 'draft');
+        setDeanRemarks(reportData.dean_remarks || null);
+        setDismissedSubmissionIds(Array.isArray(reportData.dismissed_submission_ids) ? reportData.dismissed_submission_ids : []);
+        setPreparedByName(reportData.prepared_by_name ?? userName);
+        setPreparedByTitle(reportData.prepared_by_title ?? 'Extension Chairperson');
+        setNotedByName1(reportData.noted_by_name_1 ?? 'TERESITA CLEOPOLDA B. SARILE');
+        setNotedByTitle1(reportData.noted_by_title_1 ?? 'Chair, Extension Services');
+        setNotedByName2(reportData.noted_by_name_2 ?? 'EINGILBERT C. BENOLIRAO');
+        setNotedByTitle2(reportData.noted_by_title_2 ?? 'Campus Director');
+        setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
+      }
+    } catch {
+      // silent
     }
-  }, [externalPrintTrigger, onPrintHandled]);
+  }, [targetReportId, quarter, year, userName]);
 
   useEffect(() => {
-    const loadReportData = async () => {
+    loadReportData();
+  }, [loadReportData]);
+
+  // AUTO-POPULATE EXTENSION SUBMISSIONS
+  useEffect(() => {
+    if (isFormLocked) return;
+
+    const autoPopulateExtension = async () => {
       try {
-        const headers = { Authorization: `Bearer ${getToken()}` };
-        let reportData: any = null;
+        const res = await fetch(`${RESEARCH_API_URL}/mine`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) return;
 
-        if (targetReportId) {
-          const res = await fetch(`${EXTENSION_API_URL}/mine`, { headers });
-          if (res.ok) {
-            const list: any[] = await res.json();
-            reportData = list.find((r) => r.id === targetReportId);
+        const submissions: ResearchSubmission[] = await res.json();
+        const extensionSubs = (Array.isArray(submissions) ? submissions : []).filter(
+          (s) => s.type === 'extension' && !dismissedSubmissionIds.includes(s.id)
+        );
+
+        setRows((currentRows) => {
+          const existingSourceIds = new Set(
+            currentRows.map((r) => r.source_submission_id).filter(Boolean)
+          );
+
+          const newRowsToAdd: ExtensionReportRow[] = [];
+          for (const sub of extensionSubs) {
+            if (!existingSourceIds.has(sub.id)) {
+              newRowsToAdd.push({
+                source_submission_id: sub.id,
+                extension_project: sub.title || '',
+                highlights: sub.description || '',
+                partner_linkage: sub.partner_organization || '',
+                num_trainees: sub.beneficiaries || '',
+                venue: 'Sibonga Campus / Partner Community',
+                inclusive_date: sub.start_date && sub.end_date ? `${sub.start_date} to ${sub.end_date}` : sub.start_date || '',
+              });
+            }
           }
-        }
 
-        if (!reportData) {
-          const res = await fetch(`${EXTENSION_API_URL}/my-draft`, { headers });
-          if (res.ok) {
-            reportData = await res.json();
-          }
-        }
+          if (newRowsToAdd.length === 0) return currentRows;
 
-        if (reportData && reportData.id) {
-          setReportId(reportData.id);
-          setQuarter(reportData.quarter || '1st');
-          setYear(reportData.year || new Date().getFullYear().toString());
-          setRows(reportData.rows?.length > 0 ? reportData.rows : [{ ...EMPTY_EXTENSION_ROW }, { ...EMPTY_EXTENSION_ROW }]);
-          setStatus(reportData.status || 'draft');
-          setDeanRemarks(reportData.dean_remarks || null);
-          setPreparedByName(reportData.prepared_by_name ?? userName);
-          setPreparedByTitle(reportData.prepared_by_title ?? 'Extension Chairperson');
-          setNotedByName1(reportData.noted_by_name_1 ?? 'TERESITA CLEOPOLDA B. SARILE');
-          setNotedByTitle1(reportData.noted_by_title_1 ?? 'Chair, Extension Services');
-          setNotedByName2(reportData.noted_by_name_2 ?? 'EINGILBERT C. BENOLIRAO');
-          setNotedByTitle2(reportData.noted_by_title_2 ?? 'Campus Director');
-          setLastSavedAt(reportData.updated_at ?? reportData.created_at ?? null);
-        }
+          const isInitialEmpty =
+            currentRows.length === 1 &&
+            !currentRows[0].extension_project &&
+            !currentRows[0].highlights;
+
+          return isInitialEmpty ? newRowsToAdd : [...currentRows, ...newRowsToAdd];
+        });
       } catch {
         // silent
       }
     };
-    loadReportData();
-  }, [userId, userName, targetReportId]);
+
+    autoPopulateExtension();
+  }, [dismissedSubmissionIds, isFormLocked]);
 
   const addRow = () => setRows((prev) => [...prev, { ...EMPTY_EXTENSION_ROW }]);
   const deleteRow = (idx: number) => {
-    if (rows.length <= 1) return;
-    setRows((prev) => prev.filter((_, i) => i !== idx));
+    const rowToDelete = rows[idx];
+    if (rowToDelete.source_submission_id) {
+      setDismissedSubmissionIds((prev) => [...prev, rowToDelete.source_submission_id!]);
+    }
+    setRows((prev) => (prev.length <= 1 ? [{ ...EMPTY_EXTENSION_ROW }] : prev.filter((_, i) => i !== idx)));
   };
   const updateCell = (rowIdx: number, field: keyof ExtensionReportRow, value: string) => {
     setRows((prev) => prev.map((row, i) => (i === rowIdx ? { ...row, [field]: value } : row)));
@@ -1331,6 +1818,7 @@ export function ExtensionReport({
     quarter,
     year,
     rows,
+    dismissed_submission_ids: dismissedSubmissionIds,
     prepared_by_name: preparedByName,
     prepared_by_title: preparedByTitle,
     noted_by_name_1: notedByName1,
@@ -1349,7 +1837,10 @@ export function ExtensionReport({
         headers,
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Save failed');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
       return res.json();
     }
     const res = await fetch(EXTENSION_API_URL, {
@@ -1357,7 +1848,10 @@ export function ExtensionReport({
       headers,
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Save failed');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
     return res.json();
   };
 
@@ -1379,16 +1873,24 @@ export function ExtensionReport({
       );
       setTimeout(() => setSuccessMsg(''), 3000);
       if (submitStatus === 'submitted') onAfterSubmit?.();
-    } catch {
-      setErrorMsg('Failed to update extension report.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to update extension report.');
       setTimeout(() => setErrorMsg(''), 3500);
     } finally {
       setSaving(false);
     }
   };
 
+  useEffect(() => {
+    if (externalPrintTrigger) {
+      setShowPrint(true);
+      onPrintHandled?.();
+    }
+  }, [externalPrintTrigger, onPrintHandled]);
+
   return (
     <div className="space-y-4">
+      <style>{PRINT_LAYOUT_STYLES}</style>
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{errorMsg}</div>}
 
@@ -1405,26 +1907,26 @@ export function ExtensionReport({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Community Extension Services Accomplishment Report</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Quarterly Extension Activities · 20{year.slice(-2)}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Quarterly Extension Activities · {year}</p>
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowPrint(true)} className="flex items-center gap-1.5 px-3 py-2 border rounded-xl text-sm hover:bg-gray-50">
+          <button type="button" onClick={() => setShowPrint(true)} className="flex items-center gap-1.5 px-3 py-2 border rounded-xl text-sm hover:bg-gray-50">
             <Printer className="w-4 h-4" /> Print
           </button>
           {!isFormLocked && (
             <>
-              <button onClick={() => handleSave('draft')} disabled={saving} className="px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm font-semibold hover:bg-blue-100 disabled:opacity-50">
+              <button type="button" onClick={() => handleSave('draft')} disabled={saving} className="px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm font-semibold hover:bg-blue-100 disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save Draft'}
               </button>
-              <button onClick={() => handleSave('submitted')} disabled={saving} className="px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50">
+              <button type="button" onClick={() => handleSave('submitted')} disabled={saving} className="px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50">
                 {saving ? 'Submitting...' : status === 'rejected' ? 'Resubmit to Dean' : 'Submit to Dean'}
               </button>
             </>
           )}
           {status === 'submitted' && (
             <span className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
-              <Clock className="w-4 h-4" /> Under Review by Dean
+              <Clock className="w-4 h-4" /> Under Review
             </span>
           )}
           {status === 'approved' && (
@@ -1438,13 +1940,32 @@ export function ExtensionReport({
       <div className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Quarter</label>
-          <select value={quarter} onChange={(e) => setQuarter(e.target.value)} disabled={isFormLocked} className="px-3 py-1.5 border rounded-lg text-sm bg-white">
+          <select
+            value={quarter}
+            onChange={(e) => {
+              const nextQ = e.target.value;
+              setQuarter(nextQ);
+              loadReportData(nextQ, year);
+            }}
+            disabled={isFormLocked}
+            className="px-3 py-1.5 border rounded-lg text-sm bg-white"
+          >
             <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
           </select>
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Year</label>
-          <input type="text" value={year} onChange={(e) => setYear(e.target.value)} disabled={isFormLocked} className="px-3 py-1.5 border rounded-lg text-sm w-24" />
+          <input
+            type="text"
+            value={year}
+            onChange={(e) => {
+              const nextY = e.target.value;
+              setYear(nextY);
+              if (nextY.length === 4) loadReportData(quarter, nextY);
+            }}
+            disabled={isFormLocked}
+            className="px-3 py-1.5 border rounded-lg text-sm w-24"
+          />
         </div>
       </div>
 
@@ -1479,8 +2000,13 @@ export function ExtensionReport({
                     </td>
                   ))}
                   {!isFormLocked && (
-                    <td className="p-1.5 text-center">
-                      <button onClick={() => deleteRow(idx)} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                    <td className="p-1.5 text-center align-middle">
+                      <button
+                        type="button"
+                        onClick={() => deleteRow(idx)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        title={row.source_submission_id ? 'Remove auto-filled extension (Original submission remains in database)' : 'Delete Row'}
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -1492,68 +2018,116 @@ export function ExtensionReport({
         </div>
         {!isFormLocked && (
           <div className="p-3 border-t">
-            <button onClick={addRow} className="text-xs text-[#1E3A8A] font-semibold flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg">
+            <button type="button" onClick={addRow} className="text-xs text-[#1E3A8A] font-semibold flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg">
               <Plus className="w-3.5 h-3.5" /> Add Project Row
             </button>
           </div>
         )}
       </div>
 
-      {showPrint && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-8 text-xs">
-            <div className="flex justify-between items-center pb-4 border-b mb-4">
+      {/* FULL-VIEWPORT PRINT PREVIEW MODAL */}
+      {showPrint && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 m-0 text-xs"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 sm:p-8 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-4 border-b mb-6 print-hide">
               <h3 className="font-bold text-gray-900 text-sm">Print Preview — Community Extension Report</h3>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold flex items-center gap-1.5">
+                <button type="button" onClick={() => window.print()} className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold flex items-center gap-1.5">
                   <Printer className="w-4 h-4" /> Print
                 </button>
-                <button onClick={() => setShowPrint(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                <button type="button" onClick={() => setShowPrint(false)} className="p-2 hover:bg-gray-100 rounded-xl">
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
             </div>
-            <div id="print-area">
-              <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain mb-4" />
-              <div className="text-center font-bold uppercase mb-4 text-sm">
-                Community Extension Services Accomplishment Report
-                <div className="text-xs font-normal mt-0.5">{quarter} Quarter, 20{year.slice(-2)}</div>
+
+            <div id="print-area" className="text-black bg-white max-w-[800px] mx-auto">
+              <div className="text-center mb-4">
+                <img
+                  src="/header-pics/ctu-header.png"
+                  alt="CTU Header"
+                  className="max-w-[480px] w-full mx-auto object-contain mb-2"
+                />
+                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">College of Education</div>
+                <h1 className="text-sm font-extrabold uppercase mt-1">COMMUNITY EXTENSION SERVICES ACCOMPLISHMENT REPORT</h1>
+                <div className="text-xs font-semibold text-gray-800">
+                  {quarter} Quarter, {year}
+                </div>
               </div>
-              <table className="w-full border-collapse border border-black text-[11px] mb-6">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-black p-1">Project/Activity</th>
-                    <th className="border border-black p-1">Highlights</th>
-                    <th className="border border-black p-1">Partner</th>
-                    <th className="border border-black p-1">Trainees</th>
-                    <th className="border border-black p-1">Venue</th>
-                    <th className="border border-black p-1">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="border border-black p-1">{r.extension_project}</td>
-                      <td className="border border-black p-1">{r.highlights}</td>
-                      <td className="border border-black p-1">{r.partner_linkage}</td>
-                      <td className="border border-black p-1">{r.num_trainees}</td>
-                      <td className="border border-black p-1">{r.venue}</td>
-                      <td className="border border-black p-1">{r.inclusive_date}</td>
+
+              <div className="print-avoid-break">
+                <table className="w-full border-collapse border border-black text-[10px] mb-6">
+                  <thead>
+                    <tr className="bg-gray-100 text-left">
+                      <th className="border border-black p-1.5">#</th>
+                      <th className="border border-black p-1.5">Project / Activity</th>
+                      <th className="border border-black p-1.5">Highlights</th>
+                      <th className="border border-black p-1.5">Partner</th>
+                      <th className="border border-black p-1.5 w-16">Trainees</th>
+                      <th className="border border-black p-1.5">Venue</th>
+                      <th className="border border-black p-1.5">Date</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain mt-8" />
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="border border-black p-1.5 text-center">{i + 1}</td>
+                        <td className="border border-black p-1.5 font-semibold">{r.extension_project || '—'}</td>
+                        <td className="border border-black p-1.5 whitespace-pre-wrap">{r.highlights || '—'}</td>
+                        <td className="border border-black p-1.5">{r.partner_linkage || '—'}</td>
+                        <td className="border border-black p-1.5 text-center">{r.num_trainees || '—'}</td>
+                        <td className="border border-black p-1.5">{r.venue || '—'}</td>
+                        <td className="border border-black p-1.5">{r.inclusive_date || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-6 print-avoid-break">
+                <div className="grid grid-cols-3 gap-6 text-center text-[10.5px]">
+                  <div>
+                    <p className="text-left font-semibold mb-8">Prepared by:</p>
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
+                    <p className="font-bold uppercase">{preparedByName || '____________________'}</p>
+                    <p className="text-[9.5px] text-gray-600">{preparedByTitle}</p>
+                  </div>
+                  <div>
+                    <p className="text-left font-semibold mb-8">Noted by:</p>
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
+                    <p className="font-bold uppercase">{notedByName1 || '____________________'}</p>
+                    <p className="text-[9.5px] text-gray-600">{notedByTitle1}</p>
+                  </div>
+                  <div>
+                    <p className="text-left font-semibold mb-8">Noted by:</p>
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
+                    <p className="font-bold uppercase">{notedByName2 || '____________________'}</p>
+                    <p className="text-[9.5px] text-gray-600">{notedByTitle2}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 text-center">
+                <img
+                  src="/header-pics/ctu-footer.png"
+                  alt="CTU Footer"
+                  className="max-w-[480px] w-full mx-auto object-contain"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
 // ============================================================================
-// 6. WORK FROM HOME (WFH) REPORT COMPONENT
+// 6. WORK FROM HOME (WFH) REPORT COMPONENT (FIXED SUBMISSION & PHOTOS)
 // ============================================================================
 interface DailyAccomplishment {
   date: string;
@@ -1647,13 +2221,6 @@ export function WfhReport({
   const isFormLocked = readOnly || status === 'submitted' || status === 'approved';
 
   useEffect(() => {
-    if (externalPrintTrigger) {
-      setShowPrint(true);
-      onPrintHandled?.();
-    }
-  }, [externalPrintTrigger, onPrintHandled]);
-
-  useEffect(() => {
     const loadReportData = async () => {
       try {
         const headers = { Authorization: `Bearer ${getToken()}` };
@@ -1663,15 +2230,13 @@ export function WfhReport({
           const res = await fetch(`${WFH_API_URL}/mine`, { headers });
           if (res.ok) {
             const list: any[] = await res.json();
-            data = list.find((r) => r.id === targetReportId);
+            data = list.find((r: any) => r.id === targetReportId);
           }
         }
 
         if (!data) {
           const res = await fetch(`${WFH_API_URL}/my-draft`, { headers });
-          if (res.ok) {
-            data = await res.json();
-          }
+          if (res.ok) data = await res.json();
         }
 
         if (data && data.id) {
@@ -1729,6 +2294,7 @@ export function WfhReport({
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setErrorMsg('');
     try {
       const formData = new FormData();
       Array.from(files).forEach((f) => formData.append('files', f));
@@ -1742,15 +2308,16 @@ export function WfhReport({
       if (res.ok) {
         const uploaded: { url: string; path?: string }[] = await res.json();
         setPhotos((prev) => [...prev, ...uploaded.map((u) => ({ url: u.url, path: u.path, caption: '' }))]);
-        setSuccessMsg('Evidence photo(s) uploaded!');
+        setSuccessMsg('Evidence photo(s) uploaded successfully!');
         setTimeout(() => setSuccessMsg(''), 3000);
       } else {
-        setErrorMsg('Failed to upload image(s).');
-        setTimeout(() => setErrorMsg(''), 3500);
+        const errJson = await res.json().catch(() => ({}));
+        setErrorMsg(errJson.error || 'Failed to upload image(s).');
+        setTimeout(() => setErrorMsg(''), 4500);
       }
     } catch {
-      setErrorMsg('Could not upload images.');
-      setTimeout(() => setErrorMsg(''), 3500);
+      setErrorMsg('Could not upload images. Please check your backend connection.');
+      setTimeout(() => setErrorMsg(''), 4500);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1761,9 +2328,19 @@ export function WfhReport({
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Derive quarter and year so Dean Analytics can locate and filter the report
+  const now = new Date();
+  const currentMonthIdx = now.getMonth();
+  const derivedQuarter = currentMonthIdx < 3 ? '1st' : currentMonthIdx < 6 ? '2nd' : currentMonthIdx < 9 ? '3rd' : '4th';
+  const derivedYear = now.getFullYear().toString();
+
   const getPayload = (submitStatus: string) => ({
-    reporting_period: reportingPeriod,
-    name,
+    user_id: userId,
+    submitted_by: userId,
+    quarter: derivedQuarter,
+    year: derivedYear,
+    reporting_period: reportingPeriod.trim() || `Quarter ${derivedQuarter} - ${derivedYear}`,
+    name: name.trim() || userName,
     position_rank: positionRank,
     college_office: collegeOffice,
     program_unit: programUnit,
@@ -1773,8 +2350,8 @@ export function WfhReport({
     supporting_docs: supportingDocs,
     other_docs_specify: otherDocsSpecify,
     photos,
-    prepared_by_name: preparedByName,
-    prepared_by_date: preparedByDate,
+    prepared_by_name: preparedByName || userName,
+    prepared_by_date: preparedByDate || new Date().toISOString().split('T')[0],
     verified_by_name: verifiedByName,
     verified_by_title: verifiedByTitle,
     verified_by_date: verifiedByDate,
@@ -1793,28 +2370,32 @@ export function WfhReport({
   });
 
   const persist = async (payload: Record<string, unknown>) => {
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
-    if (reportId) {
-      const res = await fetch(`${WFH_API_URL}/${reportId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      return res.json();
-    }
-    const res = await fetch(WFH_API_URL, {
-      method: 'POST',
+    const token = getToken();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const url = reportId ? `${WFH_API_URL}/${reportId}` : WFH_API_URL;
+    const method = reportId ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
       headers,
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Save failed');
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `Server returned status ${res.status}`);
+    }
     return res.json();
   };
 
   const handleSave = async (submitStatus: 'draft' | 'submitted') => {
     if (isFormLocked || saving) return;
     setSaving(true);
+    setErrorMsg('');
     try {
       const isResubmit = status === 'rejected';
       const data = await persist(getPayload(submitStatus));
@@ -1830,34 +2411,37 @@ export function WfhReport({
       );
       setTimeout(() => setSuccessMsg(''), 3000);
       if (submitStatus === 'submitted') onAfterSubmit?.();
-    } catch {
-      setErrorMsg('Error saving report.');
-      setTimeout(() => setErrorMsg(''), 3500);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error saving report.');
+      setTimeout(() => setErrorMsg(''), 5000);
     } finally {
       setSaving(false);
     }
   };
 
+  useEffect(() => {
+    if (externalPrintTrigger) {
+      setShowPrint(true);
+      onPrintHandled?.();
+    }
+  }, [externalPrintTrigger, onPrintHandled]);
+
   return (
     <div className="space-y-6">
+      <style>{PRINT_LAYOUT_STYLES}</style>
       {successMsg && <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{successMsg}</div>}
       {errorMsg && <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm">{errorMsg}</div>}
 
-      {/* Dean Rejection Banner */}
       {status === 'rejected' && deanRemarks && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div>
             <h4 className="font-bold text-sm text-red-900">WFH Report Returned by Dean</h4>
             <p className="text-xs text-red-700 mt-1">{deanRemarks}</p>
-            <p className="text-[11px] text-red-600 mt-1 font-medium">
-              Update your report details below and click <strong>"Resubmit to Dean"</strong>.
-            </p>
           </div>
         </div>
       )}
 
-      {/* Header Actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Work-From-Home (WFH) Accomplishment Report</h2>
@@ -1865,15 +2449,15 @@ export function WfhReport({
           {lastSavedAt && <p className="text-[11px] text-gray-400 mt-0.5">Last saved: {new Date(lastSavedAt).toLocaleString()}</p>}
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowPrint(true)} className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-50">
+          <button type="button" onClick={() => setShowPrint(true)} className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-50">
             <Printer className="w-4 h-4" /> Print
           </button>
           {!isFormLocked && (
             <>
-              <button onClick={() => handleSave('draft')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm hover:bg-blue-100 disabled:opacity-50">
+              <button type="button" onClick={() => handleSave('draft')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm hover:bg-blue-100 disabled:opacity-50">
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Draft'}
               </button>
-              <button onClick={() => handleSave('submitted')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm hover:bg-[#1E40AF] disabled:opacity-50 shadow-xs">
+              <button type="button" onClick={() => handleSave('submitted')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm hover:bg-[#1E40AF] disabled:opacity-50 shadow-xs">
                 {saving ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> Submitting...
@@ -1899,7 +2483,6 @@ export function WfhReport({
         </div>
       </div>
 
-      {/* Header Info Details */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <h3 className="font-semibold text-gray-800 text-sm border-b border-gray-100 pb-2">Faculty Information</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
@@ -1917,11 +2500,11 @@ export function WfhReport({
           </div>
           <div>
             <label className="block font-medium text-gray-600 mb-1">College / Office</label>
-            <input type="text" value={collegeOffice} onChange={(e) => setCollegeOffice(e.target.value)} disabled={isFormLocked} placeholder="e.g. College of Technology and Engineering" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" />
+            <input type="text" value={collegeOffice} onChange={(e) => setCollegeOffice(e.target.value)} disabled={isFormLocked} placeholder="e.g. College of Education" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" />
           </div>
           <div>
             <label className="block font-medium text-gray-600 mb-1">Program / Unit</label>
-            <input type="text" value={programUnit} onChange={(e) => setProgramUnit(e.target.value)} disabled={isFormLocked} placeholder="e.g. BIT-CT" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" />
+            <input type="text" value={programUnit} onChange={(e) => setProgramUnit(e.target.value)} disabled={isFormLocked} placeholder="e.g. BEEd" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" />
           </div>
           <div>
             <label className="block font-medium text-gray-600 mb-1">Administrative Designation (if any)</label>
@@ -1934,11 +2517,8 @@ export function WfhReport({
         </div>
       </div>
 
-      {/* Section I: Daily Accomplishments */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-800 text-sm">I. Daily Accomplishments</h3>
-        </div>
+        <h3 className="font-semibold text-gray-800 text-sm">I. Daily Accomplishments</h3>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[650px] text-xs border-collapse">
             <thead>
@@ -1953,17 +2533,17 @@ export function WfhReport({
               {dailyAccomplishments.map((item, idx) => (
                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="p-1 border border-gray-200 align-top">
-                    <input type="text" value={item.date} onChange={(e) => updateRow(idx, 'date', e.target.value)} disabled={isFormLocked} placeholder="Date" className="w-full p-1.5 rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-transparent" />
+                    <input type="text" value={item.date} onChange={(e) => updateRow(idx, 'date', e.target.value)} disabled={isFormLocked} placeholder="Date" className="w-full p-1.5 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 disabled:bg-transparent" />
                   </td>
                   <td className="p-1 border border-gray-200 align-top">
-                    <textarea rows={2} value={item.activities} onChange={(e) => updateRow(idx, 'activities', e.target.value)} disabled={isFormLocked} placeholder="Describe activities accomplished..." className="w-full p-1.5 rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-transparent resize-none" />
+                    <textarea rows={2} value={item.activities} onChange={(e) => updateRow(idx, 'activities', e.target.value)} disabled={isFormLocked} placeholder="Describe activities..." className="w-full p-1.5 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 disabled:bg-transparent resize-none" />
                   </td>
                   <td className="p-1 border border-gray-200 align-top">
-                    <textarea rows={2} value={item.output} onChange={(e) => updateRow(idx, 'output', e.target.value)} disabled={isFormLocked} placeholder="Output or deliverable produced..." className="w-full p-1.5 rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-transparent resize-none" />
+                    <textarea rows={2} value={item.output} onChange={(e) => updateRow(idx, 'output', e.target.value)} disabled={isFormLocked} placeholder="Output..." className="w-full p-1.5 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 disabled:bg-transparent resize-none" />
                   </td>
                   {!isFormLocked && (
                     <td className="p-1 border border-gray-200 text-center align-middle">
-                      <button onClick={() => deleteRow(idx)} className="p-1 text-red-400 hover:bg-red-50 rounded">
+                      <button type="button" onClick={() => deleteRow(idx)} className="p-1 text-red-400 hover:bg-red-50 rounded">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -1974,16 +2554,14 @@ export function WfhReport({
           </table>
         </div>
         {!isFormLocked && (
-          <button onClick={addRow} className="flex items-center gap-1 text-xs text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors">
+          <button type="button" onClick={addRow} className="flex items-center gap-1 text-xs text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg">
             <Plus className="w-3.5 h-3.5" /> Add Date
           </button>
         )}
       </div>
 
-      {/* Section II: Supporting Documents Checklist */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <h3 className="font-semibold text-gray-800 text-sm">II. Supporting Documents Attached</h3>
-        <p className="text-xs text-gray-400 italic -mt-2">(Check all applicable.)</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           {SUPPORTING_DOC_OPTIONS.map((doc) => (
             <label key={doc.key} className="flex items-center gap-2 cursor-pointer select-none">
@@ -1996,12 +2574,11 @@ export function WfhReport({
               <input type="checkbox" checked={!!supportingDocs.other} onChange={() => handleCheckboxChange('other')} disabled={isFormLocked} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
               <span className="text-gray-700 font-medium">Other:</span>
             </label>
-            <input type="text" value={otherDocsSpecify} onChange={(e) => setOtherDocsSpecify(e.target.value)} disabled={isFormLocked || !supportingDocs.other} placeholder="Specify other supporting document" className="flex-1 px-2 py-1 border-b border-gray-300 focus:border-blue-600 outline-none text-xs disabled:bg-gray-50" />
+            <input type="text" value={otherDocsSpecify} onChange={(e) => setOtherDocsSpecify(e.target.value)} disabled={isFormLocked || !supportingDocs.other} placeholder="Specify other document" className="flex-1 px-2 py-1 border-b border-gray-300 focus:border-blue-600 outline-none text-xs disabled:bg-gray-50" />
           </div>
         </div>
       </div>
 
-      {/* Section III: Photos / Visual Evidences */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-800 text-sm">Evidence Screenshots & Photos</h3>
@@ -2027,7 +2604,7 @@ export function WfhReport({
               <div key={idx} className="relative group border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
                 <img src={item.url} alt={`Evidence ${idx + 1}`} className="w-full h-44 object-contain bg-white" />
                 {!isFormLocked && (
-                  <button onClick={() => removePhoto(idx)} className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-red-600 text-white rounded-full transition-colors">
+                  <button type="button" onClick={() => removePhoto(idx)} className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-red-600 text-white rounded-full transition-colors">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
@@ -2048,7 +2625,6 @@ export function WfhReport({
         )}
       </div>
 
-      {/* Certification & Signatures */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
         <h3 className="font-bold text-gray-900 text-xs uppercase tracking-wide">Certification</h3>
         <p className="text-xs text-gray-600 leading-relaxed italic border-l-2 border-[#1E3A8A] pl-3">
@@ -2056,7 +2632,6 @@ export function WfhReport({
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 text-xs">
-          {/* Prepared by */}
           <div className="space-y-2 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
             <p className="font-semibold text-gray-700">Prepared by:</p>
             <input type="text" value={preparedByName} onChange={(e) => setPreparedByName(e.target.value)} disabled={isFormLocked} placeholder="Faculty Name" className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white" />
@@ -2064,87 +2639,86 @@ export function WfhReport({
             <input type="date" value={preparedByDate} onChange={(e) => setPreparedByDate(e.target.value)} disabled={isFormLocked} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
           </div>
 
-          {/* Verified by */}
           <div className="space-y-2 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
             <p className="font-semibold text-gray-700">Verified by:</p>
-            <input type="text" value={verifiedByName} onChange={(e) => setVerifiedByName(e.target.value)} disabled={isFormLocked} placeholder="Chairperson / Supervisor Name" className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white" />
-            <input type="text" value={verifiedByTitle} onChange={(e) => setVerifiedByTitle(e.target.value)} disabled={isFormLocked} placeholder="Position / Designation" className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
+            <input type="text" value={verifiedByName} onChange={(e) => setVerifiedByName(e.target.value)} disabled={isFormLocked} placeholder="Chairperson Name" className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white" />
+            <input type="text" value={verifiedByTitle} onChange={(e) => setVerifiedByTitle(e.target.value)} disabled={isFormLocked} placeholder="Position" className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
             <input type="date" value={verifiedByDate} onChange={(e) => setVerifiedByDate(e.target.value)} disabled={isFormLocked} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
           </div>
 
-          {/* Noted by */}
           <div className="space-y-2 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
             <p className="font-semibold text-gray-700">Noted by:</p>
             <input type="text" value={notedByName} onChange={(e) => setNotedByName(e.target.value)} disabled={isFormLocked} placeholder="Dean Name" className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white" />
-            <input type="text" value={notedByTitle} onChange={(e) => setNotedByTitle(e.target.value)} disabled={isFormLocked} placeholder="Position / Designation" className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
+            <input type="text" value={notedByTitle} onChange={(e) => setNotedByTitle(e.target.value)} disabled={isFormLocked} placeholder="Position" className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
             <input type="date" value={notedByDate} onChange={(e) => setNotedByDate(e.target.value)} disabled={isFormLocked} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-white" />
           </div>
         </div>
       </div>
 
-      {/* Print Preview Modal */}
-      {showPrint && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto py-8 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
+      {/* FULL-VIEWPORT PRINT PREVIEW MODAL */}
+      {showPrint && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 sm:p-8 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b mb-6 print-hide sticky top-0 bg-white z-10">
               <h3 className="font-bold text-gray-900 text-sm">Print Preview — WFH Accomplishment Report</h3>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold">
+                <button type="button" onClick={() => window.print()} className="flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold">
                   <Printer className="w-4 h-4" /> Print
                 </button>
-                <button onClick={() => setShowPrint(false)} className="p-2 hover:bg-gray-100 rounded-xl">
+                <button type="button" onClick={() => setShowPrint(false)} className="p-2 hover:bg-gray-100 rounded-xl">
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
             </div>
 
-            <div className="p-8 text-xs font-serif leading-relaxed" id="print-area">
-              <div className="mb-4">
-                <img src="/header-pics/ctu-header.png" alt="CTU Header" className="w-full object-contain" />
-              </div>
-
-              <div className="text-center mb-5">
+            <div className="text-black bg-white text-xs leading-relaxed max-w-[800px] mx-auto font-serif" id="print-area">
+              <div className="text-center mb-3">
+                <img
+                  src="/header-pics/ctu-header.png"
+                  alt="CTU Header"
+                  className="max-w-[480px] w-full mx-auto object-contain mb-2"
+                />
                 <h1 className="font-bold text-sm uppercase">WORK-FROM-HOME (WFH) ACCOMPLISHMENT REPORT</h1>
                 <p className="italic text-[11px]">(In Compliance with the CSC Work-from-Home Arrangement)</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 mb-4 text-[11px]">
-                <p><strong>Reporting Period:</strong> {reportingPeriod || '____________________'}</p>
-                <p><strong>Program/Unit:</strong> {programUnit || '____________________'}</p>
-                <p><strong>Name:</strong> {name || '____________________'}</p>
-                <p><strong>Administrative Designation (if any):</strong> {adminDesignation || 'N/A'}</p>
-                <p><strong>Position/Academic Rank:</strong> {positionRank || '____________________'}</p>
-                <p><strong>Official Working Hours:</strong> {workingHours || '____________________'}</p>
-                <p className="col-span-2"><strong>College/Office:</strong> {collegeOffice || '____________________'}</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 mb-4 text-[11px] print-avoid-break">
+                <p><strong>Reporting Period:</strong> {reportingPeriod || '—'}</p>
+                <p><strong>Program/Unit:</strong> {programUnit || '—'}</p>
+                <p><strong>Name:</strong> {name || '—'}</p>
+                <p><strong>Administrative Designation:</strong> {adminDesignation || 'N/A'}</p>
+                <p><strong>Position/Academic Rank:</strong> {positionRank || '—'}</p>
+                <p><strong>Official Working Hours:</strong> {workingHours || '—'}</p>
+                <p className="col-span-2"><strong>College/Office:</strong> {collegeOffice || '—'}</p>
               </div>
 
-              {/* I. Daily Accomplishments */}
-              <div className="mb-4">
-                <p className="font-bold mb-1.5">I. DAILY ACCOMPLISHMENTS</p>
+              <div className="mb-4 print-avoid-break">
+                <p className="font-bold mb-1.5 uppercase text-xs">I. DAILY ACCOMPLISHMENTS</p>
                 <table className="w-full border-collapse border border-black text-[10.5px]">
                   <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border border-black px-2 py-1 text-left w-28">Date</th>
-                      <th className="border border-black px-2 py-1 text-left">Activities Accomplished</th>
-                      <th className="border border-black px-2 py-1 text-left">Output/Deliverable</th>
+                    <tr className="bg-gray-100 text-left">
+                      <th className="border border-black px-2 py-1 w-28">Date</th>
+                      <th className="border border-black px-2 py-1">Activities Accomplished</th>
+                      <th className="border border-black px-2 py-1">Output/Deliverable</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dailyAccomplishments.map((r, i) => (
                       <tr key={i}>
-                        <td className="border border-black px-2 py-2 align-top">{r.date}</td>
-                        <td className="border border-black px-2 py-2 align-top">{r.activities}</td>
-                        <td className="border border-black px-2 py-2 align-top">{r.output}</td>
+                        <td className="border border-black px-2 py-1.5 align-top font-medium">{r.date || '—'}</td>
+                        <td className="border border-black px-2 py-1.5 align-top whitespace-pre-wrap">{r.activities || '—'}</td>
+                        <td className="border border-black px-2 py-1.5 align-top whitespace-pre-wrap">{r.output || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* II. Supporting Documents Attached */}
-              <div className="mb-4">
-                <p className="font-bold mb-1">II. SUPPORTING DOCUMENTS ATTACHED</p>
-                <p className="italic text-[10px] mb-2">(Check all applicable.)</p>
+              <div className="mb-4 print-avoid-break">
+                <p className="font-bold mb-1 uppercase text-xs">II. SUPPORTING DOCUMENTS ATTACHED</p>
                 <div className="grid grid-cols-2 gap-y-1 text-[10.5px]">
                   {SUPPORTING_DOC_OPTIONS.map((d) => (
                     <div key={d.key} className="flex items-center gap-1.5">
@@ -2159,48 +2733,44 @@ export function WfhReport({
                 </div>
               </div>
 
-              {/* Photos in print */}
               {photos.length > 0 && (
-                <div className="my-6 break-before-auto">
-                  <p className="font-bold mb-3">ATTACHMENTS / EVIDENCES</p>
+                <div className="my-6">
+                  <p className="font-bold mb-3 uppercase text-xs">Attachments / Evidences</p>
                   <div className="space-y-4">
                     {photos.map((p, i) => (
-                      <div key={i} className="border border-black p-2 flex flex-col items-center">
-                        <img src={p.url} alt={`Evidence ${i + 1}`} className="max-h-72 object-contain" />
-                        {p.caption && <p className="text-[10px] mt-1 font-sans">{p.caption}</p>}
+                      <div key={i} className="border border-black p-2 flex flex-col items-center print-avoid-break">
+                        <img src={p.url} alt={`Evidence ${i + 1}`} className="max-h-60 object-contain" />
+                        {p.caption && <p className="text-[10px] mt-1 font-sans text-center">{p.caption}</p>}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Certification */}
-              <div className="mt-6">
-                <p className="font-bold mb-1">CERTIFICATION</p>
-                <p className="text-justify text-[10.5px] leading-relaxed mb-8">
+              <div className="mt-6 print-avoid-break">
+                <p className="font-bold mb-1 uppercase text-xs">CERTIFICATION</p>
+                <p className="text-justify text-[10px] leading-relaxed mb-8">
                   I hereby certify that the foregoing information is true and correct and that I performed my official duties during the approved Work-from-Home arrangement in accordance with the Civil Service Commission guidelines and the policies of Cebu Technological University.
                 </p>
 
                 <div className="grid grid-cols-3 gap-6 text-center text-[10.5px]">
                   <div>
                     <p className="text-left font-semibold mb-8">Prepared by:</p>
-                    <div className="border-b border-black mx-auto mb-1" />
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
                     <p className="font-bold uppercase">{preparedByName || '____________________'}</p>
                     <p className="text-[9.5px]">Faculty Member</p>
                     <p className="text-[9.5px] mt-1">Date: {preparedByDate || '____________'}</p>
                   </div>
-
                   <div>
                     <p className="text-left font-semibold mb-8">Verified by:</p>
-                    <div className="border-b border-black mx-auto mb-1" />
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
                     <p className="font-bold uppercase">{verifiedByName || '____________________'}</p>
                     <p className="text-[9.5px]">{verifiedByTitle}</p>
                     <p className="text-[9.5px] mt-1">Date: {verifiedByDate || '____________'}</p>
                   </div>
-
                   <div>
                     <p className="text-left font-semibold mb-8">Noted by:</p>
-                    <div className="border-b border-black mx-auto mb-1" />
+                    <div className="border-b border-black mx-auto mb-1 w-full" />
                     <p className="font-bold uppercase">{notedByName || '____________________'}</p>
                     <p className="text-[9.5px]">{notedByTitle}</p>
                     <p className="text-[9.5px] mt-1">Date: {notedByDate || '____________'}</p>
@@ -2208,12 +2778,17 @@ export function WfhReport({
                 </div>
               </div>
 
-              <div className="mt-8">
-                <img src="/header-pics/ctu-footer.png" alt="CTU Footer" className="w-full object-contain" />
+              <div className="mt-8 text-center">
+                <img
+                  src="/header-pics/ctu-footer.png"
+                  alt="CTU Footer"
+                  className="max-w-[480px] w-full mx-auto object-contain"
+                />
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2232,7 +2807,7 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
     setTab(type);
   };
 
-  const handlePrintApproved = (type: ReportType, targetId?: string) => {
+  const handlePrintReportDirectly = (type: ReportType, targetId: string) => {
     setActiveReportId(targetId);
     setPrintRequest(type);
     setTab(type);
@@ -2295,7 +2870,7 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
       {tab === 'track' && (
         <ReportTrackerPanel
           onOpenReport={handleOpenReport}
-          onPrintApproved={handlePrintApproved}
+          onPrintReportDirectly={handlePrintReportDirectly}
         />
       )}
 
