@@ -133,6 +133,27 @@ export async function createNotification(
   }
 }
 
+export async function sendNotification(payload: {
+  title: string;
+  message: string;
+  type?: NotificationType;
+  roles?: string[];
+  departments?: string[];
+  user_ids?: string[];
+}) {
+  const res = await fetch('http://localhost:5000/api/notifications/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to send notification.');
+  return data as { success: boolean; sent: number; muted: number };
+}
+
 // =========================================================
 // NOTIFY USERS BY ROLE
 // =========================================================

@@ -1525,24 +1525,26 @@ router.put('/password', authenticate, async (req, res) => {
 router.put('/preferences', authenticate, async (req, res) => {
   const { allow_all, announcements, staff_updates, reports, inquiries, system_notifs } = req.body;
 
+  // notification_preferences is keyed by profiles.id (FK), not users.id
+  let profileId = req.user.profileId;
+  if (!profileId && req.user.email) {
+    const { data } = await supabase
+      .from('profiles').select('id')
+      .eq('email', req.user.email.toLowerCase()).maybeSingle();
+    profileId = data?.id;
+  }
+  if (!profileId) return res.status(404).json({ error: 'Profile not found.' });
+
   const { data, error } = await supabase
     .from('notification_preferences')
-    .update({ 
-      allow_all,
-      announcements,
-      staff_updates,
-      reports,
-      inquiries,
-      system_notifs
-    })
-    .eq('user_id', req.user.userId)
-    .select();
+    .upsert(
+      { user_id: profileId, allow_all, announcements, staff_updates, reports, inquiries, system_notifs },
+      { onConflict: 'user_id' }
+    )
+    .select()
+    .single();
 
-  if (error) {
-    console.error("Supabase Update Error:", error);
-    return res.status(500).json({ error: error.message });
-  }
-  
+  if (error) return res.status(500).json({ error: error.message });
   return res.json({ message: 'Preferences updated successfully', data });
 });
 

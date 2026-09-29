@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { renderAsync } from 'docx-preview';
 import { createPortal } from 'react-dom';
-import { notifyRole } from '../notificationService';
+import { notifyRole, sendNotification } from '../notificationService';
 import { HomePage } from './coed/HomePage';
 import { AboutPage } from './coed/AboutPage';
 import { ClubsPage } from './coed/ClubsPage';
@@ -8126,10 +8126,18 @@ function ReportsAnalytics() {
       );
       if (error) throw error;
 
-      await Promise.all([
-        notifyRole('faculty', title, `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`),
-        notifyRole('department_chair', title, `The deadline for the ${quarterSelect} quarterly report has been set to ${new Date(deadlineInput).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`),
-      ]);
+      const formattedDate = new Date(deadlineInput).toLocaleString('en-PH', {
+  timeZone: 'Asia/Manila',
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+await sendNotification({
+  title,
+  message: `The deadline for the ${quarterSelect} quarterly report has been set to ${formattedDate}.`,
+  type: 'report',
+  roles: ['faculty', 'department_chair'],
+});
 
       await fetchDeadline();
       showInfo('Success', 'Deadline saved and notified to all Faculty and Department Chairs.');
@@ -8141,28 +8149,37 @@ function ReportsAnalytics() {
   };
 
   const sendBulkReminder = async () => {
-    const pending = rows.filter((r) => r.effectiveStatus !== 'submitted' && r.effectiveStatus !== 'approved');
-    if (pending.length === 0) {
-      showInfo('All Done', 'Every faculty member and department chair has completed this quarter\'s report.');
-      return;
-    }
-    setSendingBulk(true);
-    try {
-      const dueText = deadline
-        ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
-        : '';
+  const pending = rows.filter(
+    (r) => r.effectiveStatus !== 'submitted' && r.effectiveStatus !== 'approved'
+  );
+  if (pending.length === 0) {
+    showInfo('All Done', "Every faculty member and department chair has completed this quarter's report.");
+    return;
+  }
+  setSendingBulk(true);
+  try {
+    const dueText = deadline
+      ? ` The deadline is ${new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}.`
+      : '';
 
-      await Promise.all([
-        notifyRole('faculty', `Reminder: ${quarterSelect} Quarterly Report`, `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`),
-        notifyRole('department_chair', `Reminder: ${quarterSelect} Quarterly Report`, `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`),
-      ]);
-      showInfo('Reminder Sent', `Sent a reminder to ${pending.length} pending academic personnel.`);
-    } catch (err: any) {
-      showInfo('Error', err.message || 'Failed to send reminders.');
-    } finally {
-      setSendingBulk(false);
-    }
-  };
+    const result = await sendNotification({
+      title: `Reminder: ${quarterSelect} Quarterly Report`,
+      message: `Please complete and submit your ${quarterSelect} quarterly report.${dueText}`,
+      type: 'report',
+      user_ids: pending.map((r) => r.profile.id),
+    });
+
+    showInfo(
+      'Reminder Sent',
+      `Sent a reminder to ${result.sent} of ${pending.length} pending personnel.` +
+        (result.muted > 0 ? ` (${result.muted} have reminders turned off.)` : '')
+    );
+  } catch (err: any) {
+    showInfo('Error', err.message || 'Failed to send reminders.');
+  } finally {
+    setSendingBulk(false);
+  }
+};
 
 const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
   setRemindingId(row.profile.id);
