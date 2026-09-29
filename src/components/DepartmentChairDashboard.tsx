@@ -269,9 +269,9 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
                           : rejectedAccounts;
 
   return (
-    <div className="flex flex-col h-full lg:h-[calc(100vh-140px)]">
+    <div className="flex flex-col lg:h-[calc(100vh-140px)]">
       <div className="mb-6 flex-shrink-0">
-        <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           <div className="transition-transform"><SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
@@ -279,10 +279,10 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 flex-1 min-h-0 pb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:flex-1 lg:min-h-0 pb-4">
         
         {/* FACULTY MONITORING (Left Side) */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:h-full min-h-[400px] max-h-[520px] lg:max-h-none overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2></div>
             <span className="text-[11px] font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{facultyList.length} updates</span>
@@ -2274,109 +2274,83 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   const getToken = () => localStorage.getItem('token');
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [q, y] = quarterSelect.split(' ');
-    const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
-    const quarter = quarterMap[q] || '1st';
-    const year = y || String(new Date().getFullYear());
+  setLoading(true);
+  const [q, y] = quarterSelect.split(' ');
+  const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+  const quarter = quarterMap[q] || '1st';
+  const year = y || String(new Date().getFullYear());
 
-    try {
-      const { data: profiles } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-      let personnelList = profiles || [];
-
-      // EXCEPTION LOGIC: Strictly filter based on chairman's program using Smart Matcher
-      if (departmentNames && departmentNames.length > 0) {
-        personnelList = personnelList.filter((u: any) => {
-          const userProg = (u.program || u.department || '').trim();
-          return isProgramMatch(userProg, departmentNames);
-        });
-      } else {
-        personnelList = []; 
-      }
-
-      // Fetch Reports directly from Supabase for resilience
-      const [ { data: accData }, { data: extData }, { data: wfhData } ] = await Promise.all([
-        supabase.from('accomplishment_reports').select('*').eq('quarter', quarter).eq('year', year),
-        supabase.from('extension_reports').select('*').eq('quarter', quarter).eq('year', year),
-        supabase.from('wfh_reports').select('*').neq('status', 'draft')
-      ]);
-
-      const accMap = new Map((accData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
-      const extMap = new Map((extData || []).filter(r => r.status !== 'draft').map(r => [r.submitted_by, r]));
-      const wfhMap = new Map((wfhData || []).filter(r => r.status !== 'draft').map(r => [r.user_id, r]));
-
-      const consolidated = personnelList.map((p: any) => {
-        const departmentName = p.department || p.program || 'General';
-        const acc = accMap.get(p.id) ?? null;
-        const ext = extMap.get(p.id) ?? null;
-        const wfh = wfhMap.get(p.id) ?? null;
-
-        let effectiveStatus = 'not_started';
-        let progress = 0;
-
-        if (acc || ext || wfh) {
-          const statuses = [acc?.status, ext?.status, wfh?.status].filter(Boolean);
-          if (statuses.includes('submitted')) effectiveStatus = 'submitted';
-          else if (statuses.includes('rejected')) effectiveStatus = 'rejected';
-          else if (statuses.includes('approved')) effectiveStatus = 'approved';
-
-          const validProgress: number[] = [];
-          if (typeof acc?.progress === 'number') validProgress.push(acc.progress);
-          if (typeof ext?.progress === 'number') validProgress.push(ext.progress);
-          if (wfh) validProgress.push(wfh.status === 'approved' ? 100 : 75);
-          progress = validProgress.length > 0 ? Math.round(validProgress.reduce((a, b) => a + b, 0) / validProgress.length) : 0;
-        }
-
-        return { profile: p, departmentName, accomplishmentReport: acc, extensionReport: ext, wfhReport: wfh, effectiveStatus, effectiveProgress: progress, lastUpdated: acc?.updated_at || null };
-      });
-
-      setRows(consolidated);
-    } catch (err: any) {
-      showInfo('Error', err?.message || 'Failed to load reports.');
-    } finally {
-      setLoading(false);
+  try {
+    const res = await fetch(
+      `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
+      { headers: { Authorization: `Bearer ${getToken()}` } }
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      showInfo('Error', data?.error || 'Failed to load reports.');
+      setRows([]);
+      return;
     }
-  }, [quarterSelect, departmentNames]);
+    setRows(data ?? []);
+  } catch {
+    showInfo('Error', 'Could not reach the server.');
+    setRows([]);
+  } finally {
+    setLoading(false);
+  }
+}, [quarterSelect]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
-    setActionId(id);
-    const table = type === 'accomplishment' ? 'accomplishment_reports' : type === 'extension' ? 'extension_reports' : 'wfh_reports';
-    try {
-      const { error } = await supabase.from(table).update({ status, dean_remarks: remarks }).eq('id', id);
-      if (error) {
-        showInfo('Error', error.message);
-        return;
-      }
-      showInfo('Success', `Report successfully marked as ${status}.`);
-      setSelectedReport(null);
-      setRejectFor(null);
-      await fetchData();
-    } catch {
-      showInfo('Error', 'Could not reach the server.');
-    } finally {
-      setActionId(null);
+  setActionId(id);
+  try {
+    const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ status, remarks }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showInfo('Error', data.error || 'Failed to update report.');
+      return;
     }
-  };
+    showInfo('Success', `Report successfully marked as ${status}.`);
+    setSelectedReport(null);
+    setRejectFor(null);
+    setRemarksInput('');
+    await fetchData();
+  } catch {
+    showInfo('Error', 'Could not reach the server.');
+  } finally {
+    setActionId(null);
+  }
+};
 
   const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
-    setRemindingId(row.profile.id);
-    try {
-      await supabase.from('notifications').insert({
-        user_id: row.profile.id,
+  setRemindingId(row.profile.id);
+  try {
+    const res = await fetch('http://localhost:5000/api/chair/reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({
+        facultyId: row.profile.id,
         title: `Reminder: ${quarterSelect} Quarterly Report`,
         message: `Hi ${row.profile.full_name}, please complete and submit your ${quarterSelect} quarterly report to the Chairman.`,
-        type: 'announcement',
-        is_read: false,
-      });
-      showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
-    } catch (err: any) {
-      showInfo('Error', err.message || 'Failed to send reminder.');
-    } finally {
-      setRemindingId(null);
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showInfo('Error', data.error || 'Failed to send reminder.');
+      return;
     }
-  };
+    showInfo('Reminder Sent', `Sent a reminder to ${row.profile.full_name}.`);
+  } catch {
+    showInfo('Error', 'Could not reach the server.');
+  } finally {
+    setRemindingId(null);
+  }
+};
 
   const filteredRows = rows.filter((row) => {
     if (statusFilter !== 'all' && row.effectiveStatus !== statusFilter) return false;
