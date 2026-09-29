@@ -81,8 +81,6 @@ const KIND_STYLES: Record<
   },
 };
 
-// Decides the kind from the notification's category / type / title.
-// Adjust the keywords below to match the exact values in your database.
 function getKind(notification: Notification): Kind {
   const n = notification as Notification & {
     category?: string;
@@ -155,18 +153,12 @@ export function DashboardHeader({
 
   const getToken = () => localStorage.getItem('token');
 
-  // =====================================================
-  // KEEP HEADER NAME SYNCHRONIZED WITH PARENT
-  // =====================================================
   useEffect(() => {
     if (userName?.trim()) {
       setDisplayName(userName.trim());
     }
   }, [userName]);
 
-  // =====================================================
-  // LOAD CURRENT USER FROM DATABASE
-  // =====================================================
   useEffect(() => {
     let mounted = true;
 
@@ -185,13 +177,7 @@ export function DashboardHeader({
           },
         });
 
-        if (!response.ok) {
-          console.error(
-            'Failed to load current profile:',
-            response.status
-          );
-          return;
-        }
+        if (!response.ok) return;
 
         const data = await response.json();
 
@@ -220,10 +206,7 @@ export function DashboardHeader({
           }
         }
       } catch (error) {
-        console.error(
-          'Error loading current profile:',
-          error
-        );
+        console.error('Error loading current profile:', error);
       }
     };
 
@@ -234,9 +217,6 @@ export function DashboardHeader({
     };
   }, []);
 
-  // =====================================================
-  // LOAD NOTIFICATIONS
-  // =====================================================
   async function loadNotifications() {
     const token = getToken();
 
@@ -270,9 +250,6 @@ export function DashboardHeader({
     return () => clearInterval(interval);
   }, []);
 
-  // =====================================================
-  // MARK NOTIFICATION AS READ
-  // =====================================================
   async function markAsRead(id: string) {
     const token = getToken();
 
@@ -303,18 +280,12 @@ export function DashboardHeader({
     }
   }
 
-  // =====================================================
-  // MARK ALL AS READ (uses the same per-item endpoint)
-  // =====================================================
   async function markAllAsRead() {
     const unread = notifications.filter((n) => !n.is_read);
 
     await Promise.all(unread.map((n) => markAsRead(n.id)));
   }
 
-  // =====================================================
-  // GENERATE INITIALS
-  // =====================================================
   const initials = displayName
     .trim()
     .split(/\s+/)
@@ -333,11 +304,9 @@ export function DashboardHeader({
 
   return (
     <div className="sticky top-0 z-40 bg-white w-full border-b border-gray-200/60 shadow-sm">
-      <div className="px-6 sm:px-8 flex items-center justify-between gap-4 w-full h-[73px]">
+      <div className="px-4 sm:px-8 flex items-center justify-between gap-4 w-full h-[73px]">
 
-        {/* =====================================================
-            LEFT: MOBILE MENU
-        ===================================================== */}
+        {/* LEFT: MOBILE MENU */}
         <div className="flex items-center gap-3 min-w-0">
           {onMenuClick && (
             <button
@@ -350,14 +319,10 @@ export function DashboardHeader({
           )}
         </div>
 
-        {/* =====================================================
-            RIGHT: NOTIFICATIONS + PROFILE
-        ===================================================== */}
-        <div className="flex items-center gap-4 shrink-0">
+        {/* RIGHT: NOTIFICATIONS + PROFILE */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
 
-          {/* =====================================================
-              NOTIFICATION BELL
-          ===================================================== */}
+          {/* NOTIFICATION BELL */}
           <div className="relative">
             <button
               onClick={() =>
@@ -378,40 +343,47 @@ export function DashboardHeader({
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-[420px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+              /* MOBILE-SAFE WIDTH: Uses calc(100vw - 2rem) on mobile so it never overflows off-screen, and fixes alignment */
+              <div
+                className="
+                  fixed left-4 right-4 top-[81px]
+                  sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[380px]
+                  bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden
+                "
+              >
 
                 {/* Title + mark all as read */}
-                <div className="flex items-center justify-between px-5 pt-5">
-                  <h3 className="text-xl font-semibold text-slate-900">
+                <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+                  <h3 className="text-base font-semibold text-slate-900">
                     Notifications
                   </h3>
 
                   <button
                     onClick={markAllAsRead}
                     disabled={unreadCount === 0}
-                    className="text-sm text-blue-600 hover:text-blue-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+                    className="text-xs text-blue-600 hover:text-blue-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
                   >
                     Mark all as read
                   </button>
                 </div>
 
                 {/* Tabs + filter */}
-                <div className="relative mt-4 flex items-center justify-between border-b border-slate-200 px-5">
-                  <div className="flex items-center gap-6">
+                <div className="relative mt-1 flex items-center justify-between border-b border-slate-200 px-4">
+                  <div className="flex items-center gap-4">
                     <button
                       onClick={() => setActiveTab('all')}
-                      className={`-mb-px border-b-2 pb-3 text-sm font-medium transition-colors ${
+                      className={`-mb-px border-b-2 pb-2 text-xs font-medium transition-colors ${
                         activeTab === 'all'
                           ? 'border-slate-900 text-slate-900'
                           : 'border-transparent text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      All Notifications
+                      All
                     </button>
 
                     <button
                       onClick={() => setActiveTab('unread')}
-                      className={`-mb-px border-b-2 pb-3 text-sm font-medium transition-colors ${
+                      className={`-mb-px border-b-2 pb-2 text-xs font-medium transition-colors ${
                         activeTab === 'unread'
                           ? 'border-slate-900 text-slate-900'
                           : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -424,7 +396,7 @@ export function DashboardHeader({
                     </button>
                   </div>
 
-                  <div className="relative pb-3">
+                  <div className="relative pb-2">
                     <button
                       onClick={() => setShowFilter(!showFilter)}
                       className={`p-1 rounded-md transition-colors ${
@@ -434,11 +406,11 @@ export function DashboardHeader({
                       }`}
                       aria-label="Filter by type"
                     >
-                      <Filter className="w-4 h-4" />
+                      <Filter className="w-3.5 h-3.5" />
                     </button>
 
                     {showFilter && (
-                      <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg z-10">
+                      <div className="absolute right-0 top-full mt-1 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-md z-10">
                         {(
                           [
                             'all',
@@ -459,16 +431,16 @@ export function DashboardHeader({
                                 setKindFilter(option);
                                 setShowFilter(false);
                               }}
-                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
                             >
-                              <OptionIcon className="w-4 h-4 text-slate-500" />
+                              <OptionIcon className="w-3.5 h-3.5 text-slate-500" />
                               <span className="flex-1">
                                 {option === 'all'
                                   ? 'All types'
                                   : KIND_STYLES[option].label}
                               </span>
                               {kindFilter === option && (
-                                <Check className="w-4 h-4 text-blue-600" />
+                                <Check className="w-3.5 h-3.5 text-blue-600" />
                               )}
                             </button>
                           );
@@ -479,9 +451,9 @@ export function DashboardHeader({
                 </div>
 
                 {/* List */}
-                <div className="max-h-[420px] min-h-[200px] overflow-y-auto">
+                <div className="max-h-[320px] min-h-[160px] overflow-y-auto">
                   {visibleNotifications.length === 0 ? (
-                    <p className="px-5 py-10 text-center text-sm text-slate-500">
+                    <p className="px-4 py-8 text-center text-xs text-slate-500">
                       {emptyMessage}
                     </p>
                   ) : (
@@ -502,24 +474,24 @@ export function DashboardHeader({
                               isExpanded ? null : notification.id
                             );
                           }}
-                          className={`flex items-start gap-3 px-5 py-3.5 cursor-pointer transition-colors hover:bg-slate-100 ${
+                          className={`flex items-start gap-2.5 px-4 py-3 cursor-pointer transition-colors hover:bg-slate-100 ${
                             !notification.is_read ? 'bg-slate-50' : ''
                           }`}
                         >
-                          {/* Kind icon */}
+                          {/* Smaller Kind icon */}
                           <div
                             title={label}
                             aria-label={label}
-                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${badge}`}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${badge}`}
                           >
-                            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                            <Icon className="h-4 w-4" strokeWidth={1.75} />
                           </div>
 
                           {/* Content */}
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start justify-between gap-2">
                               <h4
-                                className={`truncate text-sm text-slate-900 ${
+                                className={`truncate text-xs text-slate-900 ${
                                   notification.is_read
                                     ? 'font-medium'
                                     : 'font-semibold'
@@ -530,28 +502,28 @@ export function DashboardHeader({
 
                               {!notification.is_read && (
                                 <span
-                                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                                  className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600"
                                   aria-label="Unread"
                                 />
                               )}
                             </div>
 
-                            <div className="mt-0.5 flex items-start justify-between gap-3">
+                            <div className="mt-0.5 flex items-start justify-between gap-2">
                               <p
-                                className={`text-xs leading-relaxed text-slate-500 ${
+                                className={`text-[11px] leading-relaxed text-slate-500 ${
                                   isExpanded ? '' : 'truncate'
                                 }`}
                               >
                                 {notification.message}
                               </p>
 
-                              <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">
+                              <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-400">
                                 {timeAgo(notification.created_at)}
                               </span>
                             </div>
 
                             {isExpanded && (
-                              <p className="mt-1.5 text-[10px] text-slate-400">
+                              <p className="mt-1 text-[10px] text-slate-400">
                                 {label} · {formatManilaTime(notification.created_at)}
                               </p>
                             )}
@@ -568,19 +540,13 @@ export function DashboardHeader({
           {/* Divider */}
           <div className="h-6 w-[1px] bg-gray-200 mx-0.5" />
 
-          {/* =====================================================
-              USER PROFILE
-          ===================================================== */}
+          {/* USER PROFILE */}
           <div className="flex items-center gap-3">
-
-            {/* Initials */}
             <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xs shadow-md overflow-hidden shrink-0">
               {initials || 'U'}
             </div>
 
-            {/* Name + Role */}
             <div className="hidden sm:block text-left">
-
               <h2 className="text-xs font-bold text-gray-900 leading-tight max-w-[180px] truncate">
                 {displayName}
               </h2>

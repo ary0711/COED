@@ -123,6 +123,12 @@ interface AlumniDashboardProps {
   idNumber?: string;
 }
 
+interface AlumniProfile {
+  full_name: string;
+  email: string;
+  username?: string | null;
+}
+
 export function AlumniDashboard({
   activeMenuItem,
   setActiveMenuItem,
@@ -136,7 +142,7 @@ export function AlumniDashboard({
     localStorage.getItem('userFullName') ||
     'Alumni'
   );
-  const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
+  const [profile, setProfile] = useState<AlumniProfile | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
 
@@ -145,6 +151,7 @@ export function AlumniDashboard({
     localStorage.removeItem('user_role');
     localStorage.removeItem('userId');
     localStorage.removeItem('userFullName');
+    localStorage.removeItem('userUsername');
     if (onLogout) {
       onLogout();
     }
@@ -159,9 +166,11 @@ export function AlumniDashboard({
         return;
       }
 
+      // select('*') so this keeps working even if the "username" column
+      // has not been added to the profiles table yet
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name, email')
+        .select('*')
         .eq('id', userId)
         .maybeSingle();
 
@@ -171,8 +180,16 @@ export function AlumniDashboard({
       }
 
       if (data) {
-        setProfile(data);
+        setProfile({
+          full_name: data.full_name ?? '',
+          email: data.email ?? '',
+          username: data.username ?? null,
+        });
         setUserEmail(data.email ?? '');
+
+        if (data.username) {
+          localStorage.setItem('userUsername', data.username);
+        }
 
         if (data.full_name) {
           setDisplayName(data.full_name);
@@ -1860,69 +1877,67 @@ function AlumniInquiry() {
 
       {/* Side-by-Side Fixed Height Cards with Drop Shadow */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        {/* Left Card: Submit Inquiry Form (Fixed Height: 600px) */}
-        <div className="bg-white rounded-xl shadow-md p-6 sm:p-7 h-[600px] flex flex-col justify-between border border-gray-100">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Submit a Concern or Question</h2>
-            <p className="text-xs text-gray-500 mb-4">Send your inquiries directly to the College Dean and administrative staff.</p>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="e.g. Transcript Request"
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                    required
-                  >
-                    {INQUIRY_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+        {/* Left Card: Submit Inquiry Form (Fixed Height on desktop, message box stretches to fill it) */}
+        <div className="bg-white rounded-xl shadow-md p-6 sm:p-7 lg:h-[600px] flex flex-col border border-gray-100">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1 flex-shrink-0">Submit a Concern or Question</h2>
+          <p className="text-xs text-gray-500 mb-4 flex-shrink-0">Send your inquiries directly to the College Dean and administrative staff.</p>
 
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 min-h-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-shrink-0">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Message</label>
-                <textarea
-                  rows={5}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Provide complete details regarding your concern..."
-                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g. Transcript Request"
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   required
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                  required
+                >
+                  {INQUIRY_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-              {submitMessage && (
-                <p className={`text-xs font-medium ${submitMessage.type === 'success' ? 'text-green-700 bg-green-50 p-2.5 rounded-lg border border-green-200' : 'text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200'}`}>
-                  {submitMessage.text}
-                </p>
-              )}
+            {/* Message grows to fill all remaining card height */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <label className="block text-xs font-medium text-gray-700 mb-1 flex-shrink-0">Message</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Provide complete details regarding your concern..."
+                className="w-full flex-1 min-h-[180px] px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                required
+              />
+            </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              >
-                {submitting ? 'Submitting...' : 'Submit Inquiry'}
-              </button>
-            </form>
-          </div>
+            {submitMessage && (
+              <p className={`flex-shrink-0 text-xs font-medium ${submitMessage.type === 'success' ? 'text-green-700 bg-green-50 p-2.5 rounded-lg border border-green-200' : 'text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200'}`}>
+                {submitMessage.text}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-shrink-0 w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              {submitting ? 'Submitting...' : 'Submit Inquiry'}
+            </button>
+          </form>
         </div>
 
         {/* Right Card: Inquiry History with Tabs (Fixed Height: 600px) */}
@@ -2071,6 +2086,7 @@ interface AwardItem {
   title: string;
   org: string;
   year: string;
+  description?: string;
 }
 
 interface ResearchHighlightItem {
@@ -2084,56 +2100,130 @@ function AlumniAchievements() {
   const [researchHighlights, setResearchHighlights] = useState<ResearchHighlightItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchAchievementsData() {
-      try {
-        const userId = localStorage.getItem('userId');
-        
-        const { data: awardData } = await supabase
-          .from('alumni_awards')
-          .select('*')
-          .eq('alumni_id', userId || '');
+  // Add-achievement modal state
+  const todayIso = new Date().toISOString().split('T')[0];
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState('');
 
-        const { data: researchData } = await supabase
-          .from('alumni_student_research')
-          .select('*')
-          .eq('alumni_id', userId || '');
+  const fetchAchievementsData = async () => {
+    try {
+      const userId = localStorage.getItem('userId');
+      
+      const { data: awardData } = await supabase
+        .from('alumni_awards')
+        .select('*')
+        .eq('alumni_id', userId || '');
 
-        if (awardData && awardData.length > 0) {
-          setAwards(awardData.map((a: any) => ({
-            id: a.id,
-            title: a.title,
-            org: a.org || a.awarding_body,
-            year: a.year,
-          })));
-        } else {
-          setAwards([
-            { id: 'a1', title: 'Dean\'s Lister Academic Excellence', org: 'College of Education', year: '2024' },
-            { id: 'a2', title: 'Outstanding Student Teacher Recognition', org: 'Practicum Department', year: '2025' },
-          ]);
-        }
+      const { data: researchData } = await supabase
+        .from('alumni_student_research')
+        .select('*')
+        .eq('alumni_id', userId || '');
 
-        if (researchData && researchData.length > 0) {
-          setResearchHighlights(researchData.map((r: any) => ({
-            id: r.id,
-            title: r.title,
-            detail: r.detail || r.description,
-          })));
-        } else {
-          setResearchHighlights([
-            { id: 'r1', title: 'Undergraduate Research: Interactive Pedagogies in STEM', detail: 'Published in institutional journal repository.' },
-            { id: 'r2', title: 'Community Extension Literacy Program Contributor', detail: 'Completed 120 hours of fieldwork.' },
-          ]);
-        }
-      } catch (err) {
-        console.error('Failed to load dynamic achievements:', err);
-      } finally {
-        setLoading(false);
+      if (awardData && awardData.length > 0) {
+        setAwards(awardData.map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          org: a.org || a.awarding_body || '',
+          year: a.achievement_date
+            ? String(a.achievement_date).slice(0, 4)
+            : (a.year ? String(a.year) : ''),
+          description: a.description || '',
+        })));
+      } else {
+        setAwards([
+          { id: 'a1', title: 'Dean\'s Lister Academic Excellence', org: 'College of Education', year: '2024' },
+          { id: 'a2', title: 'Outstanding Student Teacher Recognition', org: 'Practicum Department', year: '2025' },
+        ]);
       }
-    }
 
+      if (researchData && researchData.length > 0) {
+        setResearchHighlights(researchData.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          detail: r.detail || r.description,
+        })));
+      } else {
+        setResearchHighlights([
+          { id: 'r1', title: 'Undergraduate Research: Interactive Pedagogies in STEM', detail: 'Published in institutional journal repository.' },
+          { id: 'r2', title: 'Community Extension Literacy Program Contributor', detail: 'Completed 120 hours of fieldwork.' },
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to load dynamic achievements:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchAchievementsData();
   }, []);
+
+  const openAddModal = () => {
+    setNewTitle('');
+    setNewDescription('');
+    setNewDate('');
+    setAddError('');
+    setShowAddModal(true);
+  };
+
+  const closeAddModal = () => {
+    if (addSaving) return;
+    setShowAddModal(false);
+    setAddError('');
+  };
+
+  const handleAddAchievement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError('');
+
+    const title = newTitle.trim();
+    const description = newDescription.trim();
+
+    if (!title) {
+      setAddError('Please enter the name of your achievement.');
+      return;
+    }
+    if (!newDate) {
+      setAddError('Please select the date you received this achievement.');
+      return;
+    }
+    if (newDate > todayIso) {
+      setAddError('The achievement date cannot be in the future.');
+      return;
+    }
+
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+      setAddError('Your session looks outdated. Please log out and log in again.');
+      return;
+    }
+
+    setAddSaving(true);
+    try {
+      const { error } = await supabase.from('alumni_awards').insert({
+        alumni_id: userId,
+        title,
+        description,
+        achievement_date: newDate,
+        year: newDate.slice(0, 4),
+      });
+
+      if (error) throw error;
+
+      await fetchAchievementsData();
+      setShowAddModal(false);
+    } catch (err: any) {
+      console.error('Failed to add achievement:', err);
+      setAddError(err?.message || 'Could not save your achievement. Please try again.');
+    } finally {
+      setAddSaving(false);
+    }
+  };
 
   const rowColors = ['bg-yellow-50 border-yellow-500', 'bg-blue-50 border-blue-500', 'bg-purple-50 border-purple-500', 'bg-green-50 border-green-500'];
 
@@ -2148,18 +2238,33 @@ function AlumniAchievements() {
         <div className="bg-white rounded-xl shadow-md p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Alumna / Student Awards</h2>
+            <button
+              type="button"
+              onClick={openAddModal}
+              aria-label="Add achievement"
+              title="Add achievement"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
           </div>
 
           <div className="space-y-3">
             {awards.map((award, i) => {
               const [bg, border] = rowColors[i % rowColors.length].split(' ');
+              const metaLine = [award.org, award.year].filter(Boolean).join(' - ');
               return (
                 <div key={award.id} className={`group p-4 ${bg} border-l-4 ${border} rounded-lg`}>
                   <div className="flex items-start gap-3">
                     <Award className={`w-5 h-5 mt-1 flex-shrink-0 ${border.replace('border-', 'text-')}`} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 text-sm sm:text-base">{award.title}</div>
-                      <div className="text-xs sm:text-sm text-gray-600">{award.org}{award.year ? ` - ${award.year}` : ''}</div>
+                      {metaLine && (
+                        <div className="text-xs sm:text-sm text-gray-600">{metaLine}</div>
+                      )}
+                      {award.description && (
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1 whitespace-pre-wrap">{award.description}</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2180,13 +2285,125 @@ function AlumniAchievements() {
           </div>
         </div>
       </div>
+
+      {showAddModal && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={closeAddModal}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg flex-shrink-0">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900">Add Achievement</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Tell us about an award or recognition you received.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddModal}
+                aria-label="Close"
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 ml-4"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddAchievement} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Achievement Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={(e) => { setNewTitle(e.target.value); setAddError(''); }}
+                  placeholder="e.g. Best Capstone Project"
+                  maxLength={120}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows={4}
+                  value={newDescription}
+                  onChange={(e) => { setNewDescription(e.target.value); setAddError(''); }}
+                  placeholder="Briefly describe what you achieved and where it was recognized..."
+                  maxLength={500}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                />
+                <p className="text-[11px] text-gray-400 mt-1 text-right">{newDescription.length}/500</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Date Achieved <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={newDate}
+                  max={todayIso}
+                  onChange={(e) => { setNewDate(e.target.value); setAddError(''); }}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                />
+              </div>
+
+              {addError && (
+                <p className="text-xs font-medium text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200">
+                  {addError}
+                </p>
+              )}
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={closeAddModal}
+                  disabled={addSaving}
+                  className="w-full sm:w-auto px-5 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSaving}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {addSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Add Achievement
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // ====================== SETTINGS ======================
 interface AlumniSettingsProps {
-  profile: { full_name: string; email: string } | null;
+  profile: AlumniProfile | null;
   userEmail: string;
   loading: boolean;
   onProfileUpdated: () => void;
@@ -2218,6 +2435,9 @@ function AlumniSettings({
     useState(true);
 
   const [fullNameInput, setFullNameInput] =
+    useState('');
+
+  const [usernameInput, setUsernameInput] =
     useState('');
 
   const [emailInput, setEmailInput] =
@@ -2263,6 +2483,12 @@ function AlumniSettings({
       ''
     );
 
+    setUsernameInput(
+      profile?.username ||
+      localStorage.getItem('userUsername') ||
+      ''
+    );
+
     setEmailInput(
       profile?.email ||
       userEmail ||
@@ -2279,12 +2505,25 @@ function AlumniSettings({
 
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
+    const trimmedUsername = usernameInput.trim();
     const trimmedEmail = emailInput.trim().toLowerCase();
     const trimmedIdNumber = idNumberInput.trim();
 
     if (!trimmedName) {
       setSaveMessage({ type: 'error', text: 'Full name is required.' });
       return false;
+    }
+
+    // Username is optional, but if provided it must be valid
+    if (trimmedUsername) {
+      const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
+      if (!usernameRegex.test(trimmedUsername)) {
+        setSaveMessage({
+          type: 'error',
+          text: 'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
+        });
+        return false;
+      }
     }
 
     if (!trimmedIdNumber) {
@@ -2323,6 +2562,7 @@ function AlumniSettings({
           },
           body: JSON.stringify({
             full_name: trimmedName,
+            username: trimmedUsername || null,
             email: trimmedEmail,
             id_number: trimmedIdNumber,
           }),
@@ -2336,10 +2576,16 @@ function AlumniSettings({
       }
 
       setFullNameInput(trimmedName);
+      setUsernameInput(trimmedUsername);
       setEmailInput(trimmedEmail);
       setIdNumberInput(trimmedIdNumber);
 
       localStorage.setItem('userFullName', trimmedName);
+      if (trimmedUsername) {
+        localStorage.setItem('userUsername', trimmedUsername);
+      } else {
+        localStorage.removeItem('userUsername');
+      }
       localStorage.setItem('userEmail', trimmedEmail);
       localStorage.setItem('userIdNumber', trimmedIdNumber);
 
@@ -2569,7 +2815,10 @@ function AlumniSettings({
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
                   </div>
-                  <div className="h-10 bg-gray-100 rounded-lg" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -2591,6 +2840,34 @@ function AlumniSettings({
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Username
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">
+                          @
+                        </span>
+                        <input
+                          type="text"
+                          value={usernameInput}
+                          onChange={(e) => {
+                            setUsernameInput(e.target.value.replace(/\s/g, ''));
+                            setSaveMessage(null);
+                          }}
+                          placeholder="your.username"
+                          maxLength={20}
+                          autoComplete="username"
+                          className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        3–20 characters: letters, numbers, periods, underscores.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
                         Alumni ID
                       </label>
                       <input
@@ -2603,21 +2880,21 @@ function AlumniSettings({
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={emailInput}
-                      onChange={(e) => {
-                        setEmailInput(e.target.value);
-                        setSaveMessage(null);
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={emailInput}
+                        onChange={(e) => {
+                          setEmailInput(e.target.value);
+                          setSaveMessage(null);
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
                   </div>
                 </>
               )}
