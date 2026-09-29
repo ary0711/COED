@@ -66,7 +66,6 @@ const dateOnly = (ts: string | null | undefined): string => {
   return ts.split('T')[0];
 };
 
-// Converts a plain <input type="date"> value ("2026-07-01") into a full ISO timestamp.
 const toTimestamp = (dateStr: string): string => {
   if (!dateStr) return '';
   return new Date(`${dateStr}T00:00:00`).toISOString();
@@ -76,7 +75,7 @@ const chairMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
   { icon: Calendar,        label: 'Department Calendar',  id: 'calendar' },
   { icon: FileCheck2,      label: 'Reports',              id: 'chairReports' },
-  { icon: TrendingUp,     label: 'Research & Extension', id: 'researchExtension' },
+  { icon: TrendingUp,      label: 'Research & Extension', id: 'researchExtension' },
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: FileText,        label: 'Reports Monitoring',   id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',     id: 'records' },
@@ -124,7 +123,7 @@ interface Profile {
   created_at: string;
 }
 
-// ─── HELPER: SMART PROGRAM MATCHER (Fix for Elementary Ed vs BEEd) ─────────
+// ─── HELPER: SMART PROGRAM MATCHER ─────────
 const isProgramMatch = (userProg: string, chairDepts: string[]) => {
   const p = (userProg || '').trim().toLowerCase();
   if (!p) return false;
@@ -132,10 +131,8 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
   return chairDepts.some((d) => {
     const dept = d.trim().toLowerCase();
     
-    // Direct match
     if (p === dept || p.includes(dept) || dept.includes(p)) return true;
 
-    // Aliases
     if ((p.includes('beed') || p.includes('elementary')) && (dept.includes('beed') || dept.includes('elementary'))) return true;
     if ((p.includes('btled') || p.includes('technology') || p.includes('livelihood')) && (dept.includes('btled') || dept.includes('technology') || dept.includes('livelihood'))) return true;
     if ((p.includes('math') || p.includes('mathematics')) && (dept.includes('math') || dept.includes('mathematics'))) return true;
@@ -144,7 +141,6 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
     return false;
   });
 };
-
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function DepartmentChairDashboard({
@@ -186,19 +182,19 @@ export function DepartmentChairDashboard({
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
-          {activeMenuItem === 'chairReports' && (<ReportsSection userId={userId} userName={userName} />)}
+          {activeMenuItem === 'chairReports'       && (<ReportsSection userId={userId} userName={userName} />)}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
           {activeMenuItem === 'approvals'          && <AccountApprovalsView departmentNames={departmentNames} />}
-         {activeMenuItem === 'settings' && (
-  <ChairSystemSettings
-    userName={userName}
-    departmentNames={departmentNames}
-    onLogout={handleInternalLogout}
-    onProfileUpdate={onProfileUpdate}
-  />
-)}
+          {activeMenuItem === 'settings' && (
+            <ChairSystemSettings
+              userName={userName}
+              departmentNames={departmentNames}
+              onLogout={handleInternalLogout}
+              onProfileUpdate={onProfileUpdate}
+            />
+          )}
         </main>
       </div>
     </div>
@@ -210,7 +206,6 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [facultyCount, setFacultyCount] = useState(0);
   const [facultyList, setFacultyList] = useState<any[]>([]);
   
-  // Dashboard states for Account Approvals
   const [accountsData, setAccountsData] = useState<any[]>([]);
   const [dashboardApprovalTab, setDashboardApprovalTab] = useState<'pending' | 'active' | 'rejected'>('pending');
 
@@ -218,49 +213,73 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [upcomingCount, setUpcomingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // States for Total Faculty Modal
+  const [showFacultyModal, setShowFacultyModal] = useState(false);
+  const [facultyModalData, setFacultyModalData] = useState<any[]>([]);
+  const [loadingModal, setLoadingModal] = useState(false);
+
   useEffect(() => {
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    const token = localStorage.getItem('token');
-    const headers = { Authorization: `Bearer ${token}` };
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
 
-    try {
-      // Faculty, reports, ug account approvals (backend)
-      const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
-      if (res.ok) {
-        const stats = await res.json();
-        setFacultyCount(stats.facultyCount);
-        setFacultyList(
-          stats.facultyList.map((f: any) => ({
-            ...f,
-            lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
-          }))
-        );
-        setReportStats(stats.reportStats);
-        setAccountsData(stats.accounts);
-      } else {
-        console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
+      try {
+        const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
+        if (res.ok) {
+          const stats = await res.json();
+          setFacultyCount(stats.facultyCount);
+          setFacultyList(
+            stats.facultyList.map((f: any) => ({
+              ...f,
+              lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
+            }))
+          );
+          setReportStats(stats.reportStats);
+          setAccountsData(stats.accounts);
+        } else {
+          console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
+        }
+
+        const calRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
+        if (calRes.ok) {
+          const events = await calRes.json();
+          const today = new Date().toISOString().split('T')[0];
+          setUpcomingCount(
+            (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
+          );
+        }
+      } catch (err) {
+        console.error('Error loading dashboard data', err);
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchDashboardData();
+  }, [departmentNames]);
 
-      // Upcoming activities (parehas sa Calendar page)
-      const calRes = await fetch(CALENDAR_API_URL, { headers });
-      if (calRes.ok) {
-        const events = await calRes.json();
-        const today = new Date().toISOString().split('T')[0];
-        setUpcomingCount(
-          (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
-        );
+  const handleTotalFacultyClick = async () => {
+    setShowFacultyModal(true);
+    setLoadingModal(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/accounts/faculty', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const filtered = (data || []).filter((f: any) => {
+          const dept = f.faculty_profiles?.[0]?.department || f.department || '';
+          return f.status === 'active' && isProgramMatch(dept, departmentNames);
+        });
+        setFacultyModalData(filtered);
       }
     } catch (err) {
-      console.error('Error loading dashboard data', err);
+      console.error(err);
     } finally {
-      setLoading(false);
+      setLoadingModal(false);
     }
   };
-  fetchDashboardData();
-}, [departmentNames]);
 
-  // Derived state for the account approvals tabs
   const pendingAccounts = accountsData.filter(a => a.status === 'pending');
   const approvedAccounts = accountsData.filter(a => a.status === 'active');
   const rejectedAccounts = accountsData.filter(a => a.status === 'rejected');
@@ -273,7 +292,9 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
     <div className="flex flex-col lg:h-[calc(100vh-140px)]">
       <div className="mb-6 flex-shrink-0">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-          <div className="transition-transform"><SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" /></div>
+          <div onClick={handleTotalFacultyClick} className="cursor-pointer transition-transform hover:scale-[1.02]">
+            <SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
+          </div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
           <div onClick={() => setActiveMenuItem('calendar')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Upcoming Activities" value={loading ? '...' : upcomingCount.toString()} icon={Calendar} iconColor="#8B5CF6" iconBgColor="#EDE9FE" /></div>
@@ -282,7 +303,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:flex-1 lg:min-h-0 pb-4">
         
-        {/* FACULTY MONITORING (Left Side) */}
+        {/* FACULTY MONITORING */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:h-full min-h-[400px] max-h-[520px] lg:max-h-none overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2></div>
@@ -313,8 +334,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
           </div>
         </div>
 
-
-        {/* ACCOUNT APPROVALS (Right Side) */}
+        {/* ACCOUNT APPROVALS */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center justify-between mb-3">
@@ -330,7 +350,6 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
               )}
             </div>
 
-            {/* DASHBOARD CARD TABS */}
             <div className="flex gap-1 bg-gray-200/50 p-1 rounded-lg">
               <button 
                 onClick={() => setDashboardApprovalTab('pending')}
@@ -396,6 +415,62 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         </div>
 
       </div>
+
+      {/* Program Faculty Modal */}
+      {showFacultyModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#1E3A8A]" />
+                Program Faculty ({departmentNames.join(', ')})
+              </h2>
+              <button onClick={() => setShowFacultyModal(false)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1 bg-gray-50/20">
+              {loadingModal ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#1E3A8A] mb-3" />
+                  <span className="text-sm text-gray-500">Loading faculty list...</span>
+                </div>
+              ) : facultyModalData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                  <p>No faculty members found for this program.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {facultyModalData.map((f: any) => {
+                    const rp = f.faculty_profiles?.[0] || {};
+                    const idNum = rp.faculty_id || f.id_number || 'N/A';
+                    return (
+                      <div key={f.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-blue-200 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-700 font-bold text-sm">
+                            {(f.full_name || 'U')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-bold text-gray-900 text-sm">{f.full_name || 'No Name'}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                              <span className="font-medium text-gray-600">Email:</span> {f.email}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">ID Number</div>
+                          <div className="font-mono text-sm font-semibold text-gray-800">{idNum}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -740,7 +815,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
       return;
     }
 
-    // Prevent selecting a past date
     if (form.date < todayStr) {
       setFormError('You cannot schedule an event on a past date.');
       return;
@@ -1012,7 +1086,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                   const hasEvents = dayEvents.length > 0;
                   const isTodayDate = dateStr === todayStr;
                   const isPast = dateStr < todayStr;
-                  const isSelected = selectedCalendarDate === dateStr;
+                  const isSelected = selectedCalendarDate === dateStr && !isPast;
                   const isHovered = hoveredDate === dateStr;
                   const showPopover = (isHovered || isSelected) && hasEvents;
 
@@ -1024,14 +1098,15 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                       onMouseEnter={() => setHoveredDate(dateStr)}
                       onMouseLeave={() => setHoveredDate(null)}
                       onClick={() => {
+                        if (isPast) return; 
                         setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
                       }}
-                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 transition-colors outline-none focus:bg-blue-50/30 ${
                         isSelected
-                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20 cursor-pointer'
                           : isPast
-                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                          : 'bg-white hover:bg-blue-50/20'
+                          ? 'bg-gray-200/50 cursor-not-allowed opacity-80'
+                          : 'bg-white hover:bg-blue-50/20 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
@@ -1040,7 +1115,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                             isTodayDate
                               ? 'bg-[#1E3A8A] text-white shadow-xs'
                               : isPast
-                              ? 'text-gray-400'
+                              ? 'text-gray-500'
                               : 'text-gray-700'
                           }`}
                         >
@@ -1063,7 +1138,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                               e.stopPropagation();
                               setInspectingEvent(ev);
                             }}
-                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                            className={`text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all ${isPast ? 'opacity-80' : ''}`}
                             style={{ backgroundColor: colorForEvent(ev) }}
                             title={ev.title}
                           >
@@ -1071,7 +1146,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                           </button>
                         ))}
                         {dayEvents.length > 2 && (
-                          <span className="text-[10px] font-semibold text-gray-400 px-1">
+                          <span className="text-[10px] font-semibold text-gray-500 px-1">
                             +{dayEvents.length - 2} more
                           </span>
                         )}
@@ -1083,17 +1158,17 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                           {dayEvents.slice(0, 3).map((ev) => (
                             <span
                               key={ev.id}
-                              className="w-1.5 h-1.5 rounded-full"
+                              className={`w-1.5 h-1.5 rounded-full ${isPast ? 'opacity-80' : ''}`}
                               style={{ backgroundColor: colorForEvent(ev) }}
                             />
                           ))}
                           {dayEvents.length > 3 && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                           )}
                         </div>
                       )}
 
-                      {/* Popover Preview */}
+                      {/* Popover Preview (Visible even on past dates via hover) */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -1512,7 +1587,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
         </div>
       )}
 
-      {/* Add / Edit Event Modal with strict rectangle shaping & error handling */}
+      {/* Add / Edit Event Modal */}
       {showModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
@@ -1753,49 +1828,48 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
       }
       const data = await res.json();
       const mapped: AccountApplicant[] = (data ?? []).map((p: any) => {
-  if (roleTab === 'student') {
-    const rp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
-    const yl = rp?.year_level ?? 1;
-    const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-    return {
-      id: p.id,
-      name: p.full_name ?? '—',
-      email: p.email ?? '—',
-      // Checks rp.student_no, fallback to profiles.id_number
-      idNumber: rp?.student_no || p.id_number || '—',
-      program: rp?.program || p.program || p.department || '—',
-      detail: `${yl}${suffix} Year`,
-      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      status: p.status,
-    };
-  }
-  if (roleTab === 'faculty') {
-    const rp = Array.isArray(p.faculty_profiles) ? p.faculty_profiles[0] : p.faculty_profiles;
-    const resolvedId = rp?.faculty_id || p.id_number;
-    return {
-      id: p.id,
-      name: p.full_name ?? '—',
-      email: p.email ?? '—',
-      idNumber: resolvedId ? String(resolvedId).slice(0, 8) : '—',
-      program: '—',
-      detail: rp?.position || 'Faculty',
-      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      status: p.status,
-    };
-  }
-  const rp = Array.isArray(p.alumni_profiles) ? p.alumni_profiles[0] : p.alumni_profiles;
-  const resolvedAlumniId = rp?.alumni_id || p.id_number;
-  return {
-    id: p.id,
-    name: p.full_name ?? '—',
-    email: p.email ?? '—',
-    idNumber: resolvedAlumniId ? String(resolvedAlumniId).slice(0, 8) : '—',
-    program: rp?.program || p.program || p.department || '—',
-    detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
-    registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    status: p.status,
-  };
-});
+        if (roleTab === 'student') {
+          const rp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
+          const yl = rp?.year_level ?? 1;
+          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: rp?.student_no || p.id_number || '—',
+            program: rp?.program || p.program || p.department || '—',
+            detail: `${yl}${suffix} Year`,
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        if (roleTab === 'faculty') {
+          const rp = Array.isArray(p.faculty_profiles) ? p.faculty_profiles[0] : p.faculty_profiles;
+          const resolvedId = rp?.faculty_id || p.id_number;
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: resolvedId ? String(resolvedId).slice(0, 8) : '—',
+            program: '—',
+            detail: rp?.position || 'Faculty',
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        const rp = Array.isArray(p.alumni_profiles) ? p.alumni_profiles[0] : p.alumni_profiles;
+        const resolvedAlumniId = rp?.alumni_id || p.id_number;
+        return {
+          id: p.id,
+          name: p.full_name ?? '—',
+          email: p.email ?? '—',
+          idNumber: resolvedAlumniId ? String(resolvedAlumniId).slice(0, 8) : '—',
+          program: rp?.program || p.program || p.department || '—',
+          detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+          status: p.status,
+        };
+      });
       setAccounts(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -1809,7 +1883,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
     fetchAccounts();
     setFilterStatus('pending');
     setSearch('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleTab]);
 
   const validateFile = (file: File) => {
@@ -2275,60 +2348,60 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   const getToken = () => localStorage.getItem('token');
 
   const fetchData = useCallback(async () => {
-  setLoading(true);
-  const [q, y] = quarterSelect.split(' ');
-  const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
-  const quarter = quarterMap[q] || '1st';
-  const year = y || String(new Date().getFullYear());
+    setLoading(true);
+    const [q, y] = quarterSelect.split(' ');
+    const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+    const quarter = quarterMap[q] || '1st';
+    const year = y || String(new Date().getFullYear());
 
-  try {
-    const res = await fetch(
-      `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
-      { headers: { Authorization: `Bearer ${getToken()}` } }
-    );
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      showInfo('Error', data?.error || 'Failed to load reports.');
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        showInfo('Error', data?.error || 'Failed to load reports.');
+        setRows([]);
+        return;
+      }
+      setRows(data ?? []);
+    } catch {
+      showInfo('Error', 'Could not reach the server.');
       setRows([]);
-      return;
+    } finally {
+      setLoading(false);
     }
-    setRows(data ?? []);
-  } catch {
-    showInfo('Error', 'Could not reach the server.');
-    setRows([]);
-  } finally {
-    setLoading(false);
-  }
-}, [quarterSelect]);
+  }, [quarterSelect]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
-  setActionId(id);
-  try {
-    const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify({ status, remarks }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      showInfo('Error', data.error || 'Failed to update report.');
-      return;
+    setActionId(id);
+    try {
+      const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ status, remarks }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showInfo('Error', data.error || 'Failed to update report.');
+        return;
+      }
+      showInfo('Success', `Report successfully marked as ${status}.`);
+      setSelectedReport(null);
+      setRejectFor(null);
+      setRemarksInput('');
+      await fetchData();
+    } catch {
+      showInfo('Error', 'Could not reach the server.');
+    } finally {
+      setActionId(null);
     }
-    showInfo('Success', `Report successfully marked as ${status}.`);
-    setSelectedReport(null);
-    setRejectFor(null);
-    setRemarksInput('');
-    await fetchData();
-  } catch {
-    showInfo('Error', 'Could not reach the server.');
-  } finally {
-    setActionId(null);
-  }
-};
+  };
 
-    const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
     setRemindingId(row.profile.id);
     try {
       const result = await sendBackendNotification({
@@ -2576,7 +2649,6 @@ function AcademicRecordsView() {
   return <AcademicDocumentsViewer />;
 }
 
-
 /* ─────────────────────────────────────────────
    System Settings (Department Chair)
 ───────────────────────────────────────────── */
@@ -2592,7 +2664,6 @@ const CHAIR_SETTINGS_TABS = [
   { id: 'security',      label: 'Password & Security',  icon: KeyRound },
   { id: 'notifications', label: 'Notifications',        icon: Bell },
   { id: 'department',    label: 'Department Settings',  icon: Users },
-
 ] as const;
 
 type ChairSettingsTabId = typeof CHAIR_SETTINGS_TABS[number]['id'];
@@ -2662,7 +2733,6 @@ function ChairSystemSettings({
 
   const [saving, setSaving] = useState(false);
 
-  // Load the Chair's actual profile from the same backend used by the Dean settings.
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
@@ -2916,7 +2986,7 @@ function ChairSystemSettings({
     }
   };
 
-    const saveNotifications = async () => {
+  const saveNotifications = async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
@@ -2951,7 +3021,7 @@ function ChairSystemSettings({
     }
   };
 
-    const handleSaveChanges = async () => {
+  const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
       return;
@@ -2968,8 +3038,6 @@ function ChairSystemSettings({
     }
   };
 
-  const handleCancel = () => {};
-
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-6">
@@ -2978,7 +3046,6 @@ function ChairSystemSettings({
           <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-         
           <button
             onClick={handleSaveChanges}
             disabled={saving}
@@ -3044,55 +3111,59 @@ function ChairSystemSettings({
               <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
               <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
 
-              <div className="space-y-4 max-w-md">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
-                  <input
-                    type="text"
-                    value={profileLoading ? 'Loading...' : fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    disabled={profileLoading}
-                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
-                    }`}
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                    <input
+                      type="text"
+                      value={profileLoading ? 'Loading...' : fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      disabled={profileLoading}
+                      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                    <input
+                      type="email"
+                      value={profileLoading ? 'Loading...' : email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={profileLoading}
+                      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                      }`}
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
-                  <input
-                    type="email"
-                    value={profileLoading ? 'Loading...' : email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={profileLoading}
-                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
-                    }`}
-                  />
-                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                    <input
+                      type="text"
+                      value={positionRole}
+                      disabled
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
-                  <input
-                    type="text"
-                    value={positionRole}
-                    disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
-                  <input
-                    type="text"
-                    value={department}
-                    disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  />
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
+                    <input
+                      type="text"
+                      value={department}
+                      disabled
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
 
                 {profileMessage?.type === 'error' && (
-                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700 md:col-span-2">
                     {profileMessage.text}
                   </div>
                 )}
@@ -3172,7 +3243,6 @@ function ChairSystemSettings({
                     {securityMessage.text}
                   </div>
                 )}
-
               </div>
 
               <div className="border-t border-gray-100 pt-5">
@@ -3191,7 +3261,7 @@ function ChairSystemSettings({
             </div>
           )}
 
-                    {activeTab === 'notifications' && (
+          {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
               <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
