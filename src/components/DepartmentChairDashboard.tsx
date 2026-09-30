@@ -620,6 +620,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [eventToDelete, setEventToDelete] = useState<CalendarEvent | null>(null);
 
   const emptyForm = {
     title: '',
@@ -893,8 +894,18 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
     }
   };
 
+  // Opens the confirmation modal (replaces the browser confirm() alert)
+  const requestDeleteEvent = (ev: CalendarEvent) => {
+    setEventToDelete(ev);
+  };
+
+  const cancelDeleteEvent = () => {
+    if (deletingId) return;
+    setEventToDelete(null);
+  };
+
+  // Runs after the user confirms in the modal
   const deleteEvent = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this event?')) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${CALENDAR_API_URL}/${id}`, {
@@ -914,6 +925,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
       setLoadError('Could not reach the server. Please try again.');
     } finally {
       setDeletingId(null);
+      setEventToDelete(null);
     }
   };
 
@@ -1578,7 +1590,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                       <span>Edit</span>
                     </button>
                     <button
-                      onClick={() => deleteEvent(inspectingEvent.id)}
+                      onClick={() => requestDeleteEvent(inspectingEvent)}
                       disabled={deletingId === inspectingEvent.id}
                       className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium flex items-center gap-1.5 disabled:opacity-40"
                     >
@@ -1597,6 +1609,66 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {eventToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={cancelDeleteEvent}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-event-title"
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5 z-[10051]"
+          >
+            <div className="flex flex-col items-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 id="delete-event-title" className="text-lg font-bold text-gray-900">
+                  Delete this event?
+                </h3>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  You are about to delete{' '}
+                  <span className="font-semibold text-gray-800">“{eventToDelete.title}”</span>.
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelDeleteEvent}
+                disabled={deletingId === eventToDelete.id}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteEvent(eventToDelete.id)}
+                disabled={deletingId === eventToDelete.id}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {deletingId === eventToDelete.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Add / Edit Event Modal */}
@@ -1786,7 +1858,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
     </div>
   );
 }
-
 /* ─────────────────────────────────────────────
    Account Approvals View
 ───────────────────────────────────────────── */

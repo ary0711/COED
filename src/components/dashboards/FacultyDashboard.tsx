@@ -738,7 +738,7 @@ export default function TeachingLoad() {
                       e.target.value = '';
                     }}
                   />
-                </label>
+                </label>       
 
                 {/* Uploaded File Item */}
                 {selectedFile && (
