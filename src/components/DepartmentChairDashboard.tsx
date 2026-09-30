@@ -2725,103 +2725,225 @@ function ChairSystemSettings({
   userName: string;
   departmentNames: string[];
   onLogout?: () => void;
-  onProfileUpdate?: (updatedProfile: { fullName: string; email: string }) => void;
+  onProfileUpdate?: (updatedProfile: {
+    fullName: string;
+    email: string;
+  }) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<ChairSettingsTabId>('profile');
+  const [activeTab, setActiveTab] =
+    useState<ChairSettingsTabId>('profile');
 
+  // =========================
+  // PROFILE
+  // =========================
   const [fullName, setFullName] = useState(userName);
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+
   const [positionRole] = useState('Department Chair');
   const [department] = useState(departmentNames.join(', '));
+
   const [profileLoading, setProfileLoading] = useState(true);
+
   const [profileMessage, setProfileMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [successTitle, setSuccessTitle] = useState('Profile Updated Successfully');
-  const [successText, setSuccessText] = useState('Your personal information has been updated successfully.');
 
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  const [successTitle, setSuccessTitle] = useState(
+    'Profile Updated Successfully'
+  );
+
+  const [successText, setSuccessText] = useState(
+    'Your personal information has been updated successfully.'
+  );
+
+  // =========================
+  // SECURITY
+  // =========================
   const [securityMessage, setSecurityMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
 
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
+  const [twoFactorEnabled, setTwoFactorEnabled] =
+    useState(false);
+
+  // =========================
+  // NOTIFICATIONS
+  // =========================
   const [allowAll, setAllowAll] = useState(true);
-  const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
-  const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
-    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const [departmentName, setDepartmentName] = useState(departmentNames[0] ?? '');
+  const [notifs, setNotifs] = useState(
+    CHAIR_NOTIF_DEFAULTS
+  );
+
+  const toggleNotif = (
+    key: keyof typeof CHAIR_NOTIF_DEFAULTS
+  ) => {
+    setNotifs((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  // =========================
+  // DEPARTMENT SETTINGS
+  // =========================
+  const [departmentName, setDepartmentName] = useState(
+    departmentNames[0] ?? ''
+  );
+
   const [program, setProgram] = useState('');
-  const [academicYear, setAcademicYear] = useState('2025-2026');
-  const [semester, setSemester] = useState('Second Semester');
 
+  const [academicYear, setAcademicYear] =
+    useState('2025-2026');
+
+  const [semester, setSemester] =
+    useState('Second Semester');
+
+  // =========================
+  // GENERAL
+  // =========================
   const [saving, setSaving] = useState(false);
 
+  // =========================
+  // LOAD PROFILE
+  // =========================
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
 
       if (!token) {
         setProfileLoading(false);
+
         setProfileMessage({
           type: 'error',
           text: 'Your session has expired. Please log in again.',
         });
+
         return;
       }
 
       try {
-        const response = await fetch('http://localhost:5000/api/auth/me', {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await fetch(
+          'http://localhost:5000/api/auth/me',
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to load profile information.');
+          throw new Error(
+            data.error ||
+              'Failed to load profile information.'
+          );
         }
 
+        // =========================
+        // PROFILE DATA
+        // =========================
         if (data.profile) {
-          const loadedName = data.profile.full_name || userName || '';
-          const loadedEmail = data.profile.email || '';
+          /*
+           * Username should come from public.users.
+           * The fallbacks allow this to work with
+           * different response structures.
+           */
+          const loadedUsername = String(
+            data.user?.username ??
+              data.username ??
+              data.profile?.username ??
+              ''
+          ).trim();
 
+          const loadedName = String(
+            data.profile?.full_name ??
+              data.user?.fullName ??
+              userName ??
+              ''
+          ).trim();
+
+          const loadedEmail = String(
+            data.profile?.email ??
+              data.user?.email ??
+              ''
+          ).trim();
+
+          setUsername(loadedUsername);
           setFullName(loadedName);
           setEmail(loadedEmail);
 
-          localStorage.setItem('userFullName', loadedName);
-          localStorage.setItem('userEmail', loadedEmail);
+          // Local cache only
+          localStorage.setItem(
+            'userUsername',
+            loadedUsername
+          );
+
+          localStorage.setItem(
+            'userFullName',
+            loadedName
+          );
+
+          localStorage.setItem(
+            'userEmail',
+            loadedEmail
+          );
         }
 
-         if (data.preferences) {
-          setAllowAll(data.preferences.allow_all ?? true);
+        // =========================
+        // NOTIFICATION PREFERENCES
+        // =========================
+        if (data.preferences) {
+          setAllowAll(
+            data.preferences.allow_all ?? true
+          );
+
           setNotifs({
-            reports:       data.preferences.reports       ?? true,
-            announcements: data.preferences.announcements ?? true,
-            staff_updates: data.preferences.staff_updates ?? true,
-            system_notifs: data.preferences.system_notifs ?? true,
+            reports:
+              data.preferences.reports ?? true,
+
+            announcements:
+              data.preferences.announcements ?? true,
+
+            staff_updates:
+              data.preferences.staff_updates ?? true,
+
+            system_notifs:
+              data.preferences.system_notifs ?? true,
           });
-         }
+        }
       } catch (error) {
-        console.error('Failed to load Chair profile:', error);
+        console.error(
+          'Failed to load Chair profile:',
+          error
+        );
+
         setProfileMessage({
           type: 'error',
-          text: error instanceof Error
-            ? error.message
-            : 'Unable to load your profile information.',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'Unable to load your profile information.',
         });
       } finally {
         setProfileLoading(false);
@@ -2831,7 +2953,9 @@ function ChairSystemSettings({
     loadProfile();
   }, [userName]);
 
-
+  // =========================
+  // SAVE PROFILE
+  // =========================
   const saveProfile = async () => {
     const token = localStorage.getItem('token');
 
@@ -2840,36 +2964,74 @@ function ChairSystemSettings({
         type: 'error',
         text: 'Your session has expired. Please log in again.',
       });
+
       return;
     }
 
-
     const trimmedName = fullName.trim();
+    const trimmedUsername = username
+      .trim()
+      .toLowerCase();
     const trimmedEmail = email.trim();
 
+    // =========================
+    // USERNAME VALIDATION
+    // =========================
+    if (!trimmedUsername) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Username is required.',
+      });
+
+      return;
+    }
+
+    const usernameRegex =
+      /^[a-zA-Z0-9._]{3,20}$/;
+
+    if (!usernameRegex.test(trimmedUsername)) {
+      setProfileMessage({
+        type: 'error',
+        text:
+          'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
+      });
+
+      return;
+    }
+
+    // =========================
+    // NAME VALIDATION
+    // =========================
     if (!trimmedName) {
       setProfileMessage({
         type: 'error',
         text: 'Full name is required.',
       });
+
       return;
     }
 
+    // =========================
+    // EMAIL VALIDATION
+    // =========================
     if (!trimmedEmail) {
       setProfileMessage({
         type: 'error',
         text: 'Email address is required.',
       });
+
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(trimmedEmail)) {
       setProfileMessage({
         type: 'error',
         text: 'Please enter a valid email address.',
       });
+
       return;
     }
 
@@ -2877,55 +3039,118 @@ function ChairSystemSettings({
     setProfileMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          email: trimmedEmail,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            username: trimmedUsername,
+            email: trimmedEmail,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to update your profile.');
+        throw new Error(
+          data.error ||
+            'Failed to update your profile.'
+        );
       }
 
-      const updatedName = data.profile?.full_name || trimmedName;
-      const updatedEmail = data.profile?.email || trimmedEmail;
+      // =========================
+      // GET UPDATED VALUES
+      // =========================
+      const updatedUsername = String(
+        data.user?.username ??
+          data.profile?.username ??
+          data.username ??
+          trimmedUsername
+      ).trim();
 
+      const updatedName = String(
+        data.profile?.full_name ??
+          data.user?.fullName ??
+          trimmedName
+      ).trim();
+
+      const updatedEmail = String(
+        data.profile?.email ??
+          data.user?.email ??
+          trimmedEmail
+      ).trim();
+
+      // =========================
+      // UPDATE UI
+      // =========================
+      setUsername(updatedUsername);
       setFullName(updatedName);
       setEmail(updatedEmail);
 
-      localStorage.setItem('userFullName', updatedName);
-      localStorage.setItem('userEmail', updatedEmail);
+      // =========================
+      // LOCAL CACHE
+      // =========================
+      localStorage.setItem(
+        'userUsername',
+        updatedUsername
+      );
 
+      localStorage.setItem(
+        'userFullName',
+        updatedName
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        updatedEmail
+      );
+
+      // =========================
+      // UPDATE PARENT
+      // =========================
       onProfileUpdate?.({
         fullName: updatedName,
         email: updatedEmail,
       });
 
       setProfileMessage(null);
-      setSuccessTitle('Profile Updated Successfully');
-      setSuccessText('Your personal information has been updated successfully.');
+
+      setSuccessTitle(
+        'Profile Updated Successfully'
+      );
+
+      setSuccessText(
+        'Your personal information has been updated successfully.'
+      );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair profile update failed:', error);
+      console.error(
+        'Chair profile update failed:',
+        error
+      );
+
       setProfileMessage({
         type: 'error',
-        text: error instanceof Error
-          ? error.message
-          : 'Failed to update your personal information.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update your personal information.',
       });
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================
+  // CHANGE PASSWORD
+  // =========================
   const changePassword = async () => {
     const token = localStorage.getItem('token');
 
@@ -2934,47 +3159,67 @@ function ChairSystemSettings({
         type: 'error',
         text: 'Your session has expired. Please log in again.',
       });
+
       return;
     }
 
     if (!currentPassword) {
-      setSecurityMessage({ type: 'error', text: 'Current password is required.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'Current password is required.',
+      });
+
       return;
     }
 
     if (!newPassword) {
-      setSecurityMessage({ type: 'error', text: 'New password is required.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'New password is required.',
+      });
+
       return;
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
 
     if (!passwordRegex.test(newPassword)) {
       setSecurityMessage({
         type: 'error',
-        text: 'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
+        text:
+          'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
       });
+
       return;
     }
 
     if (newPassword === currentPassword) {
       setSecurityMessage({
         type: 'error',
-        text: 'Your new password must be different from your current password.',
+        text:
+          'Your new password must be different from your current password.',
       });
+
       return;
     }
 
     if (!confirmPassword) {
-      setSecurityMessage({ type: 'error', text: 'Please confirm your new password.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'Please confirm your new password.',
+      });
+
       return;
     }
 
     if (newPassword !== confirmPassword) {
       setSecurityMessage({
         type: 'error',
-        text: 'New password and confirm password do not match.',
+        text:
+          'New password and confirm password do not match.',
       });
+
       return;
     }
 
@@ -2982,80 +3227,133 @@ function ChairSystemSettings({
     setSecurityMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/password', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to change your password.');
+        throw new Error(
+          data.error ||
+            'Failed to change your password.'
+        );
       }
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+
       setSecurityMessage(null);
-      setSuccessTitle('Password Changed Successfully');
-      setSuccessText('Your password has been updated successfully.');
+
+      setSuccessTitle(
+        'Password Changed Successfully'
+      );
+
+      setSuccessText(
+        'Your password has been updated successfully.'
+      );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair password change failed:', error);
+      console.error(
+        'Chair password change failed:',
+        error
+      );
+
       setSecurityMessage({
         type: 'error',
-        text: error instanceof Error
-          ? error.message
-          : 'Failed to change your password.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to change your password.',
       });
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================
+  // SAVE NOTIFICATIONS
+  // =========================
   const saveNotifications = async () => {
     const token = localStorage.getItem('token');
+
     if (!token) return;
 
     setSaving(true);
+
     try {
-      const response = await fetch('http://localhost:5000/api/auth/preferences', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ allow_all: allowAll, ...notifs }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/preferences',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            allow_all: allowAll,
+            ...notifs,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to update preferences.');
 
-      setSuccessTitle('Notification Preferences Updated');
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Failed to update preferences.'
+        );
+      }
+
+      setSuccessTitle(
+        'Notification Preferences Updated'
+      );
+
       setSuccessText(
         allowAll
           ? 'Your notification preferences have been saved.'
           : 'All notifications are now muted.'
       );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair notification update failed:', error);
+      console.error(
+        'Chair notification update failed:',
+        error
+      );
+
       setSuccessTitle('Update Failed');
-      setSuccessText(error instanceof Error ? error.message : 'Failed to update preferences.');
+
+      setSuccessText(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update preferences.'
+      );
+
       setShowSuccessMessage(true);
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================
+  // SAVE CHANGES
+  // =========================
   const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
@@ -3075,11 +3373,20 @@ function ChairSystemSettings({
 
   return (
     <div>
+      {/* =========================
+          HEADER
+      ========================= */}
       <div className="flex items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-gray-500 text-sm mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button
             onClick={handleSaveChanges}
@@ -3091,6 +3398,9 @@ function ChairSystemSettings({
         </div>
       </div>
 
+      {/* =========================
+          SUCCESS MESSAGE
+      ========================= */}
       {showSuccessMessage && (
         <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -3102,6 +3412,7 @@ function ChairSystemSettings({
               <p className="text-sm font-semibold text-emerald-800">
                 {successTitle}
               </p>
+
               <p className="text-xs text-emerald-700 mt-0.5">
                 {successText}
               </p>
@@ -3110,7 +3421,9 @@ function ChairSystemSettings({
 
           <button
             type="button"
-            onClick={() => setShowSuccessMessage(false)}
+            onClick={() =>
+              setShowSuccessMessage(false)
+            }
             className="text-emerald-700 hover:text-emerald-900 text-xs sm:text-sm font-semibold px-2"
           >
             Dismiss
@@ -3118,15 +3431,25 @@ function ChairSystemSettings({
         </div>
       )}
 
+      {/* =========================
+          MAIN CONTENT
+      ========================= */}
       <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        {/* =========================
+            SETTINGS SIDEBAR
+        ========================= */}
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
           {CHAIR_SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const isActive =
+              activeTab === tab.id;
+
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() =>
+                  setActiveTab(tab.id)
+                }
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
@@ -3134,50 +3457,142 @@ function ChairSystemSettings({
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{tab.label}</span>
+
+                <span className="truncate">
+                  {tab.label}
+                </span>
               </button>
             );
           })}
         </div>
 
+        {/* =========================
+            SETTINGS PANEL
+        ========================= */}
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0 md:h-[560px] overflow-y-auto">
+
+          {/* =========================
+              PROFILE TAB
+          ========================= */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Update your personal details.
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+
+                {/* LEFT COLUMN */}
                 <div className="space-y-4">
+
+                  {/* FULL NAME */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Full Name
+                    </label>
+
                     <input
                       type="text"
-                      value={profileLoading ? 'Loading...' : fullName}
-                      onChange={(e) => setFullName(e.target.value)}
+                      value={
+                        profileLoading
+                          ? 'Loading...'
+                          : fullName
+                      }
+                      onChange={(e) =>
+                        setFullName(e.target.value)
+                      }
                       disabled={profileLoading}
                       className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                        profileLoading
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : 'bg-white'
                       }`}
                     />
                   </div>
 
+                  {/* USERNAME */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Username
+                    </label>
+
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                        @
+                      </span>
+
+                      <input
+                        type="text"
+                        value={
+                          profileLoading
+                            ? 'Loading...'
+                            : username
+                        }
+                        onChange={(e) =>
+                          setUsername(
+                            e.target.value.replace(
+                              /\s/g,
+                              ''
+                            )
+                          )
+                        }
+                        disabled={profileLoading}
+                        maxLength={20}
+                        autoComplete="username"
+                        placeholder="your.username"
+                        className={`w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          profileLoading
+                            ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            : 'bg-white'
+                        }`}
+                      />
+                    </div>
+
+                    <p className="text-[11px] text-gray-400 mt-1.5">
+                      3–20 characters: letters, numbers,
+                      periods, and underscores.
+                    </p>
+                  </div>
+
+                  {/* EMAIL */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Email Address
+                    </label>
+
                     <input
                       type="email"
-                      value={profileLoading ? 'Loading...' : email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      value={
+                        profileLoading
+                          ? 'Loading...'
+                          : email
+                      }
+                      onChange={(e) =>
+                        setEmail(e.target.value)
+                      }
                       disabled={profileLoading}
                       className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
+                        profileLoading
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : 'bg-white'
                       }`}
                     />
                   </div>
                 </div>
 
+                {/* RIGHT COLUMN */}
                 <div className="space-y-4">
+
+                  {/* POSITION */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Position/Role
+                    </label>
+
                     <input
                       type="text"
                       value={positionRole}
@@ -3186,8 +3601,12 @@ function ChairSystemSettings({
                     />
                   </div>
 
+                  {/* DEPARTMENT */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Department/Program
+                    </label>
+
                     <input
                       type="text"
                       value={department}
@@ -3197,6 +3616,7 @@ function ChairSystemSettings({
                   </div>
                 </div>
 
+                {/* PROFILE ERROR */}
                 {profileMessage?.type === 'error' && (
                   <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700 md:col-span-2">
                     {profileMessage.text}
@@ -3206,176 +3626,381 @@ function ChairSystemSettings({
             </div>
           )}
 
+          {/* =========================
+              SECURITY TAB
+          ========================= */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Manage your password and account access.
+              </p>
 
               <div className="space-y-4 max-w-md mb-6">
+
+                {/* CURRENT PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showCurrentPassword ? 'text' : 'password'}
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      onChange={(e) =>
+                        setCurrentPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword(v => !v)}
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                      aria-label={
+                        showCurrentPassword
+                          ? 'Hide current password'
+                          : 'Show current password'
+                      }
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* NEW PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showNewPassword ? 'text' : 'password'}
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      onChange={(e) =>
+                        setNewPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowNewPassword(v => !v)}
+                      onClick={() =>
+                        setShowNewPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      aria-label={
+                        showNewPassword
+                          ? 'Hide new password'
+                          : 'Show new password'
+                      }
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-1.5">Minimum 8 characters: uppercase, lowercase, number, and special character.</p>
+
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    Minimum 8 characters: uppercase,
+                    lowercase, number, and special
+                    character.
+                  </p>
                 </div>
 
+                {/* CONFIRM PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Confirm New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onChange={(e) =>
+                        setConfirmPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword(v => !v)}
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}
+                      aria-label={
+                        showConfirmPassword
+                          ? 'Hide confirmation password'
+                          : 'Show confirmation password'
+                      }
                     >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
-                {securityMessage && securityMessage.type === 'error' && (
-                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
-                    {securityMessage.text}
-                  </div>
-                )}
+                {securityMessage &&
+                  securityMessage.type === 'error' && (
+                    <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                      {securityMessage.text}
+                    </div>
+                  )}
               </div>
 
               <div className="border-t border-gray-100 pt-5">
                 <ChairToggleRow
                   label="Two-Factor Authentication"
                   checked={twoFactorEnabled}
-                  onChange={() => setTwoFactorEnabled(v => !v)}
+                  onChange={() =>
+                    setTwoFactorEnabled(
+                      (v) => !v
+                    )
+                  }
                 />
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-1">
-                <button type="button" className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
+                >
                   Log Out of All Devices
                 </button>
               </div>
             </div>
           )}
 
+          {/* =========================
+              NOTIFICATIONS TAB
+          ========================= */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-4">
+                Choose which alerts you receive.
+              </p>
 
               <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl mb-4">
                 <div>
-                  <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
+                  <p className="text-sm font-bold text-gray-900">
+                    Allow Notifications
+                  </p>
+
                   <p className="text-xs text-gray-500 mt-1">
-                    Turn off to completely mute all notifications and reminders.
+                    Turn off to completely mute all
+                    notifications and reminders.
                   </p>
                 </div>
+
                 <button
                   type="button"
-                  onClick={() => setAllowAll(v => !v)}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${allowAll ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+                  onClick={() =>
+                    setAllowAll((v) => !v)
+                  }
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                    allowAll
+                      ? 'bg-[#1E3A8A]'
+                      : 'bg-gray-300'
+                  }`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${allowAll ? 'translate-x-5' : ''}`} />
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                      allowAll
+                        ? 'translate-x-5'
+                        : ''
+                    }`}
+                  />
                 </button>
               </div>
 
-              <div className={!allowAll ? 'opacity-50 pointer-events-none' : ''}>
-                <ChairToggleRow label="Faculty Reports & Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
-                <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ChairToggleRow label="Student Approvals & Department Activities" checked={notifs.staff_updates} onChange={() => toggleNotif('staff_updates')} />
-                <ChairToggleRow label="System Notifications" checked={notifs.system_notifs} onChange={() => toggleNotif('system_notifs')} />
+              <div
+                className={
+                  !allowAll
+                    ? 'opacity-50 pointer-events-none'
+                    : ''
+                }
+              >
+                <ChairToggleRow
+                  label="Faculty Reports & Pending Reports"
+                  checked={notifs.reports}
+                  onChange={() =>
+                    toggleNotif('reports')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="Announcements"
+                  checked={notifs.announcements}
+                  onChange={() =>
+                    toggleNotif('announcements')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="Student Approvals & Department Activities"
+                  checked={notifs.staff_updates}
+                  onChange={() =>
+                    toggleNotif('staff_updates')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="System Notifications"
+                  checked={notifs.system_notifs}
+                  onChange={() =>
+                    toggleNotif('system_notifs')
+                  }
+                />
               </div>
             </div>
           )}
 
+          {/* =========================
+              DEPARTMENT TAB
+          ========================= */}
           {activeTab === 'department' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Department Settings</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure your department's current details.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Department Settings
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Configure your department's current
+                details.
+              </p>
 
               <div className="space-y-4 max-w-md">
+
+                {/* DEPARTMENT */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department Name</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Department Name
+                  </label>
+
                   <input
                     type="text"
                     value={departmentName}
-                    onChange={(e) => setDepartmentName(e.target.value)}
+                    onChange={(e) =>
+                      setDepartmentName(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* PROGRAM */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Program
+                  </label>
+
                   <input
                     type="text"
                     value={program}
-                    onChange={(e) => setProgram(e.target.value)}
+                    onChange={(e) =>
+                      setProgram(e.target.value)
+                    }
                     placeholder="e.g. BEEd, BSEd-Math"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* ACADEMIC YEAR */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Academic Year
+                  </label>
+
                   <input
                     type="text"
                     value={academicYear}
-                    onChange={(e) => setAcademicYear(e.target.value)}
+                    onChange={(e) =>
+                      setAcademicYear(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* SEMESTER */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Semester
+                  </label>
+
                   <select
                     value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
+                    onChange={(e) =>
+                      setSemester(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    <option>First Semester</option>
-                    <option>Second Semester</option>
-                    <option>Summer</option>
+                    <option>
+                      First Semester
+                    </option>
+
+                    <option>
+                      Second Semester
+                    </option>
+
+                    <option>
+                      Summer
+                    </option>
                   </select>
                 </div>
               </div>
             </div>
           )}
-
         </div>
       </div>
     </div>

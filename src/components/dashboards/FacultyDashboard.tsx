@@ -1920,6 +1920,9 @@ function FacultySettings() {
 
   const [passwordMessage, setPasswordMessage] = useState('');
 
+  // =========================================================
+  // LOAD FACULTY PROFILE + NOTIFICATION PREFERENCES
+  // =========================================================
   const fetchMe = async () => {
     setLoading(true);
     setLoadError('');
@@ -1932,37 +1935,81 @@ function FacultySettings() {
         return;
       }
 
-      const res = await fetch('http://localhost:5000/api/auth/me', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await fetch(
+        'http://localhost:5000/api/auth/me',
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
         throw new Error(
-          data.error || data.message || 'Failed to load your profile.'
+          data.error ||
+            data.message ||
+            'Failed to load your profile.'
         );
       }
 
       const profile = data.profile ?? data;
+
       const facultyProfile =
         data.facultyProfile ??
         data.faculty_profile ??
         data.faculty ??
         {};
 
-      const loadedFullName = profile?.full_name ?? data.fullName ?? '';
-      const loadedUsername = profile?.username ?? data.username ?? localStorage.getItem('userUsername') ?? '';
-      const loadedEmail = facultyProfile?.contact_email ?? profile?.email ?? data.email ?? '';
-      const loadedContactNo = facultyProfile?.contact_no ?? data.contactNo ?? '';
-      const loadedFacultyId = data.facultyId ?? profile?.id_number ?? data.idNumber ?? '—';
-      const loadedPosition = data.position ?? facultyProfile?.position ?? 'Faculty';
-      const loadedDepartment = data.departmentNames?.[0] ?? data.departmentName ?? profile?.department ?? '—';
-      const loadedStatus = data.status ?? profile?.status ?? facultyProfile?.status ?? '—';
+      const loadedFullName =
+        profile?.full_name ??
+        data.fullName ??
+        '';
 
+      const loadedUsername = String(
+  data.user?.username ??
+  data.username ??
+  profile?.username ??
+  ''
+).trim();
+
+      const loadedEmail =
+        facultyProfile?.contact_email ??
+        profile?.email ??
+        data.email ??
+        '';
+
+      const loadedContactNo =
+        facultyProfile?.contact_no ??
+        data.contactNo ??
+        '';
+
+      const loadedFacultyId =
+        data.facultyId ??
+        profile?.id_number ??
+        data.idNumber ??
+        '—';
+
+      const loadedPosition =
+        data.position ??
+        facultyProfile?.position ??
+        'Faculty';
+
+      const loadedDepartment =
+        data.departmentNames?.[0] ??
+        data.departmentName ??
+        profile?.department ??
+        '—';
+
+      const loadedStatus =
+        data.status ??
+        profile?.status ??
+        facultyProfile?.status ??
+        '—';
+
+      // Profile states
       setFullNameInput(loadedFullName);
       setUsernameInput(loadedUsername);
       setEmailInput(loadedEmail);
@@ -1975,22 +2022,55 @@ function FacultySettings() {
         status: loadedStatus,
       });
 
+      // =====================================================
+      // NOTIFICATION PREFERENCES
+      // =====================================================
       if (data.preferences) {
-        const ann = data.preferences.announcements ?? true;
-        const dept = data.preferences.staff_updates ?? true;
-        const rep = data.preferences.reports ?? true;
+        const allowAll =
+          data.preferences.allow_all ?? true;
 
-        setAnnouncementAlerts(ann);
-        setDepartmentNotices(dept);
-        setReportAlerts(rep);
-        setMasterSwitch(ann || dept || rep);
+        const announcements =
+          data.preferences.announcements ?? true;
+
+        const staffUpdates =
+          data.preferences.staff_updates ?? true;
+
+        const reports =
+          data.preferences.reports ?? true;
+
+        setMasterSwitch(allowAll);
+        setAnnouncementAlerts(announcements);
+        setDepartmentNotices(staffUpdates);
+        setReportAlerts(reports);
+      } else {
+        // Default preferences
+        setMasterSwitch(true);
+        setAnnouncementAlerts(true);
+        setDepartmentNotices(true);
+        setReportAlerts(true);
       }
 
-      localStorage.setItem('userFullName', loadedFullName);
-      localStorage.setItem('userUsername', loadedUsername);
-      localStorage.setItem('userEmail', loadedEmail);
+      // Keep localStorage updated
+      localStorage.setItem(
+        'userFullName',
+        loadedFullName
+      );
+
+      localStorage.setItem(
+        'userUsername',
+        loadedUsername
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        loadedEmail
+      );
     } catch (error) {
-      console.error('Failed to load faculty profile:', error);
+      console.error(
+        'Failed to load faculty profile:',
+        error
+      );
+
       setLoadError(
         error instanceof Error
           ? error.message
@@ -2005,6 +2085,9 @@ function FacultySettings() {
     fetchMe();
   }, []);
 
+  // =========================================================
+  // SAVE PROFILE
+  // =========================================================
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
     const trimmedUsername = usernameInput.trim();
@@ -2012,14 +2095,24 @@ function FacultySettings() {
     const trimmedContactNo = contactNoInput.trim();
 
     if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name cannot be empty.' });
+      setSaveMessage({
+        type: 'error',
+        text: 'Full name cannot be empty.',
+      });
+
       return false;
     }
 
     if (trimmedEmail) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
       if (!emailRegex.test(trimmedEmail)) {
-        setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
+        setSaveMessage({
+          type: 'error',
+          text: 'Please enter a valid email address.',
+        });
+
         return false;
       }
     }
@@ -2029,77 +2122,162 @@ function FacultySettings() {
 
     try {
       const token = localStorage.getItem('token');
+
       if (!token) {
-        setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
+        setSaveMessage({
+          type: 'error',
+          text: 'Your session has expired. Please log in again.',
+        });
+
         return false;
       }
 
-      const res = await fetch('http://localhost:5000/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          username: trimmedUsername,
-          email: trimmedEmail || null,
-          contact_email: trimmedEmail || null,
-          contact_no: trimmedContactNo || null,
-        }),
-      });
+      const res = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            username: trimmedUsername,
+            email: trimmedEmail || null,
+            contact_email: trimmedEmail || null,
+            contact_no: trimmedContactNo || null,
+          }),
+        }
+      );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Failed to save your profile.');
 
-      setFullNameInput(trimmedName);
-      setUsernameInput(trimmedUsername);
-      setEmailInput(trimmedEmail);
-      setContactNoInput(trimmedContactNo);
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to save your profile.'
+        );
+      }
 
-      localStorage.setItem('userFullName', trimmedName);
-      localStorage.setItem('userUsername', trimmedUsername);
-      localStorage.setItem('userEmail', trimmedEmail);
+      const savedUsername =
+  data.username ??
+  data.profile?.username ??
+  trimmedUsername;
 
-      setSaveMessage({ type: 'success', text: 'Personal information updated successfully.' });
+const savedFullName =
+  data.full_name ??
+  data.profile?.full_name ??
+  trimmedName;
+
+const savedEmail =
+  data.email ??
+  data.profile?.email ??
+  trimmedEmail;
+
+const savedContactNo =
+  data.contact_no ??
+  data.facultyProfile?.contact_no ??
+  trimmedContactNo;
+
+setFullNameInput(savedFullName);
+setUsernameInput(savedUsername);
+setEmailInput(savedEmail);
+setContactNoInput(savedContactNo);
+
+localStorage.setItem(
+  'userFullName',
+  savedFullName
+);
+
+localStorage.setItem(
+  'userUsername',
+  savedUsername
+);
+
+localStorage.setItem(
+  'userEmail',
+  savedEmail
+);
+
+      setSaveMessage({
+        type: 'success',
+        text: 'Personal information updated successfully.',
+      });
+
       await fetchMe();
+
       return true;
     } catch (error) {
-      console.error('Faculty profile update failed:', error);
-      setSaveMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to save your personal information.' });
+      console.error(
+        'Faculty profile update failed:',
+        error
+      );
+
+      setSaveMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to save your personal information.',
+      });
+
       return false;
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================================================
+  // CHANGE PASSWORD
+  // =========================================================
   const changePassword = async () => {
     setPasswordMessage('');
 
     if (!currentPassword) {
-      setPasswordMessage('Please enter your current password.');
-      return false;
-    }
-    if (!newPassword) {
-      setPasswordMessage('Please enter a new password.');
-      return false;
-    }
-    if (!confirmPassword) {
-      setPasswordMessage('Please confirm your new password.');
-      return false;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordMessage('New password and confirm password do not match.');
+      setPasswordMessage(
+        'Please enter your current password.'
+      );
       return false;
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!\%*?&.#_-]{8,}$/;
-    if (!passwordRegex.test(newPassword)) {
-      setPasswordMessage('Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.');
+    if (!newPassword) {
+      setPasswordMessage(
+        'Please enter a new password.'
+      );
       return false;
     }
+
+    if (!confirmPassword) {
+      setPasswordMessage(
+        'Please confirm your new password.'
+      );
+      return false;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage(
+        'New password and confirm password do not match.'
+      );
+      return false;
+    }
+
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+
+    if (!passwordRegex.test(newPassword)) {
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
+
+      return false;
+    }
+
     if (currentPassword === newPassword) {
-      setPasswordMessage('Your new password must be different from your current password.');
+      setPasswordMessage(
+        'Your new password must be different from your current password.'
+      );
+
       return false;
     }
 
@@ -2108,113 +2286,253 @@ function FacultySettings() {
 
     try {
       const token = localStorage.getItem('token');
+
       if (!token) {
-        setPasswordMessage('Your session has expired. Please log in again.');
+        setPasswordMessage(
+          'Your session has expired. Please log in again.'
+        );
+
         return false;
       }
 
-      const res = await fetch('http://localhost:5000/api/auth/password', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
+      const res = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          }),
+        }
+      );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Failed to change your password.');
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to change your password.'
+        );
+      }
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
 
-      setSaveMessage({ type: 'success', text: 'Password changed successfully.' });
+      setSaveMessage({
+        type: 'success',
+        text: 'Password changed successfully.',
+      });
+
       return true;
     } catch (error) {
-      console.error('Faculty password update failed:', error);
-      setPasswordMessage(error instanceof Error ? error.message : 'Failed to change your password.');
-      setSaveMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to change your password.' });
+      console.error(
+        'Faculty password update failed:',
+        error
+      );
+
+      setPasswordMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to change your password.'
+      );
+
+      setSaveMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to change your password.',
+      });
+
       return false;
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================================================
+  // NOTIFICATION TOGGLES
+  // =========================================================
+
+  // Master switch:
+  // ON  = turn everything ON
+  // OFF = turn everything OFF
+  const handleMasterSwitchToggle = (
+    checked: boolean
+  ) => {
+    setMasterSwitch(checked);
+
+    setAnnouncementAlerts(checked);
+    setDepartmentNotices(checked);
+    setReportAlerts(checked);
+  };
+
+  // Individual toggles are completely independent.
+  // They DO NOT change the master switch.
+  const handleAnnouncementToggle = (
+    checked: boolean
+  ) => {
+    setAnnouncementAlerts(checked);
+  };
+
+  const handleDepartmentToggle = (
+    checked: boolean
+  ) => {
+    setDepartmentNotices(checked);
+  };
+
+  const handleReportToggle = (
+    checked: boolean
+  ) => {
+    setReportAlerts(checked);
+  };
+
+  // =========================================================
+  // SAVE NOTIFICATION PREFERENCES
+  // =========================================================
   const saveNotifications = async () => {
     setSaving(true);
     setSaveMessage(null);
 
     try {
       const token = localStorage.getItem('token');
+
       if (!token) {
-        setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
+        setSaveMessage({
+          type: 'error',
+          text: 'Your session has expired. Please log in again.',
+        });
+
         return false;
       }
 
-      const res = await fetch('http://localhost:5000/api/auth/preferences', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          announcements: masterSwitch ? announcementAlerts : false,
-          department_notices: masterSwitch ? departmentNotices : false, 
-          reports: masterSwitch ? reportAlerts : false,
-        }),
-      });
+      const res = await fetch(
+        'http://localhost:5000/api/auth/preferences',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            // Master state
+            allow_all: masterSwitch,
+
+            // Individual category states
+            announcements: announcementAlerts,
+            staff_updates: departmentNotices,
+            reports: reportAlerts,
+          }),
+        }
+      );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Failed to update preferences.');
 
-      setSaveMessage({ type: 'success', text: 'Notification preferences updated successfully.' });
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to update preferences.'
+        );
+      }
+
+      setSaveMessage({
+        type: 'success',
+        text: 'Notification preferences updated successfully.',
+      });
+
       return true;
     } catch (error) {
-      console.error('Failed to update notifications:', error);
+      console.error(
+        'Failed to update notifications:',
+        error
+      );
+
       setSaveMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to update preferences.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update preferences.',
       });
+
       return false;
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================================================
+  // SAVE CHANGES
+  // =========================================================
   const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
       return;
     }
+
     if (activeTab === 'security') {
       await changePassword();
       return;
     }
+
     if (activeTab === 'notifications') {
       await saveNotifications();
       return;
     }
 
-    setSaveMessage({ type: 'success', text: 'Settings saved successfully.' });
+    setSaveMessage({
+      type: 'success',
+      text: 'Settings saved successfully.',
+    });
   };
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
-    { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
-    { key: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+  // =========================================================
+  // TABS
+  // =========================================================
+  const tabs: {
+    key: TabKey;
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      key: 'profile',
+      label: 'Profile Information',
+      icon: <User className="w-4 h-4" />,
+    },
+    {
+      key: 'security',
+      label: 'Password & Security',
+      icon: <Lock className="w-4 h-4" />,
+    },
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      icon: <Bell className="w-4 h-4" />,
+    },
   ];
 
   return (
     <div>
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
 
         <div className="flex gap-3">
@@ -2228,12 +2546,18 @@ function FacultySettings() {
         </div>
       </div>
 
+      {/* =====================================================
+          LOAD ERROR
+      ===================================================== */}
       {loadError && (
         <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
           {loadError}
         </div>
       )}
 
+      {/* =====================================================
+          SAVE MESSAGE
+      ===================================================== */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -2246,7 +2570,14 @@ function FacultySettings() {
         </div>
       )}
 
+      {/* =====================================================
+          MAIN LAYOUT
+      ===================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+
+        {/* ===================================================
+            SIDEBAR
+        =================================================== */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
@@ -2268,11 +2599,23 @@ function FacultySettings() {
           ))}
         </nav>
 
+        {/* ===================================================
+            CONTENT
+        =================================================== */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6">
+
+          {/* =================================================
+              PROFILE TAB
+          ================================================= */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
 
               {loading ? (
                 <div className="animate-pulse space-y-4">
@@ -2280,35 +2623,53 @@ function FacultySettings() {
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
                   </div>
+
                   <div className="h-10 bg-gray-100 rounded-lg" />
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
+
                       <input
                         type="text"
                         value={fullNameInput}
-                        onChange={(e) => setFullNameInput(e.target.value)}
+                        onChange={(e) =>
+                          setFullNameInput(e.target.value)
+                        }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Username
+                      </label>
+
                       <input
                         type="text"
                         value={usernameInput}
-                        onChange={(e) => setUsernameInput(e.target.value)}
+                        onChange={(e) =>
+                          setUsernameInput(e.target.value)
+                        }
                         placeholder="Enter username"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Faculty ID</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Faculty ID
+                      </label>
+
                       <input
                         type="text"
                         value={readOnly.facultyId}
@@ -2316,31 +2677,48 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email
+                      </label>
+
                       <input
                         type="email"
                         value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
+                        onChange={(e) =>
+                          setEmailInput(e.target.value)
+                        }
                         placeholder="Email address"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Contact Number
+                      </label>
+
                       <input
                         type="text"
                         value={contactNoInput}
-                        onChange={(e) => setContactNoInput(e.target.value)}
+                        onChange={(e) =>
+                          setContactNoInput(e.target.value)
+                        }
                         placeholder="Optional"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Position
+                      </label>
+
                       <input
                         type="text"
                         value={readOnly.position}
@@ -2348,11 +2726,16 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Department
+                      </label>
+
                       <input
                         type="text"
                         value={readOnly.departmentName}
@@ -2360,86 +2743,153 @@ function FacultySettings() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                       />
                     </div>
+
                   </div>
                 </>
               )}
             </div>
           )}
 
+          {/* =================================================
+              SECURITY TAB
+          ================================================= */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mb-6">Keep your account secure.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Keep your account secure.
+              </p>
 
               <div className="space-y-4 max-w-md">
+
+                {/* Current Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Current Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showCurrentPassword ? 'text' : 'password'}
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={currentPassword}
                       onChange={(e) => {
-                        setCurrentPassword(e.target.value);
+                        setCurrentPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Enter current password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword((value) => !value)}
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* New Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showNewPassword ? 'text' : 'password'}
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={newPassword}
                       onChange={(e) => {
-                        setNewPassword(e.target.value);
+                        setNewPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Min 8 chars, Aa1@"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowNewPassword((value) => !value)}
+                      onClick={() =>
+                        setShowNewPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* Confirm Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirm New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={confirmPassword}
                       onChange={(e) => {
-                        setConfirmPassword(e.target.value);
+                        setConfirmPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Confirm new password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword((value) => !value)}
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -2449,95 +2899,165 @@ function FacultySettings() {
                     {passwordMessage}
                   </div>
                 )}
+
               </div>
             </div>
           )}
 
+          {/* =================================================
+              NOTIFICATIONS TAB
+          ================================================= */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mb-6">Choose what you want to be notified about.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mb-6">
+                Choose what you want to be notified about.
+              </p>
 
               <div className="space-y-4">
+
+                {/* ===========================================
+                    MASTER SWITCH
+                =========================================== */}
                 <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg mb-6">
+
                   <div>
-                    <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
-                    <p className="text-xs text-gray-500 mt-1">Turn off to completely mute all notifications and reminders.</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      Allow Notifications
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Turn off to turn all notification categories off.
+                      You can still manually customize each category.
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={masterSwitch}
-                      onChange={(e) => {
-                        const isChecked = e.target.checked;
-                        setMasterSwitch(isChecked);
-                        if (!isChecked) {
-                          setAnnouncementAlerts(false);
-                          setDepartmentNotices(false);
-                          setReportAlerts(false);
-                        }
-                      }}
+                      onChange={(e) =>
+                        handleMasterSwitchToggle(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600">
+                    </div>
                   </label>
+
                 </div>
 
                 <hr className="border-gray-100 my-4" />
 
-                <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
+                {/* ===========================================
+                    QUARTERLY REPORTS
+                =========================================== */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Quarterly Reports</p>
-                    <p className="text-xs text-gray-500 mt-1">Get reminders for upcoming or pending reports</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Quarterly Reports
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get reminders for upcoming or pending reports
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={reportAlerts}
-                      onChange={(e) => setReportAlerts(e.target.checked)}
-                      disabled={!masterSwitch}
+                      onChange={(e) =>
+                        handleReportToggle(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600">
+                    </div>
                   </label>
+
                 </div>
 
-                <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
+                {/* ===========================================
+                    ANNOUNCEMENTS
+                =========================================== */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Announcements</p>
-                    <p className="text-xs text-gray-500 mt-1">Get notified about important announcements</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Announcements
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get notified about important announcements and calendar events
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
-                      disabled={!masterSwitch}
+                      onChange={(e) =>
+                        handleAnnouncementToggle(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600">
+                    </div>
                   </label>
+
                 </div>
 
-                <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-lg ${!masterSwitch ? 'opacity-50 pointer-events-none' : ''}`}>
+                {/* ===========================================
+                    DEPARTMENT NOTICES
+                =========================================== */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Department Notices</p>
-                    <p className="text-xs text-gray-500 mt-1">Receive updates from your department</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      Department Notices
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Receive updates from your department
+                    </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={departmentNotices}
-                      onChange={(e) => setDepartmentNotices(e.target.checked)}
-                      disabled={!masterSwitch}
+                      onChange={(e) =>
+                        handleDepartmentToggle(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600">
+                    </div>
                   </label>
+
                 </div>
+
               </div>
             </div>
           )}
+
         </div>
       </div>
     </div>

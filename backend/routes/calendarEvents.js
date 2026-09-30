@@ -75,7 +75,195 @@ async function getDepartmentIdsForUser(req) {
 
 const FACULTY_AUDIENCES = ['faculty', 'Faculty', 'all', 'All', 'everyone', 'Everyone'];
 const TIME_REGEX = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])(:([0-5][0-9]))?$/;
+const chunk = (arr, size = 100) => {
+  const result = [];
 
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+
+  return result;
+};
+
+async function notifyFacultyAboutEvent(event, senderIds = []) {
+  try {
+    const audience = String(event.audience || '').toLowerCase();
+
+    // Only send faculty notifications for these audiences
+    const shouldNotifyFaculty = [
+      'faculty',
+      'all',
+      'everyone',
+    ].includes(audience);
+
+    if (!shouldNotifyFaculty) {
+      return {
+        sent: 0,
+        muted: 0,
+      };
+    }
+
+    // Get active faculty accounts
+    let facultyQuery = supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'faculty')
+      .eq('status', 'active');
+
+    const { data: facultyProfiles, error: facultyError } = await facultyQuery;
+
+    if (facultyError) {
+      console.error('Error loading faculty for event notification:', facultyError);
+      return {
+        sent: 0,
+        muted: 0,
+      };
+    }
+
+    const facultyIds = new Set(
+      (facultyProfiles || [])
+        .map((faculty) => faculty.id)
+        .filter(Boolean)
+    );
+
+    // If the event is department-specific, find faculty
+    // belonging to those departments.
+    if (
+      Array.isArray(event.department_ids) &&
+      event.department_ids.length > 0
+    ) {
+      const { data: departmentFaculty, error: departmentFacultyError } =
+        await supabase
+          .from('faculty_profiles')
+          .select('user_id, department_id')
+          .in('department_id', event.department_ids);
+
+      if (departmentFacultyError) {
+        console.error(
+          'Error loading department faculty:',
+          departmentFacultyError
+        );
+
+        return {
+          sent: 0,
+          muted: 0,
+        };
+      }
+
+      const departmentFacultyIds = new Set(
+        (departmentFaculty || [])
+          .map((faculty) => faculty.user_id)
+          .filter(Boolean)
+      );
+
+      // Keep only faculty from the selected departments
+      for (const id of [...facultyIds]) {
+        if (!departmentFacultyIds.has(id)) {
+          facultyIds.delete(id);
+        }
+      }
+    }
+
+    // Don't notify the event creator
+    for (const senderId of senderIds) {
+      facultyIds.delete(senderId);
+    }
+
+    const ids = [...facultyIds];
+
+    if (ids.length === 0) {
+      return {
+        sent: 0,
+        muted: 0,
+      };
+    }
+
+    // Check notification preferences
+    const mutedIds = new Set();
+
+    for (const idsChunk of chunk(ids)) {
+      const { data: preferences, error: preferenceError } =
+        await supabase
+          .from('notification_preferences')
+          .select('user_id, allow_all, calendar')
+          .in('user_id', idsChunk);
+
+      if (preferenceError) {
+        console.error(
+          'Error loading faculty notification preferences:',
+          preferenceError
+        );
+
+        continue;
+      }
+
+      for (const pref of preferences || []) {
+        if (
+          pref.allow_all === false ||
+          pref.calendar === false
+        ) {
+          mutedIds.add(pref.user_id);
+        }
+      }
+    }
+
+    const allowedIds = ids.filter((id) => !mutedIds.has(id));
+
+    if (allowedIds.length === 0) {
+      return {
+        sent: 0,
+        muted: mutedIds.size,
+      };
+    }
+
+    const timeText =
+      event.start_time
+        ? ` at ${event.start_time}${event.end_time ? ` - ${event.end_time}` : ''}`
+        : '';
+
+    const locationText = event.location
+      ? ` • ${event.location}`
+      : '';
+
+    const notificationRows = allowedIds.map((facultyId) => ({
+      user_id: facultyId,
+      title: `New Calendar Event: ${event.title}`,
+      message: `${event.title} is scheduled on ${event.event_date}${timeText}${locationText}.`,
+      type: 'calendar',
+      reference_id: event.id,
+      reference_table: 'calendar_events',
+      is_read: false,
+    }));
+
+    for (const rows of chunk(notificationRows)) {
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert(rows);
+
+      if (notificationError) {
+        console.error(
+          'Error creating faculty event notifications:',
+          notificationError
+        );
+      }
+    }
+
+    return {
+      sent: allowedIds.length,
+      muted: mutedIds.size,
+    };
+  } catch (error) {
+    console.error(
+      'Unexpected error sending faculty event notifications:',
+      error
+    );
+
+    return {
+      sent: 0,
+      muted: 0,
+    };
+  }
+}
 // GET /api/calendar-events
 router.get('/', authenticate, async (req, res) => {
   const userRole = (req.user.role || '').toLowerCase();
@@ -234,17 +422,36 @@ router.post('/', authenticate, async (req, res) => {
   };
 
   const { data, error } = await supabase
-    .from('calendar_events')
-    .insert(insertPayload)
-    .select()
-    .single();
+  .from('calendar_events')
+  .insert(insertPayload)
+  .select()
+  .single();
 
-  if (error) {
-    console.error('Error creating calendar event:', error);
-    return res.status(500).json({ error: error.message });
-  }
+if (error) {
+  console.error('Error creating calendar event:', error);
+  return res.status(500).json({ error: error.message });
+}
 
-  return res.status(201).json(data);
+// Get the creator's possible profile IDs so the creator
+// does not receive their own notification.
+const senderIds = [
+  req.user.profileId,
+  req.user.userId,
+  req.user.id,
+].filter(Boolean);
+
+// Send calendar notification to applicable faculty
+const notificationResult = await notifyFacultyAboutEvent(
+  data,
+  senderIds
+);
+
+console.log('Faculty event notification result:', notificationResult);
+
+return res.status(201).json({
+  ...data,
+  notification: notificationResult,
+});
 });
 
 // PUT /api/calendar-events/:id

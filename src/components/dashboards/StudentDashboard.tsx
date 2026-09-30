@@ -1808,13 +1808,70 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     setEmailInput(profile.email || userEmail || localStorage.getItem('userEmail') || '');
   }, [profile, userEmail]);
 
-  const handleAllNotificationsToggle = (checked: boolean) => {
-    setAllNotifications(checked);
-    setInquiryAlerts(checked);
-    setAnnouncementAlerts(checked);
-    setCalendarAlerts(checked);
-  };
+  const loadNotificationPreferences = async () => {
+  const token = localStorage.getItem('token');
 
+  if (!token) {
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      'http://localhost:5000/api/notifications/preferences',
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        data.message ||
+        'Failed to load notification preferences.'
+      );
+    }
+
+    setAllNotifications(data.allow_all ?? true);
+    setInquiryAlerts(data.inquiries ?? true);
+    setAnnouncementAlerts(data.announcements ?? true);
+    setCalendarAlerts(data.calendar ?? true);
+  } catch (error) {
+    console.error(
+      'Failed to load notification preferences:',
+      error
+    );
+  }
+};
+useEffect(() => {
+  if (profile) {
+    loadNotificationPreferences();
+  }
+}, [profile]);
+
+ const handleAllNotificationsToggle = (checked: boolean) => {
+  // Master switch controls EVERYTHING
+  setAllNotifications(checked);
+  setInquiryAlerts(checked);
+  setAnnouncementAlerts(checked);
+  setCalendarAlerts(checked);
+};
+
+const handleInquiryToggle = (checked: boolean) => {
+  setInquiryAlerts(checked);
+};
+
+const handleAnnouncementToggle = (checked: boolean) => {
+  setAnnouncementAlerts(checked);
+};
+
+const handleCalendarToggle = (checked: boolean) => {
+  setCalendarAlerts(checked);
+};
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
     const trimmedUsername = usernameInput.trim();
@@ -1982,21 +2039,90 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
       setSaving(false);
     }
   };
+  const saveNotificationPreferences = async () => {
+  const token = localStorage.getItem('token');
 
+  if (!token) {
+    setSaveMessage({
+      type: 'error',
+      text: 'Your session has expired. Please log in again.',
+    });
+
+    return false;
+  }
+
+  setSaving(true);
+  setSaveMessage(null);
+
+  try {
+    const response = await fetch(
+      'http://localhost:5000/api/notifications/preferences',
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          allow_all: allNotifications,
+          inquiries: inquiryAlerts,
+          announcements: announcementAlerts,
+          calendar: calendarAlerts,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        data.message ||
+        'Failed to save notification preferences.'
+      );
+    }
+
+    setSaveMessage({
+      type: 'success',
+      text: 'Notification preferences updated successfully.',
+    });
+
+    return true;
+  } catch (error) {
+    console.error(
+      'Student notification preferences update failed:',
+      error
+    );
+
+    setSaveMessage({
+      type: 'error',
+      text:
+        error instanceof Error
+          ? error.message
+          : 'Failed to save notification preferences.',
+    });
+
+    return false;
+  } finally {
+    setSaving(false);
+  }
+};
   const handleSaveChanges = async () => {
-    if (activeTab === 'profile') {
-      await saveProfile();
-      return;
-    }
+  if (activeTab === 'profile') {
+    await saveProfile();
+    return;
+  }
 
-    if (activeTab === 'security') {
-      await changePassword();
-      return;
-    }
+  if (activeTab === 'security') {
+    await changePassword();
+    return;
+  }
 
-    setSaveMessage({ type: 'success', text: 'Settings saved successfully.' });
-  };
-
+  if (activeTab === 'notifications') {
+    await saveNotificationPreferences();
+    return;
+  }
+};
   const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
     { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
@@ -2086,18 +2212,38 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
       ) : (
         <div className="space-y-4">
           {/* Full Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Full Name
-            </label>
+          {/* Full Name + Username */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {/* Full Name */}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      Full Name
+    </label>
 
-            <input
-              type="text"
-              value={fullNameInput}
-              onChange={(e) => setFullNameInput(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-          </div>
+    <input
+      type="text"
+      value={fullNameInput}
+      onChange={(e) => setFullNameInput(e.target.value)}
+      placeholder="Enter your full name"
+      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+    />
+  </div>
+
+  {/* Username */}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      Username
+    </label>
+
+    <input
+      type="text"
+      value={usernameInput}
+      onChange={(e) => setUsernameInput(e.target.value)}
+      placeholder="Enter your username"
+      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+    />
+  </div>
+</div>
 
           {/* Student ID + Email */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2277,7 +2423,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                     <input
                       type="checkbox"
                       checked={inquiryAlerts}
-                      onChange={(e) => setInquiryAlerts(e.target.checked)}
+                      onChange={(e) => handleInquiryToggle(e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
@@ -2298,7 +2444,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      onChange={(e) => handleAnnouncementToggle(e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
@@ -2319,7 +2465,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
                     <input
                       type="checkbox"
                       checked={calendarAlerts}
-                      onChange={(e) => setCalendarAlerts(e.target.checked)}
+                      onChange={(e) => handleCalendarToggle(e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
