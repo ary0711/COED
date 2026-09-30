@@ -142,6 +142,12 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
   });
 };
 
+const getFacultyProfile = (f: any) =>
+  Array.isArray(f.faculty_profiles) ? f.faculty_profiles[0] : f.faculty_profiles;
+
+const getFacultyDept = (f: any): string =>
+  getFacultyProfile(f)?.department || f.department || f.program || '';
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function DepartmentChairDashboard({
   activeMenuItem,
@@ -228,7 +234,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
         if (res.ok) {
           const stats = await res.json();
-          setFacultyCount(stats.facultyCount);
+          setFacultyCount(stats.facultyCount ?? 0);
           setFacultyList(
             stats.facultyList.map((f: any) => ({
               ...f,
@@ -240,6 +246,20 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         } else {
           console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
         }
+
+        try {
+  const facRes = await fetch('http://localhost:5000/api/accounts/faculty', { headers });
+  if (facRes.ok) {
+    const all = await facRes.json();
+    const mine = (all ?? []).filter(
+      (f: any) => f.status === 'active' && isProgramMatch(getFacultyDept(f), departmentNames)
+    );
+    setFacultyModalData(mine);
+    setFacultyCount(mine.length);   // source of truth
+  }
+} catch (e) {
+  console.error('Faculty load failed', e);
+}
 
         const calRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
         if (calRes.ok) {
@@ -293,7 +313,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
       <div className="mb-6 flex-shrink-0">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           <div onClick={handleTotalFacultyClick} className="cursor-pointer transition-transform hover:scale-[1.02]">
-            <SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
+            <SummaryCard title="Total Faculty" value={loading ? '...' : (facultyCount ?? 0).toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
           </div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
@@ -444,7 +464,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
                 <div className="grid gap-3">
                   {facultyModalData.map((f: any) => {
                     const rp = f.faculty_profiles?.[0] || {};
-                    const idNum = rp.faculty_id || f.id_number || 'N/A';
+const idNum = rp.faculty_id || f.id_number || 'N/A';
                     return (
                       <div key={f.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-blue-200 transition-colors">
                         <div className="flex items-center gap-4">
