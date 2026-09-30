@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
@@ -6,7 +7,6 @@ import {
   Phone,
   MapPin,
   Send,
-  Globe,
   Facebook,
   Clock,
 } from 'lucide-react';
@@ -169,12 +169,6 @@ export function ContactPage({
 
       /* --------------------------------------------------------
          INSERT CONTACT MESSAGE
-
-         status = pending
-         is_read = false
-
-         This allows the Admin Inquiries Management page
-         to recognize this as a NEW contact message.
       -------------------------------------------------------- */
 
       const { error } = await supabase
@@ -343,6 +337,7 @@ export function ContactPage({
       setSocialLinks(
         socialRes.data || []
       );
+
     } catch (error) {
       console.error(
         'Failed to load contact page:',
@@ -360,6 +355,7 @@ export function ContactPage({
   if (!previewMode && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
+
         <div className="text-center">
 
           <div
@@ -384,6 +380,7 @@ export function ContactPage({
           </p>
 
         </div>
+
       </div>
     );
   }
@@ -597,61 +594,33 @@ export function ContactPage({
                 {displayContent?.social_title}
               </h3>
 
+              {/* ------------------------------------------------
+                  FACEBOOK ONLY
+              ------------------------------------------------ */}
+
               <div className="flex gap-4">
 
-                {displaySocialLinks.map(
-                  (social) => (
-                    <a
-                      key={social.id}
-                      href={social.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={social.platform}
-                      className="
-                        w-11 h-11
-                        bg-blue-100
-                        rounded-full
-                        flex
-                        items-center
-                        justify-center
-                        hover:bg-blue-200
-                        transition
-                        shadow-sm
-                      "
-                    >
-
-                      {/* FACEBOOK */}
-
-                      {social.platform.toLowerCase() === 'facebook' && (
-                        <Facebook className="w-5 h-5 text-[#2563EB]" />
-                      )}
-
-                      {/* WEBSITE */}
-
-                      {social.platform.toLowerCase() === 'website' && (
-                        <Globe className="w-5 h-5 text-[#2563EB]" />
-                      )}
-
-                      {/* TWITTER */}
-
-                      {(
-                        social.platform.toLowerCase() === 'twitter' ||
-                        social.platform.toLowerCase() === 'x'
-                      ) && (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                          className="w-5 h-5 text-[#2563EB]"
-                          aria-hidden="true"
-                        >
-                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817-5.967 6.817H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231L18.244 2.25Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
-                        </svg>
-                      )}
-
-                    </a>
-                  )
-                )}
+                <a
+                  href="https://www.facebook.com/unec.educ"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Facebook"
+                  title="Visit UNEC Education Facebook Page"
+                  className="
+                    w-11 h-11
+                    bg-blue-100
+                    rounded-full
+                    flex
+                    items-center
+                    justify-center
+                    hover:bg-blue-200
+                    hover:scale-105
+                    transition-all
+                    shadow-sm
+                  "
+                >
+                  <Facebook className="w-5 h-5 text-[#2563EB]" />
+                </a>
 
               </div>
 
@@ -1037,3 +1006,5 @@ export function ContactPage({
     </div>
   );
 }
+
+
