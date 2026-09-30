@@ -28,7 +28,8 @@ const asArray = (v) => (Array.isArray(v) ? v : []);
 const isDeanOrAdmin = (req) => ['dean', 'admin'].includes(req.user.role);
 const isChair = (req) => ['department_chair', 'dept_chair', 'chair'].includes(req.user.role);
 const isFaculty = (req) => req.user.role === 'faculty';
-const canNotifyDean = (req) => isChair(req) || isFaculty(req);
+const isAlumni = (req) => req.user.role === 'alumni';
+const canNotifyDean = (req) => isChair(req) || isFaculty(req) || isAlumni(req);
 const canSend = (req) => isDeanOrAdmin(req) || isChair(req);
 
 // Some accounts (e.g. the Dean) have a different id in `users` than in `profiles`.
@@ -260,12 +261,12 @@ router.post('/send', authenticate, async (req, res) => {
   return res.json({ success: true, sent: rows.length, muted: prefs.muted });
 });
 
-const DEAN_ROLES = ['dean', 'college_dean'];
+const DEAN_ROLES = ['dean', 'college_dean', 'admin'];
 
 // ── POST /api/notifications/notify-dean  (Chair only) ────────
 router.post('/notify-dean', authenticate, async (req, res) => {
   if (!canNotifyDean(req)) {
-  return res.status(403).json({ error: 'Only department chairs and faculty can use this.' });
+  return res.status(403).json({ error: 'You are not allowed to use this.' });
 }
 
   const { title, message, type = 'report' } = req.body;

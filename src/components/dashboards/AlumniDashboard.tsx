@@ -31,6 +31,7 @@ import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 import { createPortal } from 'react-dom';
+import { notifyDean } from '../../notificationsApi';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 // ====================== TRACER SURVEY API HELPERS ======================
@@ -660,11 +661,26 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       post_graduate_degree: formData.postGraduateDegree,
     };
 
-    try {
+        try {
       if (isNew) {
         await saveTracerSurvey(payload);
       } else {
         await updateTracerSurvey(alumniId, payload);
+      }
+
+      // Notify the Dean (don't let a notification failure block the save)
+      try {
+        await notifyDean({
+          title: isNew
+            ? 'New Graduate Tracer Survey Submitted'
+            : 'Graduate Tracer Survey Updated',
+          message: `${formData.firstName} ${formData.lastName} (${alumniId}) ${
+            isNew ? 'submitted' : 'updated'
+          } their tracer survey. Status: ${formData.employmentStatus}.`,
+          type: 'system',
+        });
+      } catch (notifErr) {
+        console.error('Survey saved but Dean notification failed:', notifErr);
       }
 
       setLastUpdated(new Date().toISOString());
