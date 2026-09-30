@@ -475,7 +475,7 @@ const TEACHING_LOAD_URL = 'http://localhost:5000/api/teaching-load';
 const TEACHING_LOAD_SCAN_URL = 'http://localhost:5000/api/teaching-load/scan';
 const EMPTY_SUBJECT: TeachingSubject = { code: '', name: '', units: 3, courseAndYear: '', schedule: '', room: '' };
 
-function TeachingLoad() {
+export default function TeachingLoad() {
   const [subjects, setSubjects] = useState<TeachingSubject[]>([]);
   const [academicYear, setAcademicYear] = useState('');
   const [semester, setSemester] = useState('1st Semester');
@@ -497,7 +497,7 @@ function TeachingLoad() {
   const [banner, setBanner] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const ACCEPTED_FILE_TYPES = '.png,.jpg,.jpeg,.pdf';
-  const MAX_FILE_MB = 10;
+  const MAX_FILE_MB = 15; // Adjusted to match the screenshot text
 
   const showBanner = (type: 'success' | 'error' | 'info', text: string, ms = 5000) => {
     setBanner({ type, text });
@@ -552,26 +552,25 @@ function TeachingLoad() {
   };
 
   const handleFileSelect = (file: File) => {
-  setScanError('');
-  if (file.size > MAX_FILE_MB * 1024 * 1024) {
-    setScanError(`File is too large. Maximum size is ${MAX_FILE_MB} MB.`);
-    return;
-  }
-  const isPdf = file.type === 'application/pdf';
-  if (!isPdf && !/^image\/(png|jpe?g)$/.test(file.type)) {
-    setScanError('Unsupported file. Please upload a PNG, JPG, or PDF of your faculty load.');
-    return;
-  }
-  setSelectedFile(file);
-  if (isPdf) {
-    // object URL works in an iframe; a base64 data URL is often blocked for PDFs
-    setPreviewUrl(URL.createObjectURL(file));
-  } else {
-    const reader = new FileReader();
-    reader.onload = (e) => setPreviewUrl(e.target?.result as string);
-    reader.readAsDataURL(file);
-  }
-};
+    setScanError('');
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setScanError(`File is too large. Maximum size is ${MAX_FILE_MB} MB.`);
+      return;
+    }
+    const isPdf = file.type === 'application/pdf';
+    if (!isPdf && !/^image\/(png|jpe?g)$/.test(file.type)) {
+      setScanError('Unsupported file. Please upload a PNG, JPG, or PDF of your faculty load.');
+      return;
+    }
+    setSelectedFile(file);
+    if (isPdf) {
+      setPreviewUrl(URL.createObjectURL(file));
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => setPreviewUrl(e.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleConfirmUpload = async () => {
     if (!selectedFile) return;
@@ -590,13 +589,13 @@ function TeachingLoad() {
       });
 
       const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(
-            data.detail
-              ? `${data.error} [${data.stage || 'unknown'}] ${data.detail}`
-              : data.error || 'Failed to scan the uploaded file.'
-          );
-        }
+      if (!res.ok) {
+        throw new Error(
+          data.detail
+            ? `${data.error} [${data.stage || 'unknown'}] ${data.detail}`
+            : data.error || 'Failed to scan the uploaded file.'
+        );
+      }
 
       const extracted: TeachingSubject[] = Array.isArray(data.subjects)
         ? data.subjects.map((s: any) => ({
@@ -697,17 +696,21 @@ function TeachingLoad() {
     }
   };
 
-    const renderUploadModal = () =>
+  const renderUploadModal = () =>
     uploadModalOpen && typeof document !== 'undefined'
       ? createPortal(
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4"
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const f = e.dataTransfer.files?.[0];
+              if (f) handleFileSelect(f);
+            }}
           >
-            <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg max-h-[92vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Upload Faculty Load</h2>
+            <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-2xl max-h-[92vh] overflow-y-auto flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900 tracking-tight uppercase">EVIDENCES & SUPPORTING DOCUMENTS</h2>
                 <button
                   onClick={closeUploadModal}
                   disabled={scanning}
@@ -717,99 +720,65 @@ function TeachingLoad() {
                 </button>
               </div>
 
-              <div className="space-y-4">
-                {!selectedFile ? (
-                  <label className="border border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 hover:bg-blue-50/40 transition-colors cursor-pointer block">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-gray-700">Click to upload</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      PNG, JPG, or PDF of your "Program by Teacher" · max {MAX_FILE_MB} MB
-                    </p>
-                    <input
-                      type="file"
-                      accept={ACCEPTED_FILE_TYPES}
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFileSelect(f);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                ) : (
-                  <>
-                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
-                      <div className="flex items-center gap-3 truncate">
-                        <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                        <div className="truncate">
-                          <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
-                          <p className="text-xs text-gray-400">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                      </div>
-                      {!scanning && (
-                        <button
-                          onClick={() => { setSelectedFile(null); setPreviewUrl(null); setScanError(''); }}
-                          className="text-xs text-rose-600 hover:underline font-semibold"
-                        >
-                          Remove / Change
-                        </button>
-                      )}
+              <div className="flex-1 space-y-6">
+                {/* Always visible Dropzone */}
+                <label className="border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center hover:border-blue-400 hover:bg-blue-50/40 transition-colors cursor-pointer block">
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                  <p className="text-base font-medium text-gray-700">Click to attach files or drag and drop</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    PDF, DOCX, JPG, PNG, XLSX up to {MAX_FILE_MB}MB each
+                  </p>
+                  <input
+                    type="file"
+                    accept={ACCEPTED_FILE_TYPES}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFileSelect(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+
+                {/* Uploaded File Item */}
+                {selectedFile && (
+                  <div className="border border-blue-100 rounded-xl bg-blue-50/30 p-4">
+                    <div className="flex justify-between items-center text-sm font-semibold text-gray-700 mb-3">
+                      <span>1 file uploaded</span>
+                    </div>
+                    
+                    <div className="w-full bg-gray-200 h-1.5 rounded-full mb-4 overflow-hidden">
+                      <div className="bg-blue-600 h-1.5 rounded-full w-full"></div>
                     </div>
 
-                    {scanning ? (
-                      <div className="flex flex-col items-center gap-3 py-6">
-                        <svg className="w-16 h-16 animate-spin" viewBox="0 0 50 50">
-                          <circle cx="25" cy="25" r="20" fill="none" stroke="#DBEAFE" strokeWidth="5" />
-                          <circle
-                            cx="25"
-                            cy="25"
-                            r="20"
-                            fill="none"
-                            stroke="#1E3A8A"
-                            strokeWidth="5"
-                            strokeLinecap="round"
-                            strokeDasharray="90 150"
-                          />
-                        </svg>
-                        <p className="text-sm font-medium text-gray-600">Scanning your faculty load...</p>
+                    <div className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg shadow-sm">
+                      <div className="flex items-center gap-3 truncate">
+                        <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                        <div className="truncate flex items-baseline gap-2">
+                          <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
+                          <p className="text-xs text-gray-400">({(selectedFile.size / 1024).toFixed(1)} KB)</p>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="flex justify-end gap-3">
-                        <button
-                          onClick={closeUploadModal}
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleConfirmUpload}
-                          className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors"
-                        >
-                          Upload
-                        </button>
-                      </div>
-                    )}
-
-                    {previewUrl &&
-                      (selectedFile.type === 'application/pdf' ? (
-                        <iframe
-                          src={previewUrl}
-                          title="Faculty Load PDF Preview"
-                          className="w-full h-72 rounded-xl border border-gray-200"
-                        />
-                      ) : (
+                      
+                      <div className="flex items-center gap-4 ml-4 flex-shrink-0">
                         <button
                           type="button"
                           onClick={() => setPreviewOpen(true)}
-                          className="relative w-full h-52 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center cursor-zoom-in group"
+                          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-semibold transition-colors"
                         >
-                          <img src={previewUrl} alt="Faculty Load Preview" className="object-contain h-full w-full" />
-                          <span className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md bg-black/60 text-white text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Eye className="w-3.5 h-3.5" /> Click to enlarge
-                          </span>
+                          <Eye className="w-4 h-4" /> Preview
                         </button>
-                      ))}
-                  </>
+                        {!scanning && (
+                          <button
+                            onClick={() => { setSelectedFile(null); setPreviewUrl(null); setScanError(''); }}
+                            className="text-gray-400 hover:text-rose-600 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {scanError && (
@@ -819,42 +788,88 @@ function TeachingLoad() {
                   </div>
                 )}
               </div>
+
+              {/* Footer Actions */}
+              <div className="mt-6 pt-4 border-t border-gray-100 flex justify-end gap-3">
+                <button
+                  onClick={closeUploadModal}
+                  disabled={scanning}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmUpload}
+                  disabled={!selectedFile || scanning}
+                  className="flex items-center gap-2 px-5 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {scanning ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Scanning...
+                    </>
+                  ) : (
+                    'Upload & Scan'
+                  )}
+                </button>
+              </div>
             </div>
           </div>,
           document.body
         )
       : null;
 
-            const renderPreviewLightbox = () =>
-              previewOpen && previewUrl && typeof document !== 'undefined'
-                ? createPortal(
-                    <div
-                      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 p-4 cursor-zoom-out"
-                      onClick={() => setPreviewOpen(false)}
-                    >
-                      <button
-                        onClick={() => setPreviewOpen(false)}
-                        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
-                        aria-label="Close preview"
-                      >
-                        <X className="w-6 h-6" />
-                      </button>
-                      <img
-                        src={previewUrl}
-                        alt="Faculty Load Full Preview"
-                        className="max-w-[96vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </div>,
-                    document.body
-                  )
-                : null;
+  const renderPreviewLightbox = () =>
+    previewOpen && previewUrl && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#1e1e1e]/95 p-4 sm:p-8"
+            onClick={() => setPreviewOpen(false)}
+          >
+            {/* Top Bar for filename and Close button */}
+            <div className="absolute top-0 left-0 w-full p-4 flex items-center justify-between bg-black/40 text-gray-300 z-10" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-3">
+                  <FileText className="w-5 h-5 text-blue-400" />
+                  <span className="text-sm font-medium">{selectedFile?.name}</span>
+                  <span className="text-xs text-gray-500">({selectedFile ? (selectedFile.size / 1024).toFixed(1) : 0} KB)</span>
+                </div>
+                <button
+                  onClick={() => setPreviewOpen(false)}
+                  className="p-2 rounded hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+                  aria-label="Close preview"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+            </div>
 
-            const bannerStyles = {
-              success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-              error: 'bg-red-50 border-red-200 text-red-700',
-              info: 'bg-blue-50 border-blue-200 text-blue-700',
-            };
+            <div
+              className="w-full h-full max-w-7xl pt-12 pb-4 flex items-center justify-center cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {selectedFile?.type === 'application/pdf' ? (
+                <iframe
+                  src={previewUrl}
+                  title="Faculty Load PDF Preview"
+                  className="w-full h-full rounded shadow-2xl bg-white"
+                />
+              ) : (
+                <img
+                  src={previewUrl}
+                  alt="Faculty Load Full Preview"
+                  className="max-w-full max-h-full object-contain rounded shadow-2xl"
+                />
+              )}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+  const bannerStyles = {
+    success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    error: 'bg-red-50 border-red-200 text-red-700',
+    info: 'bg-blue-50 border-blue-200 text-blue-700',
+  };
 
   return (
     <>
