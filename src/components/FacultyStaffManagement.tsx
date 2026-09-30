@@ -233,11 +233,8 @@ export function FacultyStaffManagement() {
               <div className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
                 <Award className="w-4 h-4" />
               </div>
-              <h2 className="text-base font-bold text-gray-900">Department Chairs & Deans</h2>
+              <h2 className="text-base font-bold text-gray-900">Program Chairman</h2>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full">
-              {filteredChairs.length} {filteredChairs.length === 1 ? 'Leader' : 'Leaders'}
-            </span>
           </div>
           <div className="p-4 sm:p-5 flex-1 overflow-hidden">
             {renderList(
