@@ -471,42 +471,53 @@ interface TeachingSubject {
   room: string;
 }
 
+const TEACHING_LOAD_URL = 'http://localhost:5000/api/teaching-load';
+const TEACHING_LOAD_SCAN_URL = 'http://localhost:5000/api/teaching-load/scan';
+const EMPTY_SUBJECT: TeachingSubject = { code: '', name: '', units: 3, courseAndYear: '', schedule: '', room: '' };
+
 function TeachingLoad() {
   const [subjects, setSubjects] = useState<TeachingSubject[]>([]);
-  const [academicYear, setAcademicYear] = useState('2026-2027');
+  const [academicYear, setAcademicYear] = useState('');
   const [semester, setSemester] = useState('1st Semester');
-  const [hoursPerWeek, setHoursPerWeek] = useState(16);
+  const [hoursPerWeek, setHoursPerWeek] = useState(0);
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<TeachingSubject>({ code: '', name: '', units: 3, courseAndYear: '', schedule: '', room: '' });
+  const [editForm, setEditForm] = useState<TeachingSubject>(EMPTY_SUBJECT);
 
   const [loadingDbLoad, setLoadingDbLoad] = useState(false);
-  const [successBanner, setSuccessBanner] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [banner, setBanner] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  const ACCEPTED_FILE_TYPES = '.xlsx,.xls,.pdf,.doc,.docx,.png,.jpg,.jpeg';
+  const ACCEPTED_FILE_TYPES = '.png,.jpg,.jpeg,.pdf';
+  const MAX_FILE_MB = 10;
+
+  const showBanner = (type: 'success' | 'error' | 'info', text: string, ms = 5000) => {
+    setBanner({ type, text });
+    if (ms > 0) setTimeout(() => setBanner(null), ms);
+  };
 
   useEffect(() => {
     const fetchTeachingLoad = async () => {
       setLoadingDbLoad(true);
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch('http://localhost:5000/api/teaching-load', {
+        const res = await fetch(TEACHING_LOAD_URL, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
-          if (data && Array.isArray(data.subjects)) {
-            setSubjects(data.subjects);
-          }
-          if (data.academic_year) setAcademicYear(data.academic_year);
-          if (data.semester) setSemester(data.semester);
-          if (data.hours_per_week) setHoursPerWeek(data.hours_per_week);
+          if (data && Array.isArray(data.subjects)) setSubjects(data.subjects);
+          if (data?.academic_year) setAcademicYear(data.academic_year);
+          if (data?.semester) setSemester(data.semester);
+          if (data?.hours_per_week) setHoursPerWeek(Number(data.hours_per_week));
         }
       } catch (err) {
         console.error('Failed to fetch teaching load from DB:', err);
@@ -517,95 +528,125 @@ function TeachingLoad() {
     fetchTeachingLoad();
   }, []);
 
-  const totalUnits = useMemo(() => {
-    return subjects.reduce((acc, sub) => acc + (Number(sub.units) || 0), 0);
-  }, [subjects]);
+  const totalUnits = useMemo(
+    () => subjects.reduce((acc, sub) => acc + (Number(sub.units) || 0), 0),
+    [subjects]
+  );
 
   const openUploadModal = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
-    setUploadProgress(0);
-    setUploading(false);
+    setPreviewOpen(false);
+    setScanError('');
+    setScanning(false);
     setUploadModalOpen(true);
   };
 
   const closeUploadModal = () => {
+    if (scanning) return;
     setUploadModalOpen(false);
     setSelectedFile(null);
     setPreviewUrl(null);
-    setUploading(false);
-    setUploadProgress(0);
+    setPreviewOpen(false);
+    setScanError('');
   };
 
   const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => setPreviewUrl(e.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
+  setScanError('');
+  if (file.size > MAX_FILE_MB * 1024 * 1024) {
+    setScanError(`File is too large. Maximum size is ${MAX_FILE_MB} MB.`);
+    return;
+  }
+  const isPdf = file.type === 'application/pdf';
+  if (!isPdf && !/^image\/(png|jpe?g)$/.test(file.type)) {
+    setScanError('Unsupported file. Please upload a PNG, JPG, or PDF of your faculty load.');
+    return;
+  }
+  setSelectedFile(file);
+  if (isPdf) {
+    // object URL works in an iframe; a base64 data URL is often blocked for PDFs
+    setPreviewUrl(URL.createObjectURL(file));
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => setPreviewUrl(e.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+};
+
+  const handleConfirmUpload = async () => {
+    if (!selectedFile) return;
+    setScanning(true);
+    setScanError('');
+
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const res = await fetch(TEACHING_LOAD_SCAN_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            data.detail
+              ? `${data.error} [${data.stage || 'unknown'}] ${data.detail}`
+              : data.error || 'Failed to scan the uploaded file.'
+          );
+        }
+
+      const extracted: TeachingSubject[] = Array.isArray(data.subjects)
+        ? data.subjects.map((s: any) => ({
+            code: String(s.code ?? '').trim(),
+            name: String(s.name ?? '').trim(),
+            units: Number(s.units) || 0,
+            courseAndYear: String(s.courseAndYear ?? '').trim(),
+            schedule: String(s.schedule ?? '').trim(),
+            room: String(s.room ?? '').trim(),
+          }))
+        : [];
+
+      if (extracted.length === 0) {
+        throw new Error('No subjects could be found in the uploaded file. Try a clearer or higher-resolution image.');
+      }
+
+      setSubjects(extracted);
+      if (data.academic_year) setAcademicYear(String(data.academic_year));
+      if (data.semester) setSemester(String(data.semester));
+      if (data.hours_per_week) setHoursPerWeek(Number(data.hours_per_week));
+
+      setEditingIndex(null);
+      setHasUnsaved(true);
+      setUploadModalOpen(false);
+      setSelectedFile(null);
       setPreviewUrl(null);
+      showBanner(
+        'info',
+        `Extracted ${extracted.length} subject(s) from "${selectedFile.name}". Please review the details, then click Save Changes.`,
+        8000
+      );
+    } catch (err) {
+      console.error('Scan failed:', err);
+      setScanError(err instanceof Error ? err.message : 'Could not reach the server.');
+    } finally {
+      setScanning(false);
     }
   };
 
-  const handleConfirmUpload = () => {
-    if (!selectedFile) return;
-
-    setUploading(true);
-    setUploadProgress(0);
-
-    // Simulate scanning progress circle / bar for the uploaded schedule document
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 250);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploading(false);
-
-      // Dynamic parser reading the uploaded file name/meta or generating data extracted from the specific uploaded sheet
-      // If you want to connect a backend OCR API endpoint (e.g. /api/parse-faculty-load), you would send `selectedFile` via FormData here.
-      const extractedSubjects: TeachingSubject[] = [
-        { code: 'GE-101', name: 'Understanding the Self', units: 3, courseAndYear: 'BSIT 1A', schedule: 'TTH 7:30–9:00 AM', room: 'Room 203' },
-        { code: 'CC-102', name: 'Computer Programming 1', units: 3, courseAndYear: 'BSIT 1B', schedule: 'MWF 10:00–11:00 AM', room: 'Lab 102' },
-        { code: 'IT-311', name: 'Information Management', units: 3, courseAndYear: 'BSIT 3A', schedule: 'TTH 1:00–2:30 PM', room: 'CL2' },
-        { code: 'IT-401', name: 'Systems Integration and Architecture', units: 3, courseAndYear: 'BSIT 4A', schedule: 'MWF 3:00–4:00 PM', room: 'CL4' },
-      ];
-
-      setSubjects(extractedSubjects);
-      setHoursPerWeek(18);
-      setAcademicYear('2026-2027');
-      setSemester('1st Semester');
-
-      closeUploadModal();
-      setSuccessBanner(`Successfully scanned and extracted schedule details from "${selectedFile.name}".`);
-      setTimeout(() => setSuccessBanner(''), 4500);
-    }, 1500);
-  };
-
   const handleAddSubject = () => {
-    const newSub: TeachingSubject = {
-      code: 'NEW-101',
-      name: 'New Descriptive Title',
-      units: 3,
-      courseAndYear: 'BSIT 1A',
-      schedule: 'TTH 8:00–9:00 AM',
-      room: 'Room 101',
-    };
-    setSubjects(prev => [...prev, newSub]);
+    setSubjects((prev) => [...prev, { ...EMPTY_SUBJECT }]);
     setEditingIndex(subjects.length);
-    setEditForm(newSub);
+    setEditForm({ ...EMPTY_SUBJECT });
+    setHasUnsaved(true);
   };
 
   const handleRemoveSubject = (index: number) => {
-    setSubjects(prev => prev.filter((_, i) => i !== index));
+    setSubjects((prev) => prev.filter((_, i) => i !== index));
     if (editingIndex === index) setEditingIndex(null);
+    setHasUnsaved(true);
   };
 
   const handleStartEdit = (index: number, sub: TeachingSubject) => {
@@ -614,14 +655,20 @@ function TeachingLoad() {
   };
 
   const handleSaveEdit = (index: number) => {
-    setSubjects(prev => prev.map((item, i) => (i === index ? editForm : item)));
+    setSubjects((prev) => prev.map((item, i) => (i === index ? editForm : item)));
     setEditingIndex(null);
+    setHasUnsaved(true);
   };
 
   const handleSaveToDatabase = async () => {
+    if (editingIndex !== null) {
+      showBanner('error', 'Please confirm (✓) the subject you are editing before saving.');
+      return;
+    }
+    setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/teaching-load', {
+      const res = await fetch(TEACHING_LOAD_URL, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -632,116 +679,191 @@ function TeachingLoad() {
           academic_year: academicYear,
           semester,
           hours_per_week: hoursPerWeek,
+          total_units: totalUnits,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setSuccessBanner('Teaching load saved successfully to database!');
-        setTimeout(() => setSuccessBanner(''), 4000);
+        setHasUnsaved(false);
+        showBanner('success', 'Teaching load saved successfully.');
       } else {
-        setSuccessBanner('Failed to save teaching load.');
+        showBanner('error', data.error || 'Failed to save teaching load.');
       }
     } catch (err) {
       console.error('Error saving teaching load:', err);
-      setSuccessBanner('Error connecting to server.');
+      showBanner('error', 'Error connecting to server.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const UploadModal = () => (
-    uploadModalOpen && typeof document !== 'undefined' ? createPortal(
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Upload Faculty Schedule / Load</h2>
-            <button onClick={closeUploadModal} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {!selectedFile ? (
-              <div>
-                <label className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition-colors cursor-pointer block">
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop your faculty load schedule image or document</p>
-                  <p className="text-xs text-gray-400 mt-1">Supports PNG, JPG, JPEG, PDF, Word, Excel</p>
-                  <input
-                    type="file"
-                    accept={ACCEPTED_FILE_TYPES}
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleFileSelect(f);
-                    }}
-                  />
-                </label>
+    const renderUploadModal = () =>
+    uploadModalOpen && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => e.preventDefault()}
+          >
+            <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Upload Faculty Load</h2>
+                <button
+                  onClick={closeUploadModal}
+                  disabled={scanning}
+                  className="text-gray-400 hover:text-gray-600 disabled:opacity-40"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            ) : (
+
               <div className="space-y-4">
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3 truncate">
-                    <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                    <div className="truncate">
-                      <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
-                      <p className="text-xs text-gray-400">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                {!selectedFile ? (
+                  <label className="border border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 hover:bg-blue-50/40 transition-colors cursor-pointer block">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-700">Click to upload</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      PNG, JPG, or PDF of your "Program by Teacher" · max {MAX_FILE_MB} MB
+                    </p>
+                    <input
+                      type="file"
+                      accept={ACCEPTED_FILE_TYPES}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleFileSelect(f);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <>
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center gap-3 truncate">
+                        <FileText className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                        <div className="truncate">
+                          <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
+                          <p className="text-xs text-gray-400">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                      {!scanning && (
+                        <button
+                          onClick={() => { setSelectedFile(null); setPreviewUrl(null); setScanError(''); }}
+                          className="text-xs text-rose-600 hover:underline font-semibold"
+                        >
+                          Remove / Change
+                        </button>
+                      )}
                     </div>
-                  </div>
-                  <button
-                    onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
-                    className="text-xs text-rose-600 hover:underline font-semibold"
-                  >
-                    Remove / Change
-                  </button>
-                </div>
 
-                {previewUrl && (
-                  <div className="relative h-48 rounded-xl overflow-hidden border border-gray-200 bg-black/5 flex items-center justify-center">
-                    <img src={previewUrl} alt="Faculty Load Preview" className="object-contain h-full w-full" />
-                  </div>
+                    {scanning ? (
+                      <div className="flex flex-col items-center gap-3 py-6">
+                        <svg className="w-16 h-16 animate-spin" viewBox="0 0 50 50">
+                          <circle cx="25" cy="25" r="20" fill="none" stroke="#DBEAFE" strokeWidth="5" />
+                          <circle
+                            cx="25"
+                            cy="25"
+                            r="20"
+                            fill="none"
+                            stroke="#1E3A8A"
+                            strokeWidth="5"
+                            strokeLinecap="round"
+                            strokeDasharray="90 150"
+                          />
+                        </svg>
+                        <p className="text-sm font-medium text-gray-600">Scanning your faculty load...</p>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-3">
+                        <button
+                          onClick={closeUploadModal}
+                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleConfirmUpload}
+                          className="px-4 py-2 bg-[#1E3A8A] text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors"
+                        >
+                          Upload
+                        </button>
+                      </div>
+                    )}
+
+                    {previewUrl &&
+                      (selectedFile.type === 'application/pdf' ? (
+                        <iframe
+                          src={previewUrl}
+                          title="Faculty Load PDF Preview"
+                          className="w-full h-72 rounded-xl border border-gray-200"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewOpen(true)}
+                          className="relative w-full h-52 rounded-xl overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center cursor-zoom-in group"
+                        >
+                          <img src={previewUrl} alt="Faculty Load Preview" className="object-contain h-full w-full" />
+                          <span className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md bg-black/60 text-white text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Eye className="w-3.5 h-3.5" /> Click to enlarge
+                          </span>
+                        </button>
+                      ))}
+                  </>
                 )}
 
-                {uploading && (
-                  <div className="space-y-2 py-2">
-                    <div className="flex justify-between text-xs text-gray-600 font-medium">
-                      <span>Scanning schedule and extracting subjects...</span>
-                      <span>{uploadProgress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                      <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-                    </div>
-                  </div>
-                )}
-
-                {!uploading && (
-                  <div className="flex justify-end gap-3 pt-2">
-                    <button
-                      onClick={closeUploadModal}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleConfirmUpload}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
-                    >
-                      Scan & Extract Load Details
-                    </button>
+                {scanError && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{scanError}</span>
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        </div>
-      </div>,
-      document.body
-    ) : null
-  );
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+            const renderPreviewLightbox = () =>
+              previewOpen && previewUrl && typeof document !== 'undefined'
+                ? createPortal(
+                    <div
+                      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 p-4 cursor-zoom-out"
+                      onClick={() => setPreviewOpen(false)}
+                    >
+                      <button
+                        onClick={() => setPreviewOpen(false)}
+                        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                        aria-label="Close preview"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                      <img
+                        src={previewUrl}
+                        alt="Faculty Load Full Preview"
+                        className="max-w-[96vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>,
+                    document.body
+                  )
+                : null;
+
+            const bannerStyles = {
+              success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+              error: 'bg-red-50 border-red-200 text-red-700',
+              info: 'bg-blue-50 border-blue-200 text-blue-700',
+            };
 
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900">Teaching Load</h1>
-          <p className="text-sm text-gray-500 mt-1">Upload your faculty load document or image schedule to automatically populate assigned courses.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Upload your faculty load form to automatically populate your assigned courses.
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -752,17 +874,20 @@ function TeachingLoad() {
           </button>
           <button
             onClick={handleSaveToDatabase}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors"
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
           >
-            <Save size={16} /> Save Changes
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {saving ? 'Saving...' : 'Save Changes'}
+            {hasUnsaved && !saving && <span className="w-2 h-2 rounded-full bg-amber-300" />}
           </button>
         </div>
       </div>
 
-      {successBanner && (
-        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm flex items-center gap-2 animate-in fade-in">
-          <CheckCircle size={16} />
-          <span>{successBanner}</span>
+      {banner && (
+        <div className={`mb-4 p-3 border rounded-xl text-sm flex items-center gap-2 animate-in fade-in ${bannerStyles[banner.type]}`}>
+          {banner.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+          <span>{banner.text}</span>
         </div>
       )}
 
@@ -772,7 +897,8 @@ function TeachingLoad() {
           <input
             type="text"
             value={academicYear}
-            onChange={(e) => setAcademicYear(e.target.value)}
+            placeholder="e.g. 2026-2027"
+            onChange={(e) => { setAcademicYear(e.target.value); setHasUnsaved(true); }}
             className="font-semibold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-sm w-full"
           />
         </div>
@@ -780,11 +906,12 @@ function TeachingLoad() {
           <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Semester</div>
           <select
             value={semester}
-            onChange={(e) => setSemester(e.target.value)}
+            onChange={(e) => { setSemester(e.target.value); setHasUnsaved(true); }}
             className="font-semibold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-sm w-full"
           >
             <option value="1st Semester">1st Semester</option>
             <option value="2nd Semester">2nd Semester</option>
+            <option value="Summer">Summer</option>
           </select>
         </div>
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -796,8 +923,8 @@ function TeachingLoad() {
           <input
             type="number"
             value={hoursPerWeek}
-            onChange={(e) => setHoursPerWeek(Number(e.target.value))}
-            className="font-bold text-gray-900 bg-white border border-blue-200 rounded px-2 py-1 text-lg w-full text-blue-600"
+            onChange={(e) => { setHoursPerWeek(Number(e.target.value)); setHasUnsaved(true); }}
+            className="font-bold bg-white border border-blue-200 rounded px-2 py-1 text-lg w-full text-blue-600"
           />
         </div>
       </div>
@@ -821,11 +948,13 @@ function TeachingLoad() {
           <div className="text-center py-16 text-gray-400 p-4">
             <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-40" />
             <p className="text-sm font-medium text-gray-700">No teaching load uploaded yet</p>
-            <p className="text-xs text-gray-400 mt-1">Upload your faculty load form or schedule template above to automatically scan and populate subjects.</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Upload your faculty load form above to automatically scan and populate your subjects.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[760px]">
+            <table className="w-full text-left min-w-[860px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="py-4 px-4 text-sm font-semibold text-gray-700">Subject Code</th>
@@ -840,80 +969,57 @@ function TeachingLoad() {
               <tbody className="divide-y divide-gray-100">
                 {subjects.map((sub, i) => {
                   const isEditing = editingIndex === i;
+                  const inputCls = 'w-full px-2 py-1 border border-gray-300 rounded text-xs';
 
                   return (
-                    <tr key={i} className="hover:bg-gray-50/80 transition-colors">
+                    <tr key={i} className="hover:bg-gray-50/80 transition-colors align-top">
                       <td className="py-3 px-4 font-medium text-gray-900">
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editForm.code}
+                          <input type="text" value={editForm.code}
                             onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
-                            className="w-24 px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
-                        ) : (
-                          sub.code
-                        )}
+                            className={inputCls} />
+                        ) : sub.code}
                       </td>
                       <td className="py-3 px-4 text-gray-700">
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editForm.name}
+                          <input type="text" value={editForm.name}
                             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
-                        ) : (
-                          sub.name
-                        )}
+                            className={inputCls} />
+                        ) : sub.name}
                       </td>
                       <td className="py-3 px-4 text-center text-gray-700">
                         {isEditing ? (
-                          <input
-                            type="number"
-                            value={editForm.units}
+                          <input type="number" value={editForm.units}
                             onChange={(e) => setEditForm({ ...editForm, units: Number(e.target.value) })}
-                            className="w-16 px-2 py-1 border border-gray-300 rounded text-xs text-center"
-                          />
-                        ) : (
-                          sub.units
-                        )}
+                            className="w-16 px-2 py-1 border border-gray-300 rounded text-xs text-center" />
+                        ) : sub.units}
                       </td>
                       <td className="py-3 px-4 text-gray-700 font-medium">
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editForm.courseAndYear}
+                          <input type="text" value={editForm.courseAndYear}
                             onChange={(e) => setEditForm({ ...editForm, courseAndYear: e.target.value })}
-                            className="w-28 px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
-                        ) : (
-                          sub.courseAndYear
-                        )}
+                            className={inputCls} />
+                        ) : sub.courseAndYear}
                       </td>
-                      <td className="py-3 px-4 text-gray-700">
+                      <td className="py-3 px-4 text-gray-700 text-sm">
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editForm.schedule}
+                          <textarea rows={4} value={editForm.schedule}
                             onChange={(e) => setEditForm({ ...editForm, schedule: e.target.value })}
-                            className="w-32 px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
+                            className={inputCls} />
                         ) : (
-                          sub.schedule
+                          <div className="space-y-0.5">
+                            {(sub.schedule || '').split(';').filter((p) => p.trim()).map((part, idx) => (
+                              <div key={idx}>{part.trim()}</div>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-4 text-gray-700">
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editForm.room}
+                          <input type="text" value={editForm.room}
                             onChange={(e) => setEditForm({ ...editForm, room: e.target.value })}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-xs"
-                          />
-                        ) : (
-                          sub.room
-                        )}
+                            className={inputCls} />
+                        ) : sub.room}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-2">
@@ -921,7 +1027,7 @@ function TeachingLoad() {
                             <button
                               onClick={() => handleSaveEdit(i)}
                               className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
-                              title="Save"
+                              title="Confirm"
                             >
                               <CheckCircle size={16} />
                             </button>
@@ -951,7 +1057,9 @@ function TeachingLoad() {
           </div>
         )}
       </div>
-      <UploadModal />
+
+      {renderUploadModal()}
+      {renderPreviewLightbox()}
     </>
   );
 }
