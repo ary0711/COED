@@ -3201,7 +3201,7 @@ export default function CalendarActivities() {
     </div>
   );
 }
-// ─── Academic Records ─────────────────────────────────────────────────────────
+// ─── Academic Records (Dean/Admin) ──────────────────────────────────────────
 
 interface TargetRoleOption {
   id: string;
@@ -3222,11 +3222,21 @@ const DOC_ROLE_LABELS: Record<string, string> = {
   alumni: 'Alumni',
 };
 
+interface DocumentCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
   document_type: string;
+  category_id?: string | null;
+  document_categories?: { id: string; name: string } | null;
   target_roles?: string[];
   file_name: string;
   file_type: string;
@@ -3237,14 +3247,8 @@ interface AcademicDocument {
   updated_at: string;
 }
 
-const DEFAULT_CATEGORIES: Record<string, string> = {
-  handbook: 'Handbook',
-  policy: 'Policy',
-  form: 'Form',
-  memorandum: 'Memorandum',
-};
-
 const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+const CATEGORIES_API_URL = 'http://localhost:5000/api/academic-records/categories';
 
 function getDocsToken() {
   return localStorage.getItem('token');
@@ -3276,18 +3280,25 @@ function getFileIcon(filename: string, className = 'w-5 h-5') {
 
 export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
+  const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Categories State (Dynamic)
-  const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('custom_doc_categories');
-    return saved ? { ...DEFAULT_CATEGORIES, ...JSON.parse(saved) } : DEFAULT_CATEGORIES;
-  });
+  // Categories Modal State
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategory, setEditingCategory] = useState<DocumentCategory | null>(null);
+  const [catForm, setCatForm] = useState({ name: '', description: '' });
 
-  const [typeFilter, setTypeFilter] = useState('all');
+  // Popup Modal Alert State (Full-Viewport Blur)
+  const [popupModal, setPopupModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'confirm';
+    onConfirm?: () => void;
+  }>({ open: false, title: '', message: '', type: 'success' });
+
+  const [categoryIdFilter, setCategoryIdFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
 
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -3295,7 +3306,7 @@ export function AcademicRecords() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    document_type: 'handbook',
+    category_id: '',
     target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
@@ -3307,7 +3318,6 @@ export function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Classroom-Style Preview Modal State (Works for Local & Remote Files)
   const [previewModal, setPreviewModal] = useState<{
     open: boolean;
     url: string | null;
@@ -3322,12 +3332,28 @@ export function AcademicRecords() {
     isLocalBlob: false,
   });
 
+  // Fetch Categories from Backend
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await fetch(CATEGORIES_API_URL, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data ?? []);
+      }
+    } catch (err) {
+      console.error('Failed to load categories', err);
+    }
+  }, []);
+
+  // Fetch Documents from Backend
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       const params = new URLSearchParams();
-      if (typeFilter !== 'all') params.set('document_type', typeFilter);
+      if (categoryIdFilter !== 'all') params.set('category_id', categoryIdFilter);
       params.set('status', statusFilter);
 
       const res = await fetch(`${DOCS_API_URL}?${params.toString()}`, {
@@ -3347,15 +3373,16 @@ export function AcademicRecords() {
     } finally {
       setLoading(false);
     }
-  }, [typeFilter, statusFilter]);
+  }, [categoryIdFilter, statusFilter]);
 
   useEffect(() => {
+    fetchCategories();
     fetchDocuments();
-  }, [fetchDocuments]);
+  }, [fetchCategories, fetchDocuments]);
 
-  // Handle ESC & lock scrolling when preview modal is open
+  // Handle ESC & lock scrolling when any modal is open
   useEffect(() => {
-    if (previewModal.open) {
+    if (previewModal.open || showCategoryModal || showUploadModal || deleteConfirm || popupModal.open) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -3364,6 +3391,10 @@ export function AcademicRecords() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closePreviewModal();
+        setShowCategoryModal(false);
+        setShowUploadModal(false);
+        setDeleteConfirm(null);
+        setPopupModal(prev => ({ ...prev, open: false }));
       }
     };
 
@@ -3372,7 +3403,7 @@ export function AcademicRecords() {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [previewModal.open]);
+  }, [previewModal.open, showCategoryModal, showUploadModal, deleteConfirm, popupModal.open]);
 
   const closePreviewModal = () => {
     if (previewModal.url && previewModal.isLocalBlob) {
@@ -3381,31 +3412,86 @@ export function AcademicRecords() {
     setPreviewModal({ open: false, url: null, name: '', size: undefined, isLocalBlob: false });
   };
 
-  // --- Category Management ---
-  const handleAddCategory = () => {
-    if (!newCategoryName.trim()) return;
-    const key = newCategoryName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const updated = { ...docCategories, [key]: newCategoryName.trim() };
-    setDocCategories(updated);
-    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
-    setNewCategoryName('');
+  // --- Category Management Handlers ---
+  const handleSaveCategory = async () => {
+    if (!catForm.name.trim()) {
+      setPopupModal({
+        open: true,
+        title: 'Validation Error',
+        message: 'Category name is required.',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      const url = editingCategory ? `${CATEGORIES_API_URL}/${editingCategory.id}` : CATEGORIES_API_URL;
+      const method = editingCategory ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getDocsToken()}`,
+        },
+        body: JSON.stringify(catForm),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to save category');
+      }
+
+      setPopupModal({
+        open: true,
+        title: editingCategory ? 'Category Updated' : 'Category Created',
+        message: `"${catForm.name}" was successfully ${editingCategory ? 'updated' : 'created'}.`,
+        type: 'success',
+      });
+
+      setCatForm({ name: '', description: '' });
+      setEditingCategory(null);
+      await fetchCategories();
+    } catch (err: any) {
+      setPopupModal({
+        open: true,
+        title: 'Operation Failed',
+        message: err.message || 'Unable to save category.',
+        type: 'error',
+      });
+    }
   };
 
-  const handleDeleteCategory = (key: string) => {
-    if (!confirm(`Are you sure you want to delete the category "${docCategories[key]}"? Documents under this category will still exist.`)) return;
-    const updated = { ...docCategories };
-    delete updated[key];
-    setDocCategories(updated);
-    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
-    if (typeFilter === key) setTypeFilter('all');
-    if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
+  const toggleCategoryStatus = async (cat: DocumentCategory) => {
+    const nextStatus = !cat.is_active;
+    try {
+      const res = await fetch(`${CATEGORIES_API_URL}/${cat.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getDocsToken()}`,
+        },
+        body: JSON.stringify({ is_active: nextStatus }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update category status.');
+      await fetchCategories();
+    } catch (err: any) {
+      setPopupModal({
+        open: true,
+        title: 'Action Failed',
+        message: err.message,
+        type: 'error',
+      });
+    }
   };
 
   const resetForm = () => {
+    const activeCategories = categories.filter((c) => c.is_active);
     setForm({
       title: '',
       description: '',
-      document_type: Object.keys(docCategories)[0] || 'handbook',
+      category_id: activeCategories.length > 0 ? activeCategories[0].id : '',
       target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
@@ -3423,7 +3509,7 @@ export function AcademicRecords() {
     setForm({
       title: doc.title,
       description: doc.description ?? '',
-      document_type: doc.document_type,
+      category_id: doc.category_id || '',
       target_roles: doc.target_roles?.length
         ? doc.target_roles
         : ['student', 'faculty', 'department_chair', 'alumni'],
@@ -3455,7 +3541,7 @@ export function AcademicRecords() {
   const handleFileSelect = (selectedFile: File | undefined | null) => {
     if (!selectedFile) return;
 
-    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv'];
+    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv', '.xls', '.xlsx'];
     const fileName = selectedFile.name.toLowerCase();
     const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
@@ -3463,7 +3549,7 @@ export function AcademicRecords() {
       setFile(selectedFile);
       setFormError('');
     } else {
-      setFormError('Only PDF, Word documents (.doc, .docx), images, and text/csv files are supported.');
+      setFormError('Only PDF, Word, Excel, images, and text/csv files are supported.');
     }
   };
 
@@ -3483,7 +3569,6 @@ export function AcademicRecords() {
     }
   };
 
-  // --- Remote Document Preview (From API) ---
   const handlePreview = async (doc: AcademicDocument) => {
     setDownloadingId(doc.id);
     setLoadError('');
@@ -3522,7 +3607,6 @@ export function AcademicRecords() {
     }
   };
 
-  // --- Local Document Preview (Before Uploading) ---
   const handleLocalPreview = () => {
     if (file) {
       const localUrl = URL.createObjectURL(file);
@@ -3544,6 +3628,10 @@ export function AcademicRecords() {
       setFormError('Title is required.');
       return;
     }
+    if (!form.category_id) {
+      setFormError('Please select a category.');
+      return;
+    }
     if (form.target_roles.length === 0) {
       setFormError('Please select at least one target audience role.');
       return;
@@ -3558,7 +3646,7 @@ export function AcademicRecords() {
       const fd = new FormData();
       fd.append('title', form.title.trim());
       fd.append('description', form.description.trim());
-      fd.append('document_type', form.document_type);
+      fd.append('category_id', form.category_id);
       fd.append('target_roles', JSON.stringify(form.target_roles));
       if (file) fd.append('file', file);
 
@@ -3580,6 +3668,12 @@ export function AcademicRecords() {
       setShowUploadModal(false);
       resetForm();
       await fetchDocuments();
+      setPopupModal({
+        open: true,
+        title: 'Upload Successful',
+        message: 'The document has been saved successfully.',
+        type: 'success',
+      });
     } catch {
       setFormError('Could not reach the server. Please try again.');
     } finally {
@@ -3677,17 +3771,23 @@ export function AcademicRecords() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4 relative z-10">
         <div className="flex flex-1 gap-2">
           <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            value={categoryIdFilter}
+            onChange={(e) => setCategoryIdFilter(e.target.value)}
             className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="all">All Categories</option>
-            {Object.entries(docCategories).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name} {!cat.is_active ? '(Inactive)' : ''}
+              </option>
             ))}
           </select>
           <button
-            onClick={() => setShowCategoryModal(true)}
+            onClick={() => {
+              setEditingCategory(null);
+              setCatForm({ name: '', description: '' });
+              setShowCategoryModal(true);
+            }}
             className="px-3 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
             title="Manage Categories"
           >
@@ -3729,6 +3829,7 @@ export function AcademicRecords() {
             {documents.map((doc) => {
               const targetRoles = doc.target_roles || [];
               const isAllAudience = targetRoles.length === DOC_AUDIENCE_ROLES.length;
+              const categoryName = doc.document_categories?.name || doc.document_type || 'General';
 
               return (
                 <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3 border border-gray-100 hover:border-blue-100 transition-colors">
@@ -3738,7 +3839,7 @@ export function AcademicRecords() {
                       <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
                       <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                          {docCategories[doc.document_type] || doc.document_type}
+                          {categoryName}
                         </span>
                         {doc.status === 'archived' && (
                           <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>
@@ -3768,7 +3869,6 @@ export function AcademicRecords() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {/* View Button */}
                     <button
                       onClick={() => handlePreview(doc)}
                       disabled={downloadingId === doc.id}
@@ -3781,7 +3881,6 @@ export function AcademicRecords() {
                         <Eye className="w-5 h-5" />
                       )}
                     </button>
-                    {/* Download Button */}
                     <button
                       onClick={() => handleDownload(doc)}
                       className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
@@ -3810,63 +3909,103 @@ export function AcademicRecords() {
         )}
       </div>
 
-      {/* --- CATEGORY MANAGEMENT MODAL --- */}
+      {/* --- CATEGORY MANAGEMENT MODAL (Full-Viewport Blur) --- */}
       {showCategoryModal && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">Manage Categories</h2>
-              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5 text-gray-500" />
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">Manage Document Categories</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
-              {Object.entries(docCategories).map(([key, label]) => (
-                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
-                  <span className="text-sm font-medium text-gray-700">{label}</span>
-                  <button
-                    onClick={() => handleDeleteCategory(key)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                    title="Delete Category"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-gray-100 pt-4">
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
-              <div className="flex gap-2">
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="p-4 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
+                <h4 className="text-xs font-bold text-gray-700 uppercase">{editingCategory ? 'Edit Category' : 'Add New Category'}</h4>
                 <input
                   type="text"
-                  value={newCategoryName}
-                  onChange={e => setNewCategoryName(e.target.value)}
-                  placeholder="e.g. Certificates"
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={catForm.name}
+                  onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
+                  placeholder="Category Name e.g. Faculty Guidelines"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 />
-                <button
-                  onClick={handleAddCategory}
-                  disabled={!newCategoryName.trim()}
-                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
-                >
-                  Add
-                </button>
+                <textarea
+                  value={catForm.description}
+                  onChange={(e) => setCatForm({ ...catForm, description: e.target.value })}
+                  placeholder="Description (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white"
+                />
+                <div className="flex gap-2">
+                  {editingCategory && (
+                    <button
+                      onClick={() => { setEditingCategory(null); setCatForm({ name: '', description: '' }); }}
+                      className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSaveCategory}
+                    className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF]"
+                  >
+                    {editingCategory ? 'Update Category' : 'Create Category'}
+                  </button>
+                </div>
               </div>
+
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {categories.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-2xs">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-800 text-xs">{cat.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${cat.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                          {cat.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      {cat.description && <p className="text-[11px] text-gray-400 truncate mt-0.5">{cat.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => { setEditingCategory(cat); setCatForm({ name: cat.name, description: cat.description || '' }); }}
+                        className="text-xs text-blue-600 font-semibold hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => toggleCategoryStatus(cat)}
+                        className="text-xs text-gray-500 font-medium hover:underline"
+                      >
+                        {cat.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="px-5 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-50 shadow-2xs"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- UPLOAD / EDIT MODAL --- */}
+      {/* --- UPLOAD / EDIT MODAL (Full-Viewport Blur) --- */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
-              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5 text-gray-500" />
+              <h2 className="text-base font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
+              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -3891,12 +4030,15 @@ export function AcademicRecords() {
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                 <select
-                  value={form.document_type}
-                  onChange={(e) => setForm({ ...form, document_type: e.target.value })}
+                  value={form.category_id}
+                  onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {Object.entries(docCategories).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
+                  <option value="">-- Select Category --</option>
+                  {categories.filter(c => c.is_active || c.id === form.category_id).map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} {!cat.is_active ? '(Inactive)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -3919,14 +4061,13 @@ export function AcademicRecords() {
                     return (
                       <label
                         key={role.id}
-                        className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-full cursor-pointer border border-gray-200 hover:border-gray-300 shadow-sm transition-all"
+                        className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-full cursor-pointer border border-gray-200 hover:border-gray-300 shadow-2xs transition-all"
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleRole(role.id)}
                           className="w-4 h-4 accent-blue-600 cursor-pointer"
-                          style={{ borderRadius: '50%' }}
                         />
                         <span className={`text-xs font-medium ${isChecked ? 'text-gray-900' : 'text-gray-600'}`}>
                           {role.label}
@@ -3958,22 +4099,20 @@ export function AcademicRecords() {
                   onDrop={handleDrop}
                   onClick={() => document.getElementById('hidden-file-input')?.click()}
                   className={`w-full py-4 px-3 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                    isDragging
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                    isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'
                   }`}
                 >
                   <input
                     id="hidden-file-input"
                     type="file"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv,.xls,.xlsx"
                     className="hidden"
                     onChange={(e) => handleFileSelect(e.target.files?.[0])}
                   />
 
                   {file ? (
                     <div
-                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-2xs hover:border-blue-400 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleLocalPreview();
@@ -4010,7 +4149,7 @@ export function AcademicRecords() {
                         Drag & Drop or <span className="text-blue-600 font-semibold">Browse</span>
                       </p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        .PDF, .DOC, .DOCX, .PNG, .JPG up to 15MB
+                        .PDF, .DOC, .DOCX, .XLS, .PNG, .JPG up to 20MB
                       </p>
                     </>
                   )}
@@ -4052,9 +4191,9 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- DELETE CONFIRMATION MODAL --- */}
+      {/* --- DELETE CONFIRMATION MODAL (Full-Viewport Blur) --- */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-7 h-7 text-red-600" />
@@ -4082,7 +4221,37 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- GOOGLE CLASSROOM-STYLE PREVIEW MODAL (Supporting All Formats) --- */}
+      {/* --- POPUP NOTIFICATION MODAL (Full-Viewport Blur) --- */}
+      {popupModal.open && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900">{popupModal.title}</h3>
+              <button onClick={() => setPopupModal(prev => ({ ...prev, open: false }))} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 text-sm text-gray-600">
+              <p>{popupModal.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  if (popupModal.onConfirm) popupModal.onConfirm();
+                  setPopupModal(prev => ({ ...prev, open: false }));
+                }}
+                className={`px-5 py-2 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs ${
+                  popupModal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#1E3A8A] hover:bg-[#1E40AF]'
+                }`}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- PREVIEW MODAL --- */}
       {previewModal.open && previewModal.url && (
         <AcademicPreviewModal
           url={previewModal.url}
@@ -4095,7 +4264,7 @@ export function AcademicRecords() {
   );
 }
 
-// ─── Document Preview Modal Component (All Formats, Matching Classroom Design) ─
+// ─── Document Preview Modal Component ─────────────────────────────────────────
 
 function AcademicPreviewModal({
   url,
@@ -4136,7 +4305,7 @@ function AcademicPreviewModal({
           docxContainerRef.current.innerHTML = '';
           return renderAsync(blob, docxContainerRef.current, undefined, {
             className: 'docx',
-            inWrapper: true, // Enables full page layout, document margins & styling
+            inWrapper: true,
             ignoreWidth: false,
             ignoreHeight: false,
           });
@@ -4182,7 +4351,6 @@ function AcademicPreviewModal({
       className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in select-none"
       onClick={onClose}
     >
-      {/* Top Bar */}
       <div
         className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
         onClick={(e) => e.stopPropagation()}
@@ -4221,7 +4389,6 @@ function AcademicPreviewModal({
         </div>
       </div>
 
-      {/* Document Canvas */}
       <div
         className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
         onClick={onClose}
@@ -4283,7 +4450,6 @@ function AcademicPreviewModal({
               </pre>
             </div>
           ) : isDocx ? (
-            /* Dedicated scroll container with neutral canvas background */
             <div className="w-full h-full overflow-y-auto bg-gray-100 p-4 sm:p-8 flex justify-center text-left select-text">
               <div ref={docxContainerRef} className="w-full max-w-3xl min-h-full" />
             </div>
@@ -4310,7 +4476,6 @@ function AcademicPreviewModal({
     document.body
   );
 }
-
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {

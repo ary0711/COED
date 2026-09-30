@@ -15,7 +15,6 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
-// Gi-luagan ang allowed types kay naa nay custom categories ang frontend
 const ALLOWED_TARGET_ROLES = ['student', 'faculty', 'department_chair', 'staff', 'alumni'];
 
 const upload = multer({
@@ -60,15 +59,137 @@ function parseTargetRoles(input) {
   return sanitized;
 }
 
+// ── GET /api/academic-records/categories — list dynamic categories ──
+router.get('/categories', authenticate, async (req, res) => {
+  const { status } = req.query;
+  const userRole = req.user.role;
+  const isPrivileged = userRole === 'dean' || userRole === 'admin';
+
+  let query = supabase
+    .from('document_categories')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (!isPrivileged) {
+    query = query.eq('is_active', true);
+  } else if (status === 'active') {
+    query = query.eq('is_active', true);
+  } else if (status === 'inactive') {
+    query = query.eq('is_active', false);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+  return res.json(data ?? []);
+});
+
+// ── POST /api/academic-records/categories — create category (Dean/Admin only) ──
+router.post('/categories', authenticate, requireDeanOrAdmin, async (req, res) => {
+  const { name, description } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Category name is required.' });
+  }
+
+  const { data, error } = await supabase
+    .from('document_categories')
+    .insert({
+      name: name.trim(),
+      description: description?.trim() || null,
+      is_active: true,
+      created_by: req.user.userId,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: 'Failed to create category: ' + error.message });
+  }
+
+  return res.status(201).json(data);
+});
+
+// ── PUT /api/academic-records/categories/:id — update category (Dean/Admin only) ──
+router.put('/categories/:id', authenticate, requireDeanOrAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Category name cannot be empty.' });
+  }
+
+  const { data, error } = await supabase
+    .from('document_categories')
+    .update({
+      name: name.trim(),
+      description: description?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: 'Failed to update category: ' + error.message });
+  }
+
+  return res.json(data);
+});
+
+// ── PATCH /api/academic-records/categories/:id/status — toggle active/inactive status (Dean/Admin only) ──
+router.patch('/categories/:id/status', authenticate, requireDeanOrAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+
+  if (typeof is_active !== 'boolean') {
+    return res.status(400).json({ error: 'is_active boolean status is required.' });
+  }
+
+  const { data, error } = await supabase
+    .from('document_categories')
+    .update({
+      is_active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: 'Failed to update category status: ' + error.message });
+  }
+
+  return res.json(data);
+});
+
 // ── POST /api/academic-records/documents — upload (Dean/Admin only) ──
 router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {
-  const { title, description, document_type, target_roles } = req.body;
+  // Accepts either category_id (new dynamic system) or document_type (fallback)
+  const { title, description, category_id, document_type, target_roles } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Title is required.' });
   }
-  if (!document_type) {
-    return res.status(400).json({ error: 'document_type is required.' });
+  
+  let resolvedCategoryId = category_id;
+  let resolvedDocType = document_type;
+
+  // If category_id is provided, verify it exists and is active
+  if (resolvedCategoryId) {
+    const { data: catData, error: catError } = await supabase
+      .from('document_categories')
+      .select('id, name, is_active')
+      .eq('id', resolvedCategoryId)
+      .maybeSingle();
+
+    if (catError || !catData) {
+      return res.status(400).json({ error: 'Selected category does not exist.' });
+    }
+    resolvedDocType = catData.name;
+  } else if (!resolvedDocType) {
+    return res.status(400).json({ error: 'Category is required.' });
   }
 
   // Parse and validate target audience roles
@@ -94,7 +215,7 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
   }
 
   const ext = req.file.originalname.split('.').pop();
-  const safeDocType = document_type.replace(/[^a-zA-Z0-9]/g, '_');
+  const safeDocType = (resolvedDocType || 'general').replace(/[^a-zA-Z0-9]/g, '_');
   const storagePath = `${safeDocType}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
@@ -105,21 +226,27 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
     return res.status(500).json({ error: 'Failed to upload file: ' + uploadError.message });
   }
 
+  const insertPayload = {
+    title: title.trim(),
+    description: description?.trim() || null,
+    document_type: resolvedDocType,
+    target_roles: parsedRoles,
+    file_name: req.file.originalname,
+    file_path: storagePath,
+    file_type: req.file.mimetype,
+    file_size: req.file.size,
+    uploaded_by: req.user.userId,
+    status: 'active',
+  };
+
+  if (resolvedCategoryId) {
+    insertPayload.category_id = resolvedCategoryId;
+  }
+
   const { data, error: insertError } = await supabase
     .from('academic_documents')
-    .insert({
-      title: title.trim(),
-      description: description?.trim() || null,
-      document_type,
-      target_roles: parsedRoles,
-      file_name: req.file.originalname,
-      file_path: storagePath,
-      file_type: req.file.mimetype,
-      file_size: req.file.size,
-      uploaded_by: req.user.userId,
-      status: 'active',
-    })
-    .select()
+    .insert(insertPayload)
+    .select('*, document_categories(id, name, description, is_active)')
     .single();
 
   if (insertError) {
@@ -132,16 +259,18 @@ router.post('/', authenticate, requireDeanOrAdmin, upload.single('file'), async 
 
 // ── GET /api/academic-records/documents — list documents ──
 router.get('/', authenticate, async (req, res) => {
-  const { document_type, status } = req.query;
+  const { document_type, category_id, status } = req.query;
   const userRole = req.user.role;
   const isPrivileged = userRole === 'dean' || userRole === 'admin';
 
   let query = supabase
     .from('academic_documents')
-    .select('id, title, description, document_type, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
+    .select('id, title, description, document_type, category_id, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at, document_categories(id, name, description, is_active)')
     .order('created_at', { ascending: false });
 
-  if (document_type) {
+  if (category_id) {
+    query = query.eq('category_id', category_id);
+  } else if (document_type) {
     query = query.eq('document_type', document_type);
   }
 
@@ -170,7 +299,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
   const { data, error } = await supabase
     .from('academic_documents')
-    .select('id, title, description, document_type, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at')
+    .select('id, title, description, document_type, category_id, target_roles, file_name, file_type, file_size, uploaded_by, status, created_at, updated_at, document_categories(id, name, description, is_active)')
     .eq('id', id)
     .maybeSingle();
 
@@ -268,7 +397,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
 // ── PUT /api/academic-records/documents/:id — update metadata and/or replace file (Dean/Admin only) ──
 router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), async (req, res) => {
   const { id } = req.params;
-  const { title, description, document_type, status, target_roles } = req.body;
+  const { title, description, category_id, document_type, status, target_roles } = req.body;
 
   const { data: existing, error: fetchError } = await supabase
     .from('academic_documents')
@@ -289,9 +418,23 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
     patch.title = title.trim();
   }
   if (description !== undefined) patch.description = description?.trim() || null;
-  if (document_type !== undefined) {
+  
+  if (category_id !== undefined) {
+    const { data: catData, error: catError } = await supabase
+      .from('document_categories')
+      .select('id, name')
+      .eq('id', category_id)
+      .maybeSingle();
+
+    if (catError || !catData) {
+      return res.status(400).json({ error: 'Selected category does not exist.' });
+    }
+    patch.category_id = category_id;
+    patch.document_type = catData.name;
+  } else if (document_type !== undefined) {
     patch.document_type = document_type;
   }
+
   if (status !== undefined) {
     if (!['active', 'archived'].includes(status)) {
       return res.status(400).json({ error: 'status must be "active" or "archived".' });
@@ -322,7 +465,7 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
     }
 
     const ext = req.file.originalname.split('.').pop();
-    const safeDocType = (document_type || 'general').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeDocType = (patch.document_type || 'general').replace(/[^a-zA-Z0-9]/g, '_');
     const newPath = `${safeDocType}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
@@ -344,7 +487,7 @@ router.put('/:id', authenticate, requireDeanOrAdmin, upload.single('file'), asyn
     .from('academic_documents')
     .update(patch)
     .eq('id', id)
-    .select()
+    .select('*, document_categories(id, name, description, is_active)')
     .single();
 
   if (error) {

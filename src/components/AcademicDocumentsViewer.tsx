@@ -1,13 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, Download, Search, Eye, X, Loader2 } from 'lucide-react';
+import { FileText, Download, Search, Eye, X, Loader2, AlertTriangle, FileCode, FileImage, File as FileGenericIcon } from 'lucide-react';
+import { renderAsync } from 'docx-preview';
+
+interface DocumentCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+}
 
 interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
-  document_type: 'handbook' | 'policy' | 'form' | 'memorandum';
+  document_type: string;
+  category_id?: string | null;
+  document_categories?: { id: string; name: string } | null;
   file_name: string;
+  file_type: string;
   file_size: number;
   created_at: string;
 }
@@ -22,14 +33,8 @@ interface AcademicDocumentsViewerProps {
   onOpenPreview?: (preview: ClassroomPreview) => void;
 }
 
-const DOC_TYPE_LABELS: Record<string, string> = {
-  handbook: 'Handbook',
-  policy: 'Policy',
-  form: 'Form',
-  memorandum: 'Memorandum',
-};
-
 const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+const CATEGORIES_API_URL = 'http://localhost:5000/api/academic-records/categories';
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -37,24 +42,61 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getFileExtension(filename: string): string {
+  return (filename.split('.').pop() || '').toLowerCase();
+}
+
+function getFileIcon(filename: string, className = 'w-5 h-5') {
+  const ext = getFileExtension(filename);
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className={className} />;
+  }
+  if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+  if (['pdf', 'docx', 'doc'].includes(ext)) {
+    return <FileText className={className} />;
+  }
+  return <FileGenericIcon className={className} />;
+}
+
 export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsViewerProps) {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
+  const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  
+  const [categoryIdFilter, setCategoryIdFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // In-component modal state (used if parent doesn't handle preview)
   const [internalPreview, setInternalPreview] = useState<ClassroomPreview | null>(null);
 
-  const fetchDocuments = async () => {
+  // Fetch active categories for the filter dropdown
+  const fetchCategories = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${CATEGORIES_API_URL}?status=active`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data ?? []);
+      }
+    } catch (err) {
+      console.error('Failed to load categories', err);
+    }
+  }, []);
+
+  // Fetch documents filtered by category ID
+  const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       const params = new URLSearchParams();
-      if (typeFilter !== 'all') params.set('document_type', typeFilter);
+      if (categoryIdFilter !== 'all') params.set('category_id', categoryIdFilter);
+      
       const token = localStorage.getItem('token');
       const res = await fetch(`${DOCS_API_URL}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -73,14 +115,17 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryIdFilter]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   useEffect(() => {
     fetchDocuments();
-    /* eslint-disable-next-line */
-  }, [typeFilter]);
+  }, [fetchDocuments]);
 
-  // Lock scrolling & handle ESC key when internal modal is open
+  // Handle ESC & lock scrolling when internal modal is open
   useEffect(() => {
     if (internalPreview) {
       document.body.style.overflow = 'hidden';
@@ -118,7 +163,6 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
       const isPdf = file_type === 'application/pdf';
 
       let renderUrl = url;
-      // Convert Office documents to Google Docs embedded viewer inside iframe
       if (!isPdf && !isImg) {
         renderUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
       }
@@ -153,11 +197,11 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
         setLoadError(err.error || 'Failed to generate download link.');
         return;
       }
-      const { url, file_name } = await res.json();
+      const { url } = await res.json();
 
       const link = document.createElement('a');
       link.href = url;
-      link.download = file_name || doc.title;
+      link.download = doc.file_name || doc.title;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -191,14 +235,14 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
           />
         </div>
         <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          value={categoryIdFilter}
+          onChange={(e) => setCategoryIdFilter(e.target.value)}
           className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="all">All Categories</option>
-          {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.name}
             </option>
           ))}
         </select>
@@ -226,6 +270,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
             {filtered.map((doc) => {
               const isPreviewing = previewingId === doc.id;
               const isDownloading = downloadingId === doc.id;
+              const categoryName = doc.document_categories?.name || doc.document_type || 'General';
 
               return (
                 <div
@@ -243,7 +288,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
                       )}
                       <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                          {DOC_TYPE_LABELS[doc.document_type]}
+                          {categoryName}
                         </span>
                         <span>{formatDate(doc.created_at)}</span>
                         <span>· {formatFileSize(doc.file_size)}</span>
@@ -293,7 +338,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
         )}
       </div>
 
-      {/* Google Classroom Dark Modal Overlay */}
+      {/* Modal Overlay */}
       {internalPreview &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -301,7 +346,6 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
             className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm"
             onClick={() => setInternalPreview(null)}
           >
-            {/* Top Bar */}
             <div
               className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md"
               onClick={(e) => e.stopPropagation()}
@@ -325,7 +369,6 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
               </div>
             </div>
 
-            {/* Document Canvas */}
             <div
               className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
               onClick={() => setInternalPreview(null)}
