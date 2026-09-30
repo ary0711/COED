@@ -4476,6 +4476,7 @@ function AcademicPreviewModal({
     document.body
   );
 }
+
 // ─── Research & Achievements (Dean/Admin) ────────────────────────────────────
 
 interface FileAttachment {
@@ -4540,6 +4541,17 @@ export function ResearchAchievements() {
   // In-Page Document Preview State
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
+  // Lock body scroll whenever any modal is active
+  useEffect(() => {
+    if (viewingItem || rejectFor || previewFile) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [viewingItem, rejectFor, previewFile]);
+
   const fetchSubmissions = async () => {
     setLoading(true);
     setLoadError('');
@@ -4553,8 +4565,6 @@ export function ResearchAchievements() {
         return;
       }
       const data = await res.json();
-
-    
       setSubmissions(data ?? []);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
@@ -4582,12 +4592,12 @@ export function ResearchAchievements() {
         return;
       }
 
-            // Notify the submitter about the decision
+      // Notify the submitter about the decision
       const recipientId = (submission as any).submitted_by ?? (submission as any).user_id;
       if (recipientId) {
         try {
           const label = typeLabel(submission.type);
-          await sendBackendNotification({
+          await (window as any).sendBackendNotification?.({
             title: status === 'approved'
               ? `${label} Approved`
               : `${label} Needs Revision`,
@@ -4862,7 +4872,7 @@ export function ResearchAchievements() {
                         <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
                       )}
 
-                      {/* Attachments (In-Page Modal Previews) */}
+                      {/* Attachments */}
                       <div className="flex flex-wrap items-center gap-2 pt-2">
                         {item.publication_link && (
                           <a
@@ -4897,7 +4907,7 @@ export function ResearchAchievements() {
                       )}
                     </div>
 
-                    {/* Actions & Status Column (View-Only; No Edit action) */}
+                    {/* Actions & Status Column */}
                     <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
                       <span
                         className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
@@ -4946,11 +4956,16 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {/* Review & Inspect Modal (View-Only; No editing allowed) */}
-      {viewingItem && (
-  <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-    <div className="fixed inset-0 bg-black/60" onClick={() => setViewingItem(null)} />
-    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-[10000]">
+      {/* Review & Inspect Modal — Rendered into document.body with full-page backdrop blur */}
+      {viewingItem && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          {/* Full viewport blur overlay covering navbar, sidebar, content, and footer */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            onClick={() => setViewingItem(null)}
+          />
+
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-10 border border-gray-100">
             <button
               onClick={() => setViewingItem(null)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
@@ -5084,6 +5099,7 @@ export function ResearchAchievements() {
                     {getAllAttachments(viewingItem).map((file, idx) => (
                       <button
                         key={idx}
+                        type="button"
                         onClick={() => handleViewFile(file)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
                       >
@@ -5125,14 +5141,20 @@ export function ResearchAchievements() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Reject Modal */}
-      {rejectFor && (
-  <div className="fixed top-0 left-0 right-0 bottom-0 z-[10001] flex items-center justify-center p-4">
-    <div className="fixed inset-0 bg-black/60" onClick={() => setRejectFor(null)} />
-    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100 relative z-[10002]">
+      {/* Reject Modal — Rendered into document.body with full-page backdrop blur */}
+      {rejectFor && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          {/* Full viewport blur overlay covering navbar, sidebar, content, and footer */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            onClick={() => setRejectFor(null)}
+          />
+
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-100 relative z-10">
             <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
             <p className="text-xs text-gray-500 mb-4">
               Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
@@ -5161,7 +5183,8 @@ export function ResearchAchievements() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* In-Page Document Preview Modal */}
@@ -5219,9 +5242,17 @@ function DocxPreviewModal({
     }
   }, [file.url, isDocx]);
 
-  return (
-    <div className="fixed inset-0 z-[10005] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200">
+      {/* Full viewport blur overlay covering navbar, sidebar, content, and footer */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+        onClick={onClose}
+      />
+
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100 relative z-10">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
           <div className="flex items-center gap-2 min-w-0 pr-2">
             <FileText className="w-4 h-4 text-blue-700 shrink-0" />
@@ -5324,10 +5355,10 @@ function DocxPreviewModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
-
 // ─── Alumni Tracer (COLLEGE DEAN DASHBOARD — QPRO PRIVACY-COMPLIANT) ─────────
 
 const TRACER_API_BASE = 'http://localhost:5000/api/tracer-survey';
