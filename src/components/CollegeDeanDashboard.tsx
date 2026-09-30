@@ -1890,7 +1890,14 @@ const MONTH_NAMES = [
 
 function colorForCalendarEvent(ev: CalendarEvent): string {
   if (ev.color) return ev.color;
-  const t = ev.event_type?.toLowerCase() || '';
+  if (!ev.event_type) return DEFAULT_EVENT_COLOR;
+  if (ev.event_type.includes('::')) {
+    const parts = ev.event_type.split('::');
+    if (parts[1] && parts[1].startsWith('#')) {
+      return parts[1];
+    }
+  }
+  const t = ev.event_type.toLowerCase() || '';
   return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
 }
 
@@ -1933,15 +1940,6 @@ function sortEventsChronologically(a: CalendarEvent, b: CalendarEvent): number {
   return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
-function formatTimeFromDate(isoLike: string): string | null {
-  if (!isoLike || !isoLike.includes('T')) return null;
-  const timePart = isoLike.split('T')[1];
-  if (!timePart || timePart.startsWith('00:00:00')) return null;
-  const d = new Date(isoLike);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
 export default function CalendarActivities() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -1961,7 +1959,10 @@ export default function CalendarActivities() {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  // Custom modal state for delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDeleteConfirmId, setShowDeleteConfirmId] = useState<string | null>(null);
 
   const emptyForm = {
     title: '',
@@ -2177,7 +2178,6 @@ export default function CalendarActivities() {
       return;
     }
 
-    // Prevent selecting a past date upon creation/edit
     if (form.date < todayStr) {
       setFormError('You cannot schedule an event on a past date.');
       return;
@@ -2230,7 +2230,6 @@ export default function CalendarActivities() {
         return;
       }
 
-            // Notify the audience only for NEW events (backend respects mute settings)
       if (!isEditing) {
         try {
           const when = new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', {
@@ -2261,8 +2260,7 @@ export default function CalendarActivities() {
     }
   };
 
-  const deleteEvent = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this event?')) return;
+  const confirmDeleteEvent = async (id: string) => {
     setDeletingId(id);
     try {
       const res = await fetch(`${CALENDAR_API_URL}/${id}`, {
@@ -2278,6 +2276,7 @@ export default function CalendarActivities() {
       if (inspectingEvent?.id === id) {
         setInspectingEvent(null);
       }
+      setShowDeleteConfirmId(null);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -2570,12 +2569,13 @@ export default function CalendarActivities() {
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
                               const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                              const evColor = colorForCalendarEvent(ev);
                               return (
                                 <div
                                   key={ev.id}
                                   onClick={() => setInspectingEvent(ev)}
                                   className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                  style={{ borderLeftColor: colorForCalendarEvent(ev) }}
+                                  style={{ borderLeftColor: evColor }}
                                 >
                                   <div className="text-xs font-semibold text-gray-900 leading-snug">
                                     {ev.title}
@@ -2586,8 +2586,11 @@ export default function CalendarActivities() {
                                       {timeRangeStr}
                                     </span>
                                     {ev.event_type && (
-                                      <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
-                                        <Tag className="w-2.5 h-2.5 text-gray-400" />
+                                      <span
+                                        className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                        style={{ backgroundColor: evColor }}
+                                      >
+                                        <Tag className="w-2.5 h-2.5 text-white/80" />
                                         {ev.event_type}
                                       </span>
                                     )}
@@ -2634,12 +2637,14 @@ export default function CalendarActivities() {
                   const evDate = dateOnlyStr(ev.event_date);
                   const isDueToday = evDate === todayStr;
                   const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                  const evColor = colorForCalendarEvent(ev);
 
                   return (
                     <div
                       key={ev.id}
                       onClick={() => setInspectingEvent(ev)}
                       className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                      style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
@@ -2663,7 +2668,7 @@ export default function CalendarActivities() {
                         </span>
                         <span
                           className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                          style={{ backgroundColor: evColor }}
                         />
                         <span className="truncate">{departmentLabel(ev)}</span>
                       </div>
@@ -2802,11 +2807,13 @@ export default function CalendarActivities() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupedArchiveEvents[groupMonth].map((ev) => {
                       const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                      const evColor = colorForCalendarEvent(ev);
                       return (
                         <div
                           key={ev.id}
                           onClick={() => setInspectingEvent(ev)}
                           className="flex flex-col justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 bg-gray-50/40 hover:bg-white transition-all cursor-pointer group shadow-2xs space-y-3"
+                          style={{ borderLeftWidth: 4, borderLeftColor: evColor }}
                         >
                           <div className="space-y-1.5">
                             <div className="flex items-start justify-between gap-2">
@@ -2814,7 +2821,10 @@ export default function CalendarActivities() {
                                 {ev.title}
                               </h4>
                               {ev.event_type && (
-                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600 flex-shrink-0">
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white flex-shrink-0"
+                                  style={{ backgroundColor: evColor }}
+                                >
                                   {ev.event_type}
                                 </span>
                               )}
@@ -2875,15 +2885,15 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Event Details Modal ── */}
-      {inspectingEvent && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
+      {/* ── Event Details Modal (Portal with Full-Screen Blur) ── */}
+      {inspectingEvent && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0" onClick={() => setInspectingEvent(null)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <span
-                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
+                  className="inline-block px-2.5 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1 shadow-2xs"
                   style={{ backgroundColor: colorForCalendarEvent(inspectingEvent) }}
                 >
                   {inspectingEvent.event_type || 'Activity'}
@@ -2956,8 +2966,9 @@ export default function CalendarActivities() {
                   <Pencil className="w-3.5 h-3.5" />
                   <span>Edit</span>
                 </button>
+                {/* TRASH BUTTON OPENS THE CUSTOM CONFIRMATION MODAL - NO NATIVE ALERTS HERE */}
                 <button
-                  onClick={() => deleteEvent(inspectingEvent.id)}
+                  onClick={() => setShowDeleteConfirmId(inspectingEvent.id)}
                   disabled={deletingId === inspectingEvent.id}
                   className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium flex items-center gap-1.5 disabled:opacity-40"
                 >
@@ -2967,14 +2978,50 @@ export default function CalendarActivities() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Unified Add / Edit Event Modal ── */}
-      {showModal && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+      {/* ── Custom Delete Confirmation Modal (Portal with Full-Screen Blur) ── */}
+      {showDeleteConfirmId && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 text-center">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-gray-900">Delete Event</h3>
+              <p className="text-xs text-gray-500">
+                Are you sure you want to delete this event? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteConfirmId(null)}
+                disabled={deletingId === showDeleteConfirmId}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-xs hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteEvent(showDeleteConfirmId)}
+                disabled={deletingId === showDeleteConfirmId}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingId === showDeleteConfirmId && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{deletingId === showDeleteConfirmId ? 'Deleting...' : 'Confirm Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Unified Add / Edit Event Modal (Portal with Full-Screen Blur) ── */}
+      {showModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            className="fixed inset-0"
             onClick={() => {
               resetForm();
               setShowModal(false);
@@ -3018,7 +3065,7 @@ export default function CalendarActivities() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
                   type="date"
-                  min={todayStr} 
+                  min={todayStr}
                   value={form.date}
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3183,7 +3230,8 @@ export default function CalendarActivities() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`
@@ -3201,7 +3249,8 @@ export default function CalendarActivities() {
     </div>
   );
 }
-// ─── Academic Records ─────────────────────────────────────────────────────────
+
+// ─── Academic Records (Dean/Admin) ──────────────────────────────────────────
 
 interface TargetRoleOption {
   id: string;
@@ -3222,11 +3271,21 @@ const DOC_ROLE_LABELS: Record<string, string> = {
   alumni: 'Alumni',
 };
 
+interface DocumentCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 interface AcademicDocument {
   id: string;
   title: string;
   description: string | null;
   document_type: string;
+  category_id?: string | null;
+  document_categories?: { id: string; name: string } | null;
   target_roles?: string[];
   file_name: string;
   file_type: string;
@@ -3237,14 +3296,8 @@ interface AcademicDocument {
   updated_at: string;
 }
 
-const DEFAULT_CATEGORIES: Record<string, string> = {
-  handbook: 'Handbook',
-  policy: 'Policy',
-  form: 'Form',
-  memorandum: 'Memorandum',
-};
-
 const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
+const CATEGORIES_API_URL = 'http://localhost:5000/api/academic-records/categories';
 
 function getDocsToken() {
   return localStorage.getItem('token');
@@ -3276,18 +3329,25 @@ function getFileIcon(filename: string, className = 'w-5 h-5') {
 
 export function AcademicRecords() {
   const [documents, setDocuments] = useState<AcademicDocument[]>([]);
+  const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Categories State (Dynamic)
-  const [docCategories, setDocCategories] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('custom_doc_categories');
-    return saved ? { ...DEFAULT_CATEGORIES, ...JSON.parse(saved) } : DEFAULT_CATEGORIES;
-  });
+  // Categories Modal State
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategory, setEditingCategory] = useState<DocumentCategory | null>(null);
+  const [catForm, setCatForm] = useState({ name: '', description: '' });
 
-  const [typeFilter, setTypeFilter] = useState('all');
+  // Popup Modal Alert State (Full-Viewport Blur)
+  const [popupModal, setPopupModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'confirm';
+    onConfirm?: () => void;
+  }>({ open: false, title: '', message: '', type: 'success' });
+
+  const [categoryIdFilter, setCategoryIdFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
 
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -3295,7 +3355,7 @@ export function AcademicRecords() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    document_type: 'handbook',
+    category_id: '',
     target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
   });
   const [file, setFile] = useState<File | null>(null);
@@ -3307,7 +3367,6 @@ export function AcademicRecords() {
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Classroom-Style Preview Modal State (Works for Local & Remote Files)
   const [previewModal, setPreviewModal] = useState<{
     open: boolean;
     url: string | null;
@@ -3322,12 +3381,28 @@ export function AcademicRecords() {
     isLocalBlob: false,
   });
 
+  // Fetch Categories from Backend
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await fetch(CATEGORIES_API_URL, {
+        headers: { Authorization: `Bearer ${getDocsToken()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data ?? []);
+      }
+    } catch (err) {
+      console.error('Failed to load categories', err);
+    }
+  }, []);
+
+  // Fetch Documents from Backend
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       const params = new URLSearchParams();
-      if (typeFilter !== 'all') params.set('document_type', typeFilter);
+      if (categoryIdFilter !== 'all') params.set('category_id', categoryIdFilter);
       params.set('status', statusFilter);
 
       const res = await fetch(`${DOCS_API_URL}?${params.toString()}`, {
@@ -3347,15 +3422,16 @@ export function AcademicRecords() {
     } finally {
       setLoading(false);
     }
-  }, [typeFilter, statusFilter]);
+  }, [categoryIdFilter, statusFilter]);
 
   useEffect(() => {
+    fetchCategories();
     fetchDocuments();
-  }, [fetchDocuments]);
+  }, [fetchCategories, fetchDocuments]);
 
-  // Handle ESC & lock scrolling when preview modal is open
+  // Handle ESC & lock scrolling when any modal is open
   useEffect(() => {
-    if (previewModal.open) {
+    if (previewModal.open || showCategoryModal || showUploadModal || deleteConfirm || popupModal.open) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -3364,6 +3440,10 @@ export function AcademicRecords() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closePreviewModal();
+        setShowCategoryModal(false);
+        setShowUploadModal(false);
+        setDeleteConfirm(null);
+        setPopupModal(prev => ({ ...prev, open: false }));
       }
     };
 
@@ -3372,7 +3452,7 @@ export function AcademicRecords() {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [previewModal.open]);
+  }, [previewModal.open, showCategoryModal, showUploadModal, deleteConfirm, popupModal.open]);
 
   const closePreviewModal = () => {
     if (previewModal.url && previewModal.isLocalBlob) {
@@ -3381,31 +3461,86 @@ export function AcademicRecords() {
     setPreviewModal({ open: false, url: null, name: '', size: undefined, isLocalBlob: false });
   };
 
-  // --- Category Management ---
-  const handleAddCategory = () => {
-    if (!newCategoryName.trim()) return;
-    const key = newCategoryName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const updated = { ...docCategories, [key]: newCategoryName.trim() };
-    setDocCategories(updated);
-    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
-    setNewCategoryName('');
+  // --- Category Management Handlers ---
+  const handleSaveCategory = async () => {
+    if (!catForm.name.trim()) {
+      setPopupModal({
+        open: true,
+        title: 'Validation Error',
+        message: 'Category name is required.',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      const url = editingCategory ? `${CATEGORIES_API_URL}/${editingCategory.id}` : CATEGORIES_API_URL;
+      const method = editingCategory ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getDocsToken()}`,
+        },
+        body: JSON.stringify(catForm),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to save category');
+      }
+
+      setPopupModal({
+        open: true,
+        title: editingCategory ? 'Category Updated' : 'Category Created',
+        message: `"${catForm.name}" was successfully ${editingCategory ? 'updated' : 'created'}.`,
+        type: 'success',
+      });
+
+      setCatForm({ name: '', description: '' });
+      setEditingCategory(null);
+      await fetchCategories();
+    } catch (err: any) {
+      setPopupModal({
+        open: true,
+        title: 'Operation Failed',
+        message: err.message || 'Unable to save category.',
+        type: 'error',
+      });
+    }
   };
 
-  const handleDeleteCategory = (key: string) => {
-    if (!confirm(`Are you sure you want to delete the category "${docCategories[key]}"? Documents under this category will still exist.`)) return;
-    const updated = { ...docCategories };
-    delete updated[key];
-    setDocCategories(updated);
-    localStorage.setItem('custom_doc_categories', JSON.stringify(updated));
-    if (typeFilter === key) setTypeFilter('all');
-    if (form.document_type === key) setForm({ ...form, document_type: Object.keys(updated)[0] || '' });
+  const toggleCategoryStatus = async (cat: DocumentCategory) => {
+    const nextStatus = !cat.is_active;
+    try {
+      const res = await fetch(`${CATEGORIES_API_URL}/${cat.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getDocsToken()}`,
+        },
+        body: JSON.stringify({ is_active: nextStatus }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update category status.');
+      await fetchCategories();
+    } catch (err: any) {
+      setPopupModal({
+        open: true,
+        title: 'Action Failed',
+        message: err.message,
+        type: 'error',
+      });
+    }
   };
 
   const resetForm = () => {
+    const activeCategories = categories.filter((c) => c.is_active);
     setForm({
       title: '',
       description: '',
-      document_type: Object.keys(docCategories)[0] || 'handbook',
+      category_id: activeCategories.length > 0 ? activeCategories[0].id : '',
       target_roles: ['student', 'faculty', 'department_chair', 'alumni'],
     });
     setFile(null);
@@ -3423,7 +3558,7 @@ export function AcademicRecords() {
     setForm({
       title: doc.title,
       description: doc.description ?? '',
-      document_type: doc.document_type,
+      category_id: doc.category_id || '',
       target_roles: doc.target_roles?.length
         ? doc.target_roles
         : ['student', 'faculty', 'department_chair', 'alumni'],
@@ -3455,7 +3590,7 @@ export function AcademicRecords() {
   const handleFileSelect = (selectedFile: File | undefined | null) => {
     if (!selectedFile) return;
 
-    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv'];
+    const validExtensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv', '.xls', '.xlsx'];
     const fileName = selectedFile.name.toLowerCase();
     const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
@@ -3463,7 +3598,7 @@ export function AcademicRecords() {
       setFile(selectedFile);
       setFormError('');
     } else {
-      setFormError('Only PDF, Word documents (.doc, .docx), images, and text/csv files are supported.');
+      setFormError('Only PDF, Word, Excel, images, and text/csv files are supported.');
     }
   };
 
@@ -3483,7 +3618,6 @@ export function AcademicRecords() {
     }
   };
 
-  // --- Remote Document Preview (From API) ---
   const handlePreview = async (doc: AcademicDocument) => {
     setDownloadingId(doc.id);
     setLoadError('');
@@ -3522,7 +3656,6 @@ export function AcademicRecords() {
     }
   };
 
-  // --- Local Document Preview (Before Uploading) ---
   const handleLocalPreview = () => {
     if (file) {
       const localUrl = URL.createObjectURL(file);
@@ -3544,6 +3677,10 @@ export function AcademicRecords() {
       setFormError('Title is required.');
       return;
     }
+    if (!form.category_id) {
+      setFormError('Please select a category.');
+      return;
+    }
     if (form.target_roles.length === 0) {
       setFormError('Please select at least one target audience role.');
       return;
@@ -3558,7 +3695,7 @@ export function AcademicRecords() {
       const fd = new FormData();
       fd.append('title', form.title.trim());
       fd.append('description', form.description.trim());
-      fd.append('document_type', form.document_type);
+      fd.append('category_id', form.category_id);
       fd.append('target_roles', JSON.stringify(form.target_roles));
       if (file) fd.append('file', file);
 
@@ -3580,6 +3717,12 @@ export function AcademicRecords() {
       setShowUploadModal(false);
       resetForm();
       await fetchDocuments();
+      setPopupModal({
+        open: true,
+        title: 'Upload Successful',
+        message: 'The document has been saved successfully.',
+        type: 'success',
+      });
     } catch {
       setFormError('Could not reach the server. Please try again.');
     } finally {
@@ -3677,17 +3820,23 @@ export function AcademicRecords() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4 relative z-10">
         <div className="flex flex-1 gap-2">
           <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            value={categoryIdFilter}
+            onChange={(e) => setCategoryIdFilter(e.target.value)}
             className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="all">All Categories</option>
-            {Object.entries(docCategories).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name} {!cat.is_active ? '(Inactive)' : ''}
+              </option>
             ))}
           </select>
           <button
-            onClick={() => setShowCategoryModal(true)}
+            onClick={() => {
+              setEditingCategory(null);
+              setCatForm({ name: '', description: '' });
+              setShowCategoryModal(true);
+            }}
             className="px-3 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
             title="Manage Categories"
           >
@@ -3729,6 +3878,7 @@ export function AcademicRecords() {
             {documents.map((doc) => {
               const targetRoles = doc.target_roles || [];
               const isAllAudience = targetRoles.length === DOC_AUDIENCE_ROLES.length;
+              const categoryName = doc.document_categories?.name || doc.document_type || 'General';
 
               return (
                 <div key={doc.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg flex items-center justify-between gap-3 border border-gray-100 hover:border-blue-100 transition-colors">
@@ -3738,7 +3888,7 @@ export function AcademicRecords() {
                       <div className="font-medium text-gray-900 text-sm sm:text-base truncate">{doc.title}</div>
                       <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                          {docCategories[doc.document_type] || doc.document_type}
+                          {categoryName}
                         </span>
                         {doc.status === 'archived' && (
                           <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded-full font-medium">Archived</span>
@@ -3768,7 +3918,6 @@ export function AcademicRecords() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {/* View Button */}
                     <button
                       onClick={() => handlePreview(doc)}
                       disabled={downloadingId === doc.id}
@@ -3781,7 +3930,6 @@ export function AcademicRecords() {
                         <Eye className="w-5 h-5" />
                       )}
                     </button>
-                    {/* Download Button */}
                     <button
                       onClick={() => handleDownload(doc)}
                       className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
@@ -3810,63 +3958,103 @@ export function AcademicRecords() {
         )}
       </div>
 
-      {/* --- CATEGORY MANAGEMENT MODAL --- */}
+      {/* --- CATEGORY MANAGEMENT MODAL (Full-Viewport Blur) --- */}
       {showCategoryModal && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">Manage Categories</h2>
-              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5 text-gray-500" />
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">Manage Document Categories</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 mb-5">
-              {Object.entries(docCategories).map(([key, label]) => (
-                <div key={key} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-100 rounded-xl">
-                  <span className="text-sm font-medium text-gray-700">{label}</span>
-                  <button
-                    onClick={() => handleDeleteCategory(key)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                    title="Delete Category"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-gray-100 pt-4">
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Add New Category</label>
-              <div className="flex gap-2">
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="p-4 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
+                <h4 className="text-xs font-bold text-gray-700 uppercase">{editingCategory ? 'Edit Category' : 'Add New Category'}</h4>
                 <input
                   type="text"
-                  value={newCategoryName}
-                  onChange={e => setNewCategoryName(e.target.value)}
-                  placeholder="e.g. Certificates"
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={catForm.name}
+                  onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
+                  placeholder="Category Name e.g. Faculty Guidelines"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 />
-                <button
-                  onClick={handleAddCategory}
-                  disabled={!newCategoryName.trim()}
-                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors"
-                >
-                  Add
-                </button>
+                <textarea
+                  value={catForm.description}
+                  onChange={(e) => setCatForm({ ...catForm, description: e.target.value })}
+                  placeholder="Description (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white"
+                />
+                <div className="flex gap-2">
+                  {editingCategory && (
+                    <button
+                      onClick={() => { setEditingCategory(null); setCatForm({ name: '', description: '' }); }}
+                      className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSaveCategory}
+                    className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF]"
+                  >
+                    {editingCategory ? 'Update Category' : 'Create Category'}
+                  </button>
+                </div>
               </div>
+
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {categories.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-2xs">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-800 text-xs">{cat.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${cat.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                          {cat.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      {cat.description && <p className="text-[11px] text-gray-400 truncate mt-0.5">{cat.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => { setEditingCategory(cat); setCatForm({ name: cat.name, description: cat.description || '' }); }}
+                        className="text-xs text-blue-600 font-semibold hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => toggleCategoryStatus(cat)}
+                        className="text-xs text-gray-500 font-medium hover:underline"
+                      >
+                        {cat.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="px-5 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-50 shadow-2xs"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- UPLOAD / EDIT MODAL --- */}
+      {/* --- UPLOAD / EDIT MODAL (Full-Viewport Blur) --- */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-[8000] flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-8">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
-              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5 text-gray-500" />
+              <h2 className="text-base font-bold text-gray-900">{editingDoc ? 'Edit Document' : 'Upload Document'}</h2>
+              <button onClick={() => setShowUploadModal(false)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -3891,12 +4079,15 @@ export function AcademicRecords() {
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                 <select
-                  value={form.document_type}
-                  onChange={(e) => setForm({ ...form, document_type: e.target.value })}
+                  value={form.category_id}
+                  onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {Object.entries(docCategories).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
+                  <option value="">-- Select Category --</option>
+                  {categories.filter(c => c.is_active || c.id === form.category_id).map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} {!cat.is_active ? '(Inactive)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -3919,14 +4110,13 @@ export function AcademicRecords() {
                     return (
                       <label
                         key={role.id}
-                        className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-full cursor-pointer border border-gray-200 hover:border-gray-300 shadow-sm transition-all"
+                        className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-full cursor-pointer border border-gray-200 hover:border-gray-300 shadow-2xs transition-all"
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleRole(role.id)}
                           className="w-4 h-4 accent-blue-600 cursor-pointer"
-                          style={{ borderRadius: '50%' }}
                         />
                         <span className={`text-xs font-medium ${isChecked ? 'text-gray-900' : 'text-gray-600'}`}>
                           {role.label}
@@ -3958,22 +4148,20 @@ export function AcademicRecords() {
                   onDrop={handleDrop}
                   onClick={() => document.getElementById('hidden-file-input')?.click()}
                   className={`w-full py-4 px-3 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                    isDragging
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                    isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'
                   }`}
                 >
                   <input
                     id="hidden-file-input"
                     type="file"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv,.xls,.xlsx"
                     className="hidden"
                     onChange={(e) => handleFileSelect(e.target.files?.[0])}
                   />
 
                   {file ? (
                     <div
-                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-sm hover:border-blue-400 transition-colors"
+                      className="flex items-center justify-between w-full max-w-[320px] bg-white border border-blue-200 px-3 py-2 rounded-lg shadow-2xs hover:border-blue-400 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleLocalPreview();
@@ -4010,7 +4198,7 @@ export function AcademicRecords() {
                         Drag & Drop or <span className="text-blue-600 font-semibold">Browse</span>
                       </p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        .PDF, .DOC, .DOCX, .PNG, .JPG up to 15MB
+                        .PDF, .DOC, .DOCX, .XLS, .PNG, .JPG up to 20MB
                       </p>
                     </>
                   )}
@@ -4052,9 +4240,9 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- DELETE CONFIRMATION MODAL --- */}
+      {/* --- DELETE CONFIRMATION MODAL (Full-Viewport Blur) --- */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-7 h-7 text-red-600" />
@@ -4082,7 +4270,37 @@ export function AcademicRecords() {
         </div>
       )}
 
-      {/* --- GOOGLE CLASSROOM-STYLE PREVIEW MODAL (Supporting All Formats) --- */}
+      {/* --- POPUP NOTIFICATION MODAL (Full-Viewport Blur) --- */}
+      {popupModal.open && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900">{popupModal.title}</h3>
+              <button onClick={() => setPopupModal(prev => ({ ...prev, open: false }))} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 text-sm text-gray-600">
+              <p>{popupModal.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  if (popupModal.onConfirm) popupModal.onConfirm();
+                  setPopupModal(prev => ({ ...prev, open: false }));
+                }}
+                className={`px-5 py-2 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs ${
+                  popupModal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#1E3A8A] hover:bg-[#1E40AF]'
+                }`}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- PREVIEW MODAL --- */}
       {previewModal.open && previewModal.url && (
         <AcademicPreviewModal
           url={previewModal.url}
@@ -4095,7 +4313,7 @@ export function AcademicRecords() {
   );
 }
 
-// ─── Document Preview Modal Component (All Formats, Matching Classroom Design) ─
+// ─── Document Preview Modal Component ─────────────────────────────────────────
 
 function AcademicPreviewModal({
   url,
@@ -4136,7 +4354,7 @@ function AcademicPreviewModal({
           docxContainerRef.current.innerHTML = '';
           return renderAsync(blob, docxContainerRef.current, undefined, {
             className: 'docx',
-            inWrapper: true, // Enables full page layout, document margins & styling
+            inWrapper: true,
             ignoreWidth: false,
             ignoreHeight: false,
           });
@@ -4182,7 +4400,6 @@ function AcademicPreviewModal({
       className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in select-none"
       onClick={onClose}
     >
-      {/* Top Bar */}
       <div
         className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
         onClick={(e) => e.stopPropagation()}
@@ -4221,7 +4438,6 @@ function AcademicPreviewModal({
         </div>
       </div>
 
-      {/* Document Canvas */}
       <div
         className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
         onClick={onClose}
@@ -4283,7 +4499,6 @@ function AcademicPreviewModal({
               </pre>
             </div>
           ) : isDocx ? (
-            /* Dedicated scroll container with neutral canvas background */
             <div className="w-full h-full overflow-y-auto bg-gray-100 p-4 sm:p-8 flex justify-center text-left select-text">
               <div ref={docxContainerRef} className="w-full max-w-3xl min-h-full" />
             </div>
@@ -4375,6 +4590,17 @@ export function ResearchAchievements() {
   // In-Page Document Preview State
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
 
+  // Lock body scroll whenever any modal is active
+  useEffect(() => {
+    if (viewingItem || rejectFor || previewFile) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [viewingItem, rejectFor, previewFile]);
+
   const fetchSubmissions = async () => {
     setLoading(true);
     setLoadError('');
@@ -4388,8 +4614,6 @@ export function ResearchAchievements() {
         return;
       }
       const data = await res.json();
-
-    
       setSubmissions(data ?? []);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
@@ -4417,12 +4641,12 @@ export function ResearchAchievements() {
         return;
       }
 
-            // Notify the submitter about the decision
+      // Notify the submitter about the decision
       const recipientId = (submission as any).submitted_by ?? (submission as any).user_id;
       if (recipientId) {
         try {
           const label = typeLabel(submission.type);
-          await sendBackendNotification({
+          await (window as any).sendBackendNotification?.({
             title: status === 'approved'
               ? `${label} Approved`
               : `${label} Needs Revision`,
@@ -4697,7 +4921,7 @@ export function ResearchAchievements() {
                         <p className="text-xs text-gray-600 line-clamp-2 pt-1">{item.description}</p>
                       )}
 
-                      {/* Attachments (In-Page Modal Previews) */}
+                      {/* Attachments */}
                       <div className="flex flex-wrap items-center gap-2 pt-2">
                         {item.publication_link && (
                           <a
@@ -4732,7 +4956,7 @@ export function ResearchAchievements() {
                       )}
                     </div>
 
-                    {/* Actions & Status Column (View-Only; No Edit action) */}
+                    {/* Actions & Status Column */}
                     <div className="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 self-start">
                       <span
                         className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider"
@@ -4781,11 +5005,16 @@ export function ResearchAchievements() {
         )}
       </div>
 
-      {/* Review & Inspect Modal (View-Only; No editing allowed) */}
-      {viewingItem && (
-  <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-    <div className="fixed inset-0 bg-black/60" onClick={() => setViewingItem(null)} />
-    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-[10000]">
+      {/* Review & Inspect Modal — Rendered into document.body with full-page backdrop blur */}
+      {viewingItem && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          {/* Full viewport blur overlay covering navbar, sidebar, content, and footer */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            onClick={() => setViewingItem(null)}
+          />
+
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative z-10 border border-gray-100">
             <button
               onClick={() => setViewingItem(null)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors"
@@ -4919,6 +5148,7 @@ export function ResearchAchievements() {
                     {getAllAttachments(viewingItem).map((file, idx) => (
                       <button
                         key={idx}
+                        type="button"
                         onClick={() => handleViewFile(file)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors"
                       >
@@ -4960,14 +5190,20 @@ export function ResearchAchievements() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Reject Modal */}
-      {rejectFor && (
-  <div className="fixed top-0 left-0 right-0 bottom-0 z-[10001] flex items-center justify-center p-4">
-    <div className="fixed inset-0 bg-black/60" onClick={() => setRejectFor(null)} />
-    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-gray-100 relative z-[10002]">
+      {/* Reject Modal — Rendered into document.body with full-page backdrop blur */}
+      {rejectFor && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          {/* Full viewport blur overlay covering navbar, sidebar, content, and footer */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            onClick={() => setRejectFor(null)}
+          />
+
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-100 relative z-10">
             <h3 className="text-base font-bold text-gray-900 mb-1">Reject Submission?</h3>
             <p className="text-xs text-gray-500 mb-4">
               Providing reviewer remarks for <span className="font-semibold text-gray-800">{rejectFor.submitter?.full_name}</span>'s output.
@@ -4996,7 +5232,8 @@ export function ResearchAchievements() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* In-Page Document Preview Modal */}
@@ -5009,6 +5246,8 @@ export function ResearchAchievements() {
     </div>
   );
 }
+
+// ─── UPDATED: Dark Mode Full-Screen Document Preview Modal ─────────────────────────
 
 function DocxPreviewModal({
   file,
@@ -5038,6 +5277,7 @@ function DocxPreviewModal({
         .then(res => res.blob())
         .then(blob => {
           if (docxContainerRef.current) {
+            // @ts-ignore - Assuming renderAsync is from docx-preview imported elsewhere
             return renderAsync(blob, docxContainerRef.current, undefined, {
               className: 'docx-preview-content',
               inWrapper: false,
@@ -5054,112 +5294,113 @@ function DocxPreviewModal({
     }
   }, [file.url, isDocx]);
 
-  return (
-    <div className="fixed inset-0 z-[10005] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
-          <div className="flex items-center gap-2 min-w-0 pr-2">
-            <FileText className="w-4 h-4 text-blue-700 shrink-0" />
-            <h3 className="font-semibold text-gray-900 text-sm truncate">{file.name}</h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200/50"
-          >
-            <X className="w-5 h-5" />
-          </button>
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[999999] flex flex-col bg-[#0f0f0f] animate-in fade-in duration-200">
+      
+      {/* Top Header Bar matching the image */}
+      <div className="h-14 bg-[#1a1a1c] border-b border-[#2a2a2c] flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-5 h-5 text-blue-400 shrink-0" />
+          <h3 className="font-medium text-gray-200 text-sm truncate">{file.name}</h3>
+          <span className="text-xs text-gray-500 hidden sm:inline-block truncate">
+            (Document Preview)
+          </span>
         </div>
-
-        <div className="flex-1 overflow-auto bg-gray-100/50 p-4 flex items-center justify-center min-h-[400px]">
-          {isPdf && (
-            <iframe
-              src={`${file.url}#toolbar=0`}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
-              title={file.name}
-            />
-          )}
-
-          {isImg && (
-            <div className="flex items-center justify-center w-full h-[68vh] bg-white rounded-xl border border-gray-200 p-2">
-              <img
-                src={file.url}
-                alt={file.name}
-                className="max-w-full max-h-full object-contain rounded-lg"
-              />
-            </div>
-          )}
-
-          {isText && (
-            <iframe
-              src={file.url}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white p-4 font-mono text-xs"
-              title={file.name}
-            />
-          )}
-
-          {isDocx && (
-            <div className="w-full h-[68vh] bg-white rounded-xl border border-gray-200 overflow-y-auto p-6 sm:p-10 shadow-inner">
-              {renderingDocx && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-                  <span className="text-xs">Rendering Word document...</span>
-                </div>
-              )}
-              {renderError && (
-                <div className="text-center py-12 text-gray-500 text-xs">
-                  <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  Could not parse this Word file preview. Use "Save a Copy" below to inspect.
-                </div>
-              )}
-              <div ref={docxContainerRef} className="max-w-3xl mx-auto" />
-            </div>
-          )}
-
-          {isOfficeDoc && (
-            <iframe
-              src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`}
-              className="w-full h-[68vh] rounded-xl border border-gray-200 bg-white"
-              title={file.name}
-            />
-          )}
-
-          {!isPdf && !isImg && !isText && !isDocx && !isOfficeDoc && (
-            <div className="text-center py-12 px-4 max-w-md">
-              <FileText className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-              <h4 className="text-sm font-bold text-gray-900 mb-1">{file.name}</h4>
-              <p className="text-xs text-gray-500 mb-4">
-                This file format cannot be rendered directly inside the browser.
-              </p>
-              <a
-                href={file.url}
-                download={file.name}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-xs"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download File</span>
-              </a>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 border-t border-gray-100 flex justify-end gap-2 bg-white">
+        <div className="flex items-center gap-1 shrink-0 text-gray-400">
           <a
             href={file.url}
             download={file.name}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            className="p-2 hover:text-white hover:bg-[#2a2a2c] rounded-md transition-colors"
+            title="Download"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Save a Copy</span>
+            <Download className="w-4 h-4" />
           </a>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-semibold hover:bg-gray-900 transition-colors"
+            className="p-2 hover:text-white hover:bg-[#2a2a2c] rounded-md transition-colors"
+            title="Close"
           >
-            Close
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
-    </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto flex items-center justify-center p-4 sm:p-8">
+        {isPdf && (
+          <iframe
+            src={`${file.url}#toolbar=0`}
+            className="w-full h-full max-w-5xl rounded-sm shadow-2xl bg-white"
+            title={file.name}
+          />
+        )}
+
+        {isImg && (
+          <div className="flex items-center justify-center w-full h-full max-w-5xl">
+            <img
+              src={file.url}
+              alt={file.name}
+              className="max-w-full max-h-full object-contain rounded-sm shadow-2xl"
+            />
+          </div>
+        )}
+
+        {isText && (
+          <iframe
+            src={file.url}
+            className="w-full h-full max-w-5xl rounded-sm shadow-2xl bg-white p-6 font-mono text-sm text-gray-800"
+            title={file.name}
+          />
+        )}
+
+        {isDocx && (
+          <div className="w-full h-full max-w-5xl bg-white rounded-sm shadow-2xl overflow-y-auto p-8 sm:p-12">
+            {renderingDocx && (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                <span className="text-sm font-medium">Rendering Word document...</span>
+              </div>
+            )}
+            {renderError && (
+              <div className="text-center py-16 text-gray-500 text-sm">
+                <FileText className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                Could not parse this Word file preview. Use the download button above to inspect.
+              </div>
+            )}
+            <div ref={docxContainerRef} className="max-w-3xl mx-auto text-black" />
+          </div>
+        )}
+
+        {isOfficeDoc && (
+          <iframe
+            src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`}
+            className="w-full h-full max-w-5xl rounded-sm shadow-2xl bg-white"
+            title={file.name}
+          />
+        )}
+
+        {!isPdf && !isImg && !isText && !isDocx && !isOfficeDoc && (
+          <div className="text-center p-8 max-w-md bg-[#1a1a1c] rounded-xl border border-[#2a2a2c] shadow-2xl">
+            <FileText className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+            <h4 className="text-base font-bold text-gray-200 mb-2 truncate">{file.name}</h4>
+            <p className="text-sm text-gray-400 mb-6">
+              This file format cannot be rendered directly inside the browser.
+            </p>
+            <a
+              href={file.url}
+              download={file.name}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors w-full"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download File</span>
+            </a>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -8553,7 +8794,8 @@ function ToggleCard({
 interface SystemSettingsProps {
   profile?: { fullName: string; email: string };
   onProfileUpdate?: (profile: { fullName: string; email: string }) => void;
-  onLogout?: () => void;
+  // UPDATED: Accept a boolean flag to bypass the parent's modal
+  onLogout?: (bypassConfirm?: boolean) => void;
 }
 
 function SystemSettings({
@@ -8561,8 +8803,7 @@ function SystemSettings({
   onProfileUpdate,
   onLogout,
 }: SystemSettingsProps) {
-  const [activeTab, setActiveTab] =
-    useState<SettingsTabId>('profile');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
 
   // --- Profile State ---
   const [fullName, setFullName] = useState('');
@@ -8574,25 +8815,18 @@ function SystemSettings({
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] =
-    useState(false);
-  const [showNewPassword, setShowNewPassword] =
-    useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] =
-    useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
   // --- Notifications State ---
   const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
 
   // --- Academic Settings State ---
-  const [academicYear, setAcademicYear] =
-    useState('2025-2026');
-  const [semester, setSemester] =
-    useState('Second Semester');
-  const [collegeDept, setCollegeDept] =
-    useState('College of Education');
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [semester, setSemester] = useState('Second Semester');
+  const [collegeDept, setCollegeDept] = useState('College of Education');
 
   // --- General UI State ---
   const [saving, setSaving] = useState(false);
@@ -8601,95 +8835,47 @@ function SystemSettings({
     text: string;
   } | null>(null);
 
+  // --- Modal State ---
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   // Load Profile on mount
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
-
       if (!token) return;
 
       try {
-        const response = await fetch(
-          'http://localhost:5000/api/auth/me',
-          {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
         const data = await response.json();
+        if (!response.ok || !data.profile) throw new Error(data.error || 'Failed to load profile.');
 
-        if (!response.ok || !data.profile) {
-          throw new Error(
-            data.error || 'Failed to load profile.'
-          );
-        }
-
-        /*
-         * Username comes from the database.
-         * Prefer public.users.username.
-         */
-        const databaseUsername = String(
-          data.user?.username ??
-            data.username ??
-            data.profile?.username ??
-            ''
-        ).trim();
-
-        const databaseFullName = String(
-          data.profile?.full_name ??
-            ''
-        ).trim();
-
-        const databaseEmail = String(
-          data.profile?.email ??
-            ''
-        ).trim();
+        const databaseUsername = String(data.user?.username ?? data.username ?? data.profile?.username ?? '').trim();
+        const databaseFullName = String(data.profile?.full_name ?? '').trim();
+        const databaseEmail = String(data.profile?.email ?? '').trim();
 
         setUsername(databaseUsername);
         setFullName(databaseFullName);
         setEmail(databaseEmail);
 
-        // LocalStorage is only used as a cache.
-        localStorage.setItem(
-          'userUsername',
-          databaseUsername
-        );
-
-        localStorage.setItem(
-          'userFullName',
-          databaseFullName
-        );
-
-        localStorage.setItem(
-          'userEmail',
-          databaseEmail
-        );
+        localStorage.setItem('userUsername', databaseUsername);
+        localStorage.setItem('userFullName', databaseFullName);
+        localStorage.setItem('userEmail', databaseEmail);
 
         onProfileUpdate?.({
           fullName: databaseFullName,
           email: databaseEmail,
         });
       } catch (error) {
-        console.error(
-          'Failed to load profile:',
-          error
-        );
-
         if (profile) {
-          setFullName(
-            profile.fullName || ''
-          );
-
-          setEmail(
-            profile.email || ''
-          );
+          setFullName(profile.fullName || '');
+          setEmail(profile.email || '');
         }
       }
     };
-
     loadProfile();
   }, []);
 
@@ -8697,127 +8883,66 @@ function SystemSettings({
   useEffect(() => {
     const loadPreferences = async () => {
       const token = localStorage.getItem('token');
-
       if (!token) return;
 
       try {
-        const response = await fetch(
-          'http://localhost:5000/api/auth/me',
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch('http://localhost:5000/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
         const data = await response.json();
-
         if (data.preferences) {
           setNotifs({
-            allowAll:
-              data.preferences.allow_all ?? true,
-            inquiries:
-              data.preferences.inquiries ?? true,
-            reports:
-              data.preferences.reports ?? true,
-            announcements:
-              data.preferences.announcements ?? true,
-            staffUpdates:
-              data.preferences.staff_updates ?? false,
-            systemNotifs:
-              data.preferences.system_notifs ?? true,
+            allowAll: data.preferences.allow_all ?? true,
+            inquiries: data.preferences.inquiries ?? true,
+            reports: data.preferences.reports ?? true,
+            announcements: data.preferences.announcements ?? true,
+            staffUpdates: data.preferences.staff_updates ?? false,
+            systemNotifs: data.preferences.system_notifs ?? true,
           });
         }
       } catch (error) {
-        console.error(
-          'Failed to load notification preferences:',
-          error
-        );
+        console.error('Failed to load notification preferences:', error);
       }
     };
-
     loadPreferences();
   }, []);
 
   useEffect(() => {
     if (message) {
-      const timer = setTimeout(
-        () => setMessage(null),
-        5000
-      );
-
+      const timer = setTimeout(() => setMessage(null), 5000);
       return () => clearTimeout(timer);
     }
   }, [message]);
 
-  const toggleNotif = (
-    key: keyof typeof NOTIF_DEFAULTS
-  ) => {
+  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) => {
     if (key === 'allowAll') {
-      const nextState = !notifs.allowAll;
-
-      setNotifs((prev) => ({
-        ...prev,
-        allowAll: nextState,
-      }));
+      setNotifs((prev) => ({ ...prev, allowAll: !prev.allowAll }));
     } else {
-      setNotifs((prev) => ({
-        ...prev,
-        [key]: !prev[key],
-      }));
+      setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
     }
   };
 
   // Save Profile
   const saveProfile = async () => {
     const trimmedName = fullName.trim();
+    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
 
-    // Username is saved to database in lowercase
-    const trimmedUsername = username
-      .trim()
-      .toLowerCase();
-
-    const trimmedEmail = email
-      .trim()
-      .toLowerCase();
-
-    if (
-      !trimmedName ||
-      !trimmedUsername ||
-      !trimmedEmail
-    ) {
-      setMessage({
-        type: 'error',
-        text:
-          'Full Name, Username and Email are required.',
-      });
-
+    if (!trimmedName || !trimmedUsername || !trimmedEmail) {
+      setMessage({ type: 'error', text: 'Full Name, Username and Email are required.' });
       return;
     }
 
-    // Username validation
-    const usernameRegex =
-      /^[a-zA-Z0-9._]{3,20}$/;
-
+    const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
     if (!usernameRegex.test(trimmedUsername)) {
-      setMessage({
-        type: 'error',
-        text:
-          'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
-      });
-
+      setMessage({ type: 'error', text: 'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.' });
       return;
     }
 
     const token = localStorage.getItem('token');
-
     if (!token) {
-      setMessage({
-        type: 'error',
-        text:
-          'Your session has expired. Please sign in again.',
-      });
-
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
       return;
     }
 
@@ -8825,136 +8950,51 @@ function SystemSettings({
     setMessage(null);
 
     try {
-      const response = await fetch(
-        'http://localhost:5000/api/auth/profile',
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            full_name: trimmedName,
-            username: trimmedUsername,
-            email: trimmedEmail,
-          }),
-        }
-      );
+      const response = await fetch('http://localhost:5000/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ full_name: trimmedName, username: trimmedUsername, email: trimmedEmail }),
+      });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update profile.');
 
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            'Failed to update profile.'
-        );
-      }
+      const updatedUsername = String(data.user?.username ?? data.profile?.username ?? data.username ?? trimmedUsername).trim();
+      const updatedName = String(data.profile?.full_name ?? trimmedName).trim();
+      const updatedEmail = String(data.profile?.email ?? trimmedEmail).trim();
 
-      /*
-       * Read the updated username returned by
-       * the backend/database.
-       */
-      const updatedUsername = String(
-        data.user?.username ??
-          data.profile?.username ??
-          data.username ??
-          trimmedUsername
-      ).trim();
-
-      const updatedName = String(
-        data.profile?.full_name ??
-          trimmedName
-      ).trim();
-
-      const updatedEmail = String(
-        data.profile?.email ??
-          trimmedEmail
-      ).trim();
-
-      // Update React state
       setUsername(updatedUsername);
       setFullName(updatedName);
       setEmail(updatedEmail);
 
-      // Cache only
-      localStorage.setItem(
-        'userUsername',
-        updatedUsername
-      );
+      localStorage.setItem('userUsername', updatedUsername);
+      localStorage.setItem('userFullName', updatedName);
+      localStorage.setItem('userEmail', updatedEmail);
+      if (data.token) localStorage.setItem('token', data.token);
 
-      localStorage.setItem(
-        'userFullName',
-        updatedName
-      );
-
-      localStorage.setItem(
-        'userEmail',
-        updatedEmail
-      );
-
-      if (data.token) {
-        localStorage.setItem(
-          'token',
-          data.token
-        );
-      }
-
-      onProfileUpdate?.({
-        fullName: updatedName,
-        email: updatedEmail,
-      });
-
-      setMessage({
-        type: 'success',
-        text:
-          'Profile updated successfully.',
-      });
+      onProfileUpdate?.({ fullName: updatedName, email: updatedEmail });
+      setMessage({ type: 'success', text: 'Profile updated successfully.' });
     } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text:
-          error?.message ||
-          'Failed to update profile.',
-      });
+      setMessage({ type: 'error', text: error?.message || 'Failed to update profile.' });
     } finally {
       setSaving(false);
     }
   };
 
   const saveSecurity = async () => {
-    if (
-      !currentPassword ||
-      !newPassword ||
-      !confirmPassword
-    ) {
-      setMessage({
-        type: 'error',
-        text:
-          'Please fill in all password fields.',
-      });
-
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setMessage({ type: 'error', text: 'Please fill in all password fields.' });
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setMessage({
-        type: 'error',
-        text:
-          'New passwords do not match.',
-      });
-
+      setMessage({ type: 'error', text: 'New passwords do not match.' });
       return;
     }
 
     const token = localStorage.getItem('token');
-
     if (!token) {
-      setMessage({
-        type: 'error',
-        text:
-          'Your session has expired. Please sign in again.',
-      });
-
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
       return;
     }
 
@@ -8962,47 +9002,21 @@ function SystemSettings({
     setMessage(null);
 
     try {
-      const response = await fetch(
-        'http://localhost:5000/api/auth/password',
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            current_password: currentPassword,
-            new_password: newPassword,
-            confirm_password: confirmPassword,
-          }),
-        }
-      );
+      const response = await fetch('http://localhost:5000/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword }),
+      });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            'Failed to update password.'
-        );
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to update password.');
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-
-      setMessage({
-        type: 'success',
-        text:
-          'Password updated successfully.',
-      });
+      setMessage({ type: 'success', text: 'Password updated successfully.' });
     } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text:
-          error?.message ||
-          'Failed to update password.',
-      });
+      setMessage({ type: 'error', text: error?.message || 'Failed to update password.' });
     } finally {
       setSaving(false);
     }
@@ -9010,14 +9024,8 @@ function SystemSettings({
 
   const saveNotifications = async () => {
     const token = localStorage.getItem('token');
-
     if (!token) {
-      setMessage({
-        type: 'error',
-        text:
-          'Your session has expired. Please sign in again.',
-      });
-
+      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
       return;
     }
 
@@ -9025,125 +9033,57 @@ function SystemSettings({
     setMessage(null);
 
     try {
-      const response = await fetch(
-        'http://localhost:5000/api/auth/preferences',
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            allow_all: notifs.allowAll,
-            inquiries: notifs.inquiries,
-            reports: notifs.reports,
-            announcements:
-              notifs.announcements,
-            staff_updates:
-              notifs.staffUpdates,
-            system_notifs:
-              notifs.systemNotifs,
-          }),
-        }
-      );
+      const response = await fetch('http://localhost:5000/api/auth/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          allow_all: notifs.allowAll,
+          inquiries: notifs.inquiries,
+          reports: notifs.reports,
+          announcements: notifs.announcements,
+          staff_updates: notifs.staffUpdates,
+          system_notifs: notifs.systemNotifs,
+        }),
+      });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            'Failed to save notification preferences.'
-        );
-      }
-
-      setMessage({
-        type: 'success',
-        text:
-          'Notification preferences saved successfully.',
-      });
+      if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
+      setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
     } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text:
-          error?.message ||
-          'Error saving preferences.',
-      });
+      setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
     } finally {
       setSaving(false);
     }
   };
 
   const saveAcademicSettings = async () => {
-    if (
-      !academicYear.trim() ||
-      !collegeDept.trim()
-    ) {
-      setMessage({
-        type: 'error',
-        text:
-          'Academic Year and College/Department are required.',
-      });
-
+    if (!academicYear.trim() || !collegeDept.trim()) {
+      setMessage({ type: 'error', text: 'Academic Year and College/Department are required.' });
       return;
     }
-
-    await new Promise((res) =>
-      setTimeout(res, 400)
-    );
-
-    setMessage({
-      type: 'success',
-      text:
-        'Academic settings updated.',
-    });
+    await new Promise((res) => setTimeout(res, 400));
+    setMessage({ type: 'success', text: 'Academic settings updated.' });
   };
 
   const handleSaveChanges = async () => {
     setMessage(null);
-
     try {
       switch (activeTab) {
-        case 'profile':
-          await saveProfile();
-          break;
-
-        case 'security':
-          await saveSecurity();
-          break;
-
-        case 'notifications':
-          await saveNotifications();
-          break;
-
-        case 'academic':
-          await saveAcademicSettings();
-          break;
-
-        default:
-          setMessage({
-            type: 'error',
-            text:
-              'Nothing to save on this tab.',
-          });
+        case 'profile': await saveProfile(); break;
+        case 'security': await saveSecurity(); break;
+        case 'notifications': await saveNotifications(); break;
+        case 'academic': await saveAcademicSettings(); break;
+        default: setMessage({ type: 'error', text: 'Nothing to save on this tab.' });
       }
     } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text:
-          error?.message ||
-          'An error occurred while saving.',
-      });
+      setMessage({ type: 'error', text: error?.message || 'An error occurred while saving.' });
     }
   };
 
-  const handleLogoutAllDevices = async () => {
-    if (
-      window.confirm(
-        'Are you sure you want to log out of all devices?'
-      )
-    ) {
-      if (onLogout) onLogout();
-    }
+  // UPDATED: Pass `true` to bypass the parent component's modal
+  const confirmLogoutAllDevices = () => {
+    setShowLogoutModal(false);
+    if (onLogout) onLogout(true);
   };
 
   return (
@@ -9151,27 +9091,18 @@ function SystemSettings({
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
-            Settings
-          </h1>
-
-          <p className="text-gray-500 text-sm mt-1">
-            Manage your account and system preferences.
-          </p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {!['users', 'landing'].includes(
-            activeTab
-          ) && (
+          {!['users', 'landing'].includes(activeTab) && (
             <button
               onClick={handleSaveChanges}
               disabled={saving}
               className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
             >
-              {saving
-                ? 'Saving...'
-                : 'Save Changes'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
           )}
         </div>
@@ -9179,13 +9110,7 @@ function SystemSettings({
 
       {/* Message Alert */}
       {message && (
-        <div
-          className={`mb-6 p-4 rounded-xl text-sm font-medium border ${
-            message.type === 'success'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-red-50 text-red-700 border-red-200'
-          }`}
-        >
+        <div className={`mb-6 p-4 rounded-xl text-sm font-medium border ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
           {message.text}
         </div>
       )}
@@ -9195,144 +9120,52 @@ function SystemSettings({
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
           {SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive =
-              activeTab === tab.id;
-
+            const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setMessage(null);
-                }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={() => { setActiveTab(tab.id); setMessage(null); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-blue-50 text-[#1E3A8A] font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-
-                <span className="truncate">
-                  {tab.label}
-                </span>
+                <span className="truncate">{tab.label}</span>
               </button>
             );
           })}
         </div>
 
         {/* Content Panel */}
-        <div
-          className={`flex-1 min-w-0 ${
-            ['users', 'landing'].includes(
-              activeTab
-            )
-              ? ''
-              : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'
-          }`}
-        >
-          {activeTab === 'users' && (
-            <UserManagement />
-          )}
-
-          {activeTab === 'landing' && (
-            <LandingPageManagement />
-          )}
+        <div className={`flex-1 min-w-0 ${['users', 'landing'].includes(activeTab) ? '' : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'}`}>
+          {/* External Tabs */}
+          {activeTab === 'users' && <div className="p-4 bg-gray-50 rounded-xl text-gray-500 text-sm">UserManagement Component</div>}
+          {activeTab === 'landing' && <div className="p-4 bg-gray-50 rounded-xl text-gray-500 text-sm">LandingPageManagement Component</div>}
 
           {/* Profile */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Profile Information
-              </h2>
-
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">
-                Update your personal details.
-              </p>
+              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
 
               <div className="space-y-4 max-w-md">
-
-                {/* Full Name */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Full Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) =>
-                      setFullName(
-                        e.target.value
-                      )
-                    }
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                  <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-
-                {/* Username */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Username
-                  </label>
-
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Username</label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                      @
-                    </span>
-
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) =>
-                        setUsername(
-                          e.target.value.replace(
-                            /\s/g,
-                            ''
-                          )
-                        )
-                      }
-                      maxLength={20}
-                      autoComplete="username"
-                      placeholder="your.username"
-                      className="w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">@</span>
+                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))} maxLength={20} autoComplete="username" placeholder="your.username" className="w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
-
-                  <p className="text-[11px] text-gray-400 mt-1.5">
-                    3–20 characters: letters, numbers,
-                    periods, and underscores.
-                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1.5">3–20 characters: letters, numbers, periods, and underscores.</p>
                 </div>
-
-                {/* Email */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Email Address
-                  </label>
-
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) =>
-                      setEmail(e.target.value)
-                    }
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-
-                {/* Position */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Position/Role
-                  </label>
-
-                  <input
-                    type="text"
-                    value={positionRole}
-                    disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                  <input type="text" value={positionRole} disabled className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed" />
                 </div>
               </div>
             </div>
@@ -9341,162 +9174,48 @@ function SystemSettings({
           {/* Security */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Password & Security
-              </h2>
-
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">
-                Manage your password and account access.
-              </p>
+              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
 
               <div className="space-y-4 max-w-md mb-6">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Current Password
-                  </label>
-
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
                   <div className="relative">
-                    <input
-                      type={
-                        showCurrentPassword
-                          ? 'text'
-                          : 'password'
-                      }
-                      value={currentPassword}
-                      onChange={(e) =>
-                        setCurrentPassword(
-                          e.target.value
-                        )
-                      }
-                      placeholder="Enter current password"
-                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowCurrentPassword(
-                          (v) => !v
-                        )
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showCurrentPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                    <input type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" onClick={() => setShowCurrentPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    New Password
-                  </label>
-
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
                   <div className="relative">
-                    <input
-                      type={
-                        showNewPassword
-                          ? 'text'
-                          : 'password'
-                      }
-                      value={newPassword}
-                      onChange={(e) =>
-                        setNewPassword(
-                          e.target.value
-                        )
-                      }
-                      placeholder="Enter new password"
-                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowNewPassword(
-                          (v) => !v
-                        )
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showNewPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                    <input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" onClick={() => setShowNewPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-
-                  <p className="text-[11px] text-gray-400 mt-1.5">
-                    At least 8 characters with
-                    uppercase, lowercase, number, and
-                    special character.
-                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1.5">At least 8 characters with uppercase, lowercase, number, and special character.</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Confirm New Password
-                  </label>
-
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
                   <div className="relative">
-                    <input
-                      type={
-                        showConfirmPassword
-                          ? 'text'
-                          : 'password'
-                      }
-                      value={confirmPassword}
-                      onChange={(e) =>
-                        setConfirmPassword(
-                          e.target.value
-                        )
-                      }
-                      placeholder="Confirm new password"
-                      className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowConfirmPassword(
-                          (v) => !v
-                        )
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
+                    <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" onClick={() => setShowConfirmPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               </div>
 
               <div className="border-t border-gray-100 pt-5 max-w-lg">
-                <ToggleCard
-                  label="Two-Factor Authentication"
-                  description="Enable two-factor authentication to add an extra layer of security to your account."
-                  checked={twoFactorEnabled}
-                  onChange={() =>
-                    setTwoFactorEnabled(
-                      (v) => !v
-                    )
-                  }
-                />
+                <ToggleCard label="Two-Factor Authentication" description="Enable two-factor authentication to add an extra layer of security to your account." checked={twoFactorEnabled} onChange={() => setTwoFactorEnabled((v) => !v)} />
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-4">
-                <button
-                  onClick={
-                    handleLogoutAllDevices
-                  }
-                  className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
-                >
+                <button onClick={() => setShowLogoutModal(true)} className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
                   Log Out of All Devices
                 </button>
               </div>
@@ -9506,102 +9225,17 @@ function SystemSettings({
           {/* Notifications */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Notifications
-              </h2>
-
-              <p className="text-sm text-gray-500 mt-0.5 mb-5">
-                Choose what alerts you receive.
-              </p>
+              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-5">Choose what alerts you receive.</p>
 
               <div className="w-full">
-                <ToggleCard
-                  label="Allow Notifications"
-                  description="Turn off to completely mute all notifications and reminders."
-                  checked={notifs.allowAll}
-                  onChange={() =>
-                    toggleNotif(
-                      'allowAll'
-                    )
-                  }
-                />
-
+                <ToggleCard label="Allow Notifications" description="Turn off to completely mute all notifications and reminders." checked={notifs.allowAll} onChange={() => toggleNotif('allowAll')} />
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                  <ToggleCard
-                    label="New Inquiries"
-                    description="Get notified when new stakeholder inquiries come in."
-                    checked={notifs.inquiries}
-                    onChange={() =>
-                      toggleNotif(
-                        'inquiries'
-                      )
-                    }
-                    disabled={
-                      !notifs.allowAll
-                    }
-                  />
-
-                  <ToggleCard
-                    label="Pending Reports"
-                    description="Get reminders for upcoming or pending department reports."
-                    checked={notifs.reports}
-                    onChange={() =>
-                      toggleNotif(
-                        'reports'
-                      )
-                    }
-                    disabled={
-                      !notifs.allowAll
-                    }
-                  />
-
-                  <ToggleCard
-                    label="New Announcements"
-                    description="Get notified about important institutional updates."
-                    checked={
-                      notifs.announcements
-                    }
-                    onChange={() =>
-                      toggleNotif(
-                        'announcements'
-                      )
-                    }
-                    disabled={
-                      !notifs.allowAll
-                    }
-                  />
-
-                  <ToggleCard
-                    label="Faculty Updates"
-                    description="Receive updates regarding faculty statuses or submissions."
-                    checked={
-                      notifs.staffUpdates
-                    }
-                    onChange={() =>
-                      toggleNotif(
-                        'staffUpdates'
-                      )
-                    }
-                    disabled={
-                      !notifs.allowAll
-                    }
-                  />
-
-                  <ToggleCard
-                    label="System Notifications"
-                    description="Receive general application alerts and system notices."
-                    checked={
-                      notifs.systemNotifs
-                    }
-                    onChange={() =>
-                      toggleNotif(
-                        'systemNotifs'
-                      )
-                    }
-                    disabled={
-                      !notifs.allowAll
-                    }
-                  />
+                  <ToggleCard label="New Inquiries" description="Get notified when new stakeholder inquiries come in." checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Pending Reports" description="Get reminders for upcoming or pending department reports." checked={notifs.reports} onChange={() => toggleNotif('reports')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="New Announcements" description="Get notified about important institutional updates." checked={notifs.announcements} onChange={() => toggleNotif('announcements')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="Faculty Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
+                  <ToggleCard label="System Notifications" description="Receive general application alerts and system notices." checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} disabled={!notifs.allowAll} />
                 </div>
               </div>
             </div>
@@ -9610,82 +9244,58 @@ function SystemSettings({
           {/* Academic */}
           {activeTab === 'academic' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Academic Settings
-              </h2>
-
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">
-                Configure the current academic period.
-              </p>
+              <h2 className="text-lg font-bold text-gray-900">Academic Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure the current academic period.</p>
 
               <div className="space-y-4 max-w-md">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Academic Year
-                  </label>
-
-                  <input
-                    type="text"
-                    value={academicYear}
-                    onChange={(e) =>
-                      setAcademicYear(
-                        e.target.value
-                      )
-                    }
-                    placeholder="e.g. 2025-2026"
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <input type="text" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2025-2026" className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Current Semester
-                  </label>
-
-                  <select
-                    value={semester}
-                    onChange={(e) =>
-                      setSemester(
-                        e.target.value
-                      )
-                    }
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="First Semester">
-                      First Semester
-                    </option>
-
-                    <option value="Second Semester">
-                      Second Semester
-                    </option>
-
-                    <option value="Summer">
-                      Summer
-                    </option>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="First Semester">First Semester</option>
+                    <option value="Second Semester">Second Semester</option>
+                    <option value="Summer">Summer</option>
                   </select>
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    College/Department Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={collegeDept}
-                    onChange={(e) =>
-                      setCollegeDept(
-                        e.target.value
-                      )
-                    }
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">College/Department Name</label>
+                  <input type="text" value={collegeDept} onChange={(e) => setCollegeDept(e.target.value)} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Logout All Devices Custom Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-gray-900">Log Out of All Devices</h3>
+              <p className="text-xs text-gray-500">
+                Are you sure you want to log out of all devices? This will end all your active sessions.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowLogoutModal(false)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-xs hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmLogoutAllDevices} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-xs hover:bg-red-700 transition-colors">
+                Confirm Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

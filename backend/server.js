@@ -57,6 +57,8 @@ app.use('/api/deans-list', require('./routes/deansList'));
 app.use('/api/faculty', require('./routes/facultyDirectory'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/wfh-reports', require('./routes/wfhReports'));
+const academicDocumentsRouter = require('./routes/academicDocuments');
+app.use('/api/academic-records', academicDocumentsRouter);
 
 const teachingLoadRoutes = require('./routes/teachingLoad');
 app.use('/api', teachingLoadRoutes);

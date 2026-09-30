@@ -24,6 +24,9 @@ import {
   Upload,
   Eye,
   EyeOff,
+  Clock,
+  CalendarDays,
+  MapPin,
   Filter,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
@@ -1167,6 +1170,7 @@ interface BackendCalendarEvent {
   location?: string | null;
   department_ids?: string[] | null;
   posted_by_role?: string | null;
+  color?: string | null;
 }
 
 const EVENT_TYPE_COLOR: Record<string, string> = {
@@ -1192,7 +1196,15 @@ const MONTH_NAMES = [
 ];
 
 function colorForAlumniEvent(ev: BackendCalendarEvent): string {
-  const t = ev.event_type?.toLowerCase() || '';
+  if (ev.color) return ev.color;
+  if (!ev.event_type) return DEFAULT_ALUMNI_EVENT_COLOR;
+  if (ev.event_type.includes('::')) {
+    const parts = ev.event_type.split('::');
+    if (parts[1] && parts[1].startsWith('#')) {
+      return parts[1];
+    }
+  }
+  const t = ev.event_type.toLowerCase() || '';
   return EVENT_TYPE_COLOR[t] || DEFAULT_ALUMNI_EVENT_COLOR;
 }
 
@@ -1232,6 +1244,7 @@ function sortEventsChronologically(a: BackendCalendarEvent, b: BackendCalendarEv
   return (timeA ?? '').localeCompare(timeB ?? '');
 }
 
+// Client-side defense-in-depth audience guard
 function isAlumniAuthorizedEvent(ev: BackendCalendarEvent): boolean {
   if (!ev.audience) return true;
   const aud = ev.audience.trim().toLowerCase();
@@ -1348,6 +1361,7 @@ function AlumniCalendar() {
 
   return (
     <div className="space-y-6">
+      {/* ── Top Header ── */}
       <div>
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
           Alumni Calendar & Activities
@@ -1364,7 +1378,9 @@ function AlumniCalendar() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* ── Main Calendar Grid (2 cols on lg) ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+          {/* Quick Month & Year Selection Bar */}
           <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
             <div className="flex items-center gap-2">
               <select
@@ -1423,6 +1439,7 @@ function AlumniCalendar() {
             </div>
           </div>
 
+          {/* Days of Week Header */}
           <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
             {DAYS.map((d, i) => (
               <div
@@ -1505,6 +1522,7 @@ function AlumniCalendar() {
                       )}
                     </div>
 
+                    {/* Desktop Event Pills */}
                     <div className="hidden sm:flex flex-col gap-1">
                       {dayEvents.slice(0, 2).map((ev) => (
                         <button
@@ -1527,6 +1545,7 @@ function AlumniCalendar() {
                       )}
                     </div>
 
+                    {/* Mobile Dots */}
                     {hasEvents && (
                       <div className="sm:hidden flex gap-1 flex-wrap px-0.5 mt-1">
                         {dayEvents.slice(0, 3).map((ev) => (
@@ -1542,6 +1561,7 @@ function AlumniCalendar() {
                       </div>
                     )}
 
+                    {/* Tooltip Hover Preview with Time Range */}
                     {showPopover && (
                       <div
                         role="tooltip"
@@ -1562,30 +1582,36 @@ function AlumniCalendar() {
                         <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                           {dayEvents.map((ev) => {
                             const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                            const evColor = colorForAlumniEvent(ev);
                             return (
                               <div
                                 key={ev.id}
                                 onClick={() => setSelectedEvent(ev)}
                                 className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                style={{ borderLeftColor: isPast ? '#9CA3AF' : colorForAlumniEvent(ev) }}
+                                style={{ borderLeftColor: isPast ? '#9CA3AF' : evColor }}
                               >
                                 <div className="text-xs font-semibold text-gray-900 leading-snug">
                                   {ev.title}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                                  <span className="font-medium text-gray-700">
+                                  <span className="flex items-center gap-1 font-medium text-gray-700">
+                                    <Clock className="w-3 h-3 text-gray-400" />
                                     {timeRangeStr}
                                   </span>
                                   {ev.event_type && (
-                                    <span className="uppercase text-[9px] font-bold text-gray-600">
+                                    <span
+                                      className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                      style={{ backgroundColor: isPast ? '#9CA3AF' : evColor }}
+                                    >
                                       {ev.event_type}
                                     </span>
                                   )}
                                 </div>
                                 {ev.location && (
-                                  <p className="text-[11px] text-gray-500 truncate">
-                                    📍 {ev.location}
-                                  </p>
+                                  <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                                    <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                    <span className="truncate">{ev.location}</span>
+                                  </div>
                                 )}
                               </div>
                             );
@@ -1600,9 +1626,13 @@ function AlumniCalendar() {
           )}
         </div>
 
+        {/* ── Upcoming Activities Consistent Panel (Matches Dean & Chair) ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <h2 className="text-sm font-bold text-gray-900">Upcoming Activities</h2>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+              <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
+            </div>
             <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
               {upcomingEvents.length}
             </span>
@@ -1610,7 +1640,7 @@ function AlumniCalendar() {
 
           {upcomingEvents.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
-              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30"/>
+              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
               <p className="text-xs font-medium">No upcoming events scheduled</p>
             </div>
           ) : (
@@ -1619,12 +1649,14 @@ function AlumniCalendar() {
                 const evDate = dateOnlyAlumni(ev.event_date);
                 const isDueToday = evDate === todayStr;
                 const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                const evColor = colorForAlumniEvent(ev);
 
                 return (
                   <div
                     key={ev.id}
                     onClick={() => setSelectedEvent(ev)}
                     className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                    style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
@@ -1642,12 +1674,13 @@ function AlumniCalendar() {
                     </div>
 
                     <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                      <span className="font-medium text-gray-700">
+                      <span className="flex items-center gap-1 font-medium text-gray-700">
+                        <Clock className="w-3 h-3 text-gray-400" />
                         {timeRangeStr}
                       </span>
                       <span
                         className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: colorForAlumniEvent(ev) }}
+                        style={{ backgroundColor: evColor }}
                       />
                       <span className="truncate capitalize">{ev.event_type || 'Activity'}</span>
                     </div>
@@ -1659,68 +1692,71 @@ function AlumniCalendar() {
         </div>
       </div>
 
+      {/* ── Event Details Modal (Portal with Full-Screen Blur) ── */}
       {selectedEvent && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between p-6 border-b border-gray-100">
-              <div className="min-w-0">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0" onClick={() => setSelectedEvent(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
                 <span
-                  className="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full mb-2 capitalize"
-                  style={{
-                    backgroundColor: `${colorForAlumniEvent(selectedEvent)}15`,
-                    color: colorForAlumniEvent(selectedEvent),
-                  }}
+                  className="inline-block px-2.5 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1 shadow-2xs"
+                  style={{ backgroundColor: colorForAlumniEvent(selectedEvent) }}
                 >
                   {selectedEvent.event_type || 'Activity'}
                 </span>
-                <h3 className="text-lg font-semibold text-gray-900 truncate">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug">
                   {selectedEvent.title}
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  Scheduled for {formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}
-                </p>
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 ml-4"
+                aria-label="Close modal"
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500 hover:text-gray-700"
               >
-                <X className="w-5 h-5"/>
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Time</p>
-                <p className="text-sm text-gray-700">
-                  {formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}
-                </p>
+            <div className="space-y-3 bg-gray-50 rounded-xl p-4 text-xs sm:text-sm text-gray-700">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Date:</span>
+                <span>{formatLongDate(dateOnlyAlumni(selectedEvent.event_date))}</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="font-semibold text-gray-900">Time:</span>
+                <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
               </div>
 
               {selectedEvent.location && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Location</p>
-                  <p className="text-sm text-gray-700">{selectedEvent.location}</p>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Location:</span>
+                  <span>{selectedEvent.location}</span>
                 </div>
               )}
 
               <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Posted By</p>
-                <p className="text-sm text-gray-700">
+                <span className="font-semibold text-gray-900">Posted by: </span>
+                <span>
                   {ROLE_DISPLAY_LABEL_ALUMNI[selectedEvent.posted_by_role ?? ''] ??
                     selectedEvent.posted_by_role ??
                     'College Administration'}
+                </span>
+              </div>
+            </div>
+
+            {selectedEvent.description && (
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Description</h4>
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed whitespace-pre-wrap bg-white p-3 rounded-xl border border-gray-100">
+                  {selectedEvent.description}
                 </p>
               </div>
-
-              {selectedEvent.description && (
-                <div className="pt-2">
-                  <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Description</p>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                    {selectedEvent.description}
-                  </p>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>,
         document.body

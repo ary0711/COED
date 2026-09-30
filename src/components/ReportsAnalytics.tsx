@@ -165,6 +165,15 @@ export function ReportsAnalytics() {
   const [savingDeadline, setSavingDeadline] = useState(false);
   const [sendingBulk, setSendingBulk] = useState(false);
 
+  // New Modal States replacing alerts
+  const [showDeadlineModal, setShowDeadlineModal] = useState(false);
+  const [showBulkReminderModal, setShowBulkReminderModal] = useState(false);
+  const [statusMessageModal, setStatusMessageModal] = useState<{
+    type: 'success' | 'warning' | 'error';
+    title: string;
+    message: string;
+  } | null>(null);
+
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 15;
@@ -249,7 +258,11 @@ export function ReportsAnalytics() {
   // Save deadline & notify personnel
   const saveDeadline = async () => {
     if (!deadlineInput) {
-      alert('Please select a valid deadline date and time.');
+      setStatusMessageModal({
+        type: 'warning',
+        title: 'Missing Date',
+        message: 'Please select a valid deadline date and time.',
+      });
       return;
     }
     setSavingDeadline(true);
@@ -279,9 +292,18 @@ export function ReportsAnalytics() {
       });
 
       await fetchDeadline();
-      alert('Deadline successfully saved and notification broadcasted to Faculty & Department Chairs.');
+      setShowDeadlineModal(false);
+      setStatusMessageModal({
+        type: 'success',
+        title: 'Deadline Broadcasted',
+        message: 'Deadline successfully saved and notification broadcasted to Faculty & Department Chairs.',
+      });
     } catch (err: any) {
-      alert(err.message || 'Failed to save deadline.');
+      setStatusMessageModal({
+        type: 'error',
+        title: 'Save Failed',
+        message: err.message || 'Failed to save deadline.',
+      });
     } finally {
       setSavingDeadline(false);
     }
@@ -476,18 +498,25 @@ export function ReportsAnalytics() {
     };
   }, [periodReports]);
 
-  // Send Bulk Reminder
-  const sendBulkReminder = async () => {
+  // Pending Profiles for Bulk Reminder
+  const pendingProfiles = useMemo(() => {
     const submittedUserIds = new Set(
       periodReports
         .filter((r) => !r.is_archived && (r.status === 'submitted' || r.status === 'approved'))
         .map((r) => r.submitted_by)
     );
+    return profiles.filter((p) => !submittedUserIds.has(p.id));
+  }, [periodReports, profiles]);
 
-    const pendingProfiles = profiles.filter((p) => !submittedUserIds.has(p.id));
-
+  // Send Bulk Reminder Execution
+  const executeSendBulkReminder = async () => {
     if (pendingProfiles.length === 0) {
-      alert(`All faculty and department chairs have submitted their reports for ${selectedQuarter} Quarter ${selectedYear}.`);
+      setShowBulkReminderModal(false);
+      setStatusMessageModal({
+        type: 'warning',
+        title: 'All Reports Submitted',
+        message: `All faculty and department chairs have submitted their reports for ${selectedQuarter} Quarter ${selectedYear}.`,
+      });
       return;
     }
 
@@ -504,9 +533,18 @@ export function ReportsAnalytics() {
         user_ids: pendingProfiles.map((p) => p.id),
       });
 
-      alert(`Reminders dispatched to ${result.sent} of ${pendingProfiles.length} pending faculty members.`);
+      setShowBulkReminderModal(false);
+      setStatusMessageModal({
+        type: 'success',
+        title: 'Reminders Dispatched',
+        message: `Reminders successfully dispatched to ${result.sent} of ${pendingProfiles.length} pending faculty members.`,
+      });
     } catch (err: any) {
-      alert(err.message || 'Failed to dispatch reminders.');
+      setStatusMessageModal({
+        type: 'error',
+        title: 'Dispatch Failed',
+        message: err.message || 'Failed to dispatch reminders.',
+      });
     } finally {
       setSendingBulk(false);
     }
@@ -615,7 +653,11 @@ export function ReportsAnalytics() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to update report status.');
+        setStatusMessageModal({
+          type: 'error',
+          title: 'Action Failed',
+          message: err.error || 'Failed to update report status.',
+        });
         return;
       }
 
@@ -626,7 +668,11 @@ export function ReportsAnalytics() {
         setInspectReport((prev) => prev ? { ...prev, status: newStatus, dean_remarks: remarks || null } : null);
       }
     } catch {
-      alert('Network failure updating report.');
+      setStatusMessageModal({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Network failure updating report status.',
+      });
     } finally {
       setActionLoading(false);
     }
@@ -654,14 +700,22 @@ export function ReportsAnalytics() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to update archive status.');
+        setStatusMessageModal({
+          type: 'error',
+          title: 'Archive Failed',
+          message: err.error || 'Failed to update archive status.',
+        });
         return;
       }
 
       await fetchAllData();
       setArchiveModalTarget(null);
     } catch {
-      alert('Network failure toggling archive.');
+      setStatusMessageModal({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Network failure toggling archive.',
+      });
     } finally {
       setActionLoading(false);
     }
@@ -800,42 +854,44 @@ export function ReportsAnalytics() {
         </div>
       </div>
 
-      {/* Set Deadline & Bulk Reminder Panel */}
+      {/* Set Deadline & Bulk Reminder Panel Trigger Buttons */}
       <div className="bg-white rounded-2xl shadow-xs border border-gray-200/80 p-4 sm:p-5">
-        <label className="block text-xs font-semibold text-gray-700 mb-2">
-          Set Submission Deadline for {selectedQuarter} Quarter {selectedYear}
-        </label>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <input
-            type="datetime-local"
-            value={deadlineInput}
-            onChange={(e) => setDeadlineInput(e.target.value)}
-            className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          />
-          <button
-            onClick={saveDeadline}
-            disabled={savingDeadline}
-            className="px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
-          >
-            {savingDeadline ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700">
+              Period Submission Deadlines & Notifications ({selectedQuarter} Quarter {selectedYear})
+            </label>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Current Deadline:{' '}
+              <strong className="text-gray-900">
+                {deadline
+                  ? new Date(deadline.due_date).toLocaleString('en-PH', {
+                      timeZone: 'Asia/Manila',
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })
+                  : 'No deadline specified yet'}
+              </strong>
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <button
+              onClick={() => setShowDeadlineModal(true)}
+              className="flex-1 sm:flex-initial px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
               <Calendar className="w-4 h-4" />
-            )}
-            {savingDeadline ? 'Saving...' : deadline ? 'Update Deadline' : 'Set Deadline'}
-          </button>
-          <button
-            onClick={sendBulkReminder}
-            disabled={sendingBulk}
-            className="px-4 py-2.5 bg-amber-500 text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 flex-shrink-0"
-          >
-            {sendingBulk ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
+              {deadline ? 'Update Deadline' : 'Set Deadline'}
+            </button>
+
+            <button
+              onClick={() => setShowBulkReminderModal(true)}
+              className="flex-1 sm:flex-initial px-4 py-2.5 bg-amber-500 text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
               <Megaphone className="w-4 h-4" />
-            )}
-            {sendingBulk ? 'Sending...' : 'Send Bulk Reminder'}
-          </button>
+              Send Bulk Reminder
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1543,7 +1599,183 @@ export function ReportsAnalytics() {
       )}
 
       {/* ===================================================================== */}
-      {/* 6. COMPLETE PRINT MODAL (PORTAL COVERING 100% OF VIEWPORT)            */}
+      {/* 6. SET / UPDATE DEADLINE MODAL (FULL VIEWPORT PORTAL)                */}
+      {/* ===================================================================== */}
+      {showDeadlineModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div 
+            className="fixed inset-0"
+            onClick={() => !savingDeadline && setShowDeadlineModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-[#1E3A8A]">
+                <Calendar className="w-5 h-5" />
+                <h3 className="font-bold text-gray-900 text-base">
+                  {deadline ? 'Update Deadline' : 'Set Submission Deadline'}
+                </h3>
+              </div>
+              <button
+                disabled={savingDeadline}
+                onClick={() => setShowDeadlineModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Set the submission cutoff date and time for <strong>{selectedQuarter} Quarter {selectedYear}</strong>. All faculty members and department chairs will receive an automatic announcement.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Due Date & Time</label>
+              <input
+                type="datetime-local"
+                value={deadlineInput}
+                onChange={(e) => setDeadlineInput(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={savingDeadline}
+                onClick={() => setShowDeadlineModal(false)}
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingDeadline || !deadlineInput}
+                onClick={saveDeadline}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                {savingDeadline && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {savingDeadline ? 'Saving...' : deadline ? 'Update & Broadcast' : 'Set & Broadcast'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ===================================================================== */}
+      {/* 7. SEND BULK REMINDER MODAL (FULL VIEWPORT PORTAL)                   */}
+      {/* ===================================================================== */}
+      {showBulkReminderModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div 
+            className="fixed inset-0"
+            onClick={() => !sendingBulk && setShowBulkReminderModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-amber-600">
+                <Megaphone className="w-5 h-5" />
+                <h3 className="font-bold text-gray-900 text-base">Send Bulk Reminder</h3>
+              </div>
+              <button
+                disabled={sendingBulk}
+                onClick={() => setShowBulkReminderModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-gray-600 leading-relaxed">
+              <p>
+                You are about to dispatch quarterly report reminder notifications for <strong>{selectedQuarter} Quarter {selectedYear}</strong>.
+              </p>
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-amber-900 space-y-1">
+                <div>Pending Submissions: <strong>{pendingProfiles.length} Personnel</strong></div>
+                {deadline && (
+                  <div className="text-[11px] text-amber-700">
+                    Deadline: {new Date(deadline.due_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={sendingBulk}
+                onClick={() => setShowBulkReminderModal(false)}
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sendingBulk || pendingProfiles.length === 0}
+                onClick={executeSendBulkReminder}
+                className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                {sendingBulk && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {sendingBulk ? 'Dispatching...' : 'Confirm & Dispatch'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ===================================================================== */}
+      {/* 8. STATUS / RESPONSE MESSAGE MODAL (REPLACES BROWSER ALERTS)          */}
+      {/* ===================================================================== */}
+      {statusMessageModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div 
+            className="fixed inset-0"
+            onClick={() => setStatusMessageModal(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 text-center z-10 animate-in fade-in zoom-in-95">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${
+              statusMessageModal.type === 'success'
+                ? 'bg-emerald-50 text-emerald-600'
+                : statusMessageModal.type === 'warning'
+                ? 'bg-amber-50 text-amber-600'
+                : 'bg-red-50 text-red-600'
+            }`}>
+              {statusMessageModal.type === 'success' ? (
+                <CheckCircle className="w-6 h-6" />
+              ) : statusMessageModal.type === 'warning' ? (
+                <AlertCircle className="w-6 h-6" />
+              ) : (
+                <XCircle className="w-6 h-6" />
+              )}
+            </div>
+
+            <h3 className="font-bold text-gray-900 text-base">{statusMessageModal.title}</h3>
+            <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">{statusMessageModal.message}</p>
+
+            <button
+              type="button"
+              onClick={() => setStatusMessageModal(null)}
+              className="w-full py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF] transition-colors shadow-sm"
+            >
+              Okay
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ===================================================================== */}
+      {/* 9. COMPLETE PRINT MODAL (PORTAL COVERING 100% OF VIEWPORT)             */}
       {/* ===================================================================== */}
       {showPrintModal && inspectReport && typeof document !== 'undefined' && createPortal(
         <div 
