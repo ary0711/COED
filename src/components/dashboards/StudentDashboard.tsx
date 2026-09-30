@@ -18,6 +18,7 @@ import {
   Loader2,
   EyeOff,
   Trash2,
+  CalendarDays,
   History,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
@@ -931,7 +932,6 @@ function FacultyDepartments({ profile }: { profile: StudentProfile | null }) {
 function AcademicResources() {
   return <AcademicDocumentsViewer />;
 }
-
 // ====================== ACHIEVEMENTS & ACTIVITIES (CALENDAR) ======================
 const ROLE_DISPLAY_LABEL_STUDENT: Record<string, string> = {
   dean: 'Dean',
@@ -1058,6 +1058,7 @@ function AchievementsActivities() {
 
   return (
     <div className="space-y-6">
+      {/* ── Header ── */}
       <div>
         <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
           Calendar & Activities
@@ -1074,7 +1075,9 @@ function AchievementsActivities() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* ── Main Calendar Grid (2 Cols on lg) ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-visible">
+          {/* Month Navigation Toolbar */}
           <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/40 gap-3">
             <div className="flex items-center gap-2">
               <select
@@ -1133,6 +1136,7 @@ function AchievementsActivities() {
             </div>
           </div>
 
+          {/* Days Header */}
           <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/20">
             {DAYS.map((d, i) => (
               <div
@@ -1272,12 +1276,13 @@ function AchievementsActivities() {
                         <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                           {dayEvents.map((ev) => {
                             const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                            const evColor = colorForStudentEvent(ev);
                             return (
                               <div
                                 key={ev.id}
                                 onClick={() => setSelectedEvent(ev)}
                                 className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                style={{ borderLeftColor: isPast ? '#9CA3AF' : colorForStudentEvent(ev) }}
+                                style={{ borderLeftColor: isPast ? '#9CA3AF' : evColor }}
                               >
                                 <div className="text-xs font-semibold text-gray-900 leading-snug">
                                   {ev.title}
@@ -1287,7 +1292,10 @@ function AchievementsActivities() {
                                     {timeRangeStr}
                                   </span>
                                   {ev.event_type && (
-                                    <span className="uppercase text-[9px] font-bold text-gray-600">
+                                    <span
+                                      className="uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                      style={{ backgroundColor: isPast ? '#9CA3AF' : evColor }}
+                                    >
                                       {ev.event_type}
                                     </span>
                                   )}
@@ -1305,9 +1313,13 @@ function AchievementsActivities() {
           )}
         </div>
 
+        {/* ── Upcoming Activities Consistent Panel ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <h2 className="text-sm font-bold text-gray-900">Upcoming Activities</h2>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-[#1E3A8A]" />
+              <h2 className="text-sm font-bold text-gray-900">Upcoming Agenda</h2>
+            </div>
             <span className="px-2 py-0.5 bg-blue-50 text-[#1E3A8A] text-xs font-bold rounded-full">
               {upcomingEvents.length}
             </span>
@@ -1324,12 +1336,14 @@ function AchievementsActivities() {
                 const evDate = dateOnlyStudent(ev.event_date);
                 const isDueToday = evDate === todayStr;
                 const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                const evColor = colorForStudentEvent(ev);
 
                 return (
                   <div
                     key={ev.id}
                     onClick={() => setSelectedEvent(ev)}
                     className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                    style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
@@ -1352,7 +1366,7 @@ function AchievementsActivities() {
                       </span>
                       <span
                         className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: colorForStudentEvent(ev) }}
+                        style={{ backgroundColor: evColor }}
                       />
                       <span className="truncate capitalize">{ev.event_type || 'Activity'}</span>
                     </div>
@@ -1364,9 +1378,11 @@ function AchievementsActivities() {
         </div>
       </div>
 
+      {/* ── Event Details Modal (Portal with Full-Screen Blur) ── */}
       {selectedEvent && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0" onClick={() => setSelectedEvent(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 z-[10000]">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <span
