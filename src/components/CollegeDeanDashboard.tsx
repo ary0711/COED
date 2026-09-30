@@ -1814,7 +1814,6 @@ function UserManagement() {
     </div>
   );
 }
-
 // ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
@@ -1890,7 +1889,14 @@ const MONTH_NAMES = [
 
 function colorForCalendarEvent(ev: CalendarEvent): string {
   if (ev.color) return ev.color;
-  const t = ev.event_type?.toLowerCase() || '';
+  if (!ev.event_type) return DEFAULT_EVENT_COLOR;
+  if (ev.event_type.includes('::')) {
+    const parts = ev.event_type.split('::');
+    if (parts[1] && parts[1].startsWith('#')) {
+      return parts[1];
+    }
+  }
+  const t = ev.event_type.toLowerCase() || '';
   return TYPE_TO_COLOR[t] || DEFAULT_EVENT_COLOR;
 }
 
@@ -1962,6 +1968,7 @@ export default function CalendarActivities() {
   const [inspectingEvent, setInspectingEvent] = useState<CalendarEvent | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDeleteConfirmId, setShowDeleteConfirmId] = useState<string | null>(null); // Custom Delete Modal State
 
   const emptyForm = {
     title: '',
@@ -2177,7 +2184,6 @@ export default function CalendarActivities() {
       return;
     }
 
-    // Prevent selecting a past date upon creation/edit
     if (form.date < todayStr) {
       setFormError('You cannot schedule an event on a past date.');
       return;
@@ -2230,7 +2236,6 @@ export default function CalendarActivities() {
         return;
       }
 
-            // Notify the audience only for NEW events (backend respects mute settings)
       if (!isEditing) {
         try {
           const when = new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', {
@@ -2261,8 +2266,7 @@ export default function CalendarActivities() {
     }
   };
 
-  const deleteEvent = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this event?')) return;
+  const confirmDeleteEvent = async (id: string) => {
     setDeletingId(id);
     try {
       const res = await fetch(`${CALENDAR_API_URL}/${id}`, {
@@ -2278,6 +2282,7 @@ export default function CalendarActivities() {
       if (inspectingEvent?.id === id) {
         setInspectingEvent(null);
       }
+      setShowDeleteConfirmId(null);
     } catch {
       setLoadError('Could not reach the server. Please try again.');
     } finally {
@@ -2570,12 +2575,13 @@ export default function CalendarActivities() {
                           <div className="mt-2 space-y-2 max-h-52 overflow-y-auto pr-1">
                             {dayEvents.map((ev) => {
                               const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                              const evColor = colorForCalendarEvent(ev);
                               return (
                                 <div
                                   key={ev.id}
                                   onClick={() => setInspectingEvent(ev)}
                                   className="p-2 rounded-lg bg-gray-50 hover:bg-blue-50/40 border-l-[3px] space-y-1 cursor-pointer transition-colors"
-                                  style={{ borderLeftColor: colorForCalendarEvent(ev) }}
+                                  style={{ borderLeftColor: evColor }}
                                 >
                                   <div className="text-xs font-semibold text-gray-900 leading-snug">
                                     {ev.title}
@@ -2586,8 +2592,11 @@ export default function CalendarActivities() {
                                       {timeRangeStr}
                                     </span>
                                     {ev.event_type && (
-                                      <span className="flex items-center gap-1 uppercase text-[9px] font-bold text-gray-600">
-                                        <Tag className="w-2.5 h-2.5 text-gray-400" />
+                                      <span
+                                        className="flex items-center gap-1 uppercase text-[9px] font-bold px-1.5 py-0.2 rounded text-white"
+                                        style={{ backgroundColor: evColor }}
+                                      >
+                                        <Tag className="w-2.5 h-2.5 text-white/80" />
                                         {ev.event_type}
                                       </span>
                                     )}
@@ -2634,12 +2643,14 @@ export default function CalendarActivities() {
                   const evDate = dateOnlyStr(ev.event_date);
                   const isDueToday = evDate === todayStr;
                   const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                  const evColor = colorForCalendarEvent(ev);
 
                   return (
                     <div
                       key={ev.id}
                       onClick={() => setInspectingEvent(ev)}
                       className="p-3 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-gray-50/60 transition-all cursor-pointer group space-y-1.5"
+                      style={{ borderLeftWidth: 3, borderLeftColor: evColor }}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors line-clamp-1">
@@ -2663,7 +2674,7 @@ export default function CalendarActivities() {
                         </span>
                         <span
                           className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: colorForCalendarEvent(ev) }}
+                          style={{ backgroundColor: evColor }}
                         />
                         <span className="truncate">{departmentLabel(ev)}</span>
                       </div>
@@ -2802,11 +2813,13 @@ export default function CalendarActivities() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupedArchiveEvents[groupMonth].map((ev) => {
                       const timeRangeStr = formatEventTimeRange(ev.start_time, ev.end_time);
+                      const evColor = colorForCalendarEvent(ev);
                       return (
                         <div
                           key={ev.id}
                           onClick={() => setInspectingEvent(ev)}
                           className="flex flex-col justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 bg-gray-50/40 hover:bg-white transition-all cursor-pointer group shadow-2xs space-y-3"
+                          style={{ borderLeftWidth: 4, borderLeftColor: evColor }}
                         >
                           <div className="space-y-1.5">
                             <div className="flex items-start justify-between gap-2">
@@ -2814,7 +2827,10 @@ export default function CalendarActivities() {
                                 {ev.title}
                               </h4>
                               {ev.event_type && (
-                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 text-gray-600 flex-shrink-0">
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white flex-shrink-0"
+                                  style={{ backgroundColor: evColor }}
+                                >
                                   {ev.event_type}
                                 </span>
                               )}
@@ -2875,15 +2891,15 @@ export default function CalendarActivities() {
         </div>
       )}
 
-      {/* ── Event Details Modal ── */}
-      {inspectingEvent && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setInspectingEvent(null)} />
+      {/* ── Event Details Modal (Portal with Full-Screen Blur) ── */}
+      {inspectingEvent && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0" onClick={() => setInspectingEvent(null)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6 z-[10000] max-h-[90vh] overflow-y-auto space-y-5">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <span
-                  className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1"
+                  className="inline-block px-2.5 py-0.5 rounded text-[10px] uppercase font-bold text-white mb-1 shadow-2xs"
                   style={{ backgroundColor: colorForCalendarEvent(inspectingEvent) }}
                 >
                   {inspectingEvent.event_type || 'Activity'}
@@ -2957,7 +2973,7 @@ export default function CalendarActivities() {
                   <span>Edit</span>
                 </button>
                 <button
-                  onClick={() => deleteEvent(inspectingEvent.id)}
+                  onClick={() => setShowDeleteConfirmId(inspectingEvent.id)}
                   disabled={deletingId === inspectingEvent.id}
                   className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium flex items-center gap-1.5 disabled:opacity-40"
                 >
@@ -2967,14 +2983,50 @@ export default function CalendarActivities() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Unified Add / Edit Event Modal ── */}
-      {showModal && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center p-4">
+      {/* ── Custom Delete Confirmation Modal (Portal with Full-Screen Blur) ── */}
+      {showDeleteConfirmId && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 text-center">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-gray-900">Delete Event</h3>
+              <p className="text-xs text-gray-500">
+                Are you sure you want to delete this event? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteConfirmId(null)}
+                disabled={deletingId === showDeleteConfirmId}
+                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-xs hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteEvent(showDeleteConfirmId)}
+                disabled={deletingId === showDeleteConfirmId}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingId === showDeleteConfirmId && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{deletingId === showDeleteConfirmId ? 'Deleting...' : 'Confirm Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Unified Add / Edit Event Modal (Portal with Full-Screen Blur) ── */}
+      {showModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            className="fixed inset-0"
             onClick={() => {
               resetForm();
               setShowModal(false);
@@ -3018,7 +3070,7 @@ export default function CalendarActivities() {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
                 <input
                   type="date"
-                  min={todayStr} 
+                  min={todayStr}
                   value={form.date}
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3183,7 +3235,8 @@ export default function CalendarActivities() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`
@@ -3201,6 +3254,7 @@ export default function CalendarActivities() {
     </div>
   );
 }
+
 // ─── Academic Records (Dean/Admin) ──────────────────────────────────────────
 
 interface TargetRoleOption {
