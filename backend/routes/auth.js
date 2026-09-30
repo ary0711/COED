@@ -665,7 +665,9 @@ router.put('/profile', authenticate, async (req, res) => {
     const jwtUsername = req.user?.username;
     const jwtEmail = req.user?.email;
 
-    const { full_name, email } = req.body;
+    const { full_name, username, email } = req.body;
+
+const trimmedUsername = String(username || '').trim().toLowerCase();
 
     const trimmedName =
       String(full_name || '').trim();
@@ -673,12 +675,12 @@ router.put('/profile', authenticate, async (req, res) => {
     const trimmedEmail =
       String(email || '').trim().toLowerCase();
 
-    if (!trimmedName || !trimmedEmail) {
-      return res.status(400).json({
-        success: false,
-        error: 'Full Name and Email are required.'
-      });
-    }
+    if (!trimmedName || !trimmedEmail || !trimmedUsername) {
+  return res.status(400).json({
+    success: false,
+    error: 'Username, Full Name and Email are required.'
+  });
+}
 
     const emailRegex =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -881,13 +883,17 @@ router.put('/profile', authenticate, async (req, res) => {
     }
 
     const {
-      error: usersUpdateError
-    } = await supabase
-      .from('users')
-      .update({
-        email: trimmedEmail
-      })
-      .eq('id', currentUser.id);
+  data: updatedUser,
+  error: usersUpdateError
+} = await supabase
+  .from('users')
+  .update({
+    username: trimmedUsername,
+    email: trimmedEmail
+  })
+  .eq('id', currentUser.id)
+  .select('id, username, email, role')
+  .single();
 
     if (usersUpdateError) {
       await supabase
@@ -1523,29 +1529,75 @@ router.put('/password', authenticate, async (req, res) => {
 // NOTIFICATION PREFERENCES
 // =========================================================
 router.put('/preferences', authenticate, async (req, res) => {
-  let profileId = req.user.profileId;
-  if (!profileId && req.user.email) {
-    const { data } = await supabase
-      .from('profiles').select('id')
-      .eq('email', req.user.email.toLowerCase()).maybeSingle();
-    profileId = data?.id;
+  try {
+    let profileId = req.user.profileId;
+
+    if (!profileId && req.user.email) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', req.user.email.toLowerCase())
+        .maybeSingle();
+
+      profileId = data?.id;
+    }
+
+    if (!profileId) {
+      return res.status(404).json({
+        error: 'Profile not found.'
+      });
+    }
+
+    const allowed = [
+      'allow_all',
+      'announcements',
+      'staff_updates',
+      'reports',
+      'inquiries',
+      'system_notifs',
+      'calendar'
+    ];
+
+    const payload = {
+      user_id: profileId
+    };
+
+    allowed.forEach((key) => {
+      if (typeof req.body[key] === 'boolean') {
+        payload[key] = req.body[key];
+      }
+    });
+
+    const { data, error } = await supabase
+      .from('notification_preferences')
+      .upsert(payload, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({
+        error: error.message
+      });
+    }
+
+    return res.json({
+      message: 'Preferences updated successfully',
+      data
+    });
+
+  } catch (error) {
+    console.error(
+      'UPDATE NOTIFICATION PREFERENCES ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        error.message ||
+        'Failed to update notification preferences.'
+    });
   }
-  if (!profileId) return res.status(404).json({ error: 'Profile not found.' });
-
-  const allowed = ['allow_all', 'announcements', 'staff_updates', 'reports', 'inquiries', 'system_notifs'];
-  const payload = { user_id: profileId };
-  allowed.forEach((k) => {
-    if (typeof req.body[k] === 'boolean') payload[k] = req.body[k];
-  });
-
-  const { data, error } = await supabase
-    .from('notification_preferences')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select()
-    .single();
-
-  if (error) return res.status(500).json({ error: error.message });
-  return res.json({ message: 'Preferences updated successfully', data });
 });
-
 module.exports = router; 

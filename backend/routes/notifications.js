@@ -14,6 +14,7 @@ const supabase = require('../supabaseClient');
 const PREF_COLUMN = {
   announcement: 'announcements',
   inquiry: 'inquiries',
+  calendar: 'calendar',
   report: 'reports',
   staff_update: 'staff_updates',
   system: 'system_notifs',
@@ -27,6 +28,9 @@ const asArray = (v) => (Array.isArray(v) ? v : []);
 
 const isDeanOrAdmin = (req) => ['dean', 'admin'].includes(req.user.role);
 const isChair = (req) => ['department_chair', 'dept_chair', 'chair'].includes(req.user.role);
+const isFaculty = (req) => req.user.role === 'faculty';
+const isAlumni = (req) => req.user.role === 'alumni';
+const canNotifyDean = (req) => isChair(req) || isFaculty(req) || isAlumni(req);
 const canSend = (req) => isDeanOrAdmin(req) || isChair(req);
 
 // Some accounts (e.g. the Dean) have a different id in `users` than in `profiles`.
@@ -126,7 +130,141 @@ async function applyPreferences(ids, prefColumn) {
   }
   return { allowed: ids.filter((id) => !muted.has(id)), muted: muted.size };
 }
+// ============================================================
+// NOTIFICATION PREFERENCES
+// ============================================================
 
+// GET /api/notifications/preferences
+router.get('/preferences', authenticate, async (req, res) => {
+  try {
+    const ids = await ownIds(req);
+
+    if (ids.length === 0) {
+      return res.status(401).json({
+        error: 'Authenticated user ID is missing.',
+      });
+    }
+
+    // Prefer the profile ID when available
+    const userId = req.user.profileId || ids[0];
+
+    const { data, error } = await supabase
+      .from('notification_preferences')
+      .select(`
+        user_id,
+        allow_all,
+        inquiries,
+        announcements,
+        calendar,
+        reports,
+        staff_updates,
+        system_notifs
+      `)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        'GET notification preferences error:',
+        error
+      );
+
+      return res.status(500).json({
+        error: error.message,
+      });
+    }
+
+    // If no preference row exists yet, return defaults.
+    if (!data) {
+      return res.json({
+        user_id: userId,
+        allow_all: true,
+        inquiries: true,
+        announcements: true,
+        calendar: true,
+        reports: true,
+        staff_updates: true,
+        system_notifs: true,
+      });
+    }
+
+    return res.json(data);
+  } catch (error) {
+    console.error(
+      'GET /api/notifications/preferences ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error: error.message || 'Failed to load notification preferences.',
+    });
+  }
+});
+
+
+// PATCH /api/notifications/preferences
+router.patch('/preferences', authenticate, async (req, res) => {
+  try {
+    const ids = await ownIds(req);
+
+    if (ids.length === 0) {
+      return res.status(401).json({
+        error: 'Authenticated user ID is missing.',
+      });
+    }
+
+    const userId = req.user.profileId || ids[0];
+
+    const {
+      allow_all,
+      inquiries,
+      announcements,
+      calendar,
+    } = req.body;
+
+    const preferences = {
+      user_id: userId,
+      allow_all: Boolean(allow_all),
+      inquiries: Boolean(inquiries),
+      announcements: Boolean(announcements),
+      calendar: Boolean(calendar),
+    };
+
+    const { data, error } = await supabase
+      .from('notification_preferences')
+      .upsert(preferences, {
+        onConflict: 'user_id',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error(
+        'PATCH notification preferences error:',
+        error
+      );
+
+      return res.status(500).json({
+        error: error.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Notification preferences updated successfully.',
+      preferences: data,
+    });
+  } catch (error) {
+    console.error(
+      'PATCH /api/notifications/preferences ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error: error.message || 'Failed to update notification preferences.',
+    });
+  }
+});
 // ── GET /api/notifications ───────────────────────────────────
 router.get('/', authenticate, async (req, res) => {
   const ids = await ownIds(req);
@@ -253,8 +391,180 @@ router.post('/send', authenticate, async (req, res) => {
     const { error } = await supabase.from('notifications').insert(part);
     if (error) return res.status(500).json({ error: error.message });
   }
+  
 
   return res.json({ success: true, sent: rows.length, muted: prefs.muted });
 });
 
+const DEAN_ROLES = ['dean', 'college_dean', 'admin'];
+
+// ── POST /api/notifications/notify-dean  (Chair only) ────────
+router.post('/notify-dean', authenticate, async (req, res) => {
+  if (!canNotifyDean(req)) {
+  return res.status(403).json({ error: 'You are not allowed to use this.' });
+}
+
+  const { title, message, type = 'report' } = req.body;
+  const prefColumn = PREF_COLUMN[type];
+
+  if (!String(title || '').trim() || !String(message || '').trim()) {
+    return res.status(400).json({ error: 'Title and message are required.' });
+  }
+  if (!prefColumn) return res.status(400).json({ error: 'Invalid notification type.' });
+
+  const { data: deans, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .in('role', DEAN_ROLES)
+    .or('status.eq.active,status.is.null');
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const senderIds = await ownIds(req);
+  const ids = (deans ?? []).map((d) => d.id).filter((id) => !senderIds.includes(id));
+  if (ids.length === 0) return res.json({ success: true, sent: 0, muted: 0 });
+
+  const prefs = await applyPreferences(ids, prefColumn);
+  if (prefs.error) return res.status(500).json({ error: prefs.error.message });
+
+  const rows = prefs.allowed.map((id) => ({
+    user_id: id,
+    title: String(title).trim(),
+    message: String(message).trim(),
+    type,
+    is_read: false,
+  }));
+
+  if (rows.length > 0) {
+    const { error: insertError } = await supabase.from('notifications').insert(rows);
+    if (insertError) return res.status(500).json({ error: insertError.message });
+  }
+
+  return res.json({ success: true, sent: rows.length, muted: prefs.muted });
+});
+// ============================================================
+// POST /api/notifications/send-event
+// Send calendar/event notifications to selected recipients
+// ============================================================
+router.post('/send-event', authenticate, async (req, res) => {
+  try {
+    if (!canSend(req)) {
+      return res.status(403).json({
+        error: 'You are not allowed to send event notifications.'
+      });
+    }
+
+    const {
+      title,
+      message,
+      roles = [],
+      departments = [],
+      department_ids = [],
+      user_ids = []
+    } = req.body;
+
+    if (!String(title || '').trim()) {
+      return res.status(400).json({
+        error: 'Event title is required.'
+      });
+    }
+
+    if (!String(message || '').trim()) {
+      return res.status(400).json({
+        error: 'Event message is required.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // Resolve recipients
+    // --------------------------------------------------------
+    const resolved = await resolveRecipients(
+      {
+        roles,
+        departments,
+        department_ids,
+        user_ids
+      },
+      await ownIds(req)
+    );
+
+    if (resolved.error) {
+      return res.status(500).json({
+        error: resolved.error.message
+      });
+    }
+
+    if (!resolved.hasTargets) {
+      return res.status(400).json({
+        error: 'Choose at least one recipient group or account.'
+      });
+    }
+
+    if (resolved.ids.length === 0) {
+      return res.json({
+        success: true,
+        sent: 0,
+        muted: 0
+      });
+    }
+
+    // --------------------------------------------------------
+    // Respect each user's calendar notification preference
+    // --------------------------------------------------------
+    const prefs = await applyPreferences(
+      resolved.ids,
+      PREF_COLUMN.calendar
+    );
+
+    if (prefs.error) {
+      return res.status(500).json({
+        error: prefs.error.message
+      });
+    }
+
+    // --------------------------------------------------------
+    // Create notification rows
+    // --------------------------------------------------------
+    const rows = prefs.allowed.map((id) => ({
+      user_id: id,
+      title: String(title).trim(),
+      message: String(message).trim(),
+      type: 'calendar',
+      is_read: false
+    }));
+
+    // --------------------------------------------------------
+    // Insert notifications
+    // --------------------------------------------------------
+    for (const part of chunk(rows, 500)) {
+      const { error } = await supabase
+        .from('notifications')
+        .insert(part);
+
+      if (error) {
+        return res.status(500).json({
+          error: error.message
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      sent: rows.length,
+      muted: prefs.muted
+    });
+
+  } catch (error) {
+    console.error(
+      'SEND EVENT NOTIFICATION ERROR:',
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        error.message ||
+        'Failed to send event notifications.'
+    });
+  }
+});
 module.exports = router;

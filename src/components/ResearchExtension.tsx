@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { notifyDean } from '../notificationsApi';
 import { renderAsync } from 'docx-preview';
 import {
   Upload,
@@ -133,7 +134,7 @@ function getFileIcon(filename: string, className = 'w-4 h-4') {
   return <FileGenericIcon className={className} />;
 }
 
-export function ResearchExtension({ userId }: { userId: string }) {
+export function ResearchExtension({ userId, userName = 'A faculty member' }: { userId: string; userName?: string }) {
   // Navigation State
   const [view, setView] = useState<'overview' | 'create' | 'track'>('overview');
   const [overviewTab, setOverviewTab] = useState<'all' | 'research' | 'extension'>('all');
@@ -512,6 +513,16 @@ export function ResearchExtension({ userId }: { userId: string }) {
 
         xhr.send(formData);
       });
+
+      try {
+  await notifyDean({
+    title: `${isEdit ? 'Updated' : 'New'} ${researchType === 'research' ? 'Research' : 'Extension'} Submission`,
+    message: title.trim(),
+    type: 'system',
+  });
+} catch (e) {
+  console.error('Submission saved but Dean notification failed:', e);
+}
 
       await fetchSubmissions();
       resetForm();

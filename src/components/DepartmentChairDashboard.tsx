@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { sendBackendNotification } from '../notificationsApi';
+import { sendBackendNotification, notifyDean } from '../notificationsApi';
 import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
@@ -66,7 +66,6 @@ const dateOnly = (ts: string | null | undefined): string => {
   return ts.split('T')[0];
 };
 
-// Converts a plain <input type="date"> value ("2026-07-01") into a full ISO timestamp.
 const toTimestamp = (dateStr: string): string => {
   if (!dateStr) return '';
   return new Date(`${dateStr}T00:00:00`).toISOString();
@@ -76,7 +75,7 @@ const chairMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
   { icon: Calendar,        label: 'Department Calendar',  id: 'calendar' },
   { icon: FileCheck2,      label: 'Reports',              id: 'chairReports' },
-  { icon: TrendingUp,     label: 'Research & Extension', id: 'researchExtension' },
+  { icon: TrendingUp,      label: 'Research & Extension', id: 'researchExtension' },
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: FileText,        label: 'Reports Monitoring',   id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',     id: 'records' },
@@ -124,7 +123,7 @@ interface Profile {
   created_at: string;
 }
 
-// ─── HELPER: SMART PROGRAM MATCHER (Fix for Elementary Ed vs BEEd) ─────────
+// ─── HELPER: SMART PROGRAM MATCHER ─────────
 const isProgramMatch = (userProg: string, chairDepts: string[]) => {
   const p = (userProg || '').trim().toLowerCase();
   if (!p) return false;
@@ -132,10 +131,8 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
   return chairDepts.some((d) => {
     const dept = d.trim().toLowerCase();
     
-    // Direct match
     if (p === dept || p.includes(dept) || dept.includes(p)) return true;
 
-    // Aliases
     if ((p.includes('beed') || p.includes('elementary')) && (dept.includes('beed') || dept.includes('elementary'))) return true;
     if ((p.includes('btled') || p.includes('technology') || p.includes('livelihood')) && (dept.includes('btled') || dept.includes('technology') || dept.includes('livelihood'))) return true;
     if ((p.includes('math') || p.includes('mathematics')) && (dept.includes('math') || dept.includes('mathematics'))) return true;
@@ -144,7 +141,6 @@ const isProgramMatch = (userProg: string, chairDepts: string[]) => {
     return false;
   });
 };
-
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function DepartmentChairDashboard({
@@ -186,19 +182,19 @@ export function DepartmentChairDashboard({
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
-          {activeMenuItem === 'chairReports' && (<ReportsSection userId={userId} userName={userName} />)}
+          {activeMenuItem === 'chairReports'       && (<ReportsSection userId={userId} userName={userName} />)}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
           {activeMenuItem === 'approvals'          && <AccountApprovalsView departmentNames={departmentNames} />}
-         {activeMenuItem === 'settings' && (
-  <ChairSystemSettings
-    userName={userName}
-    departmentNames={departmentNames}
-    onLogout={handleInternalLogout}
-    onProfileUpdate={onProfileUpdate}
-  />
-)}
+          {activeMenuItem === 'settings' && (
+            <ChairSystemSettings
+              userName={userName}
+              departmentNames={departmentNames}
+              onLogout={handleInternalLogout}
+              onProfileUpdate={onProfileUpdate}
+            />
+          )}
         </main>
       </div>
     </div>
@@ -210,7 +206,6 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [facultyCount, setFacultyCount] = useState(0);
   const [facultyList, setFacultyList] = useState<any[]>([]);
   
-  // Dashboard states for Account Approvals
   const [accountsData, setAccountsData] = useState<any[]>([]);
   const [dashboardApprovalTab, setDashboardApprovalTab] = useState<'pending' | 'active' | 'rejected'>('pending');
 
@@ -218,49 +213,73 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   const [upcomingCount, setUpcomingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // States for Total Faculty Modal
+  const [showFacultyModal, setShowFacultyModal] = useState(false);
+  const [facultyModalData, setFacultyModalData] = useState<any[]>([]);
+  const [loadingModal, setLoadingModal] = useState(false);
+
   useEffect(() => {
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    const token = localStorage.getItem('token');
-    const headers = { Authorization: `Bearer ${token}` };
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
 
-    try {
-      // Faculty, reports, ug account approvals (backend)
-      const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
-      if (res.ok) {
-        const stats = await res.json();
-        setFacultyCount(stats.facultyCount);
-        setFacultyList(
-          stats.facultyList.map((f: any) => ({
-            ...f,
-            lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
-          }))
-        );
-        setReportStats(stats.reportStats);
-        setAccountsData(stats.accounts);
-      } else {
-        console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
+      try {
+        const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
+        if (res.ok) {
+          const stats = await res.json();
+          setFacultyCount(stats.facultyCount);
+          setFacultyList(
+            stats.facultyList.map((f: any) => ({
+              ...f,
+              lastUpdated: f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString() : 'No data',
+            }))
+          );
+          setReportStats(stats.reportStats);
+          setAccountsData(stats.accounts);
+        } else {
+          console.error('dashboard-stats failed:', await res.json().catch(() => ({})));
+        }
+
+        const calRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
+        if (calRes.ok) {
+          const events = await calRes.json();
+          const today = new Date().toISOString().split('T')[0];
+          setUpcomingCount(
+            (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
+          );
+        }
+      } catch (err) {
+        console.error('Error loading dashboard data', err);
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchDashboardData();
+  }, [departmentNames]);
 
-      // Upcoming activities (parehas sa Calendar page)
-      const calRes = await fetch(CALENDAR_API_URL, { headers });
-      if (calRes.ok) {
-        const events = await calRes.json();
-        const today = new Date().toISOString().split('T')[0];
-        setUpcomingCount(
-          (events ?? []).filter((e: any) => e.event_date && e.event_date.split('T')[0] >= today).length
-        );
+  const handleTotalFacultyClick = async () => {
+    setShowFacultyModal(true);
+    setLoadingModal(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/accounts/faculty', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const filtered = (data || []).filter((f: any) => {
+          const dept = f.faculty_profiles?.[0]?.department || f.department || '';
+          return f.status === 'active' && isProgramMatch(dept, departmentNames);
+        });
+        setFacultyModalData(filtered);
       }
     } catch (err) {
-      console.error('Error loading dashboard data', err);
+      console.error(err);
     } finally {
-      setLoading(false);
+      setLoadingModal(false);
     }
   };
-  fetchDashboardData();
-}, [departmentNames]);
 
-  // Derived state for the account approvals tabs
   const pendingAccounts = accountsData.filter(a => a.status === 'pending');
   const approvedAccounts = accountsData.filter(a => a.status === 'active');
   const rejectedAccounts = accountsData.filter(a => a.status === 'rejected');
@@ -273,7 +292,9 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
     <div className="flex flex-col lg:h-[calc(100vh-140px)]">
       <div className="mb-6 flex-shrink-0">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-          <div className="transition-transform"><SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" /></div>
+          <div onClick={handleTotalFacultyClick} className="cursor-pointer transition-transform hover:scale-[1.02]">
+            <SummaryCard title="Total Faculty" value={loading ? '...' : facultyCount.toString()} icon={GraduationCap} iconColor="#2563EB" iconBgColor="#DBEAFE" />
+          </div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Submitted Reports" value={loading ? '...' : reportStats.submitted.toString()} icon={CheckCircle} iconColor="#10B981" iconBgColor="#D1FAE5" /></div>
           <div onClick={() => setActiveMenuItem('reports')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Pending Reports" value={loading ? '...' : reportStats.pending.toString()} icon={Clock} iconColor="#F59E0B" iconBgColor="#FEF3C7" /></div>
           <div onClick={() => setActiveMenuItem('calendar')} className="cursor-pointer transition-transform hover:scale-[1.02]"><SummaryCard title="Upcoming Activities" value={loading ? '...' : upcomingCount.toString()} icon={Calendar} iconColor="#8B5CF6" iconBgColor="#EDE9FE" /></div>
@@ -282,7 +303,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:flex-1 lg:min-h-0 pb-4">
         
-        {/* FACULTY MONITORING (Left Side) */}
+        {/* FACULTY MONITORING */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:h-full min-h-[400px] max-h-[520px] lg:max-h-none overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><h2 className="text-sm font-bold text-gray-900">Faculty Monitoring</h2></div>
@@ -313,8 +334,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
           </div>
         </div>
 
-
-        {/* ACCOUNT APPROVALS (Right Side) */}
+        {/* ACCOUNT APPROVALS */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full min-h-[400px] overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center justify-between mb-3">
@@ -330,7 +350,6 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
               )}
             </div>
 
-            {/* DASHBOARD CARD TABS */}
             <div className="flex gap-1 bg-gray-200/50 p-1 rounded-lg">
               <button 
                 onClick={() => setDashboardApprovalTab('pending')}
@@ -396,6 +415,62 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         </div>
 
       </div>
+
+      {/* Program Faculty Modal */}
+      {showFacultyModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#1E3A8A]" />
+                Program Faculty ({departmentNames.join(', ')})
+              </h2>
+              <button onClick={() => setShowFacultyModal(false)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1 bg-gray-50/20">
+              {loadingModal ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#1E3A8A] mb-3" />
+                  <span className="text-sm text-gray-500">Loading faculty list...</span>
+                </div>
+              ) : facultyModalData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                  <p>No faculty members found for this program.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {facultyModalData.map((f: any) => {
+                    const rp = f.faculty_profiles?.[0] || {};
+                    const idNum = rp.faculty_id || f.id_number || 'N/A';
+                    return (
+                      <div key={f.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-blue-200 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-700 font-bold text-sm">
+                            {(f.full_name || 'U')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-bold text-gray-900 text-sm">{f.full_name || 'No Name'}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                              <span className="font-medium text-gray-600">Email:</span> {f.email}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">ID Number</div>
+                          <div className="font-mono text-sm font-semibold text-gray-800">{idNum}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -740,7 +815,6 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
       return;
     }
 
-    // Prevent selecting a past date
     if (form.date < todayStr) {
       setFormError('You cannot schedule an event on a past date.');
       return;
@@ -795,6 +869,18 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
         const err = await res.json().catch(() => ({}));
         setFormError(err.error || `Failed to ${isEditing ? 'update' : 'save'} event (${res.statusText})`);
         return;
+      }
+
+            if (!isEditing) {
+        try {
+          await notifyDean({
+            title: `New Department Event: ${form.title.trim()}`,
+            message: `${departmentNames.join(', ') || 'Department'} · ${new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+            type: 'system',
+          });
+        } catch (e) {
+          console.error('Event saved but Dean notification failed:', e);
+        }
       }
 
       await fetchEvents();
@@ -1012,7 +1098,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                   const hasEvents = dayEvents.length > 0;
                   const isTodayDate = dateStr === todayStr;
                   const isPast = dateStr < todayStr;
-                  const isSelected = selectedCalendarDate === dateStr;
+                  const isSelected = selectedCalendarDate === dateStr && !isPast;
                   const isHovered = hoveredDate === dateStr;
                   const showPopover = (isHovered || isSelected) && hasEvents;
 
@@ -1024,14 +1110,15 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                       onMouseEnter={() => setHoveredDate(dateStr)}
                       onMouseLeave={() => setHoveredDate(null)}
                       onClick={() => {
+                        if (isPast) return; 
                         setSelectedCalendarDate((prev) => (prev === dateStr ? null : dateStr));
                       }}
-                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 cursor-pointer transition-colors outline-none focus:bg-blue-50/30 ${
+                      className={`relative min-h-[72px] sm:min-h-[96px] border-b border-r border-gray-100 p-1.5 sm:p-2 transition-colors outline-none focus:bg-blue-50/30 ${
                         isSelected
-                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20'
+                          ? 'bg-blue-50/50 ring-2 ring-[#1E3A8A] ring-inset z-20 cursor-pointer'
                           : isPast
-                          ? 'bg-gray-50/40 hover:bg-gray-100/50'
-                          : 'bg-white hover:bg-blue-50/20'
+                          ? 'bg-gray-200/50 cursor-not-allowed opacity-80'
+                          : 'bg-white hover:bg-blue-50/20 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
@@ -1040,7 +1127,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                             isTodayDate
                               ? 'bg-[#1E3A8A] text-white shadow-xs'
                               : isPast
-                              ? 'text-gray-400'
+                              ? 'text-gray-500'
                               : 'text-gray-700'
                           }`}
                         >
@@ -1063,7 +1150,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                               e.stopPropagation();
                               setInspectingEvent(ev);
                             }}
-                            className="text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all"
+                            className={`text-left text-[10px] leading-tight font-medium px-1.5 py-0.5 rounded truncate text-white shadow-2xs hover:brightness-110 transition-all ${isPast ? 'opacity-80' : ''}`}
                             style={{ backgroundColor: colorForEvent(ev) }}
                             title={ev.title}
                           >
@@ -1071,7 +1158,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                           </button>
                         ))}
                         {dayEvents.length > 2 && (
-                          <span className="text-[10px] font-semibold text-gray-400 px-1">
+                          <span className="text-[10px] font-semibold text-gray-500 px-1">
                             +{dayEvents.length - 2} more
                           </span>
                         )}
@@ -1083,17 +1170,17 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
                           {dayEvents.slice(0, 3).map((ev) => (
                             <span
                               key={ev.id}
-                              className="w-1.5 h-1.5 rounded-full"
+                              className={`w-1.5 h-1.5 rounded-full ${isPast ? 'opacity-80' : ''}`}
                               style={{ backgroundColor: colorForEvent(ev) }}
                             />
                           ))}
                           {dayEvents.length > 3 && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                           )}
                         </div>
                       )}
 
-                      {/* Popover Preview */}
+                      {/* Popover Preview (Visible even on past dates via hover) */}
                       {showPopover && (
                         <div
                           role="tooltip"
@@ -1512,7 +1599,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
         </div>
       )}
 
-      {/* Add / Edit Event Modal with strict rectangle shaping & error handling */}
+      {/* Add / Edit Event Modal */}
       {showModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
@@ -1753,49 +1840,48 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
       }
       const data = await res.json();
       const mapped: AccountApplicant[] = (data ?? []).map((p: any) => {
-  if (roleTab === 'student') {
-    const rp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
-    const yl = rp?.year_level ?? 1;
-    const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
-    return {
-      id: p.id,
-      name: p.full_name ?? '—',
-      email: p.email ?? '—',
-      // Checks rp.student_no, fallback to profiles.id_number
-      idNumber: rp?.student_no || p.id_number || '—',
-      program: rp?.program || p.program || p.department || '—',
-      detail: `${yl}${suffix} Year`,
-      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      status: p.status,
-    };
-  }
-  if (roleTab === 'faculty') {
-    const rp = Array.isArray(p.faculty_profiles) ? p.faculty_profiles[0] : p.faculty_profiles;
-    const resolvedId = rp?.faculty_id || p.id_number;
-    return {
-      id: p.id,
-      name: p.full_name ?? '—',
-      email: p.email ?? '—',
-      idNumber: resolvedId ? String(resolvedId).slice(0, 8) : '—',
-      program: '—',
-      detail: rp?.position || 'Faculty',
-      registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      status: p.status,
-    };
-  }
-  const rp = Array.isArray(p.alumni_profiles) ? p.alumni_profiles[0] : p.alumni_profiles;
-  const resolvedAlumniId = rp?.alumni_id || p.id_number;
-  return {
-    id: p.id,
-    name: p.full_name ?? '—',
-    email: p.email ?? '—',
-    idNumber: resolvedAlumniId ? String(resolvedAlumniId).slice(0, 8) : '—',
-    program: rp?.program || p.program || p.department || '—',
-    detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
-    registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    status: p.status,
-  };
-});
+        if (roleTab === 'student') {
+          const rp = Array.isArray(p.student_profiles) ? p.student_profiles[0] : p.student_profiles;
+          const yl = rp?.year_level ?? 1;
+          const suffix = yl === 1 ? 'st' : yl === 2 ? 'nd' : yl === 3 ? 'rd' : 'th';
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: rp?.student_no || p.id_number || '—',
+            program: rp?.program || p.program || p.department || '—',
+            detail: `${yl}${suffix} Year`,
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        if (roleTab === 'faculty') {
+          const rp = Array.isArray(p.faculty_profiles) ? p.faculty_profiles[0] : p.faculty_profiles;
+          const resolvedId = rp?.faculty_id || p.id_number;
+          return {
+            id: p.id,
+            name: p.full_name ?? '—',
+            email: p.email ?? '—',
+            idNumber: resolvedId ? String(resolvedId).slice(0, 8) : '—',
+            program: '—',
+            detail: rp?.position || 'Faculty',
+            registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            status: p.status,
+          };
+        }
+        const rp = Array.isArray(p.alumni_profiles) ? p.alumni_profiles[0] : p.alumni_profiles;
+        const resolvedAlumniId = rp?.alumni_id || p.id_number;
+        return {
+          id: p.id,
+          name: p.full_name ?? '—',
+          email: p.email ?? '—',
+          idNumber: resolvedAlumniId ? String(resolvedAlumniId).slice(0, 8) : '—',
+          program: rp?.program || p.program || p.department || '—',
+          detail: rp?.graduation_year ? `Class of ${rp.graduation_year}` : '—',
+          registeredAt: new Date(p.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+          status: p.status,
+        };
+      });
       setAccounts(mapped);
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -1809,7 +1895,6 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
     fetchAccounts();
     setFilterStatus('pending');
     setSearch('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleTab]);
 
   const validateFile = (file: File) => {
@@ -1860,6 +1945,18 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
         setLoadError('Failed to update status: ' + (err.error || res.statusText));
         return;
       }
+
+            try {
+        const who = accounts.find(a => a.id === id)?.name ?? 'An applicant';
+        await notifyDean({
+          title: `Account ${status === 'active' ? 'Approved' : 'Rejected'}`,
+          message: `${who} (${roleTab}) was ${status === 'active' ? 'approved' : 'rejected'} by the Department Chair.`,
+          type: 'staff_update',
+        });
+      } catch (e) {
+        console.error('Status updated but Dean notification failed:', e);
+      }
+      
       setAccounts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch (err) {
       setLoadError('Could not reach the server. Please try again.');
@@ -2275,60 +2372,71 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   const getToken = () => localStorage.getItem('token');
 
   const fetchData = useCallback(async () => {
-  setLoading(true);
-  const [q, y] = quarterSelect.split(' ');
-  const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
-  const quarter = quarterMap[q] || '1st';
-  const year = y || String(new Date().getFullYear());
+    setLoading(true);
+    const [q, y] = quarterSelect.split(' ');
+    const quarterMap: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+    const quarter = quarterMap[q] || '1st';
+    const year = y || String(new Date().getFullYear());
 
-  try {
-    const res = await fetch(
-      `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
-      { headers: { Authorization: `Bearer ${getToken()}` } }
-    );
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      showInfo('Error', data?.error || 'Failed to load reports.');
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        showInfo('Error', data?.error || 'Failed to load reports.');
+        setRows([]);
+        return;
+      }
+      setRows(data ?? []);
+    } catch {
+      showInfo('Error', 'Could not reach the server.');
       setRows([]);
-      return;
+    } finally {
+      setLoading(false);
     }
-    setRows(data ?? []);
-  } catch {
-    showInfo('Error', 'Could not reach the server.');
-    setRows([]);
-  } finally {
-    setLoading(false);
-  }
-}, [quarterSelect]);
+  }, [quarterSelect]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
-  setActionId(id);
-  try {
-    const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify({ status, remarks }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      showInfo('Error', data.error || 'Failed to update report.');
-      return;
-    }
-    showInfo('Success', `Report successfully marked as ${status}.`);
-    setSelectedReport(null);
-    setRejectFor(null);
-    setRemarksInput('');
-    await fetchData();
-  } catch {
-    showInfo('Error', 'Could not reach the server.');
-  } finally {
-    setActionId(null);
-  }
-};
+    setActionId(id);
+    try {
+      const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ status, remarks }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showInfo('Error', data.error || 'Failed to update report.');
+        return;
+      }
 
-    const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
+          try {
+      await notifyDean({
+        title: `Report ${status === 'approved' ? 'Approved' : 'Rejected'} by Chair`,
+        message: `${selectedReport?.profile?.full_name ?? 'A faculty member'}'s ${type} report was ${status}.`,
+        type: 'report',
+      });
+    } catch (e) {
+      console.error('Decision saved but Dean notification failed:', e);
+    }
+
+      showInfo('Success', `Report successfully marked as ${status}.`);
+      setSelectedReport(null);
+      setRejectFor(null);
+      setRemarksInput('');
+      await fetchData();
+    } catch {
+      showInfo('Error', 'Could not reach the server.');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const sendIndividualReminder = async (row: ConsolidatedReportRow) => {
     setRemindingId(row.profile.id);
     try {
       const result = await sendBackendNotification({
@@ -2576,7 +2684,6 @@ function AcademicRecordsView() {
   return <AcademicDocumentsViewer />;
 }
 
-
 /* ─────────────────────────────────────────────
    System Settings (Department Chair)
 ───────────────────────────────────────────── */
@@ -2592,7 +2699,6 @@ const CHAIR_SETTINGS_TABS = [
   { id: 'security',      label: 'Password & Security',  icon: KeyRound },
   { id: 'notifications', label: 'Notifications',        icon: Bell },
   { id: 'department',    label: 'Department Settings',  icon: Users },
-
 ] as const;
 
 type ChairSettingsTabId = typeof CHAIR_SETTINGS_TABS[number]['id'];
@@ -2619,104 +2725,225 @@ function ChairSystemSettings({
   userName: string;
   departmentNames: string[];
   onLogout?: () => void;
-  onProfileUpdate?: (updatedProfile: { fullName: string; email: string }) => void;
+  onProfileUpdate?: (updatedProfile: {
+    fullName: string;
+    email: string;
+  }) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<ChairSettingsTabId>('profile');
+  const [activeTab, setActiveTab] =
+    useState<ChairSettingsTabId>('profile');
 
+  // =========================
+  // PROFILE
+  // =========================
   const [fullName, setFullName] = useState(userName);
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+
   const [positionRole] = useState('Department Chair');
   const [department] = useState(departmentNames.join(', '));
+
   const [profileLoading, setProfileLoading] = useState(true);
+
   const [profileMessage, setProfileMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [successTitle, setSuccessTitle] = useState('Profile Updated Successfully');
-  const [successText, setSuccessText] = useState('Your personal information has been updated successfully.');
 
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  const [successTitle, setSuccessTitle] = useState(
+    'Profile Updated Successfully'
+  );
+
+  const [successText, setSuccessText] = useState(
+    'Your personal information has been updated successfully.'
+  );
+
+  // =========================
+  // SECURITY
+  // =========================
   const [securityMessage, setSecurityMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
 
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
+  const [twoFactorEnabled, setTwoFactorEnabled] =
+    useState(false);
+
+  // =========================
+  // NOTIFICATIONS
+  // =========================
   const [allowAll, setAllowAll] = useState(true);
-  const [notifs, setNotifs] = useState(CHAIR_NOTIF_DEFAULTS);
-  const toggleNotif = (key: keyof typeof CHAIR_NOTIF_DEFAULTS) =>
-    setNotifs(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const [departmentName, setDepartmentName] = useState(departmentNames[0] ?? '');
+  const [notifs, setNotifs] = useState(
+    CHAIR_NOTIF_DEFAULTS
+  );
+
+  const toggleNotif = (
+    key: keyof typeof CHAIR_NOTIF_DEFAULTS
+  ) => {
+    setNotifs((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  // =========================
+  // DEPARTMENT SETTINGS
+  // =========================
+  const [departmentName, setDepartmentName] = useState(
+    departmentNames[0] ?? ''
+  );
+
   const [program, setProgram] = useState('');
-  const [academicYear, setAcademicYear] = useState('2025-2026');
-  const [semester, setSemester] = useState('Second Semester');
 
+  const [academicYear, setAcademicYear] =
+    useState('2025-2026');
+
+  const [semester, setSemester] =
+    useState('Second Semester');
+
+  // =========================
+  // GENERAL
+  // =========================
   const [saving, setSaving] = useState(false);
 
-  // Load the Chair's actual profile from the same backend used by the Dean settings.
+  // =========================
+  // LOAD PROFILE
+  // =========================
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
 
       if (!token) {
         setProfileLoading(false);
+
         setProfileMessage({
           type: 'error',
           text: 'Your session has expired. Please log in again.',
         });
+
         return;
       }
 
       try {
-        const response = await fetch('http://localhost:5000/api/auth/me', {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await fetch(
+          'http://localhost:5000/api/auth/me',
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to load profile information.');
+          throw new Error(
+            data.error ||
+              'Failed to load profile information.'
+          );
         }
 
+        // =========================
+        // PROFILE DATA
+        // =========================
         if (data.profile) {
-          const loadedName = data.profile.full_name || userName || '';
-          const loadedEmail = data.profile.email || '';
+          /*
+           * Username should come from public.users.
+           * The fallbacks allow this to work with
+           * different response structures.
+           */
+          const loadedUsername = String(
+            data.user?.username ??
+              data.username ??
+              data.profile?.username ??
+              ''
+          ).trim();
 
+          const loadedName = String(
+            data.profile?.full_name ??
+              data.user?.fullName ??
+              userName ??
+              ''
+          ).trim();
+
+          const loadedEmail = String(
+            data.profile?.email ??
+              data.user?.email ??
+              ''
+          ).trim();
+
+          setUsername(loadedUsername);
           setFullName(loadedName);
           setEmail(loadedEmail);
 
-          localStorage.setItem('userFullName', loadedName);
-          localStorage.setItem('userEmail', loadedEmail);
+          // Local cache only
+          localStorage.setItem(
+            'userUsername',
+            loadedUsername
+          );
+
+          localStorage.setItem(
+            'userFullName',
+            loadedName
+          );
+
+          localStorage.setItem(
+            'userEmail',
+            loadedEmail
+          );
         }
 
-         if (data.preferences) {
-          setAllowAll(data.preferences.allow_all ?? true);
+        // =========================
+        // NOTIFICATION PREFERENCES
+        // =========================
+        if (data.preferences) {
+          setAllowAll(
+            data.preferences.allow_all ?? true
+          );
+
           setNotifs({
-            reports:       data.preferences.reports       ?? true,
-            announcements: data.preferences.announcements ?? true,
-            staff_updates: data.preferences.staff_updates ?? true,
-            system_notifs: data.preferences.system_notifs ?? true,
+            reports:
+              data.preferences.reports ?? true,
+
+            announcements:
+              data.preferences.announcements ?? true,
+
+            staff_updates:
+              data.preferences.staff_updates ?? true,
+
+            system_notifs:
+              data.preferences.system_notifs ?? true,
           });
-         }
+        }
       } catch (error) {
-        console.error('Failed to load Chair profile:', error);
+        console.error(
+          'Failed to load Chair profile:',
+          error
+        );
+
         setProfileMessage({
           type: 'error',
-          text: error instanceof Error
-            ? error.message
-            : 'Unable to load your profile information.',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'Unable to load your profile information.',
         });
       } finally {
         setProfileLoading(false);
@@ -2726,7 +2953,9 @@ function ChairSystemSettings({
     loadProfile();
   }, [userName]);
 
-
+  // =========================
+  // SAVE PROFILE
+  // =========================
   const saveProfile = async () => {
     const token = localStorage.getItem('token');
 
@@ -2735,36 +2964,74 @@ function ChairSystemSettings({
         type: 'error',
         text: 'Your session has expired. Please log in again.',
       });
+
       return;
     }
 
-
     const trimmedName = fullName.trim();
+    const trimmedUsername = username
+      .trim()
+      .toLowerCase();
     const trimmedEmail = email.trim();
 
+    // =========================
+    // USERNAME VALIDATION
+    // =========================
+    if (!trimmedUsername) {
+      setProfileMessage({
+        type: 'error',
+        text: 'Username is required.',
+      });
+
+      return;
+    }
+
+    const usernameRegex =
+      /^[a-zA-Z0-9._]{3,20}$/;
+
+    if (!usernameRegex.test(trimmedUsername)) {
+      setProfileMessage({
+        type: 'error',
+        text:
+          'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
+      });
+
+      return;
+    }
+
+    // =========================
+    // NAME VALIDATION
+    // =========================
     if (!trimmedName) {
       setProfileMessage({
         type: 'error',
         text: 'Full name is required.',
       });
+
       return;
     }
 
+    // =========================
+    // EMAIL VALIDATION
+    // =========================
     if (!trimmedEmail) {
       setProfileMessage({
         type: 'error',
         text: 'Email address is required.',
       });
+
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(trimmedEmail)) {
       setProfileMessage({
         type: 'error',
         text: 'Please enter a valid email address.',
       });
+
       return;
     }
 
@@ -2772,55 +3039,118 @@ function ChairSystemSettings({
     setProfileMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          full_name: trimmedName,
-          email: trimmedEmail,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            username: trimmedUsername,
+            email: trimmedEmail,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to update your profile.');
+        throw new Error(
+          data.error ||
+            'Failed to update your profile.'
+        );
       }
 
-      const updatedName = data.profile?.full_name || trimmedName;
-      const updatedEmail = data.profile?.email || trimmedEmail;
+      // =========================
+      // GET UPDATED VALUES
+      // =========================
+      const updatedUsername = String(
+        data.user?.username ??
+          data.profile?.username ??
+          data.username ??
+          trimmedUsername
+      ).trim();
 
+      const updatedName = String(
+        data.profile?.full_name ??
+          data.user?.fullName ??
+          trimmedName
+      ).trim();
+
+      const updatedEmail = String(
+        data.profile?.email ??
+          data.user?.email ??
+          trimmedEmail
+      ).trim();
+
+      // =========================
+      // UPDATE UI
+      // =========================
+      setUsername(updatedUsername);
       setFullName(updatedName);
       setEmail(updatedEmail);
 
-      localStorage.setItem('userFullName', updatedName);
-      localStorage.setItem('userEmail', updatedEmail);
+      // =========================
+      // LOCAL CACHE
+      // =========================
+      localStorage.setItem(
+        'userUsername',
+        updatedUsername
+      );
 
+      localStorage.setItem(
+        'userFullName',
+        updatedName
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        updatedEmail
+      );
+
+      // =========================
+      // UPDATE PARENT
+      // =========================
       onProfileUpdate?.({
         fullName: updatedName,
         email: updatedEmail,
       });
 
       setProfileMessage(null);
-      setSuccessTitle('Profile Updated Successfully');
-      setSuccessText('Your personal information has been updated successfully.');
+
+      setSuccessTitle(
+        'Profile Updated Successfully'
+      );
+
+      setSuccessText(
+        'Your personal information has been updated successfully.'
+      );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair profile update failed:', error);
+      console.error(
+        'Chair profile update failed:',
+        error
+      );
+
       setProfileMessage({
         type: 'error',
-        text: error instanceof Error
-          ? error.message
-          : 'Failed to update your personal information.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update your personal information.',
       });
     } finally {
       setSaving(false);
     }
   };
 
+  // =========================
+  // CHANGE PASSWORD
+  // =========================
   const changePassword = async () => {
     const token = localStorage.getItem('token');
 
@@ -2829,47 +3159,67 @@ function ChairSystemSettings({
         type: 'error',
         text: 'Your session has expired. Please log in again.',
       });
+
       return;
     }
 
     if (!currentPassword) {
-      setSecurityMessage({ type: 'error', text: 'Current password is required.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'Current password is required.',
+      });
+
       return;
     }
 
     if (!newPassword) {
-      setSecurityMessage({ type: 'error', text: 'New password is required.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'New password is required.',
+      });
+
       return;
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-])[A-Za-z\d@$!%*?&.#_-]{8,}$/;
 
     if (!passwordRegex.test(newPassword)) {
       setSecurityMessage({
         type: 'error',
-        text: 'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
+        text:
+          'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.',
       });
+
       return;
     }
 
     if (newPassword === currentPassword) {
       setSecurityMessage({
         type: 'error',
-        text: 'Your new password must be different from your current password.',
+        text:
+          'Your new password must be different from your current password.',
       });
+
       return;
     }
 
     if (!confirmPassword) {
-      setSecurityMessage({ type: 'error', text: 'Please confirm your new password.' });
+      setSecurityMessage({
+        type: 'error',
+        text: 'Please confirm your new password.',
+      });
+
       return;
     }
 
     if (newPassword !== confirmPassword) {
       setSecurityMessage({
         type: 'error',
-        text: 'New password and confirm password do not match.',
+        text:
+          'New password and confirm password do not match.',
       });
+
       return;
     }
 
@@ -2877,81 +3227,134 @@ function ChairSystemSettings({
     setSecurityMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/password', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to change your password.');
+        throw new Error(
+          data.error ||
+            'Failed to change your password.'
+        );
       }
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+
       setSecurityMessage(null);
-      setSuccessTitle('Password Changed Successfully');
-      setSuccessText('Your password has been updated successfully.');
+
+      setSuccessTitle(
+        'Password Changed Successfully'
+      );
+
+      setSuccessText(
+        'Your password has been updated successfully.'
+      );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair password change failed:', error);
+      console.error(
+        'Chair password change failed:',
+        error
+      );
+
       setSecurityMessage({
         type: 'error',
-        text: error instanceof Error
-          ? error.message
-          : 'Failed to change your password.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to change your password.',
       });
     } finally {
       setSaving(false);
     }
   };
 
-    const saveNotifications = async () => {
+  // =========================
+  // SAVE NOTIFICATIONS
+  // =========================
+  const saveNotifications = async () => {
     const token = localStorage.getItem('token');
+
     if (!token) return;
 
     setSaving(true);
+
     try {
-      const response = await fetch('http://localhost:5000/api/auth/preferences', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ allow_all: allowAll, ...notifs }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/preferences',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            allow_all: allowAll,
+            ...notifs,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to update preferences.');
 
-      setSuccessTitle('Notification Preferences Updated');
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Failed to update preferences.'
+        );
+      }
+
+      setSuccessTitle(
+        'Notification Preferences Updated'
+      );
+
       setSuccessText(
         allowAll
           ? 'Your notification preferences have been saved.'
           : 'All notifications are now muted.'
       );
+
       setShowSuccessMessage(true);
     } catch (error) {
-      console.error('Chair notification update failed:', error);
+      console.error(
+        'Chair notification update failed:',
+        error
+      );
+
       setSuccessTitle('Update Failed');
-      setSuccessText(error instanceof Error ? error.message : 'Failed to update preferences.');
+
+      setSuccessText(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update preferences.'
+      );
+
       setShowSuccessMessage(true);
     } finally {
       setSaving(false);
     }
   };
 
-    const handleSaveChanges = async () => {
+  // =========================
+  // SAVE CHANGES
+  // =========================
+  const handleSaveChanges = async () => {
     if (activeTab === 'profile') {
       await saveProfile();
       return;
@@ -2968,17 +3371,23 @@ function ChairSystemSettings({
     }
   };
 
-  const handleCancel = () => {};
-
   return (
     <div>
+      {/* =========================
+          HEADER
+      ========================= */}
       <div className="flex items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-gray-500 text-sm mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-         
           <button
             onClick={handleSaveChanges}
             disabled={saving}
@@ -2989,6 +3398,9 @@ function ChairSystemSettings({
         </div>
       </div>
 
+      {/* =========================
+          SUCCESS MESSAGE
+      ========================= */}
       {showSuccessMessage && (
         <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -3000,6 +3412,7 @@ function ChairSystemSettings({
               <p className="text-sm font-semibold text-emerald-800">
                 {successTitle}
               </p>
+
               <p className="text-xs text-emerald-700 mt-0.5">
                 {successText}
               </p>
@@ -3008,7 +3421,9 @@ function ChairSystemSettings({
 
           <button
             type="button"
-            onClick={() => setShowSuccessMessage(false)}
+            onClick={() =>
+              setShowSuccessMessage(false)
+            }
             className="text-emerald-700 hover:text-emerald-900 text-xs sm:text-sm font-semibold px-2"
           >
             Dismiss
@@ -3016,15 +3431,25 @@ function ChairSystemSettings({
         </div>
       )}
 
+      {/* =========================
+          MAIN CONTENT
+      ========================= */}
       <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
+        {/* =========================
+            SETTINGS SIDEBAR
+        ========================= */}
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
           {CHAIR_SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const isActive =
+              activeTab === tab.id;
+
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() =>
+                  setActiveTab(tab.id)
+                }
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
@@ -3032,67 +3457,168 @@ function ChairSystemSettings({
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{tab.label}</span>
+
+                <span className="truncate">
+                  {tab.label}
+                </span>
               </button>
             );
           })}
         </div>
 
+        {/* =========================
+            SETTINGS PANEL
+        ========================= */}
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 min-w-0 md:h-[560px] overflow-y-auto">
+
+          {/* =========================
+              PROFILE TAB
+          ========================= */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Profile Information
+              </h2>
 
-              <div className="space-y-4 max-w-md">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
-                  <input
-                    type="text"
-                    value={profileLoading ? 'Loading...' : fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    disabled={profileLoading}
-                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
-                    }`}
-                  />
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Update your personal details.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+
+                {/* LEFT COLUMN */}
+                <div className="space-y-4">
+
+                  {/* FULL NAME */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Full Name
+                    </label>
+
+                    <input
+                      type="text"
+                      value={
+                        profileLoading
+                          ? 'Loading...'
+                          : fullName
+                      }
+                      onChange={(e) =>
+                        setFullName(e.target.value)
+                      }
+                      disabled={profileLoading}
+                      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        profileLoading
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : 'bg-white'
+                      }`}
+                    />
+                  </div>
+
+                  {/* USERNAME */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Username
+                    </label>
+
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                        @
+                      </span>
+
+                      <input
+                        type="text"
+                        value={
+                          profileLoading
+                            ? 'Loading...'
+                            : username
+                        }
+                        onChange={(e) =>
+                          setUsername(
+                            e.target.value.replace(
+                              /\s/g,
+                              ''
+                            )
+                          )
+                        }
+                        disabled={profileLoading}
+                        maxLength={20}
+                        autoComplete="username"
+                        placeholder="your.username"
+                        className={`w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          profileLoading
+                            ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            : 'bg-white'
+                        }`}
+                      />
+                    </div>
+
+                    <p className="text-[11px] text-gray-400 mt-1.5">
+                      3–20 characters: letters, numbers,
+                      periods, and underscores.
+                    </p>
+                  </div>
+
+                  {/* EMAIL */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Email Address
+                    </label>
+
+                    <input
+                      type="email"
+                      value={
+                        profileLoading
+                          ? 'Loading...'
+                          : email
+                      }
+                      onChange={(e) =>
+                        setEmail(e.target.value)
+                      }
+                      disabled={profileLoading}
+                      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        profileLoading
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : 'bg-white'
+                      }`}
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
-                  <input
-                    type="email"
-                    value={profileLoading ? 'Loading...' : email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={profileLoading}
-                    className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      profileLoading ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'
-                    }`}
-                  />
+                {/* RIGHT COLUMN */}
+                <div className="space-y-4">
+
+                  {/* POSITION */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Position/Role
+                    </label>
+
+                    <input
+                      type="text"
+                      value={positionRole}
+                      disabled
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* DEPARTMENT */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      Department/Program
+                    </label>
+
+                    <input
+                      type="text"
+                      value={department}
+                      disabled
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
-                  <input
-                    type="text"
-                    value={positionRole}
-                    disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department/Program</label>
-                  <input
-                    type="text"
-                    value={department}
-                    disabled
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  />
-                </div>
-
+                {/* PROFILE ERROR */}
                 {profileMessage?.type === 'error' && (
-                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700 md:col-span-2">
                     {profileMessage.text}
                   </div>
                 )}
@@ -3100,177 +3626,381 @@ function ChairSystemSettings({
             </div>
           )}
 
+          {/* =========================
+              SECURITY TAB
+          ========================= */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Manage your password and account access.
+              </p>
 
               <div className="space-y-4 max-w-md mb-6">
+
+                {/* CURRENT PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showCurrentPassword ? 'text' : 'password'}
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      onChange={(e) =>
+                        setCurrentPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword(v => !v)}
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                      aria-label={
+                        showCurrentPassword
+                          ? 'Hide current password'
+                          : 'Show current password'
+                      }
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* NEW PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showNewPassword ? 'text' : 'password'}
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      onChange={(e) =>
+                        setNewPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowNewPassword(v => !v)}
+                      onClick={() =>
+                        setShowNewPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      aria-label={
+                        showNewPassword
+                          ? 'Hide new password'
+                          : 'Show new password'
+                      }
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-1.5">Minimum 8 characters: uppercase, lowercase, number, and special character.</p>
+
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    Minimum 8 characters: uppercase,
+                    lowercase, number, and special
+                    character.
+                  </p>
                 </div>
 
+                {/* CONFIRM PASSWORD */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Confirm New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onChange={(e) =>
+                        setConfirmPassword(
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3.5 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword(v => !v)}
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}
+                      aria-label={
+                        showConfirmPassword
+                          ? 'Hide confirmation password'
+                          : 'Show confirmation password'
+                      }
                     >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
-                {securityMessage && securityMessage.type === 'error' && (
-                  <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
-                    {securityMessage.text}
-                  </div>
-                )}
-
+                {securityMessage &&
+                  securityMessage.type === 'error' && (
+                    <div className="px-3.5 py-3 rounded-xl text-sm border bg-red-50 border-red-200 text-red-700">
+                      {securityMessage.text}
+                    </div>
+                  )}
               </div>
 
               <div className="border-t border-gray-100 pt-5">
                 <ChairToggleRow
                   label="Two-Factor Authentication"
                   checked={twoFactorEnabled}
-                  onChange={() => setTwoFactorEnabled(v => !v)}
+                  onChange={() =>
+                    setTwoFactorEnabled(
+                      (v) => !v
+                    )
+                  }
                 />
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-1">
-                <button type="button" className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
+                >
                   Log Out of All Devices
                 </button>
               </div>
             </div>
           )}
 
-                    {activeTab === 'notifications' && (
+          {/* =========================
+              NOTIFICATIONS TAB
+          ========================= */}
+          {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-4">Choose which alerts you receive.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-4">
+                Choose which alerts you receive.
+              </p>
 
               <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl mb-4">
                 <div>
-                  <p className="text-sm font-bold text-gray-900">Allow Notifications</p>
+                  <p className="text-sm font-bold text-gray-900">
+                    Allow Notifications
+                  </p>
+
                   <p className="text-xs text-gray-500 mt-1">
-                    Turn off to completely mute all notifications and reminders.
+                    Turn off to completely mute all
+                    notifications and reminders.
                   </p>
                 </div>
+
                 <button
                   type="button"
-                  onClick={() => setAllowAll(v => !v)}
-                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${allowAll ? 'bg-[#1E3A8A]' : 'bg-gray-300'}`}
+                  onClick={() =>
+                    setAllowAll((v) => !v)
+                  }
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                    allowAll
+                      ? 'bg-[#1E3A8A]'
+                      : 'bg-gray-300'
+                  }`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${allowAll ? 'translate-x-5' : ''}`} />
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                      allowAll
+                        ? 'translate-x-5'
+                        : ''
+                    }`}
+                  />
                 </button>
               </div>
 
-              <div className={!allowAll ? 'opacity-50 pointer-events-none' : ''}>
-                <ChairToggleRow label="Faculty Reports & Pending Reports" checked={notifs.reports} onChange={() => toggleNotif('reports')} />
-                <ChairToggleRow label="Announcements" checked={notifs.announcements} onChange={() => toggleNotif('announcements')} />
-                <ChairToggleRow label="Student Approvals & Department Activities" checked={notifs.staff_updates} onChange={() => toggleNotif('staff_updates')} />
-                <ChairToggleRow label="System Notifications" checked={notifs.system_notifs} onChange={() => toggleNotif('system_notifs')} />
+              <div
+                className={
+                  !allowAll
+                    ? 'opacity-50 pointer-events-none'
+                    : ''
+                }
+              >
+                <ChairToggleRow
+                  label="Faculty Reports & Pending Reports"
+                  checked={notifs.reports}
+                  onChange={() =>
+                    toggleNotif('reports')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="Announcements"
+                  checked={notifs.announcements}
+                  onChange={() =>
+                    toggleNotif('announcements')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="Student Approvals & Department Activities"
+                  checked={notifs.staff_updates}
+                  onChange={() =>
+                    toggleNotif('staff_updates')
+                  }
+                />
+
+                <ChairToggleRow
+                  label="System Notifications"
+                  checked={notifs.system_notifs}
+                  onChange={() =>
+                    toggleNotif('system_notifs')
+                  }
+                />
               </div>
             </div>
           )}
 
+          {/* =========================
+              DEPARTMENT TAB
+          ========================= */}
           {activeTab === 'department' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Department Settings</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure your department's current details.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Department Settings
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Configure your department's current
+                details.
+              </p>
 
               <div className="space-y-4 max-w-md">
+
+                {/* DEPARTMENT */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department Name</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Department Name
+                  </label>
+
                   <input
                     type="text"
                     value={departmentName}
-                    onChange={(e) => setDepartmentName(e.target.value)}
+                    onChange={(e) =>
+                      setDepartmentName(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* PROGRAM */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Program</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Program
+                  </label>
+
                   <input
                     type="text"
                     value={program}
-                    onChange={(e) => setProgram(e.target.value)}
+                    onChange={(e) =>
+                      setProgram(e.target.value)
+                    }
                     placeholder="e.g. BEEd, BSEd-Math"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* ACADEMIC YEAR */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Academic Year
+                  </label>
+
                   <input
                     type="text"
                     value={academicYear}
-                    onChange={(e) => setAcademicYear(e.target.value)}
+                    onChange={(e) =>
+                      setAcademicYear(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* SEMESTER */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Semester
+                  </label>
+
                   <select
                     value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
+                    onChange={(e) =>
+                      setSemester(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    <option>First Semester</option>
-                    <option>Second Semester</option>
-                    <option>Summer</option>
+                    <option>
+                      First Semester
+                    </option>
+
+                    <option>
+                      Second Semester
+                    </option>
+
+                    <option>
+                      Summer
+                    </option>
                   </select>
                 </div>
               </div>
             </div>
           )}
-
         </div>
       </div>
     </div>

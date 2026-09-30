@@ -31,6 +31,7 @@ import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 import { createPortal } from 'react-dom';
+import { notifyDean } from '../../notificationsApi';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 
 // ====================== TRACER SURVEY API HELPERS ======================
@@ -660,11 +661,26 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
       post_graduate_degree: formData.postGraduateDegree,
     };
 
-    try {
+        try {
       if (isNew) {
         await saveTracerSurvey(payload);
       } else {
         await updateTracerSurvey(alumniId, payload);
+      }
+
+      // Notify the Dean (don't let a notification failure block the save)
+      try {
+        await notifyDean({
+          title: isNew
+            ? 'New Graduate Tracer Survey Submitted'
+            : 'Graduate Tracer Survey Updated',
+          message: `${formData.firstName} ${formData.lastName} (${alumniId}) ${
+            isNew ? 'submitted' : 'updated'
+          } their tracer survey. Status: ${formData.employmentStatus}.`,
+          type: 'system',
+        });
+      } catch (notifErr) {
+        console.error('Survey saved but Dean notification failed:', notifErr);
       }
 
       setLastUpdated(new Date().toISOString());
@@ -2434,26 +2450,16 @@ function AlumniSettings({
   const [announcementAlerts, setAnnouncementAlerts] =
     useState(true);
 
-  const [fullNameInput, setFullNameInput] =
-    useState('');
+  // Personal Information
+  const [fullNameInput, setFullNameInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [idNumberInput, setIdNumberInput] = useState('');
 
-  const [usernameInput, setUsernameInput] =
-    useState('');
-
-  const [emailInput, setEmailInput] =
-    useState('');
-
-  const [idNumberInput, setIdNumberInput] =
-    useState('');
-
-  const [currentPassword, setCurrentPassword] =
-    useState('');
-
-  const [newPassword, setNewPassword] =
-    useState('');
-
-  const [confirmPassword, setConfirmPassword] =
-    useState('');
+  // Password
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const [showCurrentPassword, setShowCurrentPassword] =
     useState(false);
@@ -2464,87 +2470,351 @@ function AlumniSettings({
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
 
-  const [passwordMessage, setPasswordMessage] =
-    useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
 
-  const [saving, setSaving] =
-    useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [saveMessage, setSaveMessage] =
-    useState<{
-      type: 'success' | 'error';
-      text: string;
-    } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
+  /*
+   * ============================================================
+   * LOAD CURRENT ALUMNI INFORMATION FROM DATABASE
+   * ============================================================
+   *
+   * /api/auth/me returns:
+   *
+   * {
+   *   user: {
+   *     id,
+   *     username,
+   *     email,
+   *     role,
+   *     ...
+   *   },
+   *   profile: {
+   *     full_name,
+   *     email,
+   *     id_number,
+   *     ...
+   *   },
+   *   preferences: {...}
+   * }
+   *
+   * Username comes from public.users.
+   * Full name / ID number come from public.profiles.
+   */
+  const fetchCurrentProfile = async () => {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/auth/me',
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to load your profile.'
+        );
+      }
+
+      /*
+       * IMPORTANT:
+       * Username is taken from data.user.username
+       * because public.users is the source of truth.
+       */
+      const databaseUsername = String(
+        data.user?.username ??
+          ''
+      ).trim();
+
+      const databaseFullName = String(
+        data.profile?.full_name ??
+          data.user?.fullName ??
+          ''
+      ).trim();
+
+      const databaseEmail = String(
+        data.user?.email ??
+          data.profile?.email ??
+          ''
+      ).trim();
+
+      const databaseIdNumber = String(
+        data.profile?.id_number ??
+          ''
+      ).trim();
+
+      /*
+       * Update the form directly from the database response.
+       */
+      setFullNameInput(databaseFullName);
+      setUsernameInput(databaseUsername);
+      setEmailInput(databaseEmail);
+      setIdNumberInput(databaseIdNumber);
+
+      /*
+       * Keep localStorage synchronized as a cache only.
+       */
+      if (databaseFullName) {
+        localStorage.setItem(
+          'userFullName',
+          databaseFullName
+        );
+      }
+
+      if (databaseUsername) {
+        localStorage.setItem(
+          'userUsername',
+          databaseUsername
+        );
+      }
+
+      if (databaseEmail) {
+        localStorage.setItem(
+          'userEmail',
+          databaseEmail
+        );
+      }
+
+      if (databaseIdNumber) {
+        localStorage.setItem(
+          'userIdNumber',
+          databaseIdNumber
+        );
+      }
+
+      /*
+       * Load notification preferences from the same
+       * authenticated /me response.
+       */
+      if (data.preferences) {
+        setEmailNotifications(
+          data.preferences.allow_all ??
+            true
+        );
+
+        setAnnouncementAlerts(
+          data.preferences.announcements ??
+            true
+        );
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load alumni profile:',
+        error
+      );
+
+      /*
+       * Only use props/localStorage as fallback if
+       * the database request fails.
+       */
+      setFullNameInput(
+        profile?.full_name ||
+          localStorage.getItem('userFullName') ||
+          ''
+      );
+
+      setUsernameInput(
+        localStorage.getItem('userUsername') ||
+          ''
+      );
+
+      setEmailInput(
+        profile?.email ||
+          userEmail ||
+          localStorage.getItem('userEmail') ||
+          ''
+      );
+
+      setIdNumberInput(
+        idNumber ||
+          localStorage.getItem('userIdNumber') ||
+          ''
+      );
+    }
+  };
+
+  /*
+   * Load database information whenever the component
+   * receives a valid profile / session.
+   */
   useEffect(() => {
-    setFullNameInput(
-      profile?.full_name ||
-      localStorage.getItem('userFullName') ||
-      ''
+    if (!loading) {
+      fetchCurrentProfile();
+    }
+  }, [loading]);
+const saveNotificationPreferences = async () => {
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    setSaveMessage({
+      type: 'error',
+      text: 'Your session has expired. Please log in again.',
+    });
+    return false;
+  }
+
+  try {
+    setSaving(true);
+    setSaveMessage(null);
+
+    const response = await fetch(
+      'http://localhost:5000/api/auth/preferences',
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          allow_all: emailNotifications,
+          announcements: announcementAlerts,
+        }),
+      }
     );
 
-    setUsernameInput(
-      profile?.username ||
-      localStorage.getItem('userUsername') ||
-      ''
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          data.message ||
+          'Failed to save notification preferences.'
+      );
+    }
+
+    // Update the UI with the values actually saved
+    setEmailNotifications(
+      data.preferences?.allow_all ??
+        emailNotifications
     );
 
-    setEmailInput(
-      profile?.email ||
-      userEmail ||
-      localStorage.getItem('userEmail') ||
-      ''
+    setAnnouncementAlerts(
+      data.preferences?.announcements ??
+        announcementAlerts
     );
 
-    setIdNumberInput(
-      idNumber ||
-      localStorage.getItem('userIdNumber') ||
-      ''
-    );
-  }, [profile, userEmail, idNumber]);
+    setSaveMessage({
+      type: 'success',
+      text: 'Notification settings updated successfully.',
+    });
 
+    return true;
+  } catch (error) {
+    console.error(
+      'Failed to save alumni notification preferences:',
+      error
+    );
+
+    setSaveMessage({
+      type: 'error',
+      text:
+        error instanceof Error
+          ? error.message
+          : 'Failed to save notification settings.',
+    });
+
+    return false;
+  } finally {
+    setSaving(false);
+  }
+};
+  /*
+   * ============================================================
+   * SAVE PERSONAL INFORMATION
+   * ============================================================
+   */
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
-    const trimmedUsername = usernameInput.trim();
-    const trimmedEmail = emailInput.trim().toLowerCase();
+    const trimmedUsername = usernameInput
+      .trim()
+      .toLowerCase();
+    const trimmedEmail = emailInput
+      .trim()
+      .toLowerCase();
     const trimmedIdNumber = idNumberInput.trim();
 
     if (!trimmedName) {
-      setSaveMessage({ type: 'error', text: 'Full name is required.' });
+      setSaveMessage({
+        type: 'error',
+        text: 'Full name is required.',
+      });
       return false;
     }
 
-    // Username is optional, but if provided it must be valid
-    if (trimmedUsername) {
-      const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
-      if (!usernameRegex.test(trimmedUsername)) {
-        setSaveMessage({
-          type: 'error',
-          text: 'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
-        });
-        return false;
-      }
+    if (!trimmedUsername) {
+      setSaveMessage({
+        type: 'error',
+        text: 'Username is required.',
+      });
+      return false;
+    }
+
+    const usernameRegex =
+      /^[a-zA-Z0-9._]{3,20}$/;
+
+    if (!usernameRegex.test(trimmedUsername)) {
+      setSaveMessage({
+        type: 'error',
+        text:
+          'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
+      });
+      return false;
     }
 
     if (!trimmedIdNumber) {
-      setSaveMessage({ type: 'error', text: 'Alumni ID is required.' });
+      setSaveMessage({
+        type: 'error',
+        text: 'Alumni ID is required.',
+      });
       return false;
     }
 
     if (!trimmedEmail) {
-      setSaveMessage({ type: 'error', text: 'Email address is required.' });
+      setSaveMessage({
+        type: 'error',
+        text: 'Email address is required.',
+      });
       return false;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     if (!emailRegex.test(trimmedEmail)) {
-      setSaveMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      setSaveMessage({
+        type: 'error',
+        text: 'Please enter a valid email address.',
+      });
       return false;
     }
 
     const token = localStorage.getItem('token');
+
     if (!token) {
-      setSaveMessage({ type: 'error', text: 'Your session has expired. Please log in again.' });
+      setSaveMessage({
+        type: 'error',
+        text:
+          'Your session has expired. Please log in again.',
+      });
       return false;
     }
 
@@ -2562,91 +2832,180 @@ function AlumniSettings({
           },
           body: JSON.stringify({
             full_name: trimmedName,
-            username: trimmedUsername || null,
+            username: trimmedUsername,
             email: trimmedEmail,
             id_number: trimmedIdNumber,
           }),
         }
       );
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response
+        .json()
+        .catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || data.message || 'Failed to update your profile.');
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to update your profile.'
+        );
       }
 
-      setFullNameInput(trimmedName);
-      setUsernameInput(trimmedUsername);
-      setEmailInput(trimmedEmail);
-      setIdNumberInput(trimmedIdNumber);
+      /*
+       * Use the value returned by the backend.
+       * This makes the UI reflect the actual saved
+       * database value.
+       */
+      const savedUsername = String(
+        data.user?.username ??
+          data.profile?.username ??
+          trimmedUsername
+      ).trim();
 
-      localStorage.setItem('userFullName', trimmedName);
-      if (trimmedUsername) {
-        localStorage.setItem('userUsername', trimmedUsername);
-      } else {
-        localStorage.removeItem('userUsername');
-      }
-      localStorage.setItem('userEmail', trimmedEmail);
-      localStorage.setItem('userIdNumber', trimmedIdNumber);
+      const savedFullName = String(
+        data.user?.fullName ??
+          data.profile?.full_name ??
+          trimmedName
+      ).trim();
 
+      const savedEmail = String(
+        data.user?.email ??
+          data.profile?.email ??
+          trimmedEmail
+      ).trim();
+
+      const savedIdNumber = String(
+        data.user?.idNumber ??
+          data.profile?.id_number ??
+          trimmedIdNumber
+      ).trim();
+
+      setFullNameInput(savedFullName);
+      setUsernameInput(savedUsername);
+      setEmailInput(savedEmail);
+      setIdNumberInput(savedIdNumber);
+
+      /*
+       * Synchronize localStorage.
+       */
+      localStorage.setItem(
+        'userFullName',
+        savedFullName
+      );
+
+      localStorage.setItem(
+        'userUsername',
+        savedUsername
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        savedEmail
+      );
+
+      localStorage.setItem(
+        'userIdNumber',
+        savedIdNumber
+      );
+
+      /*
+       * Refresh the parent/profile state if provided.
+       */
       await onProfileUpdated();
+
+      /*
+       * Fetch again from the database so the fields
+       * definitely reflect what is currently stored.
+       */
+      await fetchCurrentProfile();
 
       setSaveMessage({
         type: 'success',
-        text: 'Personal information updated successfully.',
+        text:
+          'Personal information updated successfully.',
       });
 
       return true;
     } catch (error) {
-      console.error('Alumni profile update failed:', error);
+      console.error(
+        'Alumni profile update failed:',
+        error
+      );
+
       setSaveMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to update your personal information.',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update your personal information.',
       });
+
       return false;
     } finally {
       setSaving(false);
     }
   };
 
+  /*
+   * ============================================================
+   * CHANGE PASSWORD
+   * ============================================================
+   */
   const changePassword = async () => {
     setPasswordMessage('');
     setSaveMessage(null);
 
     if (!currentPassword) {
-      setPasswordMessage('Current password is required.');
+      setPasswordMessage(
+        'Current password is required.'
+      );
       return false;
     }
 
     if (!newPassword) {
-      setPasswordMessage('New password is required.');
+      setPasswordMessage(
+        'New password is required.'
+      );
       return false;
     }
 
     if (!confirmPassword) {
-      setPasswordMessage('Please confirm your new password.');
+      setPasswordMessage(
+        'Please confirm your new password.'
+      );
       return false;
     }
 
     if (newPassword !== confirmPassword) {
-      setPasswordMessage('New password and confirm password do not match.');
+      setPasswordMessage(
+        'New password and confirm password do not match.'
+      );
       return false;
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#_-]).{8,}$/;
+
     if (!passwordRegex.test(newPassword)) {
-      setPasswordMessage('Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.');
+      setPasswordMessage(
+        'Your new password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character.'
+      );
       return false;
     }
 
     if (currentPassword === newPassword) {
-      setPasswordMessage('Your new password must be different from your current password.');
+      setPasswordMessage(
+        'Your new password must be different from your current password.'
+      );
       return false;
     }
 
     const token = localStorage.getItem('token');
+
     if (!token) {
-      setPasswordMessage('Your session has expired. Please log in again.');
+      setPasswordMessage(
+        'Your session has expired. Please log in again.'
+      );
       return false;
     }
 
@@ -2670,10 +3029,16 @@ function AlumniSettings({
         }
       );
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response
+        .json()
+        .catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || data.message || 'Failed to change your password.');
+        throw new Error(
+          data.error ||
+            data.message ||
+            'Failed to change your password.'
+        );
       }
 
       setCurrentPassword('');
@@ -2688,33 +3053,58 @@ function AlumniSettings({
 
       return true;
     } catch (error) {
-      console.error('Alumni password update failed:', error);
-      const message = error instanceof Error ? error.message : 'Failed to change your password.';
+      console.error(
+        'Alumni password update failed:',
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to change your password.';
+
       setPasswordMessage(message);
-      setSaveMessage({ type: 'error', text: message });
+
+      setSaveMessage({
+        type: 'error',
+        text: message,
+      });
+
       return false;
     } finally {
       setSaving(false);
     }
   };
 
+  /*
+   * ============================================================
+   * SAVE BUTTON
+   * ============================================================
+   */
   const handleSaveChanges = async () => {
-    if (activeTab === 'profile') {
-      await saveProfile();
-      return;
-    }
+  if (activeTab === 'profile') {
+    await saveProfile();
+    return;
+  }
 
-    if (activeTab === 'security') {
-      await changePassword();
-      return;
-    }
+  if (activeTab === 'security') {
+    await changePassword();
+    return;
+  }
 
-    setSaveMessage({
-      type: 'success',
-      text: 'Settings saved successfully.',
-    });
-  };
+  if (activeTab === 'notifications') {
+    await saveNotificationPreferences();
+    return;
+  }
+};
 
+  /*
+   * ============================================================
+   * TABS
+   * ============================================================
+   *
+   * Account Actions has been removed.
+   */
   const tabs: {
     key: AlumniSettingsTab;
     label: string;
@@ -2735,20 +3125,17 @@ function AlumniSettings({
       label: 'Notifications',
       icon: <Bell className="w-4 h-4" />,
     },
-    {
-      key: 'account',
-      label: 'Account Actions',
-      icon: <LogOut className="w-4 h-4" />,
-    },
   ];
 
   return (
     <div>
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             Settings
           </h1>
+
           <p className="text-sm text-gray-500 mt-1">
             Manage your account and system preferences.
           </p>
@@ -2765,6 +3152,7 @@ function AlumniSettings({
         </div>
       </div>
 
+      {/* SAVE MESSAGE */}
       {saveMessage && (
         <div
           className={`mb-4 px-4 py-3 text-sm rounded-xl border ${
@@ -2778,6 +3166,7 @@ function AlumniSettings({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+        {/* SIDEBAR */}
         <nav className="bg-white rounded-xl shadow-md p-3 h-fit">
           {tabs.map((tab) => (
             <button
@@ -2799,12 +3188,17 @@ function AlumniSettings({
           ))}
         </nav>
 
+        {/* CONTENT */}
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
+          {/* =====================================================
+              PROFILE INFORMATION
+              ===================================================== */}
           {activeTab === 'profile' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Profile Information
               </h2>
+
               <p className="text-sm text-gray-500 mb-6">
                 Update your personal details.
               </p>
@@ -2815,6 +3209,7 @@ function AlumniSettings({
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
                   </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="h-10 bg-gray-100 rounded-lg" />
                     <div className="h-10 bg-gray-100 rounded-lg" />
@@ -2822,16 +3217,20 @@ function AlumniSettings({
                 </div>
               ) : (
                 <>
+                  {/* Full Name + Username */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Full Name
                       </label>
+
                       <input
                         type="text"
                         value={fullNameInput}
                         onChange={(e) => {
-                          setFullNameInput(e.target.value);
+                          setFullNameInput(
+                            e.target.value
+                          );
                           setSaveMessage(null);
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -2842,15 +3241,22 @@ function AlumniSettings({
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Username
                       </label>
+
                       <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">
                           @
                         </span>
+
                         <input
                           type="text"
                           value={usernameInput}
                           onChange={(e) => {
-                            setUsernameInput(e.target.value.replace(/\s/g, ''));
+                            setUsernameInput(
+                              e.target.value.replace(
+                                /\s/g,
+                                ''
+                              )
+                            );
                             setSaveMessage(null);
                           }}
                           placeholder="your.username"
@@ -2859,22 +3265,25 @@ function AlumniSettings({
                           className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                         />
                       </div>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        3–20 characters: letters, numbers, periods, underscores.
-                      </p>
+
+                      
                     </div>
                   </div>
 
+                  {/* Alumni ID + Email */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Alumni ID
                       </label>
+
                       <input
                         type="text"
                         value={idNumberInput}
                         onChange={(e) => {
-                          setIdNumberInput(e.target.value);
+                          setIdNumberInput(
+                            e.target.value
+                          );
                           setSaveMessage(null);
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -2885,11 +3294,14 @@ function AlumniSettings({
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Email Address
                       </label>
+
                       <input
                         type="email"
                         value={emailInput}
                         onChange={(e) => {
-                          setEmailInput(e.target.value);
+                          setEmailInput(
+                            e.target.value
+                          );
                           setSaveMessage(null);
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -2901,90 +3313,145 @@ function AlumniSettings({
             </div>
           )}
 
+          {/* =====================================================
+              SECURITY
+              ===================================================== */}
           {activeTab === 'security' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Password & Security
               </h2>
+
               <p className="text-sm text-gray-500 mb-6">
                 Keep your account secure.
               </p>
 
               <div className="space-y-4 max-w-md">
+                {/* Current Password */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Current Password
                   </label>
+
                   <div className="relative">
                     <input
-                      type={showCurrentPassword ? 'text' : 'password'}
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={currentPassword}
                       onChange={(e) => {
-                        setCurrentPassword(e.target.value);
+                        setCurrentPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Enter current password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword((value) => !value)}
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* New Password */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     New Password
                   </label>
+
                   <div className="relative">
                     <input
-                      type={showNewPassword ? 'text' : 'password'}
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={newPassword}
                       onChange={(e) => {
-                        setNewPassword(e.target.value);
+                        setNewPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Min 8 chars, Aa1@"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowNewPassword((value) => !value)}
+                      onClick={() =>
+                        setShowNewPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* Confirm Password */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Confirm New Password
                   </label>
+
                   <div className="relative">
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={confirmPassword}
                       onChange={(e) => {
-                        setConfirmPassword(e.target.value);
+                        setConfirmPassword(
+                          e.target.value
+                        );
                         setPasswordMessage('');
                         setSaveMessage(null);
                       }}
                       placeholder="Confirm new password"
                       className="w-full px-4 py-2 pr-11 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword((value) => !value)}
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (value) => !value
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -2998,78 +3465,75 @@ function AlumniSettings({
             </div>
           )}
 
+          {/* =====================================================
+              NOTIFICATIONS
+              ===================================================== */}
           {activeTab === 'notifications' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Notifications
               </h2>
+
               <p className="text-sm text-gray-500 mb-6">
                 Choose what you want to be notified about.
               </p>
 
               <div className="space-y-4">
+                {/* Email Notifications */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       Email Notifications
                     </p>
+
                     <p className="text-xs text-gray-500 mt-1">
                       Receive email updates about your activities
                     </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={emailNotifications}
-                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      onChange={(e) =>
+                        setEmailNotifications(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
+
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
 
+                {/* Announcement Alerts */}
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       Announcement Alerts
                     </p>
+
                     <p className="text-xs text-gray-500 mt-1">
                       Get notified about important announcements
                     </p>
                   </div>
+
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={announcementAlerts}
-                      onChange={(e) => setAnnouncementAlerts(e.target.checked)}
+                      onChange={(e) =>
+                        setAnnouncementAlerts(
+                          e.target.checked
+                        )
+                      }
                       className="sr-only peer"
                     />
+
                     <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
                   </label>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Account Actions
-              </h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Manage your active session.
-              </p>
-
-              <div className="space-y-3 max-w-md">
-                <button
-                  onClick={onLogout}
-                  className="w-full px-4 py-3 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium"
-                >
-                  Log Out from Account
-                </button>
-                <p className="text-xs text-gray-500 text-center">
-                  This will sign you out from your session and return to the home page
-                </p>
               </div>
             </div>
           )}

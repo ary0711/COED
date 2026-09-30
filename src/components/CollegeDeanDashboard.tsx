@@ -1873,7 +1873,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
   all: 'General College Community',
   alumni: 'Alumni Only',
   students: 'Students Only',
-  faculty: 'Faculty & Staff Only',
+  faculty: 'Faculty Only',
 };
 
 const AUDIENCE_TO_ROLES: Record<string, string[]> = {
@@ -3152,7 +3152,7 @@ export default function CalendarActivities() {
                   <option value="all">Everyone (General College Community)</option>
                   <option value="alumni">Alumni Only (Homecoming, Tracer, Career, Reunions)</option>
                   <option value="students">Students Only (Academic, Enrollment, Exams)</option>
-                  <option value="faculty">Faculty & Staff Only (Meetings, Evaluations)</option>
+                  <option value="faculty">Faculty Only (Meetings, Evaluations)</option>
                 </select>
               </div>
             </div>
@@ -8556,11 +8556,17 @@ interface SystemSettingsProps {
   onLogout?: () => void;
 }
 
-function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
-  
+function SystemSettings({
+  profile,
+  onProfileUpdate,
+  onLogout,
+}: SystemSettingsProps) {
+  const [activeTab, setActiveTab] =
+    useState<SettingsTabId>('profile');
+
   // --- Profile State ---
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [positionRole] = useState('College Dean');
 
@@ -8568,52 +8574,118 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] =
+    useState(false);
+
   // --- Notifications State ---
   const [notifs, setNotifs] = useState(NOTIF_DEFAULTS);
 
   // --- Academic Settings State ---
-  const [academicYear, setAcademicYear] = useState('2025-2026');
-  const [semester, setSemester] = useState('Second Semester');
-  const [collegeDept, setCollegeDept] = useState('College of Education');
+  const [academicYear, setAcademicYear] =
+    useState('2025-2026');
+  const [semester, setSemester] =
+    useState('Second Semester');
+  const [collegeDept, setCollegeDept] =
+    useState('College of Education');
 
   // --- General UI State ---
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   // Load Profile on mount
   useEffect(() => {
     const loadProfile = async () => {
       const token = localStorage.getItem('token');
+
       if (!token) return;
 
       try {
-        const response = await fetch('http://localhost:5000/api/auth/me', {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(
+          'http://localhost:5000/api/auth/me',
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
         const data = await response.json();
-        if (!response.ok || !data.profile) throw new Error(data.error || 'Failed to load profile.');
 
-        const databaseFullName = data.profile.full_name || '';
-        const databaseEmail = data.profile.email || '';
+        if (!response.ok || !data.profile) {
+          throw new Error(
+            data.error || 'Failed to load profile.'
+          );
+        }
 
+        /*
+         * Username comes from the database.
+         * Prefer public.users.username.
+         */
+        const databaseUsername = String(
+          data.user?.username ??
+            data.username ??
+            data.profile?.username ??
+            ''
+        ).trim();
+
+        const databaseFullName = String(
+          data.profile?.full_name ??
+            ''
+        ).trim();
+
+        const databaseEmail = String(
+          data.profile?.email ??
+            ''
+        ).trim();
+
+        setUsername(databaseUsername);
         setFullName(databaseFullName);
         setEmail(databaseEmail);
-        localStorage.setItem('userFullName', databaseFullName);
-        localStorage.setItem('userEmail', databaseEmail);
 
-        onProfileUpdate?.({ fullName: databaseFullName, email: databaseEmail });
+        // LocalStorage is only used as a cache.
+        localStorage.setItem(
+          'userUsername',
+          databaseUsername
+        );
+
+        localStorage.setItem(
+          'userFullName',
+          databaseFullName
+        );
+
+        localStorage.setItem(
+          'userEmail',
+          databaseEmail
+        );
+
+        onProfileUpdate?.({
+          fullName: databaseFullName,
+          email: databaseEmail,
+        });
       } catch (error) {
-        console.error('Failed to load profile:', error);
+        console.error(
+          'Failed to load profile:',
+          error
+        );
+
         if (profile) {
-          setFullName(profile.fullName || '');
-          setEmail(profile.email || '');
+          setFullName(
+            profile.fullName || ''
+          );
+
+          setEmail(
+            profile.email || ''
+          );
         }
       }
     };
@@ -8625,25 +8697,42 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
   useEffect(() => {
     const loadPreferences = async () => {
       const token = localStorage.getItem('token');
+
       if (!token) return;
 
       try {
-        const response = await fetch('http://localhost:5000/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(
+          'http://localhost:5000/api/auth/me',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
         const data = await response.json();
+
         if (data.preferences) {
           setNotifs({
-            allowAll: data.preferences.allow_all ?? true,
-            inquiries: data.preferences.inquiries ?? true,
-            reports: data.preferences.reports ?? true,
-            announcements: data.preferences.announcements ?? true,
-            staffUpdates: data.preferences.staff_updates ?? false,
-            systemNotifs: data.preferences.system_notifs ?? true,
+            allowAll:
+              data.preferences.allow_all ?? true,
+            inquiries:
+              data.preferences.inquiries ?? true,
+            reports:
+              data.preferences.reports ?? true,
+            announcements:
+              data.preferences.announcements ?? true,
+            staffUpdates:
+              data.preferences.staff_updates ?? false,
+            systemNotifs:
+              data.preferences.system_notifs ?? true,
           });
         }
       } catch (error) {
-        console.error('Failed to load notification preferences:', error);
+        console.error(
+          'Failed to load notification preferences:',
+          error
+        );
       }
     };
 
@@ -8652,35 +8741,83 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
 
   useEffect(() => {
     if (message) {
-      const timer = setTimeout(() => setMessage(null), 5000);
+      const timer = setTimeout(
+        () => setMessage(null),
+        5000
+      );
+
       return () => clearTimeout(timer);
     }
   }, [message]);
 
-  const toggleNotif = (key: keyof typeof NOTIF_DEFAULTS) => {
+  const toggleNotif = (
+    key: keyof typeof NOTIF_DEFAULTS
+  ) => {
     if (key === 'allowAll') {
       const nextState = !notifs.allowAll;
+
       setNotifs((prev) => ({
         ...prev,
         allowAll: nextState,
       }));
     } else {
-      setNotifs((prev) => ({ ...prev, [key]: !prev[key] }));
+      setNotifs((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
     }
   };
 
+  // Save Profile
   const saveProfile = async () => {
     const trimmedName = fullName.trim();
-    const trimmedEmail = email.trim().toLowerCase();
 
-    if (!trimmedName || !trimmedEmail) {
-      setMessage({ type: 'error', text: 'Full Name and Email are required.' });
+    // Username is saved to database in lowercase
+    const trimmedUsername = username
+      .trim()
+      .toLowerCase();
+
+    const trimmedEmail = email
+      .trim()
+      .toLowerCase();
+
+    if (
+      !trimmedName ||
+      !trimmedUsername ||
+      !trimmedEmail
+    ) {
+      setMessage({
+        type: 'error',
+        text:
+          'Full Name, Username and Email are required.',
+      });
+
+      return;
+    }
+
+    // Username validation
+    const usernameRegex =
+      /^[a-zA-Z0-9._]{3,20}$/;
+
+    if (!usernameRegex.test(trimmedUsername)) {
+      setMessage({
+        type: 'error',
+        text:
+          'Username must be 3–20 characters and can only contain letters, numbers, periods, and underscores.',
+      });
+
       return;
     }
 
     const token = localStorage.getItem('token');
+
     if (!token) {
-      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      setMessage({
+        type: 'error',
+        text:
+          'Your session has expired. Please sign in again.',
+      });
+
       return;
     }
 
@@ -8688,89 +8825,199 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
     setMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ full_name: trimmedName, email: trimmedEmail }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/profile',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            full_name: trimmedName,
+            username: trimmedUsername,
+            email: trimmedEmail,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to update profile.');
 
-      const updatedName = data.profile?.full_name || trimmedName;
-      const updatedEmail = data.profile?.email || trimmedEmail;
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Failed to update profile.'
+        );
+      }
 
-      localStorage.setItem('userFullName', updatedName);
-      localStorage.setItem('userEmail', updatedEmail);
-      if (data.token) localStorage.setItem('token', data.token);
+      /*
+       * Read the updated username returned by
+       * the backend/database.
+       */
+      const updatedUsername = String(
+        data.user?.username ??
+          data.profile?.username ??
+          data.username ??
+          trimmedUsername
+      ).trim();
 
+      const updatedName = String(
+        data.profile?.full_name ??
+          trimmedName
+      ).trim();
+
+      const updatedEmail = String(
+        data.profile?.email ??
+          trimmedEmail
+      ).trim();
+
+      // Update React state
+      setUsername(updatedUsername);
       setFullName(updatedName);
       setEmail(updatedEmail);
-      onProfileUpdate?.({ fullName: updatedName, email: updatedEmail });
 
-      setMessage({ type: 'success', text: 'Profile updated successfully.' });
+      // Cache only
+      localStorage.setItem(
+        'userUsername',
+        updatedUsername
+      );
+
+      localStorage.setItem(
+        'userFullName',
+        updatedName
+      );
+
+      localStorage.setItem(
+        'userEmail',
+        updatedEmail
+      );
+
+      if (data.token) {
+        localStorage.setItem(
+          'token',
+          data.token
+        );
+      }
+
+      onProfileUpdate?.({
+        fullName: updatedName,
+        email: updatedEmail,
+      });
+
+      setMessage({
+        type: 'success',
+        text:
+          'Profile updated successfully.',
+      });
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Failed to update profile.' });
+      setMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          'Failed to update profile.',
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const saveSecurity = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setMessage({ type: 'error', text: 'Please fill in all password fields.' });
+    if (
+      !currentPassword ||
+      !newPassword ||
+      !confirmPassword
+    ) {
+      setMessage({
+        type: 'error',
+        text:
+          'Please fill in all password fields.',
+      });
+
       return;
     }
+
     if (newPassword !== confirmPassword) {
-      setMessage({ type: 'error', text: 'New passwords do not match.' });
+      setMessage({
+        type: 'error',
+        text:
+          'New passwords do not match.',
+      });
+
       return;
     }
 
     const token = localStorage.getItem('token');
+
     if (!token) {
-      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      setMessage({
+        type: 'error',
+        text:
+          'Your session has expired. Please sign in again.',
+      });
+
       return;
     }
-
 
     setSaving(true);
     setMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/password', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/password',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to update password.');
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Failed to update password.'
+        );
+      }
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setMessage({ type: 'success', text: 'Password updated successfully.' });
+
+      setMessage({
+        type: 'success',
+        text:
+          'Password updated successfully.',
+      });
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Failed to update password.' });
+      setMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          'Failed to update password.',
+      });
     } finally {
       setSaving(false);
     }
   };
 
- const saveNotifications = async () => {
+  const saveNotifications = async () => {
     const token = localStorage.getItem('token');
+
     if (!token) {
-      setMessage({ type: 'error', text: 'Your session has expired. Please sign in again.' });
+      setMessage({
+        type: 'error',
+        text:
+          'Your session has expired. Please sign in again.',
+      });
+
       return;
     }
 
@@ -8778,59 +9025,123 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
     setMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/preferences', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          allow_all: notifs.allowAll,
-          inquiries: notifs.inquiries,
-          reports: notifs.reports,
-          announcements: notifs.announcements,
-          staff_updates: notifs.staffUpdates,
-          system_notifs: notifs.systemNotifs,
-        }),
-      });
+      const response = await fetch(
+        'http://localhost:5000/api/auth/preferences',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            allow_all: notifs.allowAll,
+            inquiries: notifs.inquiries,
+            reports: notifs.reports,
+            announcements:
+              notifs.announcements,
+            staff_updates:
+              notifs.staffUpdates,
+            system_notifs:
+              notifs.systemNotifs,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to save notification preferences.');
 
-      setMessage({ type: 'success', text: 'Notification preferences saved successfully.' });
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Failed to save notification preferences.'
+        );
+      }
+
+      setMessage({
+        type: 'success',
+        text:
+          'Notification preferences saved successfully.',
+      });
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Error saving preferences.' });
+      setMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          'Error saving preferences.',
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const saveAcademicSettings = async () => {
-    if (!academicYear.trim() || !collegeDept.trim()) {
-      setMessage({ type: 'error', text: 'Academic Year and College/Department are required.' });
+    if (
+      !academicYear.trim() ||
+      !collegeDept.trim()
+    ) {
+      setMessage({
+        type: 'error',
+        text:
+          'Academic Year and College/Department are required.',
+      });
+
       return;
     }
-    await new Promise((res) => setTimeout(res, 400));
-    setMessage({ type: 'success', text: 'Academic settings updated.' });
+
+    await new Promise((res) =>
+      setTimeout(res, 400)
+    );
+
+    setMessage({
+      type: 'success',
+      text:
+        'Academic settings updated.',
+    });
   };
 
   const handleSaveChanges = async () => {
     setMessage(null);
+
     try {
       switch (activeTab) {
-        case 'profile': await saveProfile(); break;
-        case 'security': await saveSecurity(); break;
-        case 'notifications': await saveNotifications(); break;
-        case 'academic': await saveAcademicSettings(); break;
-        default: setMessage({ type: 'error', text: 'Nothing to save on this tab.' });
+        case 'profile':
+          await saveProfile();
+          break;
+
+        case 'security':
+          await saveSecurity();
+          break;
+
+        case 'notifications':
+          await saveNotifications();
+          break;
+
+        case 'academic':
+          await saveAcademicSettings();
+          break;
+
+        default:
+          setMessage({
+            type: 'error',
+            text:
+              'Nothing to save on this tab.',
+          });
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'An error occurred while saving.' });
+      setMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          'An error occurred while saving.',
+      });
     }
   };
 
   const handleLogoutAllDevices = async () => {
-    if (window.confirm('Are you sure you want to log out of all devices?')) {
+    if (
+      window.confirm(
+        'Are you sure you want to log out of all devices?'
+      )
+    ) {
       if (onLogout) onLogout();
     }
   };
@@ -8840,17 +9151,27 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">Settings</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your account and system preferences.</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
+            Settings
+          </h1>
+
+          <p className="text-gray-500 text-sm mt-1">
+            Manage your account and system preferences.
+          </p>
         </div>
+
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {!['users', 'landing'].includes(activeTab) && (
+          {!['users', 'landing'].includes(
+            activeTab
+          ) && (
             <button
               onClick={handleSaveChanges}
               disabled={saving}
               className="px-4 sm:px-5 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 shadow-sm"
             >
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving
+                ? 'Saving...'
+                : 'Save Changes'}
             </button>
           )}
         </div>
@@ -8858,7 +9179,13 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
 
       {/* Message Alert */}
       {message && (
-        <div className={`mb-6 p-4 rounded-xl text-sm font-medium border ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+        <div
+          className={`mb-6 p-4 rounded-xl text-sm font-medium border ${
+            message.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-red-50 text-red-700 border-red-200'
+          }`}
+        >
           {message.text}
         </div>
       )}
@@ -8868,51 +9195,138 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
         <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
           {SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const isActive =
+              activeTab === tab.id;
+
             return (
               <button
                 key={tab.id}
-                onClick={() => { setActiveTab(tab.id); setMessage(null); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-blue-50 text-[#1E3A8A] font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setMessage(null);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-blue-50 text-[#1E3A8A] font-semibold'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{tab.label}</span>
+
+                <span className="truncate">
+                  {tab.label}
+                </span>
               </button>
             );
           })}
         </div>
 
         {/* Content Panel */}
-        <div className={`flex-1 min-w-0 ${['users', 'landing'].includes(activeTab) ? '' : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'}`}>
-          {activeTab === 'users' && <UserManagement />}
-          {activeTab === 'landing' && <LandingPageManagement />}
+        <div
+          className={`flex-1 min-w-0 ${
+            ['users', 'landing'].includes(
+              activeTab
+            )
+              ? ''
+              : 'bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6'
+          }`}
+        >
+          {activeTab === 'users' && (
+            <UserManagement />
+          )}
 
+          {activeTab === 'landing' && (
+            <LandingPageManagement />
+          )}
+
+          {/* Profile */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Update your personal details.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Profile Information
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Update your personal details.
+              </p>
 
               <div className="space-y-4 max-w-md">
+
+                {/* Full Name */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Full Name
+                  </label>
+
                   <input
                     type="text"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) =>
+                      setFullName(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Username */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Username
+                  </label>
+
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      @
+                    </span>
+
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) =>
+                        setUsername(
+                          e.target.value.replace(
+                            /\s/g,
+                            ''
+                          )
+                        )
+                      }
+                      maxLength={20}
+                      autoComplete="username"
+                      placeholder="your.username"
+                      className="w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    3–20 characters: letters, numbers,
+                    periods, and underscores.
+                  </p>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Email Address
+                  </label>
+
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) =>
+                      setEmail(e.target.value)
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Position */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Position/Role</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Position/Role
+                  </label>
+
                   <input
                     type="text"
                     value={positionRole}
@@ -8924,69 +9338,140 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
             </div>
           )}
 
+          {/* Security */}
           {activeTab === 'security' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Password & Security</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Manage your password and account access.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Password & Security
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Manage your password and account access.
+              </p>
 
               <div className="space-y-4 max-w-md mb-6">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showCurrentPassword ? 'text' : 'password'}
+                      type={
+                        showCurrentPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      onChange={(e) =>
+                        setCurrentPassword(
+                          e.target.value
+                        )
+                      }
                       placeholder="Enter current password"
                       className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowCurrentPassword((v) => !v)}
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showCurrentPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showNewPassword ? 'text' : 'password'}
+                      type={
+                        showNewPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      onChange={(e) =>
+                        setNewPassword(
+                          e.target.value
+                        )
+                      }
                       placeholder="Enter new password"
                       className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowNewPassword((v) => !v)}
+                      onClick={() =>
+                        setShowNewPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNewPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-1.5">At least 8 characters with uppercase, lowercase, number, and special character.</p>
+
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    At least 8 characters with
+                    uppercase, lowercase, number, and
+                    special character.
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Confirm New Password</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Confirm New Password
+                  </label>
+
                   <div className="relative">
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
                       value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onChange={(e) =>
+                        setConfirmPassword(
+                          e.target.value
+                        )
+                      }
                       placeholder="Confirm new password"
                       className="w-full px-3.5 py-2.5 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (v) => !v
+                        )
+                      }
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -8997,13 +9482,19 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
                   label="Two-Factor Authentication"
                   description="Enable two-factor authentication to add an extra layer of security to your account."
                   checked={twoFactorEnabled}
-                  onChange={() => setTwoFactorEnabled((v) => !v)}
+                  onChange={() =>
+                    setTwoFactorEnabled(
+                      (v) => !v
+                    )
+                  }
                 />
               </div>
 
               <div className="border-t border-gray-100 pt-5 mt-4">
                 <button
-                  onClick={handleLogoutAllDevices}
+                  onClick={
+                    handleLogoutAllDevices
+                  }
                   className="px-4 py-2.5 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
                 >
                   Log Out of All Devices
@@ -9012,63 +9503,181 @@ function SystemSettings({ profile, onProfileUpdate, onLogout }: SystemSettingsPr
             </div>
           )}
 
+          {/* Notifications */}
           {activeTab === 'notifications' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Notifications</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-5">Choose what alerts you receive.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Notifications
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-5">
+                Choose what alerts you receive.
+              </p>
 
               <div className="w-full">
                 <ToggleCard
                   label="Allow Notifications"
                   description="Turn off to completely mute all notifications and reminders."
                   checked={notifs.allowAll}
-                  onChange={() => toggleNotif('allowAll')}
+                  onChange={() =>
+                    toggleNotif(
+                      'allowAll'
+                    )
+                  }
                 />
+
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                  <ToggleCard label="New Inquiries" description="Get notified when new stakeholder inquiries come in." checked={notifs.inquiries} onChange={() => toggleNotif('inquiries')} disabled={!notifs.allowAll} />
-                  <ToggleCard label="Pending Reports" description="Get reminders for upcoming or pending department reports." checked={notifs.reports} onChange={() => toggleNotif('reports')} disabled={!notifs.allowAll} />
-                  <ToggleCard label="New Announcements" description="Get notified about important institutional updates." checked={notifs.announcements} onChange={() => toggleNotif('announcements')} disabled={!notifs.allowAll} />
-                  <ToggleCard label="Faculty/Staff Updates" description="Receive updates regarding faculty statuses or submissions." checked={notifs.staffUpdates} onChange={() => toggleNotif('staffUpdates')} disabled={!notifs.allowAll} />
-                  <ToggleCard label="System Notifications" description="Receive general application alerts and system notices." checked={notifs.systemNotifs} onChange={() => toggleNotif('systemNotifs')} disabled={!notifs.allowAll} />
+                  <ToggleCard
+                    label="New Inquiries"
+                    description="Get notified when new stakeholder inquiries come in."
+                    checked={notifs.inquiries}
+                    onChange={() =>
+                      toggleNotif(
+                        'inquiries'
+                      )
+                    }
+                    disabled={
+                      !notifs.allowAll
+                    }
+                  />
+
+                  <ToggleCard
+                    label="Pending Reports"
+                    description="Get reminders for upcoming or pending department reports."
+                    checked={notifs.reports}
+                    onChange={() =>
+                      toggleNotif(
+                        'reports'
+                      )
+                    }
+                    disabled={
+                      !notifs.allowAll
+                    }
+                  />
+
+                  <ToggleCard
+                    label="New Announcements"
+                    description="Get notified about important institutional updates."
+                    checked={
+                      notifs.announcements
+                    }
+                    onChange={() =>
+                      toggleNotif(
+                        'announcements'
+                      )
+                    }
+                    disabled={
+                      !notifs.allowAll
+                    }
+                  />
+
+                  <ToggleCard
+                    label="Faculty Updates"
+                    description="Receive updates regarding faculty statuses or submissions."
+                    checked={
+                      notifs.staffUpdates
+                    }
+                    onChange={() =>
+                      toggleNotif(
+                        'staffUpdates'
+                      )
+                    }
+                    disabled={
+                      !notifs.allowAll
+                    }
+                  />
+
+                  <ToggleCard
+                    label="System Notifications"
+                    description="Receive general application alerts and system notices."
+                    checked={
+                      notifs.systemNotifs
+                    }
+                    onChange={() =>
+                      toggleNotif(
+                        'systemNotifs'
+                      )
+                    }
+                    disabled={
+                      !notifs.allowAll
+                    }
+                  />
                 </div>
               </div>
             </div>
           )}
 
+          {/* Academic */}
           {activeTab === 'academic' && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Academic Settings</h2>
-              <p className="text-sm text-gray-500 mt-0.5 mb-6">Configure the current academic period.</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Academic Settings
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-0.5 mb-6">
+                Configure the current academic period.
+              </p>
 
               <div className="space-y-4 max-w-md">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Academic Year</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Academic Year
+                  </label>
+
                   <input
                     type="text"
                     value={academicYear}
-                    onChange={(e) => setAcademicYear(e.target.value)}
+                    onChange={(e) =>
+                      setAcademicYear(
+                        e.target.value
+                      )
+                    }
                     placeholder="e.g. 2025-2026"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Current Semester</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    Current Semester
+                  </label>
+
                   <select
                     value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
+                    onChange={(e) =>
+                      setSemester(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    <option value="First Semester">First Semester</option>
-                    <option value="Second Semester">Second Semester</option>
-                    <option value="Summer">Summer</option>
+                    <option value="First Semester">
+                      First Semester
+                    </option>
+
+                    <option value="Second Semester">
+                      Second Semester
+                    </option>
+
+                    <option value="Summer">
+                      Summer
+                    </option>
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">College/Department Name</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                    College/Department Name
+                  </label>
+
                   <input
                     type="text"
                     value={collegeDept}
-                    onChange={(e) => setCollegeDept(e.target.value)}
+                    onChange={(e) =>
+                      setCollegeDept(
+                        e.target.value
+                      )
+                    }
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
