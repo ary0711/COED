@@ -1137,12 +1137,15 @@ function UserManagement() {
   const [total, setTotal]               = useState(0);
   const [activating, setActivating]     = useState<string | null>(null);
 
-  const [modal, setModal]         = useState<'add' | 'edit' | 'delete' | null>(null);
+  const [modal, setModal]         = useState<'add' | 'edit' | null>(null);
   const [selected, setSelected]   = useState<any | null>(null);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
   const [fetchError, setFetchError] = useState('');
-
+  const [statusMessage, setStatusMessage] = useState<{
+  type: 'success' | 'error';
+  text: string;
+} | null>(null);
   const [form, setForm] = useState({
     username: '', full_name: '', email: '', role: 'student',
     id_number: '', program: '', status: 'active', password: '',
@@ -1221,7 +1224,7 @@ function UserManagement() {
     setModal('edit');
   };
   
-  const openDelete = (user: any) => { setSelected(user); setModal('delete'); };
+
 
   const handleAdd = async () => {
     setFormError('');
@@ -1459,20 +1462,72 @@ function UserManagement() {
     }
   };
 
-  const toggleStatus = async (user: any) => {
-    if (user.status === 'pending') return;
-    const next = user.status === 'active' ? 'inactive' : 'active';
+  
+const toggleStatus = async (user: any) => {
+  if (user.status === 'pending') return;
+
+  const nextStatus =
+    user.status === 'active' ? 'inactive' : 'active';
+
+  setStatusMessage(null);
+  setActivating(user.id);
+
+  try {
     const token = localStorage.getItem('token');
-    await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status: next }),
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+      `http://localhost:5000/api/auth/users/${user.id}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+        }),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        result.message ||
+        'Failed to update the account status.'
+      );
+    }
+
+    // Refresh the user list using the saved backend status.
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text:
+        `The account status for ${user.full_name} was changed to ` +
+        `${nextStatus.toUpperCase()}. ` +
+        (result.emailSent
+          ? `An email notification was sent to ${user.email}.`
+          : result.emailError
+            ? `The status was saved, but the email could not be sent: ${result.emailError}`
+            : 'Check the server response for email delivery status.'),
     });
-    fetchUsers();
-  };
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message ||
+        'Unable to update the account status.',
+    });
+  } finally {
+    setActivating(null);
+  }
+};
+
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -1492,7 +1547,26 @@ function UserManagement() {
           </button>
         </div>
       </div>
+      {statusMessage && (
+  <div
+    role="status"
+    className={`px-4 py-3 rounded-xl border text-sm ${
+      statusMessage.type === 'success'
+        ? 'bg-green-50 border-green-200 text-green-800'
+        : 'bg-red-50 border-red-200 text-red-700'
+    }`}
+  >
+    <div className="flex items-start gap-2">
+      {statusMessage.type === 'success' ? (
+        <Check className="w-5 h-5 flex-shrink-0" />
+      ) : (
+        <X className="w-5 h-5 flex-shrink-0" />
+      )}
 
+      <p>{statusMessage.text}</p>
+    </div>
+  </div>
+)}
       {fetchError && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{fetchError}</div>
       )}
@@ -1601,12 +1675,31 @@ function UserManagement() {
                         <span className="text-sm text-gray-600 line-clamp-2" title={affiliation}>{affiliation ?? '—'}</span>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
-                        <button onClick={() => toggleStatus(user)}
-                          className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold"
-                          style={{ background: status.bg, color: status.color }}>
-                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: status.dot }} />
-                          <span className="hidden sm:inline">{status.label}</span>
-                        </button>
+                        <button
+  onClick={() => toggleStatus(user)}
+  disabled={isActivating || isPending}
+  title={
+    isPending
+      ? 'Activate this account using the Activate button'
+      : `Change account status from ${user.status}`
+  }
+  className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+  style={{
+    background: status.bg,
+    color: status.color,
+  }}
+>
+  {isActivating ? (
+    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+  ) : (
+    <span
+      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+      style={{ background: status.dot }}
+    />
+  )}
+
+  <span>{isActivating ? 'Updating...' : status.label}</span>
+</button>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center justify-center gap-1">
@@ -1618,7 +1711,7 @@ function UserManagement() {
                             </button>
                           )}
                           <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => openDelete(user)} className="p-1.5 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                         
                         </div>
                       </td>
                     </tr>
@@ -1793,24 +1886,7 @@ function UserManagement() {
         </div>
       )}
 
-      {modal === 'delete' && selected && (
-        <div 
-          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
-          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Delete User</h2>
-            <p className="text-sm text-gray-500 mb-6">Are you sure you want to delete {selected.full_name}?</p>
-            {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
-            <div className="flex gap-3">
-              <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
-              <button onClick={handleDelete} disabled={saving} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm">
-                {saving ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 }
