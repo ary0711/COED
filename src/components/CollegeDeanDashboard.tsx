@@ -16,6 +16,7 @@ import HomePageEditor from './pages/HomePageEditor';
 import AnnouncementsContent from './AnnouncementsContent';
 import AboutPageEditor from './pages/AboutPageEditor';
 import DepartmentsPageEditor from './pages/DepartmentsPageEditor';
+import AccreditationWorkspace from './AccreditationWorkspace'; 
 import ClubsPageEditor from './pages/ClubsPageEditor';
 import ResearchPageEditor from './pages/ResearchPageEditor';
 import AchievementsPageEditor from './pages/AchievementsPageEditor';
@@ -111,6 +112,7 @@ import {
   AlertTriangle,
   HelpCircle,
   Mail,
+  Folder,
 } from 'lucide-react';
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -222,6 +224,7 @@ const DEFAULT_PROGRAMS = ['BEED', 'BSED-MATH', 'BSED-ENGLISH', 'BTLED'];
 const deanMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',               id: 'dashboard' },
   { icon: FileText,        label: 'Academic Records',        id: 'records' },
+  { icon: Folder,          label: 'Accreditation Management', id: 'accreditation' },
   { icon: GraduationCap,   label: 'Faculty',         id: 'faculty' },
   { icon: Calendar,        label: 'Calendar & Activities',   id: 'calendar' },
   { icon: Award,           label: 'Research & Achievements', id: 'research' },
@@ -361,6 +364,7 @@ export function CollegeDeanDashboard({
           {activeMenuItem === 'dashboard'     && <DashboardView onNavigate={handleNavigate} />}
           {activeMenuItem === 'users'         && <UserManagement />}
           {activeMenuItem === 'records'       && <AcademicRecords />}
+          {activeMenuItem === 'accreditation' && <AccreditationWorkspace userRole="dean" />} 
           {activeMenuItem === 'faculty'       && <FacultyStaffManagement />}
           {activeMenuItem === 'calendar'      && <CalendarActivities />}
           {activeMenuItem === 'research'      && <ResearchAchievements />}

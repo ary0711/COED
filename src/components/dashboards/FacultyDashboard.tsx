@@ -37,6 +37,7 @@ import {
   Trash2,
   Plus,
   Save,
+  Folder,
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
@@ -47,6 +48,7 @@ import { ResearchExtension } from '../ResearchExtension';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 import { FacultyAchievements } from '../FacultyAchievements';
 import { ReportsSection } from '../ReportsSection'; 
+import AccreditationWorkspace from '../AccreditationWorkspace'; 
 
 const facultyMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',             id: 'dashboard' },
@@ -55,6 +57,7 @@ const facultyMenuItems = [
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: GraduationCap,   label: "Dean's List",          id: 'deans-list' },
   { icon: FolderOpen,      label: 'Academic Resources',   id: 'academic-resources' },
+  { icon: Folder,      label: 'Accreditation',   id: 'accreditation' },
   { icon: FileText,        label: 'Reports',              id: 'reports' },
   { icon: Calendar,        label: 'Calendar',             id: 'calendar' },
   { icon: Settings,        label: 'Settings',             id: 'settings' },
@@ -150,6 +153,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           {activeMenuItem === 'achievements'      && <FacultyAchievements userName={userName} />}
           {activeMenuItem === 'deans-list'         && <DeansListGenerator userId={userId} userName={userName} />}
           {activeMenuItem === 'academic-resources' && <AcademicResources />}
+          {activeMenuItem === 'accreditation' && <AccreditationWorkspace userRole="faculty" />} 
           {activeMenuItem === 'reports'             && <ReportsSection userId={userId} userName={userName} />}
           {activeMenuItem === 'calendar'          && <FacultyCalendar />}
           {activeMenuItem === 'settings'          && <FacultySettings />}

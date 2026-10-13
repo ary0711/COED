@@ -65,6 +65,9 @@ app.use('/api', teachingLoadRoutes);
 
 app.use('/api/contact', require('./routes/contact'));
 
+const accreditationRouter = require('./routes/accreditation');
+app.use('/api/accreditation', accreditationRouter);
+
 const authenticate = require('./middleware/authenticate');
 
 app.get('/api/profile', authenticate, (req, res) => {

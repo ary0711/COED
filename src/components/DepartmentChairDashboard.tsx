@@ -44,6 +44,7 @@ import {
   TrendingUp,
   EyeOff,
   Award,
+  Folder,
 } from 'lucide-react';
 
 import { Sidebar } from './Sidebar';
@@ -57,6 +58,7 @@ import { ExtensionReport } from './dashboards/ExtensionReport';
 import { ResearchExtension } from './ResearchExtension';
 import { FacultyAchievements } from './FacultyAchievements';
 import { ReportsSection } from './ReportsSection';
+import AccreditationWorkspace from './AccreditationWorkspace'; 
 
 import { supabase } from '../supabaseClient';
 
@@ -79,6 +81,7 @@ const chairMenuItems = [
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
   { icon: FileText,        label: 'Reports Monitoring',   id: 'reports' },
   { icon: ClipboardList,   label: 'Academic Records',     id: 'records' },
+  { icon: Folder,   label: 'Accreditation',     id: 'accreditation' },
   { icon: Megaphone,       label: 'Announcements',        id: 'announcements' },
   { icon: UserCheck,       label: 'Account Approvals',    id: 'approvals' },
   { icon: Settings,        label: 'System Settings',      id: 'settings' },
@@ -192,6 +195,7 @@ export function DepartmentChairDashboard({
           {activeMenuItem === 'chairReports'       && (<ReportsSection userId={userId} userName={userName} />)}
           {activeMenuItem === 'reports'            && <ReportsMonitoring departmentNames={departmentNames} />}
           {activeMenuItem === 'records'            && <AcademicRecordsView />}
+          {activeMenuItem === 'accreditation' && <AccreditationWorkspace userRole="chairperson" />} 
           {activeMenuItem === 'announcements'      && <AnnouncementsContent userRole="department_chair" />}
           {activeMenuItem === 'approvals'          && <AccountApprovalsView departmentNames={departmentNames} />}
           {activeMenuItem === 'settings' && (
