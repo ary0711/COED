@@ -80,15 +80,20 @@ interface FileUploadTask {
 
 interface ResearchSubmission {
   id: string;
+  submitted_by?: string | null;
   title: string;
-  type: 'research' | 'extension';
+  type: 'research' | 'extension' | 'achievement';
   publication_link?: string | null;
   file_name: string | null;
   file_url: string | null;
   file_path?: string | null;
   files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
+  research_status?: 'on-going' | 'completed' | null;
   dean_remarks?: string | null;
+  remarks?: string | null;
+  category?: string | null;
+  date_received?: string | null;
   created_at: string;
   updated_at: string;
   funding_source?: string | null;
@@ -137,7 +142,7 @@ function getFileIcon(filename: string, className = 'w-4 h-4') {
 export function ResearchExtension({ userId, userName = 'A faculty member' }: { userId: string; userName?: string }) {
   // Navigation State
   const [view, setView] = useState<'overview' | 'create' | 'track'>('overview');
-  const [overviewTab, setOverviewTab] = useState<'all' | 'research' | 'extension'>('all');
+  const [overviewTab, setOverviewTab] = useState<'all' | 'research' | 'extension' | 'achievement'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
@@ -151,7 +156,8 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
   const localBlobUrlMapRef = useRef<Map<string, string>>(new Map());
 
   // Form State
-  const [researchType, setResearchType] = useState<'research' | 'extension'>('research');
+  const [researchType, setResearchType] = useState<'research' | 'extension' | 'achievement'>('research');
+  const [researchStatus, setResearchStatus] = useState<'on-going' | 'completed'>('completed');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -208,7 +214,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       });
       if (!res.ok) throw new Error(`Server returned status ${res.status}`);
       const data = await res.json();
-      setSubmissions((data ?? []).filter((s: any) => s.type === 'research' || s.type === 'extension'));
+      setSubmissions((data ?? []).filter((s: any) => ['research', 'extension', 'achievement'].includes(s.type)));
     } catch (err: any) {
       setFetchError(err.message || 'Unable to connect to research submission service.');
     } finally {
@@ -269,6 +275,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     setDescription('');
     setStartDate('');
     setEndDate('');
+    setResearchStatus('completed');
     setExistingFiles([]);
     setUploadQueue([]);
     setPublicationLink('');
@@ -282,7 +289,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     setIsSdgDropdownOpen(false);
   };
 
-  const handleStartCreate = (type: 'research' | 'extension') => {
+  const handleStartCreate = (type: 'research' | 'extension' | 'achievement') => {
     resetForm();
     setResearchType(type);
     setView('create');
@@ -296,6 +303,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     setDescription(submission.description || '');
     setStartDate(submission.start_date || '');
     setEndDate(submission.end_date || '');
+    setResearchStatus(submission.research_status || 'completed');
     setExistingFiles(getSubmissionFiles(submission));
     setUploadQueue([]);
     setSelectedSdgs(parseSdgs(submission.sdg_alignment));
@@ -318,7 +326,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       } else {
         setCoAuthors(['']);
       }
-    } else {
+    } else if (submission.type === 'extension') {
       setPartnerOrg(submission.partner_organization || '');
       setBeneficiaries(
         submission.beneficiaries !== null && submission.beneficiaries !== undefined
@@ -327,6 +335,14 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       );
     }
     setView('create');
+  };
+
+  const handleResearchStatusChange = (statusVal: 'on-going' | 'completed') => {
+    setResearchStatus(statusVal);
+    if (statusVal === 'on-going') {
+      setPublicationLink('');
+      setEndDate('');
+    }
   };
 
   const handleNavigateToTrack = (id: string) => {
@@ -369,7 +385,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     );
   };
 
-  // Preview local unsubmitted files
   const handlePreviewQueuedTask = (task: FileUploadTask) => {
     let blobUrl = localBlobUrlMapRef.current.get(task.id);
     if (!blobUrl) {
@@ -384,7 +399,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     });
   };
 
-  // Upload Progress calculations
   const totalFilesCount = uploadQueue.length;
   const completedFilesCount = uploadQueue.filter((t) => t.status === 'completed').length;
   const failedFilesCount = uploadQueue.filter((t) => t.status === 'error').length;
@@ -404,7 +418,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       return;
     }
 
-    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+    if (researchType === 'research' && researchStatus === 'completed' && startDate && endDate && new Date(endDate) < new Date(startDate)) {
       setModal({
         isOpen: true,
         type: 'validation',
@@ -434,7 +448,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       return;
     }
 
-    // Clean co-authors: trim whitespace, filter empty values
     const cleanedCoAuthors = coAuthors.map((a) => a.trim()).filter(Boolean);
     const coAuthorsString = cleanedCoAuthors.join(', ');
 
@@ -445,15 +458,22 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       formData.append('type', researchType);
       if (description.trim()) formData.append('description', description.trim());
       if (startDate) formData.append('start_date', startDate);
-      if (endDate) formData.append('end_date', endDate);
+      if (researchType === 'research') {
+        formData.append('research_status', researchStatus);
+        if (researchStatus === 'completed') {
+          if (endDate) formData.append('end_date', endDate);
+          if (publicationLink.trim()) formData.append('publication_link', publicationLink.trim());
+        }
+      } else {
+        if (endDate) formData.append('end_date', endDate);
+      }
       formData.append('sdg_alignment', JSON.stringify(selectedSdgs));
 
       if (researchType === 'research') {
-        if (publicationLink.trim()) formData.append('publication_link', publicationLink.trim());
         if (fundingSource.trim()) formData.append('funding_source', fundingSource.trim());
         if (coAuthorsString) formData.append('authors', coAuthorsString);
         if (budget) formData.append('budget', budget);
-      } else {
+      } else if (researchType === 'extension') {
         if (partnerOrg.trim()) formData.append('partner_organization', partnerOrg.trim());
         if (beneficiaries) formData.append('beneficiaries', beneficiaries);
       }
@@ -462,7 +482,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       const endpoint = isEdit ? `${RESEARCH_API_URL}/${editingSubmission!.id}` : RESEARCH_API_URL;
       const method = isEdit ? 'PUT' : 'POST';
 
-      // Attach ALL pending files to the single FormData request
       const pendingFiles = uploadQueue.filter(
         (t) => t.status === 'pending' || t.status === 'error'
       );
@@ -470,7 +489,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
         formData.append('files', task.file);
       });
 
-      // Submit all files in a single unified request with live progress tracking
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open(method, endpoint, true);
@@ -515,14 +533,14 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       });
 
       try {
-  await notifyDean({
-    title: `${isEdit ? 'Updated' : 'New'} ${researchType === 'research' ? 'Research' : 'Extension'} Submission`,
-    message: title.trim(),
-    type: 'system',
-  });
-} catch (e) {
-  console.error('Submission saved but Dean notification failed:', e);
-}
+        await notifyDean({
+          title: `${isEdit ? 'Updated' : 'New'} ${researchType.charAt(0).toUpperCase() + researchType.slice(1)} Submission`,
+          message: title.trim(),
+          type: 'system',
+        });
+      } catch (e) {
+        console.error('Submission saved but Dean notification failed:', e);
+      }
 
       await fetchSubmissions();
       resetForm();
@@ -569,6 +587,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       rejected: submissions.filter((s) => s.status === 'rejected').length,
       researchCount: submissions.filter((s) => s.type === 'research').length,
       extensionCount: submissions.filter((s) => s.type === 'extension').length,
+      achievementCount: submissions.filter((s) => s.type === 'achievement').length,
     };
   }, [submissions]);
 
@@ -704,7 +723,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
 
           <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4 mb-5">
-              <div className="flex gap-1.5 p-1 bg-gray-100 rounded-xl w-fit">
+              <div className="flex gap-1.5 p-1 bg-gray-100 rounded-xl w-fit flex-wrap">
                 <button
                   onClick={() => setOverviewTab('all')}
                   className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
@@ -827,6 +846,15 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                               <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
                                 {item.type}
                               </span>
+                              {item.type === 'research' && item.research_status && (
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                  item.research_status === 'on-going'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {item.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                                </span>
+                              )}
                               <h3 className="text-sm sm:text-base font-semibold text-gray-900">
                                 {item.title}
                               </h3>
@@ -834,9 +862,9 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                             <div className="text-xs text-gray-500 mt-0.5">
                               Submitted on {formatDate(item.created_at)}
                               {item.start_date &&
-                                ` · Activity: ${formatDate(item.start_date)} – ${formatDate(
-                                  item.end_date
-                                )}`}
+                                ` · Activity: ${formatDate(item.start_date)} – ${
+                                  item.end_date ? formatDate(item.end_date) : 'Present'
+                                }`}
                             </div>
                           </div>
                         </div>
@@ -919,7 +947,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       {/* CREATE / EDIT FORM VIEW */}
       {view === 'create' && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 w-full">
-          <div className="flex items-center justify-between pb-6 mb-6 border-b border-gray-100">
+          <div className="flex items-center justify-between pb-6 mb-6 border-b border-gray-100 flex-wrap gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
                 {editingSubmission
@@ -931,7 +959,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
               </p>
             </div>
             {!editingSubmission && (
-              <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+              <div className="flex gap-2 p-1 bg-gray-100 rounded-xl flex-wrap">
                 <button
                   type="button"
                   onClick={() => setResearchType('research')}
@@ -1042,13 +1070,21 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       Publication Link <span className="text-gray-400 font-normal">(Optional DOI or URL)</span>
+                      {researchStatus === 'on-going' && (
+                        <span className="text-amber-600 ml-1 font-medium">✨ Disabled for On-going research</span>
+                      )}
                     </label>
                     <input
                       type="url"
                       value={publicationLink}
+                      disabled={researchStatus === 'on-going'}
                       onChange={(e) => setPublicationLink(e.target.value)}
-                      placeholder="https://doi.org/... or journal link"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder={researchStatus === 'on-going' ? 'Disabled for on-going research' : 'https://doi.org/... or journal link'}
+                      className={`w-full px-4 py-2.5 border rounded-xl text-sm transition-all ${
+                        researchStatus === 'on-going'
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-75'
+                          : 'border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none'
+                      }`}
                     />
                   </div>
                 </div>
@@ -1231,6 +1267,23 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                 </span>
                 Implementation Schedule
               </h3>
+
+              {researchType === 'research' && (
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Research Status *
+                  </label>
+                  <select
+                    value={researchStatus}
+                    onChange={(e) => handleResearchStatusChange(e.target.value as 'on-going' | 'completed')}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-medium text-gray-900"
+                  >
+                    <option value="completed">Completed</option>
+                    <option value="on-going">On-going</option>
+                  </select>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Start Date</label>
@@ -1242,13 +1295,23 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">End Date</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    End Date
+                    {researchType === 'research' && researchStatus === 'on-going' && (
+                      <span className="text-amber-600 ml-1 font-medium">✨ Disabled for On-going research</span>
+                    )}
+                  </label>
                   <input
                     type="date"
                     min={startDate || undefined}
                     value={endDate}
+                    disabled={researchType === 'research' && researchStatus === 'on-going'}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className={`w-full px-4 py-2.5 border rounded-xl text-sm transition-all ${
+                      researchType === 'research' && researchStatus === 'on-going'
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-75'
+                        : 'border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none'
+                    }`}
                   />
                 </div>
               </div>
@@ -1353,7 +1416,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
-                            {/* In-Modal Preview for Staged Unsubmitted Local Files */}
                             <button
                               type="button"
                               onClick={() => handlePreviewQueuedTask(task)}
@@ -1445,6 +1507,15 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                     <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
                       {activeSubmission.type}
                     </span>
+                    {activeSubmission.type === 'research' && activeSubmission.research_status && (
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                        activeSubmission.research_status === 'on-going'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {activeSubmission.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                      </span>
+                    )}
                     <span className="text-xs text-gray-400">ID: {activeSubmission.id.slice(0, 8)}</span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-bold text-gray-900">
@@ -1523,10 +1594,10 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                         : 'Awaiting completion of administrative review.'}
                     </p>
 
-                    {activeSubmission.dean_remarks && (
-                      <div className="mt-3 p-3.5 bg-rose-50 border border-rose-100 text-rose-800">
+                    {(activeSubmission.dean_remarks || activeSubmission.remarks) && (
+                      <div className="mt-3 p-3.5 bg-rose-50 border border-rose-100 text-rose-800 rounded-xl">
                         <span className="font-semibold block mb-0.5">Reviewer Remarks:</span>
-                        {activeSubmission.dean_remarks}
+                        {activeSubmission.dean_remarks || activeSubmission.remarks}
                       </div>
                     )}
                   </div>
@@ -1601,6 +1672,15 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
               <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded">
                 {detailsModalSubmission.type}
               </span>
+              {detailsModalSubmission.type === 'research' && detailsModalSubmission.research_status && (
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                  detailsModalSubmission.research_status === 'on-going'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {detailsModalSubmission.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                </span>
+              )}
               {statusBadge(detailsModalSubmission.status)}
             </div>
 
@@ -1624,7 +1704,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   <span className="font-semibold text-gray-500 block">Implementation Period</span>
                   <span>
                     {formatDate(detailsModalSubmission.start_date)} –{' '}
-                    {formatDate(detailsModalSubmission.end_date)}
+                    {detailsModalSubmission.end_date ? formatDate(detailsModalSubmission.end_date) : 'Present (On-going)'}
                   </span>
                 </div>
                 {detailsModalSubmission.type === 'research' && (
@@ -1705,7 +1785,6 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   </div>
                 )}
 
-              {/* Google Classroom-Style File Cards */}
               {getSubmissionFiles(detailsModalSubmission).length > 0 && (
                 <div>
                   <span className="font-semibold text-gray-500 block mb-2">Attached Documents</span>
@@ -1823,7 +1902,6 @@ function ClassroomDocumentViewer({
   const isText = ['txt', 'csv', 'json', 'log'].includes(ext);
   const isDocx = ext === 'docx';
 
-  // Lock scrolling & handle ESC key when open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
 
@@ -1838,7 +1916,6 @@ function ClassroomDocumentViewer({
     };
   }, [onClose]);
 
-  // Securely resolve signed URL or local blob URL
   useEffect(() => {
     let isCancelled = false;
     setLoadingFile(true);
@@ -1877,7 +1954,6 @@ function ClassroomDocumentViewer({
     };
   }, [file]);
 
-  // Handle client-side rendering for DOCX and text formats
   useEffect(() => {
     if (!activeUrl) return;
 
@@ -1921,7 +1997,6 @@ function ClassroomDocumentViewer({
       className="fixed inset-0 z-[999999] bg-[#1a1a1a]/95 flex flex-col backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
-      {/* Top Bar */}
       <div
         className="h-14 px-4 sm:px-6 flex items-center justify-between bg-[#202124] border-b border-gray-700/60 text-white select-none shadow-md shrink-0"
         onClick={(e) => e.stopPropagation()}
@@ -1958,7 +2033,6 @@ function ClassroomDocumentViewer({
         </div>
       </div>
 
-      {/* Document Canvas */}
       <div
         className="flex-1 w-full p-2 sm:p-6 flex items-center justify-center overflow-hidden"
         onClick={onClose}

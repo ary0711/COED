@@ -4,9 +4,10 @@ import axios from 'axios';
 import { 
   FileText, Download, Search, Eye, X, Loader2, 
   FileCode, FileImage, File as FileGenericIcon, 
-  UploadCloud, Trash2, FolderPlus, Folder as FolderIcon 
+  UploadCloud, Trash2, FolderPlus, Folder as FolderIcon,
+  AlertCircle, CheckCircle2
 } from 'lucide-react';
-import { supabase } from '../supabaseClient'; // Adjusted to use project's supabase client
+import { supabase } from '../supabaseClient';
 
 export interface Folder {
   id: string;
@@ -43,16 +44,23 @@ interface BreadcrumbItem {
 }
 
 interface AccreditationWorkspaceProps {
-  userRole?: 'dean' | 'chairperson' | 'faculty';
+  userRole?: 'dean' | 'chairperson' | 'department_chair' | 'faculty';
 }
 
 interface DocumentPreviewState {
   open: boolean;
   url: string | null;
   title: string;
-  isImage: boolean;
-  mimeType?: string;
+  type: 'image' | 'pdf' | 'office' | 'text' | 'unsupported';
   size?: number;
+}
+
+interface CustomModalState {
+  open: boolean;
+  title: string;
+  message: string;
+  type: 'success' | 'error' | 'confirm';
+  onConfirm?: () => void;
 }
 
 const DOCS_API_URL = 'http://localhost:5000/api/accreditation';
@@ -75,7 +83,7 @@ function getFileIcon(filename: string, className = 'w-5 h-5') {
   if (['txt', 'csv', 'json', 'log', 'js', 'ts', 'html'].includes(ext)) {
     return <FileCode className={className} />;
   }
-  if (['pdf', 'docx', 'doc'].includes(ext)) {
+  if (['pdf', 'docx', 'doc', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
     return <FileText className={className} />;
   }
   return <FileGenericIcon className={className} />;
@@ -83,7 +91,6 @@ function getFileIcon(filename: string, className = 'w-5 h-5') {
 
 export default function AccreditationWorkspace({ userRole = 'faculty' }: AccreditationWorkspaceProps) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  // Breadcrumb starts at top-level "Accreditation" instead of "Accreditation Root"
   const [folderPath, setFolderPath] = useState<BreadcrumbItem[]>([{ id: null, name: 'Accreditation' }]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [documents, setDocuments] = useState<AccreditationDocument[]>([]);
@@ -103,7 +110,14 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
     open: false,
     url: null,
     title: '',
-    isImage: false,
+    type: 'unsupported',
+  });
+
+  const [modalAlert, setModalAlert] = useState<CustomModalState>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success',
   });
   
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -143,7 +157,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
 
   // Lock scroll on modals
   useEffect(() => {
-    if (isUploadModalOpen || isNewFolderModalOpen || previewModal.open) {
+    if (isUploadModalOpen || isNewFolderModalOpen || previewModal.open || modalAlert.open) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -151,7 +165,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isUploadModalOpen, isNewFolderModalOpen, previewModal.open]);
+  }, [isUploadModalOpen, isNewFolderModalOpen, previewModal.open, modalAlert.open]);
 
   const handleFolderClick = (folder: Folder) => {
     setCurrentFolderId(folder.id);
@@ -179,8 +193,19 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
       setNewFolderDesc('');
       setIsNewFolderModalOpen(false);
       fetchFolderContents(currentFolderId);
+      setModalAlert({
+        open: true,
+        title: 'Folder Created',
+        message: 'The accreditation folder was created successfully.',
+        type: 'success',
+      });
     } catch (err: any) {
-      alert('Failed to create folder: ' + (err.response?.data?.message || err.message));
+      setModalAlert({
+        open: true,
+        title: 'Creation Failed',
+        message: err.response?.data?.message || err.message,
+        type: 'error',
+      });
     }
   };
 
@@ -218,24 +243,45 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
       });
       
       if (res.data.success) {
-        alert(`Successfully uploaded ${res.data.results.successful.length} file(s).`);
         setSelectedFiles([]);
         setIsUploadModalOpen(false);
         fetchFolderContents(currentFolderId);
+        setModalAlert({
+          open: true,
+          title: 'Upload Successful',
+          message: `Successfully uploaded ${res.data.results.successful.length} file(s).`,
+          type: 'success',
+        });
       }
     } catch (err: any) {
-      alert('Upload failed: ' + (err.response?.data?.message || err.message));
+      setModalAlert({
+        open: true,
+        title: 'Upload Failed',
+        message: err.response?.data?.message || err.message,
+        type: 'error',
+      });
     }
   };
 
   const handlePreview = async (doc: AccreditationDocument) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
     const fileUrl = `${supabaseUrl}/storage/v1/object/public/coed-accreditation/${doc.file_path}`;
-    const isImg = doc.mime_type?.startsWith('image/');
-    const isPdf = doc.mime_type === 'application/pdf';
-
+    const ext = getFileExtension(doc.original_name);
+    
+    let previewType: DocumentPreviewState['type'] = 'unsupported';
     let renderUrl = fileUrl;
-    if (!isPdf && !isImg) {
+
+    if (doc.mime_type?.startsWith('image/')) {
+      previewType = 'image';
+    } else if (doc.mime_type === 'application/pdf' || ext === 'pdf') {
+      previewType = 'pdf';
+    } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+      previewType = 'office';
+      renderUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
+    } else if (['txt', 'csv', 'json', 'log', 'html', 'js', 'ts'].includes(ext)) {
+      previewType = 'text';
+    } else {
+      previewType = 'office';
       renderUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
     }
 
@@ -243,8 +289,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
       open: true,
       url: renderUrl,
       title: doc.original_name,
-      isImage: isImg,
-      mimeType: doc.mime_type,
+      type: previewType,
       size: doc.file_size
     });
   };
@@ -260,12 +305,19 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
       link.click();
       document.body.removeChild(link);
     } catch (err) {
-      alert('Failed to download file.');
+      setModalAlert({
+        open: true,
+        title: 'Download Error',
+        message: 'Failed to download file.',
+        type: 'error',
+      });
     }
   };
 
   const filteredFolders = folders.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
   const filteredDocuments = documents.filter(d => d.original_name.toLowerCase().includes(search.toLowerCase()));
+
+  const canManageFolders = userRole === 'dean' || userRole === 'chairperson' || userRole === 'department_chair';
 
   return (
     <div className="space-y-6">
@@ -291,7 +343,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
         <div className="flex items-center gap-2">
           {currentFolderId && (
             <>
-              {(userRole === 'dean' || userRole === 'chairperson') && (
+              {canManageFolders && (
                 <button 
                   onClick={() => setIsNewFolderModalOpen(true)}
                   className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl text-sm font-semibold transition-colors"
@@ -309,7 +361,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
               </button>
             </>
           )}
-          {!currentFolderId && (userRole === 'dean' || userRole === 'chairperson') && (
+          {!currentFolderId && canManageFolders && (
             <button 
               onClick={() => setIsNewFolderModalOpen(true)}
               className="flex items-center gap-1.5 px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors text-sm font-semibold shadow-md"
@@ -599,7 +651,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
               className="w-full h-full max-w-5xl bg-white rounded-md shadow-2xl overflow-hidden relative flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              {previewModal.isImage ? (
+              {previewModal.type === 'image' ? (
                 <div className="w-full h-full flex items-center justify-center p-4 bg-zinc-950 overflow-auto">
                   <img
                     src={previewModal.url}
@@ -614,6 +666,42 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
                   className="w-full h-full border-0 bg-white"
                 />
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Custom COED Modal Alert */}
+      {modalAlert.open && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                {modalAlert.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                )}
+                {modalAlert.title}
+              </h3>
+              <button onClick={() => setModalAlert(prev => ({ ...prev, open: false }))} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 text-sm text-gray-600">
+              <p>{modalAlert.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => {
+                  if (modalAlert.onConfirm) modalAlert.onConfirm();
+                  setModalAlert(prev => ({ ...prev, open: false }));
+                }}
+                className="px-5 py-2 bg-[#1E3A8A] text-white text-xs font-semibold rounded-xl hover:bg-[#1E40AF] transition-colors shadow-sm"
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>,
