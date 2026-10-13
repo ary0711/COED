@@ -102,10 +102,11 @@ router.post('/folders/:folderId/upload', upload.array('files'), async (req, res)
   for (const file of files) {
     try {
       const fileExt = file.originalname.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
-      const filePath = `accreditation/${folderId}/${fileName}`;
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      const fileName = `${Date.now()}_${randomStr}.${fileExt}`;
+      const filePath = `${folderId}/${fileName}`;
 
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage bucket named 'coed-accreditation'
       const { error: storageError } = await supabase.storage
         .from('coed-accreditation')
         .upload(filePath, file.buffer, {
@@ -122,10 +123,10 @@ router.post('/folders/:folderId/upload', upload.array('files'), async (req, res)
           folder_id: folderId,
           file_name: fileName,
           original_name: file.originalname,
-          file_path: filePath,
+          file_path: filePath, // Stored as folderId/filename
           file_size: file.size,
           mime_type: file.mimetype,
-          uploaded_by: userId,
+          uploaded_by: userId || null,
           status: 'submitted'
         }])
         .select()

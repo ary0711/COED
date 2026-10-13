@@ -7,6 +7,7 @@ import {
   UploadCloud, Trash2, FolderPlus, Folder as FolderIcon,
   AlertCircle, CheckCircle2
 } from 'lucide-react';
+import { renderAsync } from 'docx-preview';
 import { supabase } from '../supabaseClient';
 
 export interface Folder {
@@ -51,7 +52,7 @@ interface DocumentPreviewState {
   open: boolean;
   url: string | null;
   title: string;
-  type: 'image' | 'pdf' | 'office' | 'text' | 'unsupported';
+  type: 'image' | 'pdf' | 'docx' | 'text' | 'unsupported';
   size?: number;
 }
 
@@ -121,6 +122,7 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
   });
   
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -154,6 +156,22 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
   useEffect(() => {
     fetchFolderContents(currentFolderId);
   }, [currentFolderId, fetchFolderContents]);
+
+  // Render docx content when preview modal opens with a docx file
+  useEffect(() => {
+    if (previewModal.open && previewModal.type === 'docx' && previewModal.url && docxContainerRef.current) {
+      axios.get(previewModal.url, { responseType: 'blob' }).then(res => {
+        if (docxContainerRef.current) {
+          docxContainerRef.current.innerHTML = '';
+          renderAsync(res.data, docxContainerRef.current, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+          }).catch(err => console.error('Error rendering docx:', err));
+        }
+      }).catch(err => console.error('Failed to fetch docx file blob:', err));
+    }
+  }, [previewModal]);
 
   // Lock scroll on modals
   useEffect(() => {
@@ -262,36 +280,55 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
       });
     }
   };
+const handlePreview = async (doc: AccreditationDocument) => {
+    try {
+      const ext = getFileExtension(doc.original_name);
+      const isImg = doc.mime_type?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+      const isPdf = doc.mime_type === 'application/pdf' || ext === 'pdf';
+      const isDocx = ext === 'docx' || doc.mime_type?.includes('wordprocessingml');
 
-  const handlePreview = async (doc: AccreditationDocument) => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-    const fileUrl = `${supabaseUrl}/storage/v1/object/public/coed-accreditation/${doc.file_path}`;
-    const ext = getFileExtension(doc.original_name);
-    
-    let previewType: DocumentPreviewState['type'] = 'unsupported';
-    let renderUrl = fileUrl;
+      let previewType: DocumentPreviewState['type'] = 'unsupported';
+      let renderUrl = '';
 
-    if (doc.mime_type?.startsWith('image/')) {
-      previewType = 'image';
-    } else if (doc.mime_type === 'application/pdf' || ext === 'pdf') {
-      previewType = 'pdf';
-    } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-      previewType = 'office';
-      renderUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
-    } else if (['txt', 'csv', 'json', 'log', 'html', 'js', 'ts'].includes(ext)) {
-      previewType = 'text';
-    } else {
-      previewType = 'office';
-      renderUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+      if (isImg || isPdf) {
+        // Get public URL for images and PDFs
+        const { data } = supabase.storage
+          .from('coed-accreditation')
+          .getPublicUrl(doc.file_path);
+        renderUrl = data.publicUrl;
+        previewType = isImg ? 'image' : 'pdf';
+      } else if (isDocx) {
+        // Download blob directly using Supabase client for docx-preview
+        const { data, error } = await supabase.storage
+          .from('coed-accreditation')
+          .download(doc.file_path);
+
+        if (error) throw error;
+        renderUrl = URL.createObjectURL(data);
+        previewType = 'docx';
+      } else {
+        const { data } = supabase.storage
+          .from('coed-accreditation')
+          .getPublicUrl(doc.file_path);
+        renderUrl = data.publicUrl;
+        previewType = 'unsupported';
+      }
+
+      setPreviewModal({
+        open: true,
+        url: renderUrl,
+        title: doc.original_name,
+        type: previewType,
+        size: doc.file_size
+      });
+    } catch (err: any) {
+      setModalAlert({
+        open: true,
+        title: 'Preview Error',
+        message: err.message || 'Could not generate preview for this file.',
+        type: 'error',
+      });
     }
-
-    setPreviewModal({
-      open: true,
-      url: renderUrl,
-      title: doc.original_name,
-      type: previewType,
-      size: doc.file_size
-    });
   };
 
   const handleDownload = async (doc: AccreditationDocument) => {
@@ -659,12 +696,41 @@ export default function AccreditationWorkspace({ userRole = 'faculty' }: Accredi
                     className="max-h-full max-w-full object-contain select-none"
                   />
                 </div>
-              ) : (
+              ) : previewModal.type === 'pdf' || previewModal.type === 'text' ? (
                 <iframe
                   src={previewModal.url}
                   title={previewModal.title}
                   className="w-full h-full border-0 bg-white"
                 />
+              ) : previewModal.type === 'docx' ? (
+                <div className="w-full h-full overflow-auto p-8 bg-gray-50 flex justify-center">
+                  <div 
+                    ref={docxContainerRef} 
+                    className="bg-white shadow-lg p-8 max-w-3xl w-full min-h-full text-left" 
+                  />
+                </div>
+              ) : (
+                <div className="m-auto text-center p-8 max-w-md">
+                  <FileText className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+                  <h4 className="text-sm font-bold text-gray-900 mb-1">{previewModal.title}</h4>
+                  <p className="text-xs text-gray-500 mb-4">
+                    In-app preview is not supported for this file format. You can download it securely to inspect.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = previewModal.url!;
+                      link.download = previewModal.title;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-blue-800 transition-colors shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download File Securely</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
