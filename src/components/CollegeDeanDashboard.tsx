@@ -91,6 +91,7 @@ import {
   Bell,
   LogOut,
   Info,
+  FolderArchive,
   KeyRound,
   Loader2,
   Building,
@@ -1148,9 +1149,9 @@ function UserManagement() {
   const [formError, setFormError] = useState('');
   const [fetchError, setFetchError] = useState('');
   const [statusMessage, setStatusMessage] = useState<{
-  type: 'success' | 'error';
-  text: string;
-} | null>(null);
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
   const [form, setForm] = useState({
     username: '', full_name: '', email: '', role: 'student',
     id_number: '', program: '', status: 'active', password: '',
@@ -1228,8 +1229,6 @@ function UserManagement() {
     setFormError('');
     setModal('edit');
   };
-  
-
 
   const handleAdd = async () => {
     setFormError('');
@@ -1356,7 +1355,7 @@ function UserManagement() {
 
       const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
         method: 'PUT',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -1384,45 +1383,6 @@ function UserManagement() {
       await fetchUsers();
     } catch (error: any) {
       setFormError(error.message || 'Unable to connect to the backend.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!selected) return;
-    setFormError('');
-    setSaving(true);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
-        method: 'DELETE',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-      });
-
-      const text = await response.text();
-      let result: any = {};
-      try {
-        result = text ? JSON.parse(text) : {};
-      } catch {
-        result = { error: text || 'Server returned an invalid response.' };
-      }
-
-      if (!response.ok) {
-        setFormError(result.error || result.message || `Failed to delete user. Server returned ${response.status}.`);
-        return;
-      }
-
-      setModal(null);
-      setSelected(null);
-      setFormError('');
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
-      await fetchUsers();
-    } catch (error: any) {
-      setFormError(error?.message || 'Unable to connect to the backend server.');
     } finally {
       setSaving(false);
     }
@@ -1467,72 +1427,69 @@ function UserManagement() {
     }
   };
 
-  
-const toggleStatus = async (user: any) => {
-  if (user.status === 'pending') return;
+  const toggleStatus = async (user: any) => {
+    if (user.status === 'pending') return;
 
-  const nextStatus =
-    user.status === 'active' ? 'inactive' : 'active';
+    const nextStatus =
+      user.status === 'active' ? 'inactive' : 'active';
 
-  setStatusMessage(null);
-  setActivating(user.id);
+    setStatusMessage(null);
+    setActivating(user.id);
 
-  try {
-    const token = localStorage.getItem('token');
+    try {
+      const token = localStorage.getItem('token');
 
-    if (!token) {
-      throw new Error('Your session has expired. Please log in again.');
-    }
-
-    const response = await fetch(
-      `http://localhost:5000/api/auth/users/${user.id}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          status: nextStatus,
-        }),
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
       }
-    );
 
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(
-        result.error ||
-        result.message ||
-        'Failed to update the account status.'
+      const response = await fetch(
+        `http://localhost:5000/api/auth/users/${user.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status: nextStatus,
+          }),
+        }
       );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          result.message ||
+          'Failed to update the account status.'
+        );
+      }
+
+      await fetchUsers();
+
+      setStatusMessage({
+        type: 'success',
+        text:
+          `The account status for ${user.full_name} was changed to ` +
+          `${nextStatus.toUpperCase()}. ` +
+          (result.emailSent
+            ? `An email notification was sent to ${user.email}.`
+            : result.emailError
+              ? `The status was saved, but the email could not be sent: ${result.emailError}`
+              : 'Check the server response for email delivery status.'),
+      });
+    } catch (error: any) {
+      setStatusMessage({
+        type: 'error',
+        text: error.message ||
+          'Unable to update the account status.',
+      });
+    } finally {
+      setActivating(null);
     }
-
-    // Refresh the user list using the saved backend status.
-    await fetchUsers();
-
-    setStatusMessage({
-      type: 'success',
-      text:
-        `The account status for ${user.full_name} was changed to ` +
-        `${nextStatus.toUpperCase()}. ` +
-        (result.emailSent
-          ? `An email notification was sent to ${user.email}.`
-          : result.emailError
-            ? `The status was saved, but the email could not be sent: ${result.emailError}`
-            : 'Check the server response for email delivery status.'),
-    });
-  } catch (error: any) {
-    setStatusMessage({
-      type: 'error',
-      text: error.message ||
-        'Unable to update the account status.',
-    });
-  } finally {
-    setActivating(null);
-  }
-};
-
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -1552,26 +1509,27 @@ const toggleStatus = async (user: any) => {
           </button>
         </div>
       </div>
+      
       {statusMessage && (
-  <div
-    role="status"
-    className={`px-4 py-3 rounded-xl border text-sm ${
-      statusMessage.type === 'success'
-        ? 'bg-green-50 border-green-200 text-green-800'
-        : 'bg-red-50 border-red-200 text-red-700'
-    }`}
-  >
-    <div className="flex items-start gap-2">
-      {statusMessage.type === 'success' ? (
-        <Check className="w-5 h-5 flex-shrink-0" />
-      ) : (
-        <X className="w-5 h-5 flex-shrink-0" />
+        <div
+          role="status"
+          className={`px-4 py-3 rounded-xl border text-sm ${
+            statusMessage.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            {statusMessage.type === 'success' ? (
+              <Check className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <X className="w-5 h-5 flex-shrink-0" />
+            )}
+            <p>{statusMessage.text}</p>
+          </div>
+        </div>
       )}
 
-      <p>{statusMessage.text}</p>
-    </div>
-  </div>
-)}
       {fetchError && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{fetchError}</div>
       )}
@@ -1649,8 +1607,7 @@ const toggleStatus = async (user: any) => {
                   const status       = STATUS_CONFIG[user.status] ?? { label: user.status, color: '#374151', bg: '#F3F4F6', dot: '#6B7280' };
                   const isPending    = user.status === 'pending';
                   const isActivating = activating === user.id;
-                  
-                  const affiliation = user.program || user.department;
+                  const affiliation  = user.program || user.department;
 
                   return (
                     <tr key={user.id} className={`transition-colors ${isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/30'}`}>
@@ -1681,30 +1638,29 @@ const toggleStatus = async (user: any) => {
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
                         <button
-  onClick={() => toggleStatus(user)}
-  disabled={isActivating || isPending}
-  title={
-    isPending
-      ? 'Activate this account using the Activate button'
-      : `Change account status from ${user.status}`
-  }
-  className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-  style={{
-    background: status.bg,
-    color: status.color,
-  }}
->
-  {isActivating ? (
-    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-  ) : (
-    <span
-      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-      style={{ background: status.dot }}
-    />
-  )}
-
-  <span>{isActivating ? 'Updating...' : status.label}</span>
-</button>
+                          onClick={() => toggleStatus(user)}
+                          disabled={isActivating || isPending}
+                          title={
+                            isPending
+                              ? 'Activate this account using the Activate button'
+                              : `Change account status from ${user.status}`
+                          }
+                          className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{
+                            background: status.bg,
+                            color: status.color,
+                          }}
+                        >
+                          {isActivating ? (
+                            <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ background: status.dot }}
+                            />
+                          )}
+                          <span>{isActivating ? 'Updating...' : status.label}</span>
+                        </button>
                       </td>
                       <td className="py-3 sm:py-4 px-4 sm:px-6">
                         <div className="flex items-center justify-center gap-1">
@@ -1715,8 +1671,9 @@ const toggleStatus = async (user: any) => {
                               <span className="hidden sm:inline">Activate</span>
                             </button>
                           )}
-                          <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
-                         
+                          <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="Edit User">
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1890,12 +1847,9 @@ const toggleStatus = async (user: any) => {
           </div>
         </div>
       )}
-
-      
     </div>
   );
 }
-
 // ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
@@ -3283,7 +3237,6 @@ export default function CalendarActivities() {
   );
 }
 // ─── Academic Records (Dean/Admin) ──────────────────────────────────────────
-
 interface TargetRoleOption {
   id: string;
   label: string;
@@ -3398,6 +3351,7 @@ export function AcademicRecords() {
   const [deleteConfirm, setDeleteConfirm] = useState<AcademicDocument | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingCategory, setDownloadingCategory] = useState(false);
 
   const [previewModal, setPreviewModal] = useState<{
     open: boolean;
@@ -3618,6 +3572,17 @@ export function AcademicRecords() {
     }
   };
 
+  // --- Duplicate File Check Helper ---
+  const isDuplicateFile = (newFile: File, categoryId?: string, excludeDocId?: string) => {
+    return documents.some((d) => {
+      if (excludeDocId && d.id === excludeDocId) return false;
+      const sameName = d.file_name.toLowerCase() === newFile.name.toLowerCase();
+      const sameSize = d.file_size === newFile.size;
+      const sameCategory = categoryId ? (d.category_id === categoryId) : true;
+      return sameName && (sameSize || sameCategory);
+    });
+  };
+
   // --- Drag and Drop File Handlers ---
   const handleFileSelect = (selectedFile: File | undefined | null) => {
     if (!selectedFile) return;
@@ -3626,12 +3591,21 @@ export function AcademicRecords() {
     const fileName = selectedFile.name.toLowerCase();
     const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
-    if (isValid) {
-      setFile(selectedFile);
-      setFormError('');
-    } else {
+    if (!isValid) {
       setFormError('Only PDF, Word, Excel, images, and text/csv files are supported.');
+      return;
     }
+
+    if (isDuplicateFile(selectedFile, form.category_id, editingDoc?.id)) {
+      setFormError(`A document with the file "${selectedFile.name}" already exists.`);
+      setFile(null);
+      const fileInput = document.getElementById('hidden-file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      return;
+    }
+
+    setFile(selectedFile);
+    setFormError('');
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -3719,6 +3693,11 @@ export function AcademicRecords() {
     }
     if (!editingDoc && !file) {
       setFormError('Please choose a file to upload.');
+      return;
+    }
+
+    if (file && isDuplicateFile(file, form.category_id, editingDoc?.id)) {
+      setFormError(`A document with the file "${file.name}" already exists in this category.`);
       return;
     }
 
@@ -3834,6 +3813,36 @@ export function AcademicRecords() {
     }
   };
 
+  // --- Download All Documents in a Category ---
+  const handleDownloadAllInCategory = async (targetCategoryId?: string) => {
+    const catId = targetCategoryId || categoryIdFilter;
+    if (!catId || catId === 'all') return;
+
+    const targetDocs = documents.filter(d => (d.category_id === catId || d.document_categories?.id === catId));
+    if (targetDocs.length === 0) {
+      setPopupModal({
+        open: true,
+        title: 'No Documents',
+        message: 'No documents found in this category to download.',
+        type: 'error',
+      });
+      return;
+    }
+
+    setDownloadingCategory(true);
+    try {
+      for (const doc of targetDocs) {
+        await handleDownload(doc);
+        // Small delay to allow consecutive browser downloads
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+    } catch {
+      setLoadError('Some files could not be downloaded.');
+    } finally {
+      setDownloadingCategory(false);
+    }
+  };
+
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -3863,6 +3872,24 @@ export function AcademicRecords() {
               </option>
             ))}
           </select>
+
+          {/* Download All in Category button when filtered */}
+          {categoryIdFilter !== 'all' && (
+            <button
+              onClick={() => handleDownloadAllInCategory()}
+              disabled={downloadingCategory}
+              className="px-3 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+              title="Download All Files in Selected Category"
+            >
+              {downloadingCategory ? (
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">Download All</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               setEditingCategory(null);
@@ -4049,6 +4076,13 @@ export function AcademicRecords() {
                       {cat.description && <p className="text-[11px] text-gray-400 truncate mt-0.5">{cat.description}</p>}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleDownloadAllInCategory(cat.id)}
+                        className="text-xs text-emerald-600 font-semibold hover:underline"
+                        title="Download all documents in this category"
+                      >
+                        Download All
+                      </button>
                       <button
                         onClick={() => { setEditingCategory(cat); setCatForm({ name: cat.name, description: cat.description || '' }); }}
                         className="text-xs text-blue-600 font-semibold hover:underline"
@@ -8782,7 +8816,6 @@ function LandingPageManagement() {
     </div>
   );
 }
-
 // ─── System Settings ──────────────────────────────────────────────────────────
 const NOTIF_DEFAULTS = {
   allowAll: true,
@@ -8912,10 +8945,6 @@ function SystemSettings({
           );
         }
 
-        /*
-         * Username comes from the database.
-         * Prefer public.users.username.
-         */
         const databaseUsername = String(
           data.user?.username ??
             data.username ??
@@ -8937,7 +8966,6 @@ function SystemSettings({
         setFullName(databaseFullName);
         setEmail(databaseEmail);
 
-        // LocalStorage is only used as a cache.
         localStorage.setItem(
           'userUsername',
           databaseUsername
@@ -9057,7 +9085,6 @@ function SystemSettings({
   const saveProfile = async () => {
     const trimmedName = fullName.trim();
 
-    // Username is saved to database in lowercase
     const trimmedUsername = username
       .trim()
       .toLowerCase();
@@ -9080,7 +9107,6 @@ function SystemSettings({
       return;
     }
 
-    // Username validation
     const usernameRegex =
       /^[a-zA-Z0-9._]{3,20}$/;
 
@@ -9135,10 +9161,6 @@ function SystemSettings({
         );
       }
 
-      /*
-       * Read the updated username returned by
-       * the backend/database.
-       */
       const updatedUsername = String(
         data.user?.username ??
           data.profile?.username ??
@@ -9156,12 +9178,10 @@ function SystemSettings({
           trimmedEmail
       ).trim();
 
-      // Update React state
       setUsername(updatedUsername);
       setFullName(updatedName);
       setEmail(updatedEmail);
 
-      // Cache only
       localStorage.setItem(
         'userUsername',
         updatedUsername
@@ -9475,9 +9495,10 @@ function SystemSettings({
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
-        {/* Sidebar Tabs */}
-        <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:h-[560px] overflow-y-auto">
+      {/* Main Container - items-start ensures the sticky sidebar can stretch down smoothly */}
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6 items-start">
+        {/* Sidebar Tabs - Sticky on scroll */}
+        <div className="w-full md:w-64 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 p-2 md:sticky md:top-6 md:self-start">
           {SETTINGS_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive =
@@ -9536,7 +9557,6 @@ function SystemSettings({
               </p>
 
               <div className="space-y-4 max-w-md">
-
                 {/* Full Name */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">
