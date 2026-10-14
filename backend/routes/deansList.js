@@ -233,19 +233,13 @@ function escapeHtml(str) {
 }
 
 function buildBodyHtml({ students, college, semester, generatedAt }) {
-  const rows = students.map((s, i) => {
-    const badgeBg = s.gwa <= 1.5 ? '#dbeafe' : '#dcfce7';
-    const badgeColor = s.gwa <= 1.5 ? '#1d4ed8' : '#15803d';
-    return `
+  const rows = students.map((s, i) => `
       <tr>
         <td class="rank">${i + 1}</td>
         <td class="name">${escapeHtml(s.name)}</td>
-        <td class="course">${escapeHtml([s.course, s.yearLevel].filter(Boolean).join(' '))}</td>
-        <td class="gwa-cell">
-          <span class="badge" style="background:${badgeBg}; color:${badgeColor};">${s.gwa.toFixed(2)}</span>
-        </td>
-      </tr>`;
-  }).join('');
+        <td class="course">${escapeHtml(s.course)}</td>
+        <td class="gwa ${s.gwa <= 1.5 ? 'gwa-blue' : 'gwa-green'}">${s.gwa.toFixed(2)}</td>
+      </tr>`).join('');
 
   const emptyState = students.length === 0
     ? `<p class="empty-state">No qualifiers found for this batch.</p>`
@@ -253,9 +247,9 @@ function buildBodyHtml({ students, college, semester, generatedAt }) {
 
   return `
     <div class="letterhead">
-      <p class="eyebrow">Cebu Technological University</p>
-      <h1>Dean's List</h1>
+      <h2>Dean's List</h2>
       <p class="subtitle">${escapeHtml(college)} · ${escapeHtml(semester)}</p>
+      <p class="generated">Generated ${escapeHtml(generatedAt)}</p>
     </div>
 
     <table class="qualifiers-table">
@@ -264,15 +258,12 @@ function buildBodyHtml({ students, college, semester, generatedAt }) {
           <th class="rank">#</th>
           <th>Full Name</th>
           <th>Course</th>
-          <th class="gwa-cell">GWA</th>
+          <th class="gwa">GWA</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows}
-      </tbody>
+      <tbody>${rows}</tbody>
     </table>
     ${emptyState}
-    <p class="generated-at">Generated ${escapeHtml(generatedAt)}</p>
   `;
 }
 
@@ -285,108 +276,86 @@ function buildFullHtml(bodyHtml) {
       <style>
         * { box-sizing: border-box; }
         body {
-          font-family: Helvetica, Arial, sans-serif;
-          color: #1f2937;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                       Roboto, "Helvetica Neue", Arial, sans-serif;
+          color: #111827;
           margin: 0;
           padding: 0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
-        .letterhead {
-          text-align: center;
-          padding-bottom: 14px;
-          margin-bottom: 14px;
-          border-bottom: 1px solid #f3f4f6;
-        }
-        .letterhead .eyebrow {
-          font-size: 10px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: #9ca3af;
-          margin: 0;
-        }
-        .letterhead h1 {
-          font-size: 18px;
-          font-weight: 700;
-          color: #111827;
-          margin: 4px 0 0;
-        }
-        .letterhead .subtitle {
-          font-size: 12px;
-          color: #6b7280;
-          margin: 4px 0 0;
-        }
+
+        .letterhead { text-align: center; padding: 0 0 22px; }
+        .letterhead h2 { font-size: 18px; font-weight: 700; color: #111827; margin: 0; }
+        .letterhead .subtitle { font-size: 14px; color: #4b5563; margin: 10px 0 0; }
+        .letterhead .generated { font-size: 10px; color: #6b7280; margin: 10px 0 0; }
+
         table.qualifiers-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 11px;
+          width: 100%; border-collapse: collapse; text-align: left;
+          border-top: 1px solid #e5e7eb;
         }
-        table.qualifiers-table thead th {
-          background: #f9fafb;
-          text-align: left;
-          font-weight: 600;
-          color: #374151;
-          padding: 10px 12px;
-          border-bottom: 2px solid #e5e7eb;
+        table.qualifiers-table th {
+          padding: 18px 24px; font-size: 14px; font-weight: 600; color: #111827;
+          border-bottom: 1px solid #e5e7eb;
         }
         table.qualifiers-table td {
-          padding: 8px 12px;
-          border-bottom: 1px solid #f3f4f6;
+          padding: 20px 24px; font-size: 14px;
+          border-bottom: 1px solid #e5e7eb;
         }
-        table.qualifiers-table .rank {
-          width: 36px;
-          color: #9ca3af;
-          font-size: 10px;
-        }
-        table.qualifiers-table .name {
-          font-weight: 500;
-          color: #111827;
-        }
-        table.qualifiers-table .course {
-          color: #374151;
-        }
-        table.qualifiers-table .gwa-cell {
-          text-align: center;
-          width: 70px;
-        }
-        .badge {
-          display: inline-block;
-          padding: 2px 10px;
-          border-radius: 999px;
-          font-weight: 700;
-          font-size: 10px;
-        }
-        .empty-state {
-          text-align: center;
-          color: #9ca3af;
-          font-size: 12px;
-          padding: 24px 0;
-        }
-        .generated-at {
-          text-align: right;
-          font-size: 9px;
-          color: #9ca3af;
-          margin-top: 16px;
-        }
+        table.qualifiers-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+        table.qualifiers-table thead { display: table-header-group; }
+
+        .rank { width: 48px; color: #6b7280; font-size: 12px; }
+        th.rank { font-size: 14px; color: #111827; }
+        .name { font-weight: 500; color: #111827; }
+        .course { color: #374151; }
+        .gwa { text-align: center; width: 90px; }
+        td.gwa { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .gwa-blue { color: #1d4ed8; }
+        .gwa-green { color: #15803d; }
+
+        .empty-state { text-align: center; color: #9ca3af; font-size: 14px; padding: 48px 0; }
       </style>
     </head>
-    <body>
-      ${bodyHtml}
-    </body>
+    <body>${bodyHtml}</body>
   </html>`;
+}
+
+// Reads the PNG's real width/height from its header bytes (no extra package needed).
+function getPngSize(filePath) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  } catch {
+    return null;
+  }
 }
 
 async function generateDeansListPdf({ filePath, students, college, semester, generatedAt }) {
   const headerImg = imageToDataUri(HEADER_IMAGE_PATH);
   const footerImg = imageToDataUri(FOOTER_IMAGE_PATH);
 
+  // A4 = ~794px wide at 96dpi. Side margins are 40px each -> 714px content width.
+  const SIDE_MARGIN = 40;
+  const CONTENT_W = 794 - SIDE_MARGIN * 2;
+
+  const fitHeight = (imgPath, fallback) => {
+    const size = getPngSize(imgPath);
+    return size ? Math.ceil((CONTENT_W * size.h) / size.w) : fallback;
+  };
+
+  const headerH = headerImg ? fitHeight(HEADER_IMAGE_PATH, 150) : 0;
+  const footerH = footerImg ? fitHeight(FOOTER_IMAGE_PATH, 90) : 0;
+
   const headerTemplate = headerImg
-    ? `<div style="width:100%; margin:0 40px; -webkit-print-color-adjust:exact;">
-         <img src="${headerImg}" style="width:100%; display:block;" />
+    ? `<div style="width:100%; padding:0 ${SIDE_MARGIN}px; box-sizing:border-box; -webkit-print-color-adjust:exact;">
+         <img src="${headerImg}" style="width:${CONTENT_W}px; height:${headerH}px; display:block;" />
        </div>`
     : `<div></div>`;
 
   const footerTemplate = footerImg
-    ? `<div style="width:100%; margin:0 40px; -webkit-print-color-adjust:exact;">
-         <img src="${footerImg}" style="width:100%; display:block;" />
+    ? `<div style="width:100%; padding:0 ${SIDE_MARGIN}px; box-sizing:border-box; -webkit-print-color-adjust:exact;">
+         <img src="${footerImg}" style="width:${CONTENT_W}px; height:${footerH}px; display:block;" />
        </div>`
     : `<div></div>`;
 
@@ -410,10 +379,11 @@ async function generateDeansListPdf({ filePath, students, college, semester, gen
       headerTemplate,
       footerTemplate,
       margin: {
-        top: headerImg ? '130px' : '40px',
-        bottom: footerImg ? '110px' : '40px',
-        left: '40px',
-        right: '40px',
+        // image height + a small gap so the title block never sits under the image
+        top: headerImg ? `${headerH + 24}px` : '40px',
+        bottom: footerImg ? `${footerH + 24}px` : '40px',
+        left: `${SIDE_MARGIN}px`,
+        right: `${SIDE_MARGIN}px`,
       },
     });
   } finally {
