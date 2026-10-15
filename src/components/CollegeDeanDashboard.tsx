@@ -1492,8 +1492,8 @@ function UserManagement() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between gap-3">
+<div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">      
+  <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">User Management</h1>
           <p className="text-gray-500 mt-1 text-sm">{total} user{total !== 1 ? 's' : ''} found</p>
@@ -1577,8 +1577,8 @@ function UserManagement() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {loading ? (
+<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
           </div>
@@ -1588,10 +1588,10 @@ function UserManagement() {
             <p className="font-medium">No users found</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px]">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
+           <div className="user-management-scroll min-h-0 flex-1 overflow-auto overscroll-contain">
+    <table className="w-full min-w-[640px]">
+             <thead className="sticky top-0 z-20 bg-gray-50">
+  <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
@@ -1684,21 +1684,47 @@ function UserManagement() {
           </div>
         )}
 
-        {totalPages > 1 && (
-          <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-2">
-            <p className="text-xs sm:text-sm text-gray-500">
-              {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
-            </p>
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 sm:p-2 rounded-lg border border-gray-200">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 sm:p-2 rounded-lg border border-gray-200">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
+        
+{!loading && !fetchError && total > 0 && (
+  <div className="flex flex-shrink-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+    <div className="min-w-0">
+      <p className="text-xs text-gray-500 sm:text-sm">
+        Showing{" "}
+        {((page - 1) * PAGE_SIZE) + 1}–
+        {Math.min(page * PAGE_SIZE, total)} of {total} users
+      </p>
+
+      <p className="mt-1 text-xs font-medium text-gray-400">
+        Page {page} of {Math.max(1, totalPages)}
+      </p>
+    </div>
+
+    <div className="flex flex-shrink-0 items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setPage((current) => Math.max(1, current - 1))}
+        disabled={page <= 1}
+        aria-label="Previous page"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() =>
+          setPage((current) => Math.min(totalPages, current + 1))
+        }
+        disabled={page >= totalPages}
+        aria-label="Next page"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  </div>
+)}
+
       </div>
 
       {(modal === 'add' || modal === 'edit') && (
@@ -5892,8 +5918,8 @@ function AlumniTracer() {
             <p className="text-xs text-gray-400 mt-0.5">Records will appear as alumni submit responses.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse border border-gray-200 text-xs">
+<div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+              <table className="w-full text-left border-collapse border border-gray-200 text-xs">
               <thead>
                 {/* Excel Section Numbering Row */}
                 <tr className="bg-gray-100/90 text-gray-500 font-bold border-b border-gray-200 text-[10px] text-center">
