@@ -1,9 +1,15 @@
+
 import { useState } from 'react';
-import { ArrowLeft, Mail } from 'lucide-react';
+import { ArrowLeft, Mail, User } from 'lucide-react';
 
 interface ForgotPasswordPageProps {
   onBack: () => void;
   onReturnToLogin: () => void;
+}
+
+interface ForgotPasswordResponse {
+  error?: string;
+  message?: string;
 }
 
 export function ForgotPasswordPage({
@@ -18,237 +24,212 @@ export function ForgotPasswordPage({
   const [successMsg, setSuccessMsg] = useState('');
 
   const handleResetPassword = async () => {
-  setError('');
-  setSuccessMsg('');
+    setError('');
+    setSuccessMsg('');
 
-  const trimmedUsername = username.trim();
-  const trimmedEmail = email.trim().toLowerCase();
+    const trimmedUsername = username.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
-  // =====================================================
-  // VALIDATE USERNAME
-  // =====================================================
-
-  if (!trimmedUsername) {
-    setError('Please enter your username.');
-    return;
-  }
-
-  // =====================================================
-  // VALIDATE EMAIL
-  // =====================================================
-
-  if (!trimmedEmail) {
-    setError('Please enter your email address.');
-    return;
-  }
-
-  const emailRegex =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!emailRegex.test(trimmedEmail)) {
-    setError('Please enter a valid email address.');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    // ===================================================
-    // SEND REQUEST TO BACKEND
-    // ===================================================
-
-    const response = await fetch(
-      'http://localhost:5000/api/auth/forgot-password',
-      {
-        method: 'POST',
-
-        headers: {
-          'Content-Type': 'application/json',
-        },
-
-        body: JSON.stringify({
-          username: trimmedUsername,
-          email: trimmedEmail,
-        }),
-      }
-    );
-
-    // ===================================================
-    // SAFELY READ SERVER RESPONSE
-    // ===================================================
-
-    const contentType =
-      response.headers.get('content-type') || '';
-
-    let data: any = null;
-
-    if (contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-
-      console.error(
-        'Server returned non-JSON response:',
-        text
-      );
-
-      // =================================================
-      // HANDLE COMMON HTTP ERRORS
-      // =================================================
-
-      if (response.status === 404) {
-        setError(
-          'The password reset service could not be found. Please make sure the backend server is running.'
-        );
-        return;
-      }
-
-      if (response.status === 500) {
-        setError(
-          'The server encountered an error. Please try again later.'
-        );
-        return;
-      }
-
-      setError(
-        'The server returned an unexpected response. Please try again.'
-      );
-
+    // Prevent empty username
+    if (!trimmedUsername) {
+      setError('Please enter your username.');
       return;
     }
 
-    // ===================================================
-    // HANDLE HTTP ERRORS
-    // ===================================================
+    // Prevent empty email
+    if (!trimmedEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
 
-    if (!response.ok) {
-      console.error(
-        'Forgot password HTTP error:',
-        response.status,
-        data
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (loading) return;
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/auth/forgot-password',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: trimmedUsername,
+            email: trimmedEmail,
+          }),
+        }
       );
 
-      if (response.status === 400) {
+      // Safely read the server response
+      const contentType =
+        response.headers.get('content-type') || '';
+
+      let data: ForgotPasswordResponse | null = null;
+
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const responseText = await response.text();
+
+        console.error(
+          'Server returned a non-JSON response:',
+          responseText
+        );
+
+        if (response.status === 404) {
+          setError(
+            'The password reset service could not be found. Please make sure the backend server is running.'
+          );
+          return;
+        }
+
+        if (response.status >= 500) {
+          setError(
+            'The server encountered an error. Please try again later.'
+          );
+          return;
+        }
+
+        setError(
+          'The server returned an unexpected response. Please try again.'
+        );
+        return;
+      }
+
+      // Handle unsuccessful requests
+      if (!response.ok) {
+        console.error(
+          'Forgot password HTTP error:',
+          response.status,
+          data
+        );
+
+        if (response.status === 400) {
+          setError(
+            data?.error ||
+              'Please check the information you entered.'
+          );
+          return;
+        }
+
+        if (response.status === 401) {
+          setError(
+            data?.error ||
+              'You are not authorized to perform this request.'
+          );
+          return;
+        }
+
+        if (response.status === 404) {
+          setError(
+            'The password reset service could not be found. Please make sure the backend is running.'
+          );
+          return;
+        }
+
+        if (response.status === 429) {
+          setError(
+            'Too many password reset attempts. Please wait a few minutes and try again.'
+          );
+          return;
+        }
+
+        if (response.status >= 500) {
+          setError(
+            'The server encountered an error. Please try again later.'
+          );
+          return;
+        }
+
         setError(
           data?.error ||
-            'Please check the information you entered.'
+            data?.message ||
+            'We could not process your password reset request.'
         );
         return;
       }
 
-      if (response.status === 401) {
-        setError(
-          data?.error ||
-            'You are not authorized to perform this request.'
-        );
-        return;
-      }
-
-      if (response.status === 404) {
-        setError(
-          'The password reset service could not be found. Please make sure the backend is running.'
-        );
-        return;
-      }
-
-      if (response.status === 429) {
-        setError(
-          'Too many password reset attempts. Please wait a few minutes and try again.'
-        );
-        return;
-      }
-
-      if (response.status >= 500) {
-        setError(
-          'The server encountered an error. Please try again later.'
-        );
-        return;
-      }
-
-      setError(
-        data?.error ||
-          data?.message ||
-          'We could not process your password reset request.'
+      // Successful request
+      setSuccessMsg(
+        data?.message ||
+          'If the username and email match an account, a password reset link has been sent to that email address. Please check your inbox.'
       );
 
-      return;
+      setUsername('');
+      setEmail('');
+    } catch (err) {
+      console.error('Unexpected forgot password error:', err);
+
+      if (err instanceof TypeError) {
+        setError(
+          'Unable to connect to the server. Please make sure the backend server is running.'
+        );
+      } else {
+        setError(
+          'An unexpected error occurred. Please try again.'
+        );
+      }
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // ===================================================
-    // SUCCESS
-    // ===================================================
+  const handleReturnToLogin = () => {
+    setError('');
+    setSuccessMsg('');
+    onReturnToLogin();
+  };
 
-    setSuccessMsg(
-      data?.message ||
-        'If the username and email match an account, a password reset link has been sent to that email address. Please check your inbox.'
-    );
-
-    // Clear fields after successful request
-    setUsername('');
-    setEmail('');
-
-  } catch (err: any) {
-    console.error(
-      'Unexpected forgot password error:',
-      err
-    );
-
-    // ===================================================
-    // NETWORK / CONNECTION ERROR
-    // ===================================================
-
-    if (
-      err instanceof TypeError &&
-      err.message.toLowerCase().includes('fetch')
-    ) {
-      setError(
-        'Unable to connect to the server. Please make sure the backend server is running.'
-      );
-      return;
-    }
-
-    setError(
-      'An unexpected error occurred. Please try again.'
-    );
-
-  } finally {
-    setLoading(false);
-  }
-};
   return (
     <div className="fixed inset-0 flex overflow-hidden">
+      {/* LEFT PANEL — MATCHES LOGIN PAGE */}
 
-      {/* =================================================
-          LEFT PANEL
-      ================================================= */}
-
-      <div className="hidden lg:flex w-5/12 bg-[#0f2a5e] flex-col relative overflow-hidden">
-
+      <div className="hidden lg:flex w-1/2 bg-[#0f2a5e] flex-col relative overflow-hidden">
+        {/* Decorative circles */}
         <div className="absolute inset-0 pointer-events-none">
-
           <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full border-[60px] border-white/5" />
-
           <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full border-[60px] border-white/5" />
-
         </div>
 
+        {/* Desktop back button */}
         <button
+          type="button"
           onClick={onBack}
           className="absolute top-6 left-6 z-20 w-10 h-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all border border-white/20"
+          title="Back to Home"
+          aria-label="Back to Home"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
 
+        {/* Branding */}
         <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-12 text-center">
-
-          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-2xl mb-8 overflow-hidden">
-
+          <div className="w-56 h-56 bg-white rounded-3xl flex items-center justify-center shadow-2xl mb-8 overflow-hidden">
             <img
               src="/COED LOGO.png"
               alt="COED Logo"
-              className="w-20 h-20 object-contain"
-            />
+              className="w-52 h-52 object-contain"
+              onError={(e) => {
+                const el = e.currentTarget;
+                el.style.display = 'none';
 
+                const parent = el.parentElement;
+
+                if (parent) {
+                  parent.innerHTML =
+                    '<span class="text-[#0f2a5e] font-black text-2xl">COED</span>';
+                }
+              }}
+            />
           </div>
 
           <h1 className="text-white text-3xl font-bold leading-snug mb-3">
@@ -264,93 +245,114 @@ export function ForgotPasswordPage({
             <br />
             Argao Campus
           </p>
-
         </div>
       </div>
 
-      {/* =================================================
-          RIGHT PANEL
-      ================================================= */}
+      {/* RIGHT PANEL — MATCHES LOGIN PAGE */}
 
       <div className="flex-1 bg-white flex flex-col overflow-y-auto">
+        {/* Header / Mobile Back Button */}
+        <div className="flex items-center justify-between px-10 pt-7 pb-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-100 transition-all"
+            title="Back to Home"
+            aria-label="Back to Home"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
 
-        <div className="flex-1 flex flex-col justify-center px-10 lg:px-16 py-8">
+          <div className="hidden lg:block" />
+        </div>
 
+        {/* Form Content */}
+        <div className="flex-1 flex flex-col justify-center px-10 lg:px-16 py-4">
           <div className="w-full max-w-md mx-auto">
-
-            {/* ERROR */}
+            {/* Error Message */}
             {error && (
-              <div className="mb-5 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+              <div
+                role="alert"
+                className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium"
+              >
                 {error}
               </div>
             )}
 
-            {/* SUCCESS */}
+            {/* Success Message */}
             {successMsg && (
-              <div className="mb-5 px-4 py-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-medium">
+              <div
+                role="status"
+                className="mb-4 px-4 py-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-medium"
+              >
                 {successMsg}
               </div>
             )}
 
             <div className="space-y-5">
-
-              {/* TITLE */}
-
+              {/* Title */}
               <div>
-
                 <h3 className="text-3xl font-bold text-gray-900">
                   Forgot Password?
                 </h3>
 
-                <p className="text-gray-500 text-sm mt-1">
-                  Enter your username and email address.
-                  If they match your account, we'll send
+                <p className="text-gray-500 text-sm mt-1 leading-relaxed">
+                  Enter your username and registered email address.
+                  If the details match your account, we will send
                   you a password reset link.
                 </p>
-
               </div>
 
-              {/* USERNAME */}
-
+              {/* Username */}
               <div>
-
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label
+                  htmlFor="forgot-username"
+                  className="block text-sm font-medium text-gray-700 mb-1.5"
+                >
                   Username
                 </label>
 
-                <input
-                  type="text"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
-                    setError('');
-                    setSuccessMsg('');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleResetPassword();
-                    }
-                  }}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm"
-                />
+                <div className="relative">
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 
+                  <input
+                    id="forgot-username"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="Enter your username"
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      setError('');
+                      setSuccessMsg('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !loading) {
+                        handleResetPassword();
+                      }
+                    }}
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  />
+                </div>
               </div>
 
-              {/* EMAIL */}
-
+              {/* Email Address */}
               <div>
-
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label
+                  htmlFor="forgot-email"
+                  className="block text-sm font-medium text-gray-700 mb-1.5"
+                >
                   Email Address
                 </label>
 
                 <div className="relative">
-
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 
                   <input
+                    id="forgot-email"
                     type="email"
+                    autoComplete="email"
                     placeholder="your.email@example.com"
                     value={email}
                     onChange={(e) => {
@@ -359,54 +361,43 @@ export function ForgotPasswordPage({
                       setSuccessMsg('');
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !loading) {
                         handleResetPassword();
                       }
                     }}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm"
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all text-sm disabled:bg-gray-50 disabled:cursor-not-allowed"
                   />
-
                 </div>
-
               </div>
 
-              {/* SEND BUTTON */}
-
+              {/* Send Reset Link Button */}
               <button
+                type="button"
                 onClick={handleResetPassword}
                 disabled={loading}
                 className="w-full py-3.5 bg-[#1d4ed8] text-white rounded-xl font-semibold text-sm hover:bg-[#1e40af] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
               >
-
                 {loading
-                  ? 'Checking account...'
+                  ? 'Checking account…'
                   : 'Send Reset Link →'}
-
               </button>
 
-              {/* LOGIN */}
-
+              {/* Return to Login */}
               <p className="text-center text-sm text-gray-500">
-
                 Remember your password?{' '}
-
                 <button
-                  onClick={onReturnToLogin}
+                  type="button"
+                  onClick={handleReturnToLogin}
                   className="text-[#1d4ed8] font-semibold hover:underline"
                 >
                   Sign In
                 </button>
-
               </p>
-
             </div>
-
           </div>
-
         </div>
-
       </div>
-
     </div>
   );
 }
