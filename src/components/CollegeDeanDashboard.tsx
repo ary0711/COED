@@ -5542,6 +5542,7 @@ function AlumniTracer() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [programFilter, setProgramFilter] = useState('all');
+  const [selectedGraduate, setSelectedGraduate] = useState<GraduateRecord | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -5686,6 +5687,91 @@ function AlumniTracer() {
       : 0);
   const responseRate = totalAlumniCount > 0 ? Math.round((responsesCount / totalAlumniCount) * 100) : 0;
 
+  const escapePrintHtml = (value: unknown) =>
+    String(value ?? '—').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[char] as string));
+
+  const openPrintWindow = (title: string, body: string) => {
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      alert('Please allow pop-ups for this site to print the masterlist.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+      <html><head><title>${escapePrintHtml(title)}</title>
+      <meta charset="utf-8" />
+      <style>
+        @page { size: landscape; margin: 12mm; }
+        body { font-family: Arial, sans-serif; color: #111827; font-size: 10px; }
+        h1 { font-size: 18px; text-align: center; margin: 0 0 5px; }
+        h2 { font-size: 13px; text-align: center; margin: 0 0 16px; font-weight: normal; }
+        .meta { margin: 12px 0; font-size: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #9ca3af; padding: 6px; text-align: left; vertical-align: top; }
+        th { background: #e5e7eb; font-weight: bold; }
+        .status { font-weight: bold; }
+        .detail { width: 100%; max-width: 760px; margin: 20px auto; }
+        .detail td:first-child { width: 32%; font-weight: bold; background: #f3f4f6; }
+        .footer { margin-top: 24px; display: flex; justify-content: space-between; }
+        @media screen { body { padding: 24px; } }
+      </style></head><body>${body}
+      <script>window.onload = () => { window.focus(); window.print(); };</script>
+      </body></html>`);
+    printWindow.document.close();
+  };
+
+  const printMasterlist = () => {
+    const rowsToPrint = filtered;
+    if (!rowsToPrint.length) {
+      alert('There are no graduate records to print.');
+      return;
+    }
+    const rows = rowsToPrint.map((r, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapePrintHtml(r.program)}</td>
+        <td>${escapePrintHtml(r.last_name)}</td>
+        <td>${escapePrintHtml(r.first_name)}</td>
+        <td class="status">${escapePrintHtml(formatQproStatus(r.employment_status))}</td>
+        <td>${escapePrintHtml(r.employer || r.job_title || '—')}</td>
+        <td>${escapePrintHtml(r.supporting_docs || `${r.program || 'COED'} Batch 2024`)}</td>
+        <td>${escapePrintHtml(r.post_graduate_degree || '—')}</td>
+      </tr>`).join('');
+
+    openPrintWindow('COED Graduate Employment Masterlist', `
+      <h1>CEBU TECHNOLOGICAL UNIVERSITY — ARGAO CAMPUS</h1>
+      <h2>College of Education | Graduate Employment Masterlist</h2>
+      <div class="meta">Outcome Indicator 2 · Records included: ${rowsToPrint.length} · Printed: ${new Date().toLocaleString()}</div>
+      <table><thead><tr>
+        <th>Item</th><th>Program Name</th><th>Last Name</th><th>First Name</th>
+        <th>Employment Status</th><th>Name of Company / Type of Business</th>
+        <th>Supporting Documents</th><th>Post Graduate Degree</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="footer"><span>Prepared by: ____________________</span><span>Verified by: ____________________</span></div>`);
+  };
+
+  const printIndividualGraduate = (graduate: GraduateRecord) => {
+    openPrintWindow('Graduate Employment Record', `
+      <h1>CEBU TECHNOLOGICAL UNIVERSITY — ARGAO CAMPUS</h1>
+      <h2>College of Education | Individual Graduate Employment Record</h2>
+      <table class="detail"><tbody>
+        <tr><td>Graduate Name</td><td>${escapePrintHtml(`${graduate.first_name} ${graduate.last_name}`)}</td></tr>
+        <tr><td>Alumni ID</td><td>${escapePrintHtml(graduate.alumni_id)}</td></tr>
+        <tr><td>Program</td><td>${escapePrintHtml(graduate.program)}</td></tr>
+        <tr><td>Employment Status</td><td>${escapePrintHtml(formatQproStatus(graduate.employment_status))}</td></tr>
+        <tr><td>Company / Type of Business</td><td>${escapePrintHtml(graduate.employer || graduate.job_title || '—')}</td></tr>
+        <tr><td>Job Title</td><td>${escapePrintHtml(graduate.job_title || '—')}</td></tr>
+        <tr><td>Supporting Documents</td><td>${escapePrintHtml(graduate.supporting_docs || '—')}</td></tr>
+        <tr><td>Post Graduate Degree</td><td>${escapePrintHtml(graduate.post_graduate_degree || '—')}</td></tr>
+        <tr><td>Curriculum Relevance</td><td>${escapePrintHtml(graduate.relevance || '—')}</td></tr>
+        <tr><td>Last Updated</td><td>${escapePrintHtml(graduate.updated_at ? new Date(graduate.updated_at).toLocaleString() : '—')}</td></tr>
+      </tbody></table>
+      <div class="footer"><span>Prepared by: ____________________</span><span>Verified by: ____________________</span></div>`);
+  };
+
   // Export Privacy-Safe CSV (Excludes Individual Salaries)
   const exportToCSV = () => {
     if (records.length === 0) {
@@ -5749,6 +5835,15 @@ function AlumniTracer() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </button>
+          <button
+            type="button"
+            onClick={printMasterlist}
+            disabled={loading || filtered.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-[#1E3A8A] text-[#1E3A8A] hover:bg-blue-50 rounded-xl text-xs sm:text-sm font-semibold transition-all disabled:opacity-50"
+          >
+            <span aria-hidden="true">🖨</span>
+            Print Masterlist
           </button>
           <button
             type="button"
@@ -5947,6 +6042,7 @@ function AlumniTracer() {
                   </th>
                   <th className="p-2.5 border border-gray-300">Supporting Documents</th>
                   <th className="p-2.5 border border-gray-300">Post Graduate Degree</th>
+                  <th className="p-2.5 border border-gray-300 no-print">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-gray-700">
@@ -5988,6 +6084,15 @@ function AlumniTracer() {
                       <td className="p-2.5 border border-gray-200 text-[11px] text-gray-600">
                         {item.post_graduate_degree || '—'}
                       </td>
+                      <td className="p-2 border border-gray-200 no-print">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGraduate(item)}
+                          className="px-3 py-1.5 rounded-lg bg-blue-50 text-[#1E3A8A] hover:bg-blue-100 font-semibold whitespace-nowrap"
+                        >
+                          View Record
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -5996,6 +6101,51 @@ function AlumniTracer() {
           </div>
         )}
       </div>
+
+      {selectedGraduate && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="graduate-record-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSelectedGraduate(null);
+          }}
+        >
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4">
+              <div>
+                <h2 id="graduate-record-title" className="text-lg font-bold text-gray-900">Graduate Employment Record</h2>
+                <p className="text-xs text-gray-500">Individual submitted tracer information</p>
+              </div>
+              <button type="button" onClick={() => setSelectedGraduate(null)} className="rounded-lg px-3 py-2 text-gray-500 hover:bg-gray-100" aria-label="Close record">✕</button>
+            </div>
+            <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+              {[
+                ['Graduate Name', `${selectedGraduate.first_name} ${selectedGraduate.last_name}`],
+                ['Alumni ID', selectedGraduate.alumni_id],
+                ['Program', selectedGraduate.program],
+                ['Employment Status', formatQproStatus(selectedGraduate.employment_status)],
+                ['Company / Type of Business', selectedGraduate.employer || selectedGraduate.job_title || '—'],
+                ['Job Title', selectedGraduate.job_title || '—'],
+                ['Supporting Documents', selectedGraduate.supporting_docs || '—'],
+                ['Post Graduate Degree', selectedGraduate.post_graduate_degree || '—'],
+                ['Curriculum Relevance', selectedGraduate.relevance || '—'],
+                ['Last Updated', selectedGraduate.updated_at ? new Date(selectedGraduate.updated_at).toLocaleString() : '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{label}</p>
+                  <p className="mt-1 break-words text-sm font-medium text-gray-900">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 p-5 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setSelectedGraduate(null)} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Close</button>
+              <button type="button" onClick={() => printIndividualGraduate(selectedGraduate)} className="rounded-xl bg-[#1E3A8A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1E40AF]">Print Individual Record</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
