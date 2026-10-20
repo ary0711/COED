@@ -20,6 +20,8 @@ import {
   Trash2,
   CalendarDays,
   History,
+  Shield,
+  Plus,
 } from 'lucide-react';
 import { Sidebar } from '../Sidebar';
 import { createPortal } from 'react-dom';
@@ -27,6 +29,8 @@ import { DashboardHeader } from '../DashboardHeader';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
+import { ClubDashboard } from './ClubDashboard';
+import type { ClubAccess } from './ClubDashboard';
 
 const studentMenuItems = [
   { icon: Bell,         label: 'Dashboard',             id: 'dashboard'    },
@@ -38,6 +42,7 @@ const studentMenuItems = [
 ];
 
 const ME_API_URL = 'http://localhost:5000/api/students/me';
+const CLUB_ME_API_URL = 'http://localhost:5000/api/clubs/me';
 
 // How often the dashboard silently re-fetches the profile so a newly
 // published Dean's List result shows up without a manual reload.
@@ -127,6 +132,8 @@ interface RealCalendarEvent {
   event_date: string;
   start_time?: string | null;
   end_time?: string | null;
+  location?: string | null;
+  club_id?: string | null;
   department_ids: string[] | null;
   event_type: 'meeting' | 'activity' | 'deadline' | 'holiday' | 'exam' | string | null;
   audience?: string | null;
@@ -176,6 +183,8 @@ function sortEventsChronologically(a: RealCalendarEvent, b: RealCalendarEvent): 
 }
 
 function isStudentAuthorizedEvent(ev: RealCalendarEvent): boolean {
+  // Club events are already limited to the student's own clubs by the backend
+  if (ev.club_id) return true;
   if (!ev.audience) return true;
   const aud = ev.audience.trim().toLowerCase();
   return ['all', 'everyone', 'student', 'students'].includes(aud);
@@ -204,6 +213,36 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   const [userEmail, setUserEmail] = useState<string>('');
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Club officer access (President / Vice President / Secretary only)
+  const [clubAccess, setClubAccess] = useState<ClubAccess | null>(null);
+
+  useEffect(() => {
+    const loadClubAccess = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch(CLUB_ME_API_URL, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setClubAccess(await res.json());
+      } catch (err) {
+        console.error('Failed to load club access', err);
+      }
+    };
+    loadClubAccess();
+  }, []);
+
+  // Regular students keep the original menu; officers get an extra "Club" item
+  const menuItems = useMemo(() => {
+    if (!clubAccess?.isOfficer) return studentMenuItems;
+    const settingsItem = studentMenuItems[studentMenuItems.length - 1];
+    return [
+      ...studentMenuItems.slice(0, -1),
+      { icon: Shield, label: 'Club', id: 'club' },
+      settingsItem,
+    ];
+  }, [clubAccess]);
 
   const fetchProfile = async (silent = false) => {
     if (!silent) setProfileLoading(true);
@@ -345,7 +384,7 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   return (
     <div className="flex min-h-screen bg-gray-100">
       <Sidebar
-        menuItems={studentMenuItems}
+        menuItems={menuItems}
         activeItem={activeMenuItem}
         onItemClick={setActiveMenuItem}
         userRole="Student"
@@ -388,7 +427,8 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           )}
           {activeMenuItem === 'faculty'      && <FacultyDepartments profile={profile} />}
           {activeMenuItem === 'resources'    && <AcademicResources />}
-          {activeMenuItem === 'achievements'&& <AchievementsActivities />}
+          {activeMenuItem === 'achievements'&& <AchievementsActivities clubAccess={clubAccess} />}
+          {activeMenuItem === 'club' && clubAccess?.isOfficer && <ClubDashboard />}
           {activeMenuItem === 'inquiry'      && <InquiryContact />}
           {activeMenuItem === 'settings'     && (
             <StudentSettings
@@ -939,6 +979,7 @@ const ROLE_DISPLAY_LABEL_STUDENT: Record<string, string> = {
   college_dean: 'Dean',
   department_chair: 'Dept. Chair',
   faculty: 'Faculty',
+  club_officer: 'Club Officer',
 };
 
 const MONTH_NAMES = [
@@ -966,7 +1007,7 @@ function formatEventTimeRange(start?: string | null, end?: string | null): strin
   return 'Time not specified';
 }
 
-function AchievementsActivities() {
+function AchievementsActivities({ clubAccess }: { clubAccess: ClubAccess | null }) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
 
@@ -978,6 +1019,13 @@ function AchievementsActivities() {
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<RealCalendarEvent | null>(null);
+
+  // Club officer: add-activity form
+  const emptyClubForm = { title: '', description: '', event_date: '', start_time: '', end_time: '', location: '' };
+  const [showClubForm, setShowClubForm] = useState(false);
+  const [clubSaving, setClubSaving] = useState(false);
+  const [clubFormError, setClubFormError] = useState('');
+  const [clubForm, setClubForm] = useState(emptyClubForm);
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -1006,6 +1054,63 @@ function AchievementsActivities() {
   useEffect(() => {
     fetchEvents();
   }, []);
+
+  const submitClubEvent = async () => {
+    setClubFormError('');
+    if (!clubForm.title.trim()) return setClubFormError('Event name is required.');
+    if (!clubForm.event_date) return setClubFormError('Please choose a date.');
+    if (!clubForm.location.trim()) return setClubFormError('Please enter where the event will be held.');
+    if (clubForm.start_time && clubForm.end_time && clubForm.end_time <= clubForm.start_time) {
+      return setClubFormError('End time must be later than start time.');
+    }
+
+    setClubSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(CALENDAR_API_URL_STUDENT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: clubForm.title,
+          description: clubForm.description,
+          event_date: clubForm.event_date,
+          start_time: clubForm.start_time || null,
+          end_time: clubForm.end_time || null,
+          location: clubForm.location,
+          event_type: 'activity',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) return setClubFormError(json.error || 'Failed to add the activity.');
+
+      setShowClubForm(false);
+      setClubForm(emptyClubForm);
+      fetchEvents();
+    } catch {
+      setClubFormError('Could not reach the server. Please try again.');
+    } finally {
+      setClubSaving(false);
+    }
+  };
+
+  const deleteClubEvent = async (id: string) => {
+    if (!confirm('Delete this club activity?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${CALENDAR_API_URL_STUDENT}/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setSelectedEvent(null);
+        fetchEvents();
+      } else {
+        alert('Could not delete the activity.');
+      }
+    } catch {
+      alert('Could not reach the server.');
+    }
+  };
 
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
@@ -1059,13 +1164,28 @@ function AchievementsActivities() {
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
-      <div>
-        <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
-          Calendar & Activities
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Stay updated on academic schedules, university activities, and important deadlines.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
+            Calendar & Activities
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Stay updated on academic schedules, university activities, and important deadlines.
+          </p>
+        </div>
+
+        {clubAccess?.isOfficer && (
+          <button
+            onClick={() => {
+              setClubFormError('');
+              setShowClubForm(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] text-white rounded-lg hover:bg-blue-900 transition-colors text-sm font-medium shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add {clubAccess.clubName} activity
+          </button>
+        )}
       </div>
 
       {loadError && (
@@ -1414,6 +1534,13 @@ function AchievementsActivities() {
                 <span>{formatEventTimeRange(selectedEvent.start_time, selectedEvent.end_time)}</span>
               </div>
 
+              {selectedEvent.location && (
+                <div>
+                  <span className="font-semibold text-gray-900">Where: </span>
+                  <span>{selectedEvent.location}</span>
+                </div>
+              )}
+
               <div>
                 <span className="font-semibold text-gray-900">Posted by: </span>
                 <span>
@@ -1432,6 +1559,118 @@ function AchievementsActivities() {
                 </p>
               </div>
             )}
+
+            {clubAccess?.isOfficer && selectedEvent.club_id === clubAccess.clubId && (
+              <button
+                onClick={() => deleteClubEvent(selectedEvent.id)}
+                className="w-full py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Delete activity
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Club activity form (officers only) ── */}
+      {showClubForm && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0" onClick={() => setShowClubForm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 z-[10000]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">New {clubAccess?.clubName} activity</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Only members of {clubAccess?.clubName} will see this.</p>
+              </div>
+              <button
+                onClick={() => setShowClubForm(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Event name</label>
+              <input
+                value={clubForm.title}
+                onChange={(e) => setClubForm({ ...clubForm, title: e.target.value })}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Description</label>
+              <textarea
+                rows={4}
+                value={clubForm.description}
+                onChange={(e) => setClubForm({ ...clubForm, description: e.target.value })}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Date</label>
+                <input
+                  type="date"
+                  min={todayStr}
+                  value={clubForm.event_date}
+                  onChange={(e) => setClubForm({ ...clubForm, event_date: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Start time</label>
+                <input
+                  type="time"
+                  value={clubForm.start_time}
+                  onChange={(e) => setClubForm({ ...clubForm, start_time: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">End time</label>
+                <input
+                  type="time"
+                  value={clubForm.end_time}
+                  onChange={(e) => setClubForm({ ...clubForm, end_time: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Where</label>
+              <input
+                value={clubForm.location}
+                onChange={(e) => setClubForm({ ...clubForm, location: e.target.value })}
+                placeholder="e.g. COED Function Hall"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {clubFormError && (
+              <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200">{clubFormError}</p>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowClubForm(false)}
+                className="flex-1 py-2.5 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitClubEvent}
+                disabled={clubSaving}
+                className="flex-1 py-2.5 text-sm font-medium text-white bg-[#1E3A8A] rounded-lg hover:bg-blue-900 disabled:opacity-50"
+              >
+                {clubSaving ? 'Saving...' : 'Add activity'}
+              </button>
+            </div>
           </div>
         </div>,
         document.body
@@ -1571,7 +1810,7 @@ function InquiryContact() {
           <div className="flex-1 flex flex-col">
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Submit a Concern or Question</h2>
             <p className="text-xs text-gray-500 mb-5">Send your inquiries directly to the College Dean and administrative staff.</p>
-            
+
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1779,6 +2018,9 @@ interface StudentSettingsProps {
   onProfileUpdated: () => void;
 }
 
+const TOGGLE_TRACK_CLASS =
+  "w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600";
+
 function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: StudentSettingsProps) {
   const [activeTab, setActiveTab] = useState<StudentSettingsTab>('profile');
 
@@ -1825,69 +2067,61 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
   }, [profile, userEmail]);
 
   const loadNotificationPreferences = async () => {
-  const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token');
 
-  if (!token) {
-    return;
-  }
+    if (!token) {
+      return;
+    }
 
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/notifications/preferences',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/notifications/preferences', {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
         },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to load notification preferences.');
       }
-    );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-        data.message ||
-        'Failed to load notification preferences.'
-      );
+      setAllNotifications(data.allow_all ?? true);
+      setInquiryAlerts(data.inquiries ?? true);
+      setAnnouncementAlerts(data.announcements ?? true);
+      setCalendarAlerts(data.calendar ?? true);
+    } catch (error) {
+      console.error('Failed to load notification preferences:', error);
     }
+  };
 
-    setAllNotifications(data.allow_all ?? true);
-    setInquiryAlerts(data.inquiries ?? true);
-    setAnnouncementAlerts(data.announcements ?? true);
-    setCalendarAlerts(data.calendar ?? true);
-  } catch (error) {
-    console.error(
-      'Failed to load notification preferences:',
-      error
-    );
-  }
-};
-useEffect(() => {
-  if (profile) {
-    loadNotificationPreferences();
-  }
-}, [profile]);
+  useEffect(() => {
+    if (profile) {
+      loadNotificationPreferences();
+    }
+  }, [profile]);
 
- const handleAllNotificationsToggle = (checked: boolean) => {
-  // Master switch controls EVERYTHING
-  setAllNotifications(checked);
-  setInquiryAlerts(checked);
-  setAnnouncementAlerts(checked);
-  setCalendarAlerts(checked);
-};
+  const handleAllNotificationsToggle = (checked: boolean) => {
+    // Master switch controls EVERYTHING
+    setAllNotifications(checked);
+    setInquiryAlerts(checked);
+    setAnnouncementAlerts(checked);
+    setCalendarAlerts(checked);
+  };
 
-const handleInquiryToggle = (checked: boolean) => {
-  setInquiryAlerts(checked);
-};
+  const handleInquiryToggle = (checked: boolean) => {
+    setInquiryAlerts(checked);
+  };
 
-const handleAnnouncementToggle = (checked: boolean) => {
-  setAnnouncementAlerts(checked);
-};
+  const handleAnnouncementToggle = (checked: boolean) => {
+    setAnnouncementAlerts(checked);
+  };
 
-const handleCalendarToggle = (checked: boolean) => {
-  setCalendarAlerts(checked);
-};
+  const handleCalendarToggle = (checked: boolean) => {
+    setCalendarAlerts(checked);
+  };
+
   const saveProfile = async () => {
     const trimmedName = fullNameInput.trim();
     const trimmedUsername = usernameInput.trim();
@@ -2055,25 +2289,24 @@ const handleCalendarToggle = (checked: boolean) => {
       setSaving(false);
     }
   };
+
   const saveNotificationPreferences = async () => {
-  const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token');
 
-  if (!token) {
-    setSaveMessage({
-      type: 'error',
-      text: 'Your session has expired. Please log in again.',
-    });
+    if (!token) {
+      setSaveMessage({
+        type: 'error',
+        text: 'Your session has expired. Please log in again.',
+      });
 
-    return false;
-  }
+      return false;
+    }
 
-  setSaving(true);
-  setSaveMessage(null);
+    setSaving(true);
+    setSaveMessage(null);
 
-  try {
-    const response = await fetch(
-      'http://localhost:5000/api/notifications/preferences',
-      {
+    try {
+      const response = await fetch('http://localhost:5000/api/notifications/preferences', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -2085,60 +2318,51 @@ const handleCalendarToggle = (checked: boolean) => {
           announcements: announcementAlerts,
           calendar: calendarAlerts,
         }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to save notification preferences.');
       }
-    );
 
-    const data = await response.json();
+      setSaveMessage({
+        type: 'success',
+        text: 'Notification preferences updated successfully.',
+      });
 
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-        data.message ||
-        'Failed to save notification preferences.'
-      );
+      return true;
+    } catch (error) {
+      console.error('Student notification preferences update failed:', error);
+
+      setSaveMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to save notification preferences.',
+      });
+
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    if (activeTab === 'profile') {
+      await saveProfile();
+      return;
     }
 
-    setSaveMessage({
-      type: 'success',
-      text: 'Notification preferences updated successfully.',
-    });
+    if (activeTab === 'security') {
+      await changePassword();
+      return;
+    }
 
-    return true;
-  } catch (error) {
-    console.error(
-      'Student notification preferences update failed:',
-      error
-    );
+    if (activeTab === 'notifications') {
+      await saveNotificationPreferences();
+      return;
+    }
+  };
 
-    setSaveMessage({
-      type: 'error',
-      text:
-        error instanceof Error
-          ? error.message
-          : 'Failed to save notification preferences.',
-    });
-
-    return false;
-  } finally {
-    setSaving(false);
-  }
-};
-  const handleSaveChanges = async () => {
-  if (activeTab === 'profile') {
-    await saveProfile();
-    return;
-  }
-
-  if (activeTab === 'security') {
-    await changePassword();
-    return;
-  }
-
-  if (activeTab === 'notifications') {
-    await saveNotificationPreferences();
-    return;
-  }
-};
   const tabs: { key: StudentSettingsTab; label: string; icon: React.ReactNode }[] = [
     { key: 'profile', label: 'Profile Information', icon: <User className="w-4 h-4" /> },
     { key: 'security', label: 'Password & Security', icon: <Lock className="w-4 h-4" /> },
@@ -2203,99 +2427,89 @@ const handleCalendarToggle = (checked: boolean) => {
         </nav>
 
         <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 min-h-[520px]">
-  {activeTab === 'profile' && (
-    <div>
-      <h2 className="text-lg font-semibold text-gray-900">
-        Profile Information
-      </h2>
-
-      <p className="text-sm text-gray-500 mb-6">
-        Update your personal details.
-      </p>
-
-      {loading ? (
-        <div className="animate-pulse space-y-4">
-          <div className="h-10 bg-gray-100 rounded-lg" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="h-10 bg-gray-100 rounded-lg" />
-            <div className="h-10 bg-gray-100 rounded-lg" />
-          </div>
-        </div>
-      ) : !profile ? (
-        <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-          Your profile information could not be loaded.
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Full Name */}
-          {/* Full Name + Username */}
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-  {/* Full Name */}
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-2">
-      Full Name
-    </label>
-
-    <input
-      type="text"
-      value={fullNameInput}
-      onChange={(e) => setFullNameInput(e.target.value)}
-      placeholder="Enter your full name"
-      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-    />
-  </div>
-
-  {/* Username */}
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-2">
-      Username
-    </label>
-
-    <input
-      type="text"
-      value={usernameInput}
-      onChange={(e) => setUsernameInput(e.target.value)}
-      placeholder="Enter your username"
-      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-    />
-  </div>
-</div>
-
-          {/* Student ID + Email */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Student ID */}
+          {activeTab === 'profile' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Student ID
-              </label>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Profile Information
+              </h2>
 
-              <input
-                type="text"
-                value={studentNoInput}
-                onChange={(e) => setStudentNoInput(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+              <p className="text-sm text-gray-500 mb-6">
+                Update your personal details.
+              </p>
+
+              {loading ? (
+                <div className="animate-pulse space-y-4">
+                  <div className="h-10 bg-gray-100 rounded-lg" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                    <div className="h-10 bg-gray-100 rounded-lg" />
+                  </div>
+                </div>
+              ) : !profile ? (
+                <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+                  Your profile information could not be loaded.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Full Name + Username */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={fullNameInput}
+                        onChange={(e) => setFullNameInput(e.target.value)}
+                        placeholder="Enter your full name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={usernameInput}
+                        onChange={(e) => setUsernameInput(e.target.value)}
+                        placeholder="Enter your username"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Student ID + Email */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Student ID
+                      </label>
+                      <input
+                        type="text"
+                        value={studentNoInput}
+                        onChange={(e) => setStudentNoInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {/* Email Address */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )}
-        
+          )}
 
           {activeTab === 'security' && (
             <div>
@@ -2421,7 +2635,7 @@ const handleCalendarToggle = (checked: boolean) => {
                       onChange={(e) => handleAllNotificationsToggle(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                    <div className={TOGGLE_TRACK_CLASS} />
                   </label>
                 </div>
 
@@ -2442,7 +2656,7 @@ const handleCalendarToggle = (checked: boolean) => {
                       onChange={(e) => handleInquiryToggle(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                    <div className={TOGGLE_TRACK_CLASS} />
                   </label>
                 </div>
 
@@ -2463,7 +2677,7 @@ const handleCalendarToggle = (checked: boolean) => {
                       onChange={(e) => handleAnnouncementToggle(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                    <div className={TOGGLE_TRACK_CLASS} />
                   </label>
                 </div>
 
@@ -2484,7 +2698,7 @@ const handleCalendarToggle = (checked: boolean) => {
                       onChange={(e) => handleCalendarToggle(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                    <div className={TOGGLE_TRACK_CLASS} />
                   </label>
                 </div>
               </div>

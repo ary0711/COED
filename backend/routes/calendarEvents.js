@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middleware/authenticate');
 const supabase = require('../supabaseClient');
+const { getUserId, getOfficerMembership, getMemberClubIds } = require('../utils/clubAccess');
 
 const PROGRAM_TO_DEPARTMENT = {
   'BEEd': '41fffef4-b5fc-4bdf-8a30-1a53097113c7',
@@ -90,6 +91,7 @@ async function notifyFacultyAboutEvent(event, senderIds = []) {
     const audience = String(event.audience || '').toLowerCase();
 
     // Only send faculty notifications for these audiences
+    // (club events use audience 'club', so they are skipped here)
     const shouldNotifyFaculty = [
       'faculty',
       'all',
@@ -264,6 +266,7 @@ async function notifyFacultyAboutEvent(event, senderIds = []) {
     };
   }
 }
+
 // GET /api/calendar-events
 router.get('/', authenticate, async (req, res) => {
   const userRole = (req.user.role || '').toLowerCase();
@@ -297,7 +300,23 @@ router.get('/', authenticate, async (req, res) => {
     }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json(data ?? []);
+
+    // Club events: only for the clubs this student belongs to
+    const clubIds = await getMemberClubIds(getUserId(req));
+    let clubEvents = [];
+    if (clubIds.length > 0) {
+      const { data: ce } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .in('club_id', clubIds);
+      clubEvents = ce ?? [];
+    }
+
+    const merged = [...(data ?? []), ...clubEvents].sort((a, b) =>
+      String(a.event_date).localeCompare(String(b.event_date)) ||
+      String(a.start_time ?? '').localeCompare(String(b.start_time ?? ''))
+    );
+    return res.json(merged);
   }
 
   if (userRole === 'faculty') {
@@ -343,8 +362,14 @@ router.post('/', authenticate, async (req, res) => {
   const isChair = userRole === 'department_chair';
   const isDeanOrAdmin = ['dean', 'admin', 'college_dean', 'college dean'].includes(userRole);
 
-  if (!isChair && !isDeanOrAdmin) {
-    return res.status(403).json({ error: 'Only Department Chairs or the Dean can create calendar events.' });
+  // Students can post only if they are a club officer (president / VP / secretary)
+  let officer = null;
+  if (userRole === 'student') {
+    officer = await getOfficerMembership(getUserId(req));
+  }
+
+  if (!isChair && !isDeanOrAdmin && !officer) {
+    return res.status(403).json({ error: 'Only Department Chairs, the Dean, or club officers can create calendar events.' });
   }
 
   const {
@@ -406,6 +431,10 @@ router.post('/', authenticate, async (req, res) => {
     department_ids = [target_department_id];
   }
 
+  if (officer) {
+    department_ids = null; // club events are scoped by club, not department
+  }
+
   const insertPayload = {
     title: String(title).trim(),
     description: description ? String(description).trim() : null,
@@ -414,44 +443,45 @@ router.post('/', authenticate, async (req, res) => {
     end_time: validatedEndTime,
     location: location ? String(location).trim() : null,
     event_type: event_type ? String(event_type).trim().toLowerCase() : 'activity',
-    audience: (audience || 'all').trim().toLowerCase(),
+    audience: officer ? 'club' : (audience || 'all').trim().toLowerCase(),
     status: status || 'upcoming',
     department_ids,
+    club_id: officer ? officer.club_id : null,
     organizer_id: validOrganizerId,
-    posted_by_role: req.user.role,
+    posted_by_role: officer ? 'club_officer' : req.user.role,
   };
 
   const { data, error } = await supabase
-  .from('calendar_events')
-  .insert(insertPayload)
-  .select()
-  .single();
+    .from('calendar_events')
+    .insert(insertPayload)
+    .select()
+    .single();
 
-if (error) {
-  console.error('Error creating calendar event:', error);
-  return res.status(500).json({ error: error.message });
-}
+  if (error) {
+    console.error('Error creating calendar event:', error);
+    return res.status(500).json({ error: error.message });
+  }
 
-// Get the creator's possible profile IDs so the creator
-// does not receive their own notification.
-const senderIds = [
-  req.user.profileId,
-  req.user.userId,
-  req.user.id,
-].filter(Boolean);
+  // Get the creator's possible profile IDs so the creator
+  // does not receive their own notification.
+  const senderIds = [
+    req.user.profileId,
+    req.user.userId,
+    req.user.id,
+  ].filter(Boolean);
 
-// Send calendar notification to applicable faculty
-const notificationResult = await notifyFacultyAboutEvent(
-  data,
-  senderIds
-);
+  // Send calendar notification to applicable faculty (skipped for club events)
+  const notificationResult = await notifyFacultyAboutEvent(
+    data,
+    senderIds
+  );
 
-console.log('Faculty event notification result:', notificationResult);
+  console.log('Faculty event notification result:', notificationResult);
 
-return res.status(201).json({
-  ...data,
-  notification: notificationResult,
-});
+  return res.status(201).json({
+    ...data,
+    notification: notificationResult,
+  });
 });
 
 // PUT /api/calendar-events/:id
@@ -575,6 +605,22 @@ router.delete('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const userRole = (req.user.role || '').toLowerCase();
   const isChair = userRole === 'department_chair';
+
+  // Students: only a club officer, and only for their own club's events
+  if (userRole === 'student') {
+    const officer = await getOfficerMembership(getUserId(req));
+    if (!officer) return res.status(403).json({ error: 'Not authorized.' });
+
+    const { data: ev } = await supabase
+      .from('calendar_events')
+      .select('club_id')
+      .eq('id', id)
+      .single();
+
+    if (!ev || ev.club_id !== officer.club_id) {
+      return res.status(403).json({ error: 'You can only delete events of your own club.' });
+    }
+  }
 
   if (isChair) {
     const chairDeptIds = await getDepartmentIdsForUser(req);
