@@ -1,3 +1,4 @@
+
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
@@ -26,19 +27,6 @@ const transporter = nodemailer.createTransport({
 // ============================================================
 // COED LOGO
 // ============================================================
-//
-// Expected location:
-//
-// COED/
-// ├── public/
-// │   └── COED LOGO.png
-// └── backend/
-//     └── services/
-//         └── emailService.js
-//
-// If your logo is somewhere else, change COED_LOGO_PATH
-// in your .env file.
-//
 
 const COED_LOGO_PATH =
   process.env.COED_LOGO_PATH ||
@@ -76,20 +64,6 @@ async function sendContactReply({
   recipientName,
   subject,
   message,
-
-  // Optional custom signature.
-  //
-  // Example:
-  //
-  // signature: `
-  //   Regards,<br>
-  //   <strong>John Doe</strong><br>
-  //   College Dean<br>
-  //   College of Education
-  // `
-  //
-  // If no signature is provided, the default COED signature
-  // will automatically be used.
   signature,
 }) {
   // ----------------------------------------------------------
@@ -243,9 +217,7 @@ async function sendContactReply({
           "
         >
 
-          <!-- =================================================
-               HEADER
-          ================================================== -->
+          <!-- HEADER -->
 
           <tr>
             <td
@@ -289,9 +261,7 @@ async function sendContactReply({
             </td>
           </tr>
 
-          <!-- =================================================
-               MESSAGE
-          ================================================== -->
+          <!-- MESSAGE -->
 
           <tr>
             <td
@@ -318,9 +288,7 @@ async function sendContactReply({
                 ${safeMessage}
               </div>
 
-              <!-- =================================================
-                   SIGNATURE
-              ================================================== -->
+              <!-- SIGNATURE -->
 
               <div style="
                 margin-top: 30px;
@@ -336,9 +304,7 @@ async function sendContactReply({
             </td>
           </tr>
 
-          <!-- =================================================
-               FOOTER
-          ================================================== -->
+          <!-- FOOTER -->
 
           <tr>
             <td
@@ -364,9 +330,7 @@ async function sendContactReply({
             </td>
           </tr>
 
-          <!-- =================================================
-               BOTTOM BLUE LINE
-          ================================================== -->
+          <!-- BOTTOM BLUE LINE -->
 
           <tr>
             <td
@@ -419,15 +383,10 @@ ${plainTextSignature}
 
   const mailOptions = {
     from: `"COED Administration" <${process.env.EMAIL_USER}>`,
-
     to: recipientEmail,
-
     subject: emailSubject,
-
     text,
-
     html,
-
     attachments: logoAttachment,
   };
 
@@ -488,6 +447,85 @@ ${plainTextSignature}
 }
 
 // ============================================================
+// SEND ACCOUNT STATUS EMAIL
+// ============================================================
+// Used by auth.js when an administrator changes a user's
+// account status.
+//
+// Supported statuses:
+// active, inactive, pending, rejected
+// ============================================================
+
+async function sendAccountStatusEmail({
+  to,
+  fullName,
+  role,
+  status,
+}) {
+  const normalizedStatus = String(status || '')
+    .trim()
+    .toLowerCase();
+
+  const statusMessages = {
+    active: {
+      heading: 'Your COED account is now active.',
+      details:
+        'Your account has been activated. You can now sign in to the COED University Management System using your registered login credentials.',
+    },
+
+    inactive: {
+      heading: 'Your COED account is now inactive.',
+      details:
+        'Your account has been marked as inactive. You will not be able to sign in while this status remains in effect. Please contact the College of Education administration if you need assistance.',
+    },
+
+    pending: {
+      heading: 'Your COED account is pending approval.',
+      details:
+        'Your account is currently awaiting approval. Please wait for further updates from the College of Education administration.',
+    },
+
+    rejected: {
+      heading: 'Your COED account registration was not approved.',
+      details:
+        'Your account registration has been marked as rejected. Please contact the appropriate College of Education administrator if you need clarification.',
+    },
+  };
+
+  const statusInfo = statusMessages[normalizedStatus];
+
+  if (!statusInfo) {
+    throw new Error(
+      `Unsupported account status: ${status || '(empty)'}`
+    );
+  }
+
+  if (!to) {
+    throw new Error(
+      'Recipient email is required for account status notifications.'
+    );
+  }
+
+  const message = `
+${statusInfo.heading}
+
+${statusInfo.details}
+
+Account role: ${role || 'User'}
+Current status: ${normalizedStatus.toUpperCase()}
+
+If you believe this change was made in error, please contact the College of Education administration.
+  `.trim();
+
+  return sendContactReply({
+    recipientEmail: to,
+    recipientName: fullName || 'COED User',
+    subject: 'COED Account Status Update',
+    message,
+  });
+}
+
+// ============================================================
 // VERIFY GMAIL CONNECTION
 // ============================================================
 
@@ -525,6 +563,6 @@ async function verifyEmailConnection() {
 
 module.exports = {
   sendContactReply,
+  sendAccountStatusEmail,
   verifyEmailConnection,
 };
-

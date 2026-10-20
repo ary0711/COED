@@ -70,6 +70,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
   const [search, setSearch] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingCategory, setDownloadingCategory] = useState(false);
 
   const [internalPreview, setInternalPreview] = useState<ClassroomPreview | null>(null);
 
@@ -212,6 +213,34 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
     }
   };
 
+  // Download all files in the currently selected category
+  const handleDownloadAllInCategory = async () => {
+    if (categoryIdFilter === 'all') return;
+
+    const targetDocs = documents.filter(
+      (d) => d.category_id === categoryIdFilter || d.document_categories?.id === categoryIdFilter
+    );
+
+    if (targetDocs.length === 0) {
+      setLoadError('No documents found in this category to download.');
+      return;
+    }
+
+    setDownloadingCategory(true);
+    setLoadError('');
+    try {
+      for (const doc of targetDocs) {
+        await handleDownload(doc);
+        // Small interval between sequential browser triggers
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+    } catch {
+      setLoadError('Some files could not be downloaded.');
+    } finally {
+      setDownloadingCategory(false);
+    }
+  };
+
   const filtered = documents.filter((d) =>
     d.title.toLowerCase().includes(search.toLowerCase())
   );
@@ -234,18 +263,39 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <select
-          value={categoryIdFilter}
-          onChange={(e) => setCategoryIdFilter(e.target.value)}
-          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="all">All Categories</option>
-          {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex gap-2">
+          <select
+            value={categoryIdFilter}
+            onChange={(e) => setCategoryIdFilter(e.target.value)}
+            className="flex-1 sm:flex-initial px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">All Categories</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Download All in Category button (Visible when a category is selected) */}
+          {categoryIdFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={handleDownloadAllInCategory}
+              disabled={downloadingCategory || loading}
+              className="px-3 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+              title="Download All Files in Selected Category"
+            >
+              {downloadingCategory ? (
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">Download All</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {loadError && (
@@ -300,7 +350,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
                     <button
                       type="button"
                       onClick={() => handlePreview(doc)}
-                      disabled={isPreviewing || isDownloading}
+                      disabled={isPreviewing || isDownloading || downloadingCategory}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
                       title="View file"
                     >
@@ -320,7 +370,7 @@ export function AcademicDocumentsViewer({ onOpenPreview }: AcademicDocumentsView
                     <button
                       type="button"
                       onClick={() => handleDownload(doc)}
-                      disabled={isPreviewing || isDownloading}
+                      disabled={isPreviewing || isDownloading || downloadingCategory}
                       className="flex items-center gap-1 p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40"
                       title="Download"
                     >

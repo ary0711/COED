@@ -323,29 +323,7 @@ async function loadAboutPage() {
           </div>
         </div>
 
-        {/* Stats — directly under the About/History section */}
-        <div className="mb-24">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-            {statsToDisplay.map((stat) => (
-              <div
-                key={stat.id}
-                className="text-center"
-              >
-                <div className="bg-blue-50 rounded-xl p-6 h-full flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                  <Users className="w-7 h-7 text-[#2563EB] mx-auto mb-3" />
-
-                  <div className="text-3xl font-bold text-[#1E3A8A] mb-1">
-                    {stat.count}
-                  </div>
-
-                  <div className="text-sm text-gray-600">
-                    {stat.label}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+       
 
         {/* Vision, Mission, Goals */}
         <div className="grid md:grid-cols-3 gap-8 mb-24">

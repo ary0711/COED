@@ -38,6 +38,7 @@ app.use('/api/research-submissions', require('./routes/researchSubmissions'));
 app.use('/api/students', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/calendar-events', require('./routes/calendarEvents'));
+app.use('/api/clubs', require('./routes/clubs'));
 app.use('/api/announcements', require('./routes/announcements'));
 
 app.use('/api/inquiries', require('./routes/inquiries'));
@@ -64,6 +65,9 @@ const teachingLoadRoutes = require('./routes/teachingLoad');
 app.use('/api', teachingLoadRoutes);
 
 app.use('/api/contact', require('./routes/contact'));
+
+const accreditationRouter = require('./routes/accreditation');
+app.use('/api/accreditation', accreditationRouter);
 
 const authenticate = require('./middleware/authenticate');
 

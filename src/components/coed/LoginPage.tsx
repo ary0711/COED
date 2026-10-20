@@ -376,8 +376,8 @@ if (resolvedProfileId) {
         </button>
 
         <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-12 text-center">
-          <div className="w-40 h-40 bg-white rounded-3xl flex items-center justify-center shadow-2xl mb-8 overflow-hidden">
-            <img src="/COED LOGO.png" alt="COED Logo" className="w-36 h-36 object-contain"
+          <div className="w-56 h-56 bg-white rounded-3xl flex items-center justify-center shadow-2xl mb-8 overflow-hidden">
+            <img src="/COED LOGO.png" alt="COED Logo"  className="w-52 h-52 object-contain"
               onError={(e) => {
                 const el = e.currentTarget;
                 el.style.display = 'none';

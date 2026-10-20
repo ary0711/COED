@@ -3,7 +3,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../supabaseClient');
 const authenticate = require('../middleware/authenticate');
-
+const {
+  sendAccountStatusEmail,
+} = require('../services/emailService');
 const router = express.Router();
 
 console.log('✅ AUTH.JS LOADED:', __filename);
@@ -1190,64 +1192,291 @@ router.get('/student-count', async (req, res) => {
 
 // =========================================================
 // USER UPDATE (Admin/Dean only)
+// Includes account status email notifications
 // =========================================================
 router.put('/users/:id', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'dean' && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only administrators can modify users.' });
+    if (!['dean', 'admin'].includes(req.user?.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only administrators can modify users.',
+      });
     }
 
     const { id } = req.params;
-    const { full_name, role, id_number, department, status, password } = req.body;
+    const {
+      full_name,
+      role,
+      id_number,
+      department,
+      status,
+      password,
+    } = req.body;
 
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required.',
+      });
+    }
+
+    // ------------------------------------------------------
+    // 1. GET THE EXISTING PROFILE
+    // ------------------------------------------------------
+    const {
+      data: existingProfile,
+      error: existingProfileError,
+    } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      return res.status(500).json({
+        success: false,
+        error: existingProfileError.message,
+      });
+    }
+
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        error: 'User profile not found.',
+      });
+    }
+
+    // ------------------------------------------------------
+    // 2. GET THE USER'S REGISTERED EMAIL
+    // ------------------------------------------------------
+    const {
+      data: existingUser,
+      error: existingUserError,
+    } = await supabase
+      .from('users')
+      .select('id, username, email, role')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (existingUserError) {
+      return res.status(500).json({
+        success: false,
+        error: existingUserError.message,
+      });
+    }
+
+    const recipientEmail =
+      existingProfile.email || existingUser?.email;
+
+    // ------------------------------------------------------
+    // 3. PREPARE PROFILE UPDATES
+    // ------------------------------------------------------
     const profileUpdate = {};
-    if (full_name !== undefined) profileUpdate.full_name = full_name.trim();
-    if (role !== undefined) profileUpdate.role = role;
-    if (id_number !== undefined) profileUpdate.id_number = id_number.trim();
-    if (department !== undefined) profileUpdate.department = department?.trim() || null;
-    if (status !== undefined) profileUpdate.status = status;
+
+    if (full_name !== undefined) {
+      profileUpdate.full_name = String(full_name).trim();
+    }
+
+    if (role !== undefined) {
+      profileUpdate.role = role;
+    }
+
+    if (id_number !== undefined) {
+      profileUpdate.id_number = String(id_number).trim();
+    }
+
+    if (department !== undefined) {
+      profileUpdate.department =
+        String(department || '').trim() || null;
+    }
+
+    let newStatus = existingProfile.status;
+    let statusChanged = false;
+
+    if (status !== undefined) {
+      newStatus = String(status).trim().toLowerCase();
+
+      const allowedStatuses = [
+        'active',
+        'inactive',
+        'pending',
+        'rejected',
+      ];
+
+      if (!allowedStatuses.includes(newStatus)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid account status. Allowed statuses: ${allowedStatuses.join(', ')}.`,
+        });
+      }
+
+      const previousStatus = String(
+        existingProfile.status || ''
+      ).trim().toLowerCase();
+
+      statusChanged = previousStatus !== newStatus;
+      profileUpdate.status = newStatus;
+    }
+
+    // ------------------------------------------------------
+    // 4. UPDATE THE PROFILE
+    // ------------------------------------------------------
+    let updatedProfile = existingProfile;
 
     if (Object.keys(profileUpdate).length > 0) {
-      const { error: profileError } = await supabase
+      const {
+        data,
+        error: profileError,
+      } = await supabase
         .from('profiles')
         .update(profileUpdate)
-        .eq('id', id);
+        .eq('id', id)
+        .select()
+        .single();
 
-      if (profileError) return res.status(400).json({ error: profileError.message });
+      if (profileError) {
+        return res.status(400).json({
+          success: false,
+          error: profileError.message,
+        });
+      }
+
+      updatedProfile = data;
     }
 
+    // ------------------------------------------------------
+    // 5. UPDATE THE APPLICATION USER
+    // ------------------------------------------------------
     const userUpdate = {};
-    if (role !== undefined) userUpdate.role = role;
 
-    if (password && password.trim() !== '') {
+    if (role !== undefined) {
+      userUpdate.role = role;
+    }
+
+    if (password && String(password).trim() !== '') {
       if (password.length < 6) {
-        return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+        return res.status(400).json({
+          success: false,
+          error: 'Password must be at least 6 characters.',
+        });
       }
-      userUpdate.password_hash = await bcrypt.hash(password, 10);
 
-      const { error: authError } = await supabase.auth.admin.updateUserById(id, { password });
+      userUpdate.password_hash = await bcrypt.hash(
+        password,
+        10
+      );
+
+      const {
+        error: authError,
+      } = await supabase.auth.admin.updateUserById(id, {
+        password,
+      });
+
       if (authError) {
-        console.warn('Could not sync password to Supabase Auth:', authError.message);
+        console.warn(
+          'Could not sync password to Supabase Auth:',
+          authError.message
+        );
       }
     }
 
-    let updatedUser = null;
+    let updatedUser = existingUser;
+
     if (Object.keys(userUpdate).length > 0) {
-      const { data, error: userError } = await supabase
+      const {
+        data,
+        error: userError,
+      } = await supabase
         .from('users')
         .update(userUpdate)
         .eq('id', id)
         .select()
         .single();
 
-      if (userError) return res.status(400).json({ error: userError.message });
+      if (userError) {
+        return res.status(400).json({
+          success: false,
+          error: userError.message,
+        });
+      }
+
       updatedUser = data;
     }
 
-    return res.json({ message: 'User updated successfully.', user: updatedUser });
+    // ------------------------------------------------------
+    // 6. SEND EMAIL ONLY WHEN STATUS ACTUALLY CHANGES
+    // ------------------------------------------------------
+    let emailSent = false;
+    let emailError = null;
+
+    if (statusChanged) {
+      if (!recipientEmail) {
+        emailError =
+          'The account status was updated, but no recipient email was found.';
+
+        console.error(emailError, 'User ID:', id);
+      } else {
+        try {
+          console.log('Sending account status email:', {
+            userId: id,
+            recipientEmail,
+            previousStatus: existingProfile.status,
+            newStatus,
+          });
+
+          await sendAccountStatusEmail({
+            to: recipientEmail,
+            fullName:
+              updatedProfile.full_name ||
+              existingProfile.full_name ||
+              'COED User',
+            role:
+              updatedProfile.role ||
+              existingUser?.role ||
+              'User',
+            status: newStatus,
+          });
+
+          emailSent = true;
+
+          console.log(
+            'Account status email sent successfully to:',
+            recipientEmail
+          );
+        } catch (mailError) {
+          emailError = mailError.message;
+
+          console.error(
+            'Account status email failed:',
+            mailError.message
+          );
+        }
+      }
+    }
+
+    // ------------------------------------------------------
+    // 7. RESPONSE
+    // ------------------------------------------------------
+    return res.json({
+      success: true,
+      message: statusChanged
+        ? emailSent
+          ? 'User updated successfully. Account status email sent.'
+          : 'User updated successfully, but the status email could not be sent.'
+        : 'User updated successfully.',
+      user: updatedUser,
+      profile: updatedProfile,
+      statusChanged,
+      emailSent,
+      ...(emailError ? { emailError } : {}),
+    });
   } catch (error) {
     console.error('Update user error:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error.',
+    });
   }
 });
 

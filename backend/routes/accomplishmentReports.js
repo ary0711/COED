@@ -5,7 +5,6 @@ const multer = require('multer');
 const authenticate = require('../middleware/authenticate');
 const supabase = require('../supabaseClient');
 
-// Only Dean (or admin) may list college-wide submissions or approve/reject them.
 function requireDean(req, res, next) {
   if (req.user?.role !== 'dean' && req.user?.role !== 'admin') {
     return res.status(403).json({ error: 'Only the Dean can access this resource.' });
@@ -16,11 +15,54 @@ function requireDean(req, res, next) {
 const PHOTOS_BUCKET = 'accomplishment-photos';
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+// GET /api/accomplishment-reports/program-mfo1
+// Retrieves the Department Chairperson's official MFO 1 entries for a given program & period
+router.get('/program-mfo1', authenticate, async (req, res) => {
+  try {
+    const { program, quarter, year } = req.query;
+
+    if (!quarter || !year) {
+      return res.status(400).json({ error: 'Quarter and Year are required.' });
+    }
+
+    if (!program || !program.trim()) {
+      return res.json(null);
+    }
+
+    const raw = program.trim();
+    let searchCode = raw;
+    const lower = raw.toLowerCase();
+    if (lower.includes('btled') || lower.includes('technology') || lower.includes('livelihood')) {
+      searchCode = 'BTLEd';
+    } else if (lower.includes('beed') || lower.includes('elementary')) {
+      searchCode = 'BEEd';
+    } else if (lower.includes('bsed') || lower.includes('secondary') || lower.includes('math')) {
+      searchCode = 'BSEd-Math';
+    }
+
+    const { data, error } = await supabase
+      .from('accomplishment_reports')
+      .select('id, program, program_chair, quarter, year, pi1_data, pi2_data, pi3_data, pi4_data, pi5_data, pi6_data, pi7_data, pi8_data, updated_at')
+      .eq('quarter', quarter)
+      .eq('year', String(year))
+      .ilike('program', `%${searchCode}%`)
+      .in('status', ['submitted', 'under_review', 'approved'])
+      .or('is_archived.is.null,is_archived.eq.false')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data || null);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/accomplishment-reports/my-draft
-// Returns active unsubmitted drafts for this user across quarters
 router.get('/my-draft', authenticate, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
@@ -31,7 +73,7 @@ router.get('/my-draft', authenticate, async (req, res) => {
       .select('*')
       .eq('submitted_by', userId)
       .eq('status', 'draft')
-      .eq('is_archived.is.null,is_archived.eq.false', false)
+      .or('is_archived.is.null,is_archived.eq.false')
       .order('updated_at', { ascending: false });
 
     if (quarter) query = query.eq('quarter', quarter);
@@ -188,6 +230,7 @@ router.patch('/:id/archive', authenticate, async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
+    const userRole = (req.user?.role || '').toLowerCase();
     const { quarter, year, ...body } = req.body;
 
     if (!userId) {
@@ -198,7 +241,6 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Quarter and Year are required.' });
     }
 
-    // 1. Enforce 1 Report Per User + Quarter + Year
     const { data: existing } = await supabase
       .from('accomplishment_reports')
       .select('id, status')
@@ -215,18 +257,32 @@ router.post('/', authenticate, async (req, res) => {
       });
     }
 
-    // 2. Insert new record
+    const insertPayload = {
+      ...body,
+      quarter,
+      year: String(year),
+      submitted_by: userId,
+      status: req.body.status || 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // If faculty, strip MFO 1 fields so only Chairperson entries populate MFO 1
+    if (userRole === 'faculty') {
+      delete insertPayload.pi1_data;
+      delete insertPayload.pi2_data;
+      delete insertPayload.pi3_data;
+      delete insertPayload.pi4_data;
+      delete insertPayload.pi5_data;
+      delete insertPayload.pi6_data;
+      delete insertPayload.pi7_data;
+      delete insertPayload.pi8_data;
+      delete insertPayload.program_chair;
+    }
+
     const { data, error } = await supabase
       .from('accomplishment_reports')
-      .insert([{
-        ...body,
-        quarter,
-        year: String(year),
-        submitted_by: userId,
-        status: req.body.status || 'draft',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }])
+      .insert([insertPayload])
       .select()
       .single();
 
@@ -241,6 +297,7 @@ router.post('/', authenticate, async (req, res) => {
 router.put('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const userId = req.user?.userId || req.user?.id;
+  const userRole = (req.user?.role || '').toLowerCase();
 
   try {
     const { data: existing, error: fetchError } = await supabase
@@ -259,6 +316,19 @@ router.put('/:id', authenticate, async (req, res) => {
     const payload = { ...req.body, updated_at: new Date().toISOString() };
     delete payload.submitted_by;
     delete payload.id;
+
+    // Prevent faculty from overwriting official chairperson MFO 1 entries
+    if (userRole === 'faculty') {
+      delete payload.pi1_data;
+      delete payload.pi2_data;
+      delete payload.pi3_data;
+      delete payload.pi4_data;
+      delete payload.pi5_data;
+      delete payload.pi6_data;
+      delete payload.pi7_data;
+      delete payload.pi8_data;
+      delete payload.program_chair;
+    }
 
     const { data, error } = await supabase
       .from('accomplishment_reports')

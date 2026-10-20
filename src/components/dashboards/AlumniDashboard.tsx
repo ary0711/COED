@@ -523,6 +523,7 @@ function AlumniDashboardView({
 }
 
 // ====================== TRACER SURVEY (ALUMNI DASHBOARD) ======================
+
 function TracerSurvey({ alumniId }: { alumniId: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -537,6 +538,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   const [showPreview, setShowPreview] = useState(false);
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   const [feedbackModal, setFeedbackModal] = useState<{
     open: boolean;
     type: 'success' | 'error';
@@ -561,13 +563,24 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     postGraduateDegree: '',
   });
 
-  const [originalData, setOriginalData] = useState<typeof formData | null>(null);
+  const [originalData, setOriginalData] =
+    useState<typeof formData | null>(null);
 
+  // Employment details are displayed only when employed.
+  const isEmployedType = formData.employmentStatus === 'employed';
+
+  // Load the alumni's existing survey.
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    const loadSurvey = async () => {
       setLoading(true);
+
       try {
         const existing = await getTracerSurvey(alumniId);
+
+        if (cancelled) return;
+
         if (existing) {
           const fetchedData = {
             firstName: existing.first_name || '',
@@ -580,9 +593,10 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
             relevance: existing.relevance || 'very-relevant',
             postGraduateDegree: existing.post_graduate_degree || '',
           };
+
           setFormData(fetchedData);
           setOriginalData(fetchedData);
-          setLastUpdated(existing.updated_at);
+          setLastUpdated(existing.updated_at || '');
           setIsNew(false);
           setIsEditing(false);
         } else {
@@ -591,31 +605,84 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         }
       } catch (err) {
         console.error('Failed to load existing survey:', err);
+
+        if (!cancelled) {
+          setFeedbackModal({
+            open: true,
+            type: 'error',
+            title: 'Unable to Load Survey',
+            message:
+              'Could not retrieve your existing survey. Please refresh the page and try again.',
+          });
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
+    };
+
+    loadSurvey();
+
+    return () => {
+      cancelled = true;
+    };
   }, [alumniId]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Clean up the temporary image preview URL.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const updateField = (
+    field: keyof typeof formData,
+    value: string
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+
+    setErrors([]);
+  };
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const selected = e.target.files?.[0];
-    if (selected && selected.type.startsWith('image/')) {
-      setFile(selected);
-      setPreviewUrl(URL.createObjectURL(selected));
-      setUploadProgress(0);
-      
-      const interval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            return 100;
-          }
-          return prev + 15;
-        });
-      }, 100);
-    } else if (selected) {
-      alert('Please select an image file (JPG, PNG).');
+
+    if (!selected) return;
+
+    if (!['image/jpeg', 'image/png'].includes(selected.type)) {
+      setFeedbackModal({
+        open: true,
+        type: 'error',
+        title: 'Invalid File Type',
+        message: 'Please select a JPG or PNG image.',
+      });
+
+      e.target.value = '';
+      return;
     }
+
+    if (selected.size > 15 * 1024 * 1024) {
+      setFeedbackModal({
+        open: true,
+        type: 'error',
+        title: 'File Too Large',
+        message: 'Please select an image that is 15 MB or smaller.',
+      });
+
+      e.target.value = '';
+      return;
+    }
+
+    setPreviewUrl(URL.createObjectURL(selected));
+    setFile(selected);
+
+    // This indicates local selection only.
+    // Actual uploading requires a storage upload implementation.
+    setUploadProgress(100);
   };
 
   const removeFile = () => {
@@ -624,23 +691,59 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
     setUploadProgress(0);
   };
 
+  const buildPayload = () => ({
+    alumni_id: alumniId,
+    first_name: formData.firstName.trim(),
+    last_name: formData.lastName.trim(),
+    employment_status: formData.employmentStatus,
+
+    // Do not submit stale employment details for non-employed alumni.
+    job_title: isEmployedType ? formData.jobTitle.trim() : '',
+    employer: isEmployedType ? formData.employer.trim() : '',
+    years_employed: isEmployedType
+      ? Number(formData.yearsEmployed) || 0
+      : 0,
+    monthly_salary: isEmployedType
+      ? formData.monthlySalary
+      : '',
+    relevance: isEmployedType ? formData.relevance : '',
+
+    post_graduate_degree: formData.postGraduateDegree.trim(),
+  });
+
   const initiateSubmit = () => {
-    const payload = {
-      alumni_id: alumniId,
-      first_name: formData.firstName,
-      last_name: formData.lastName,
-      employment_status: formData.employmentStatus,
-      job_title: formData.jobTitle,
-      employer: formData.employer,
-      years_employed: Number(formData.yearsEmployed) || 0,
-      monthly_salary: formData.monthlySalary,
-      relevance: formData.relevance,
-      post_graduate_degree: formData.postGraduateDegree,
+    const payload = buildPayload();
+
+    // Supply harmless placeholders to the existing validator for
+    // employment fields when those fields are not applicable.
+    // The actual saved payload still contains empty employment fields.
+    const validationPayload = {
+      ...payload,
+      employer: isEmployedType ? payload.employer : 'N/A',
+      job_title: isEmployedType ? payload.job_title : 'N/A',
     };
 
-    const validationErrors = validateTracerSurvey(payload);
+    const validationErrors = validateTracerSurvey(validationPayload);
+
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Extra safety for the fields shown conditionally.
+    const conditionalErrors: string[] = [];
+
+    if (isEmployedType && !payload.employer) {
+      conditionalErrors.push('Company / Institution Name is required.');
+    }
+
+    if (isEmployedType && !payload.job_title) {
+      conditionalErrors.push('Designation / Position Title is required.');
+    }
+
+    if (conditionalErrors.length > 0) {
+      setErrors(conditionalErrors);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -650,28 +753,20 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
   };
 
   const handleConfirmedSave = async () => {
-    setSaving(true);
-    const payload = {
-      alumni_id: alumniId,
-      first_name: formData.firstName,
-      last_name: formData.lastName,
-      employment_status: formData.employmentStatus,
-      job_title: formData.jobTitle,
-      employer: formData.employer,
-      years_employed: Number(formData.yearsEmployed) || 0,
-      monthly_salary: formData.monthlySalary,
-      relevance: formData.relevance,
-      post_graduate_degree: formData.postGraduateDegree,
-    };
+    if (saving) return;
 
-        try {
+    setSaving(true);
+
+    try {
+      const payload = buildPayload();
+
       if (isNew) {
         await saveTracerSurvey(payload);
       } else {
         await updateTracerSurvey(alumniId, payload);
       }
 
-      // Notify the Dean (don't let a notification failure block the save)
+      // A notification failure must not undo a successful survey save.
       try {
         await notifyDean({
           title: isNew
@@ -683,11 +778,16 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
           type: 'system',
         });
       } catch (notifErr) {
-        console.error('Survey saved but Dean notification failed:', notifErr);
+        console.error(
+          'Survey saved but Dean notification failed:',
+          notifErr
+        );
       }
 
+      const savedData = { ...formData };
+
       setLastUpdated(new Date().toISOString());
-      setOriginalData(formData);
+      setOriginalData(savedData);
       setIsNew(false);
       setIsEditing(false);
       setShowConfirmModal(false);
@@ -696,46 +796,66 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         open: true,
         type: 'success',
         title: 'Survey Recorded Successfully',
-        message: 'Your employment and career details have been synchronized with the College Dean registry.',
+        message:
+          'Your employment and career details have been saved successfully.',
       });
     } catch (err: any) {
       setShowConfirmModal(false);
+
       setFeedbackModal({
         open: true,
         type: 'error',
         title: 'Submission Error',
-        message: err?.message || 'Could not save survey response. Please try again.',
+        message:
+          err?.message ||
+          'Could not save your survey response. Please try again.',
       });
     } finally {
       setSaving(false);
     }
   };
 
+  const handleCancelEdit = () => {
+    if (originalData) {
+      setFormData(originalData);
+    }
+
+    setErrors([]);
+    setIsEditing(false);
+  };
+
+  const inputClass =
+    'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500';
+
+  const selectClass =
+    'w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500';
+
+  const labelClass =
+    'block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2';
+
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center shadow-sm">
         <RefreshCw className="w-8 h-8 text-[#1E3A8A] animate-spin mx-auto mb-3" />
-        <p className="text-sm font-semibold text-gray-800">Retrieving Graduate Tracer Profile</p>
-        <p className="text-xs text-gray-400 mt-1">Connecting to institutional records...</p>
+        <p className="text-sm font-semibold text-gray-800">
+          Retrieving Graduate Tracer Profile
+        </p>
+        <p className="text-xs text-gray-400 mt-1">
+          Connecting to institutional records...
+        </p>
       </div>
     );
   }
 
-  const isEmployedType = formData.employmentStatus === 'employed';
-
-  const handleCancelEdit = () => {
-    if (originalData) setFormData(originalData);
-    setIsEditing(false);
-    setErrors([]);
-  };
-
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl text-[#1E3A8A]">
             <FileText className="w-6 h-6" />
           </div>
+
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">
               Institutional Graduate Tracer
@@ -746,34 +866,40 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {!isNew && !isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              Update Information
-            </button>
-          ) : !isNew && isEditing ? (
-            <button
-              onClick={handleCancelEdit}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
-            >
-              Cancel Edit
-            </button>
-          ) : null}
-        </div>
+        {!isNew && !isEditing && (
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-sm"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Update Information
+          </button>
+        )}
+
+        {!isNew && isEditing && (
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold"
+          >
+            Cancel Edit
+          </button>
+        )}
       </div>
 
+      {/* Saved status */}
       {!isNew && !isEditing && (
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-sm">
+            <div className="p-2.5 bg-emerald-500 text-white rounded-xl">
               <CheckCircle className="w-5 h-5" />
             </div>
+
             <div>
-              <h3 className="text-sm font-bold text-emerald-900">Tracer Profile is Active</h3>
+              <h3 className="text-sm font-bold text-emerald-900">
+                Tracer Profile is Active
+              </h3>
               <p className="text-xs text-emerald-700 mt-0.5">
                 Last updated on{' '}
                 <span className="font-semibold">
@@ -785,21 +911,25 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
                       })
                     : 'Recent Session'}
                 </span>
-                . Your responses are officially counted in college analytics.
+                . Your responses are available for college analytics.
               </p>
             </div>
           </div>
+
           <span className="text-[11px] font-bold px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full w-fit">
-            Verified Record
+            Saved Record
           </span>
         </div>
       )}
 
+      {/* Validation errors */}
       {errors.length > 0 && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs sm:text-sm space-y-1">
           <p className="font-bold flex items-center gap-1.5">
-            <X className="w-4 h-4 text-rose-600" /> Missing Required Fields:
+            <X className="w-4 h-4 text-rose-600" />
+            Please correct the following:
           </p>
+
           <ul className="list-disc pl-5 space-y-0.5">
             {errors.map((err) => (
               <li key={err}>{err}</li>
@@ -808,53 +938,62 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       )}
 
+      {/* Survey form */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50/70 border-b border-gray-200/80 flex items-center justify-between">
+        <div className="px-6 py-4 bg-gray-50/70 border-b border-gray-200/80 flex items-center justify-between gap-3">
           <span className="text-xs font-bold uppercase tracking-wider text-gray-700">
             Professional & Employment Profile
           </span>
-          <span className="text-xs text-gray-400">Alumni ID: {alumniId}</span>
+
+          <span className="text-xs text-gray-400">
+            Alumni ID: {alumniId}
+          </span>
         </div>
 
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* FIRST NAME - always visible */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+              <label className={labelClass}>
                 First Name <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 placeholder="First Name"
                 value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                onChange={(e) => updateField('firstName', e.target.value)}
                 disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+                className={inputClass}
               />
             </div>
 
+            {/* LAST NAME - always visible */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+              <label className={labelClass}>
                 Last Name <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 placeholder="Last Name"
                 value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                onChange={(e) => updateField('lastName', e.target.value)}
                 disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+                className={inputClass}
               />
             </div>
 
+            {/* STATUS - always visible */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                STATUS <span className="text-rose-500">*</span>
+              <label className={labelClass}>
+                Status <span className="text-rose-500">*</span>
               </label>
               <select
                 value={formData.employmentStatus}
-                onChange={(e) => setFormData({ ...formData, employmentStatus: e.target.value })}
+                onChange={(e) =>
+                  updateField('employmentStatus', e.target.value)
+                }
                 disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+                className={selectClass}
               >
                 <option value="employed">Employed</option>
                 <option value="unemployed">Unemployed</option>
@@ -862,187 +1001,220 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
               </select>
             </div>
 
+            {/* POST GRADUATE DEGREE - always visible */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                POST GRADUATE DEGREE
+              <label className={labelClass}>
+                Post Graduate Degree
               </label>
               <input
                 type="text"
                 placeholder="e.g. Master's in Education, PhD, None"
                 value={formData.postGraduateDegree}
-                onChange={(e) => setFormData({ ...formData, postGraduateDegree: e.target.value })}
+                onChange={(e) =>
+                  updateField('postGraduateDegree', e.target.value)
+                }
                 disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
+                className={inputClass}
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                NAME OF COMPANY / TYPE OF BUSINESS {isEmployedType && <span className="text-rose-500">*</span>}
-              </label>
-              <input
-                type="text"
-                placeholder="Company / Institution Name"
-                value={formData.employer}
-                onChange={(e) => setFormData({ ...formData, employer: e.target.value })}
-                disabled={!isEditing || !isEmployedType}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                MEDIAN/AVERAGE SALARY (Monthly)
-              </label>
-              <select
-                value={formData.monthlySalary}
-                onChange={(e) => setFormData({ ...formData, monthlySalary: e.target.value })}
-                disabled={!isEditing || !isEmployedType}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              >
-                <option value="prefer-not-to-say">Prefer not to say</option>
-                <option value="below-20000">Below ₱20,000</option>
-                <option value="20000-25000">₱20,000 – ₱25,000</option>
-                <option value="25000-30000">₱25,000 – ₱30,000</option>
-                <option value="30000-40000">₱30,000 – ₱40,000</option>
-                <option value="above-40000">Above ₱40,000</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Degree Alignment & Relevance
-              </label>
-              <select
-                value={formData.relevance}
-                onChange={(e) => setFormData({ ...formData, relevance: e.target.value })}
-                disabled={!isEditing}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              >
-                <option value="very-relevant">Directly Relevant (Education / Teaching Field)</option>
-                <option value="relevant">Relevant (Related Discipline or Instructional Role)</option>
-                <option value="somewhat-relevant">Somewhat Relevant (General Skills Applied)</option>
-                <option value="not-relevant">Not Relevant (Different Industry)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Designation / Position Title {isEmployedType && <span className="text-rose-500">*</span>}
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Master Teacher I, Secondary Math Teacher"
-                value={formData.jobTitle}
-                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                disabled={!isEditing || !isEmployedType}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 focus:border-[#1E3A8A] disabled:bg-gray-50 disabled:text-gray-500"
-              />
-            </div>
-          </div>
-
-          <div className="mt-8">
-            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-              <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold shadow-sm">
-                5
-              </span> 
-              EVIDENCES & SUPPORTING DOCUMENTS
-            </h3>
-            
-            <div className="border border-dashed border-gray-300 rounded-xl p-8 text-center bg-white hover:bg-gray-50 transition-colors cursor-pointer relative mb-4">
-              <input 
-                type="file" 
-                accept="image/jpeg, image/png" 
-                onChange={handleFileChange} 
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                disabled={!isEditing} 
-              />
-              <Upload className="mx-auto h-8 w-8 text-gray-400 mb-3" />
-              <p className="text-sm text-gray-700 font-medium">Click to attach files or drag and drop</p>
-              <p className="text-xs text-gray-400 mt-1">Image only (Company ID or COE, JPG, PNG) up to 15MB each</p>
-            </div>
-
-            {file && (
-              <div className="flex items-center justify-between bg-white border border-gray-200 shadow-sm rounded-xl p-4 transition-all">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-700 truncate">{file.name}</div>
-                    <div className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</div>
-                  </div>
+            {/* EMPLOYMENT FIELDS - employed only */}
+            {isEmployedType && (
+              <>
+                <div>
+                  <label className={labelClass}>
+                    Name of Company / Type of Business{' '}
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Company / Institution Name"
+                    value={formData.employer}
+                    onChange={(e) =>
+                      updateField('employer', e.target.value)
+                    }
+                    disabled={!isEditing}
+                    className={inputClass}
+                  />
                 </div>
-                
-                <div className="flex items-center gap-4 flex-shrink-0 ml-4">
-                  {uploadProgress < 100 ? (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500 font-medium animate-pulse">Uploading...</span>
-                      <div className="relative w-8 h-8 flex items-center justify-center">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            className="text-gray-100"
-                            strokeWidth="3"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <path
-                            className="text-blue-600 transition-all duration-300 ease-out"
-                            strokeDasharray={`${uploadProgress}, 100`}
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                        </svg>
-                        <span className="absolute text-[9px] font-bold text-gray-700">{uploadProgress}%</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <button 
-                        type="button" 
-                        onClick={() => setShowPreview(true)} 
-                        className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-semibold transition-colors"
-                      >
-                        <Eye className="w-4 h-4" /> Preview
-                      </button>
-                      {isEditing && (
-                        <button 
-                          type="button" 
-                          onClick={removeFile} 
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Remove file"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </>
-                  )}
+
+                <div>
+                  <label className={labelClass}>
+                    Median/Average Salary (Monthly)
+                  </label>
+                  <select
+                    value={formData.monthlySalary}
+                    onChange={(e) =>
+                      updateField('monthlySalary', e.target.value)
+                    }
+                    disabled={!isEditing}
+                    className={selectClass}
+                  >
+                    <option value="prefer-not-to-say">
+                      Prefer not to say
+                    </option>
+                    <option value="below-20000">Below ₱20,000</option>
+                    <option value="20000-25000">
+                      ₱20,000 – ₱25,000
+                    </option>
+                    <option value="25000-30000">
+                      ₱25,000 – ₱30,000
+                    </option>
+                    <option value="30000-40000">
+                      ₱30,000 – ₱40,000
+                    </option>
+                    <option value="above-40000">
+                      Above ₱40,000
+                    </option>
+                  </select>
                 </div>
-              </div>
+
+                <div>
+                  <label className={labelClass}>
+                    Degree Alignment & Relevance
+                  </label>
+                  <select
+                    value={formData.relevance}
+                    onChange={(e) =>
+                      updateField('relevance', e.target.value)
+                    }
+                    disabled={!isEditing}
+                    className={selectClass}
+                  >
+                    <option value="very-relevant">
+                      Directly Relevant (Education / Teaching Field)
+                    </option>
+                    <option value="relevant">
+                      Relevant (Related Discipline or Instructional Role)
+                    </option>
+                    <option value="somewhat-relevant">
+                      Somewhat Relevant (General Skills Applied)
+                    </option>
+                    <option value="not-relevant">
+                      Not Relevant (Different Industry)
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelClass}>
+                    Designation / Position Title{' '}
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Master Teacher I, Secondary Math Teacher"
+                    value={formData.jobTitle}
+                    onChange={(e) =>
+                      updateField('jobTitle', e.target.value)
+                    }
+                    disabled={!isEditing}
+                    className={inputClass}
+                  />
+                </div>
+              </>
             )}
           </div>
 
+          {/* EVIDENCE UPLOAD - employed only */}
+          {isEmployedType && (
+            <div className="mt-8">
+              <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-bold">
+                  5
+                </span>
+                Evidence & Supporting Documents
+              </h3>
+
+              {isEditing && (
+                <div className="border border-dashed border-gray-300 rounded-xl p-8 text-center bg-white hover:bg-gray-50 transition-colors relative mb-4">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    onChange={handleFileChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+
+                  <Upload className="mx-auto h-8 w-8 text-gray-400 mb-3" />
+
+                  <p className="text-sm text-gray-700 font-medium">
+                    Click to attach an image
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Company ID or COE, JPG or PNG, up to 15 MB
+                  </p>
+                </div>
+              )}
+
+              {file && (
+                <div className="flex items-center justify-between gap-4 bg-white border border-gray-200 shadow-sm rounded-xl p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                      <FileText className="w-5 h-5" />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-700 truncate">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreview(true)}
+                      className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-semibold"
+                    >
+                      <Eye className="w-4 h-4" />
+                      Preview
+                    </button>
+
+                    {isEditing && (
+                      <button
+                        type="button"
+                        onClick={removeFile}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                        title="Remove file"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {uploadProgress > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Image selected: {uploadProgress}%. This does not indicate
+                  that the image has been uploaded to storage.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Form actions */}
           {isEditing && (
             <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-5 border-t border-gray-100 mt-6">
               {!isNew && (
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Discard Changes
                 </button>
               )}
+
               <button
                 type="button"
                 onClick={initiateSubmit}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold shadow-sm transition-all"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white rounded-xl text-xs sm:text-sm font-semibold shadow-sm"
               >
-                <Check className="w-4 h-4 stroke-[2.5]" />
+                <Check className="w-4 h-4" />
                 {isNew ? 'Submit Survey Response' : 'Save Changes'}
               </button>
             </div>
@@ -1050,110 +1222,151 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
         </div>
       </div>
 
-      {showPreview && previewUrl && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-2 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center p-4 border-b border-gray-100">
-              <h3 className="font-bold text-gray-800">Document Preview</h3>
-              <button 
-                onClick={() => setShowPreview(false)} 
-                className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 flex justify-center bg-gray-50/50 rounded-b-xl overflow-auto max-h-[75vh]">
-              <img src={previewUrl} alt="Preview" className="max-w-full h-auto object-contain rounded shadow-sm" />
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* Image preview modal */}
+      {showPreview && previewUrl && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-2">
+              <div className="flex justify-between items-center p-4 border-b border-gray-100">
+                <h3 className="font-bold text-gray-800">
+                  Document Preview
+                </h3>
 
-      {showConfirmModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E3A8A] flex items-center justify-center mx-auto mb-3.5">
-              <FileText className="w-6 h-6" />
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(false)}
+                  className="p-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-full"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 flex justify-center bg-gray-50 rounded-b-xl overflow-auto max-h-[75vh]">
+                <img
+                  src={previewUrl}
+                  alt="Supporting document preview"
+                  className="max-w-full h-auto object-contain rounded shadow-sm"
+                />
+              </div>
             </div>
+          </div>,
+          document.body
+        )}
 
-            <h3 className="text-base font-bold text-gray-900 mb-1">Confirm Tracer Submission</h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-4">
-              You are about to save your employment details under{' '}
-              <span className="font-semibold text-gray-800">
-                {formData.jobTitle || formData.employmentStatus}
-              </span>{' '}
-              at{' '}
-              <span className="font-semibold text-gray-800">
-                {formData.employer || 'Self / N/A'}
-              </span>
-              . This information will be aggregated in the Dean's accreditation report.
-            </p>
+      {/* Confirmation modal */}
+      {showConfirmModal && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-gray-100">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E3A8A] flex items-center justify-center mx-auto mb-3.5">
+                <FileText className="w-6 h-6" />
+              </div>
 
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                disabled={saving}
-                className="flex-1 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
-              >
-                Review Again
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmedSave}
-                disabled={saving}
-                className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-all shadow-md inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-              >
-                {saving ? (
+              <h3 className="text-base font-bold text-gray-900 mb-1">
+                Confirm Tracer Submission
+              </h3>
+
+              <p className="text-xs text-gray-500 leading-relaxed mb-4">
+                You are about to save your survey with status{' '}
+                <span className="font-semibold text-gray-800">
+                  {formData.employmentStatus === 'not-tracked'
+                    ? 'Not tracked'
+                    : formData.employmentStatus.charAt(0).toUpperCase() +
+                      formData.employmentStatus.slice(1)}
+                </span>
+                {isEmployedType && (
                   <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Submitting...
+                    {' '}for the position{' '}
+                    <span className="font-semibold text-gray-800">
+                      {formData.jobTitle}
+                    </span>
+                    {' '}at{' '}
+                    <span className="font-semibold text-gray-800">
+                      {formData.employer}
+                    </span>
                   </>
-                ) : (
-                  'Confirm & Save'
                 )}
+                . Please confirm that your information is correct.
+              </p>
+
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={saving}
+                  className="flex-1 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl disabled:opacity-50"
+                >
+                  Review Again
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmedSave}
+                  disabled={saving}
+                  className="flex-1 py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl shadow-md inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {saving ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Confirm & Save'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Success / error modal */}
+      {feedbackModal.open && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100">
+              <div
+                className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
+                  feedbackModal.type === 'success'
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : 'bg-rose-100 text-rose-600'
+                }`}
+              >
+                {feedbackModal.type === 'success' ? (
+                  <CheckCircle className="w-6 h-6" />
+                ) : (
+                  <X className="w-6 h-6" />
+                )}
+              </div>
+
+              <h3 className="text-base font-bold text-gray-900 mb-1">
+                {feedbackModal.title}
+              </h3>
+
+              <p className="text-xs text-gray-500 leading-relaxed mb-5">
+                {feedbackModal.message}
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setFeedbackModal((prev) => ({
+                    ...prev,
+                    open: false,
+                  }))
+                }
+                className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl shadow-md"
+              >
+                Done
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {feedbackModal.open && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3.5 ${
-                feedbackModal.type === 'success'
-                  ? 'bg-emerald-100 text-emerald-600'
-                  : 'bg-rose-100 text-rose-600'
-              }`}
-            >
-              {feedbackModal.type === 'success' ? (
-                <CheckCircle className="w-6 h-6" />
-              ) : (
-                <X className="w-6 h-6" />
-              )}
-            </div>
-
-            <h3 className="text-base font-bold text-gray-900 mb-1">{feedbackModal.title}</h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-5">{feedbackModal.message}</p>
-
-            <button
-              type="button"
-              onClick={() => setFeedbackModal((prev) => ({ ...prev, open: false }))}
-              className="w-full py-2.5 text-xs font-semibold text-white bg-[#1E3A8A] hover:bg-[#1E40AF] rounded-xl transition-colors shadow-md"
-            >
-              Done
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
+
 
 // ====================== ALUMNI CALENDAR ======================
 const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';

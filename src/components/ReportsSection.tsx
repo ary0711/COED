@@ -23,6 +23,7 @@ import {
   Archive,
   ArchiveRestore,
   ExternalLink,
+  Building,
 } from 'lucide-react';
 import { notifyDean } from '../notificationsApi';
 
@@ -39,6 +40,22 @@ function getToken() {
 }
 
 export type ReportType = 'accomplishment' | 'extension' | 'wfh';
+// Maps any full department name, program name, or code to the official 3 codes
+export function normalizeDepartmentCode(raw?: string | null): 'BEEd' | 'BTLEd' | 'BSEd-Math' | string {
+  if (!raw) return '';
+  const s = raw.toLowerCase().trim();
+
+  if (s.includes('btled') || s.includes('technology') || s.includes('livelihood')) {
+    return 'BTLEd';
+  }
+  if (s.includes('beed') || s.includes('elementary')) {
+    return 'BEEd';
+  }
+  if (s.includes('bsed') || s.includes('secondary') || s.includes('math') || s.includes('english')) {
+    return 'BSEd-Math';
+  }
+  return raw.trim();
+}
 
 export interface UnifiedTrackItem {
   id: string;
@@ -788,6 +805,8 @@ function EditableTable({
 export function AccomplishmentReport({
   userId,
   userName,
+  userRole: propRole,
+  userDepartment: propDept,
   targetReportId,
   readOnly = false,
   onAfterSubmit,
@@ -796,33 +815,60 @@ export function AccomplishmentReport({
 }: {
   userId: string;
   userName: string;
+  userRole?: string;
+  userDepartment?: string;
   targetReportId?: string;
   readOnly?: boolean;
   onAfterSubmit?: () => void;
   externalPrintTrigger?: boolean;
   onPrintHandled?: () => void;
 }) {
+  // 1. Resolve role & department from token if props are not explicitly provided
+  const token = getToken();
+  const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
+  const rawRole = (propRole || decoded?.role || 'faculty').toLowerCase().trim();
+  const rawDept = propDept || decoded?.departmentNames?.[0] || decoded?.department || decoded?.program || '';
+
+  const myDeptCode = normalizeDepartmentCode(rawDept);
+  const isChairUser = rawRole === 'chair' || rawRole === 'department_chair';
+
+  // 2. Report Period & Identification
   const [quarter, setQuarter] = useState('1st');
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [reportId, setReportId] = useState<string | null>(targetReportId || null);
   const [status, setStatus] = useState<'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('draft');
   const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
 
-  const [programChair, setProgramChair] = useState(userName);
-  const [program, setProgram] = useState('');
+  // Initialize with official department code for chairs
+  const [program, setProgram] = useState(() => (isChairUser ? myDeptCode : ''));
+  const [programChair, setProgramChair] = useState(() => (isChairUser ? userName : ''));
   const [otherAccomplishments, setOtherAccomplishments] = useState('');
   const [dateSubmitted, setDateSubmitted] = useState('');
 
+  // Determine active report department
+  const activeReportDeptCode = normalizeDepartmentCode(program || myDeptCode);
+
+  // User is chairperson of THIS report only if they are a department_chair AND their department matches
+  const isChairOfThisReport = isChairUser && myDeptCode !== '' && myDeptCode === activeReportDeptCode;
+  const isFaculty = !isChairOfThisReport;
+
+  // 3. Chairperson MFO 1 Synchronization State
+  const [chairMfo1Data, setChairMfo1Data] = useState<any | null>(null);
+  const [loadingChairMfo1, setLoadingChairMfo1] = useState(false);
+
+  // 4. Action & Feedback States
   const [saving, setSaving] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
+  // 5. Documentation & Evidence States
   const [docEntries, setDocEntries] = useState<DocEntry[]>([]);
   const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>([]);
   const fileInputRefs = useRef<{ [id: string]: HTMLInputElement | null }>({});
 
+  // 6. Generic Rows & MFO State Arrays
   const emptyRow = (keys: string[]) => keys.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
   const [pi1, setPi1] = useState<GenericRow[]>([emptyRow(['date_exam','no_first_time','no_passers','passing_pct_first','total_takers','total_passers','overall_pct'])]);
   const [pi2, setPi2] = useState<GenericRow[]>([emptyRow(['no_graduates','no_employed','percentage'])]);
@@ -841,15 +887,14 @@ export function AccomplishmentReport({
   const [otherInitiatives, setOtherInitiatives] = useState<GenericRow[]>([emptyRow(['title_activity','date_conducted','venue','sponsoring_agency','students_involved','role_students','faculty_involved','role_faculty'])]);
   const [awards, setAwards] = useState<GenericRow[]>([emptyRow(['title_award','nature_award','granting_agency','date_awarding'])]);
 
-  // Request guard to prevent race conditions when changing quarter
   const activePeriodRef = useRef<string>('');
 
   const resetBlankForm = useCallback((newQuarter: string, newYear: string) => {
     setReportId(null);
     setStatus('draft');
     setDeanRemarks(null);
-    setProgramChair(userName);
-    setProgram('');
+    setProgramChair(isChairOfThisReport ? userName : '');
+    setProgram(myDeptCode || '');
     setOtherAccomplishments('');
     setDateSubmitted('');
     setDismissedSubmissionIds([]);
@@ -871,9 +916,9 @@ export function AccomplishmentReport({
     setOtherInitiatives([emptyRow(['title_activity','date_conducted','venue','sponsoring_agency','students_involved','role_students','faculty_involved','role_faculty'])]);
     setAwards([emptyRow(['title_award','nature_award','granting_agency','date_awarding'])]);
     setLastSavedAt(null);
-  }, [userName]);
+  }, [userName, isChairOfThisReport, myDeptCode]);
 
-  // Precise loader for the selected period
+  // Load Period Report (Personal draft/submission for this user)
   const loadPeriodReport = useCallback(async (targetQ: string, targetY: string, explicitId?: string) => {
     const periodKey = explicitId ? `id:${explicitId}` : `${targetQ}-${targetY}`;
     activePeriodRef.current = periodKey;
@@ -884,7 +929,7 @@ export function AccomplishmentReport({
       if (!res.ok) return;
 
       const list: any[] = await res.json();
-      if (activePeriodRef.current !== periodKey) return; // Prevent race conditions
+      if (activePeriodRef.current !== periodKey) return;
 
       let matched: any = null;
       if (explicitId) {
@@ -899,8 +944,8 @@ export function AccomplishmentReport({
         setYear(String(matched.year || targetY));
         setStatus(matched.status || 'draft');
         setDeanRemarks(matched.dean_remarks || null);
-        setProgramChair(matched.program_chair ?? userName);
-        setProgram(matched.program ?? '');
+        setProgramChair(matched.program_chair ?? (isChairOfThisReport ? userName : ''));
+        setProgram(matched.program ?? myDeptCode ?? '');
         setOtherAccomplishments(matched.other_accomplishments ?? '');
         setDateSubmitted(matched.date_submitted ?? '');
         setDismissedSubmissionIds(Array.isArray(matched.dismissed_submission_ids) ? matched.dismissed_submission_ids : []);
@@ -924,19 +969,65 @@ export function AccomplishmentReport({
         if (matched.doc_entries_data?.length) setDocEntries(matched.doc_entries_data);
         setLastSavedAt(matched.updated_at ?? matched.created_at ?? null);
       } else {
-        // No report exists for this quarter + year: start clean
         resetBlankForm(targetQ, targetY);
       }
     } catch {
       // silent
     }
-  }, [userName, resetBlankForm]);
+  }, [userName, isChairOfThisReport, myDeptCode, resetBlankForm]);
 
   useEffect(() => {
     loadPeriodReport(quarter, year, targetReportId);
   }, [loadPeriodReport, targetReportId]);
 
-  // Status-driven lifecycle lock
+  // Synchronize Chairperson MFO 1 entries if Faculty
+  useEffect(() => {
+  if (isChairOfThisReport) {
+    setChairMfo1Data(null);
+    return;
+  }
+
+  const fetchChairMfo1 = async () => {
+    // Falls back to myDeptCode if program is empty
+    const targetDept = normalizeDepartmentCode(program || myDeptCode);
+    if (!targetDept) return;
+
+    setLoadingChairMfo1(true);
+    try {
+      const res = await fetch(
+        `${ACCOMPLISHMENT_API_URL}/program-mfo1?program=${encodeURIComponent(targetDept)}&quarter=${quarter}&year=${year}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      if (res.ok) {
+        const chairData = await res.json();
+        if (chairData) {
+          setChairMfo1Data(chairData);
+          if (chairData.program_chair) setProgramChair(chairData.program_chair);
+          setProgram(chairData.program || targetDept);
+
+          // Populate the faculty's read-only MFO 1 tables
+          if (chairData.pi1_data?.length) setPi1(chairData.pi1_data);
+          if (chairData.pi2_data?.length) setPi2(chairData.pi2_data);
+          if (chairData.pi3_data?.length) setPi3(chairData.pi3_data);
+          if (chairData.pi4_data?.length) setPi4(chairData.pi4_data);
+          if (chairData.pi5_data?.length) setPi5(chairData.pi5_data);
+          if (chairData.pi6_data?.length) setPi6(chairData.pi6_data);
+          if (chairData.pi7_data?.length) setPi7(chairData.pi7_data);
+          if (chairData.pi8_data?.length) setPi8(chairData.pi8_data);
+        } else {
+          setChairMfo1Data(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load Chairperson MFO 1:', err);
+    } finally {
+      setLoadingChairMfo1(false);
+    }
+  };
+
+  fetchChairMfo1();
+}, [quarter, year, isChairOfThisReport, myDeptCode, program]);
+  // Lifecycle & Form Locking
   const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
   const isApproved = status === 'approved';
   const isRevisionMode = status === 'rejected';
@@ -1051,7 +1142,6 @@ export function AccomplishmentReport({
   const persist = async (payload: Record<string, unknown>) => {
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
     
-    // Strict isolation: if reportId is active, PUT to that exact ID. Otherwise, create a new record via POST
     if (reportId) {
       const res = await fetch(`${ACCOMPLISHMENT_API_URL}/${reportId}`, {
         method: 'PUT',
@@ -1070,8 +1160,20 @@ export function AccomplishmentReport({
       headers,
       body: JSON.stringify(payload),
     });
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      // Auto-adopt existing draft ID on conflict
+      if (res.status === 409 && err.existingId && err.status === 'draft') {
+        setReportId(err.existingId);
+        const putRes = await fetch(`${ACCOMPLISHMENT_API_URL}/${err.existingId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        if (!putRes.ok) throw new Error('Failed to update existing draft.');
+        return putRes.json();
+      }
       throw new Error(err.error || res.statusText);
     }
     return res.json();
@@ -1130,9 +1232,7 @@ export function AccomplishmentReport({
     }
   };
 
-  // --------------------------------------------------------------------------
   // Activity Documentation Helpers
-  // --------------------------------------------------------------------------
   const addDocEntry = (category: string) => {
     setDocEntries((prev) => [
       ...prev,
@@ -1186,7 +1286,6 @@ export function AccomplishmentReport({
     }
   };
 
-  // Check if a row has any filled fields
   const hasPopulatedData = (rows: GenericRow[]) =>
     rows.some((row) => Object.values(row).some((val) => Boolean(val && val.trim())));
 
@@ -1233,7 +1332,9 @@ export function AccomplishmentReport({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Accomplishment Report</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Program Chairperson Report · SY {year}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {isChairOfThisReport ? 'Program Chairperson Report' : 'Faculty Accomplishment Report'} · SY {year}
+          </p>
           {lastSavedAt && (
             <p className="text-xs text-gray-400 mt-0.5">Last saved: {new Date(lastSavedAt).toLocaleString()}</p>
           )}
@@ -1329,8 +1430,9 @@ export function AccomplishmentReport({
               type="text"
               value={programChair}
               onChange={(e) => setProgramChair(e.target.value)}
-              disabled={isFormLocked}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+              disabled={isFaculty || isFormLocked}
+              placeholder={isFaculty ? 'Auto-filled from Chairperson' : 'Chairperson Name'}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm disabled:bg-gray-50"
             />
           </div>
           <div>
@@ -1339,40 +1441,108 @@ export function AccomplishmentReport({
               type="text"
               value={program}
               onChange={(e) => setProgram(e.target.value)}
-              disabled={isFormLocked}
-              placeholder="e.g. BEEd"
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+              disabled={isFaculty || isFormLocked}
+              placeholder="e.g. BEEd, BTLEd, BSEd-Math"
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm disabled:bg-gray-50"
             />
           </div>
         </div>
       </div>
 
-      <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 1: Higher Education Services</div>
+      {/* =================================================================== */}
+      {/* MFO 1: HIGHER EDUCATION SERVICES (CHAIR EDITABLE / FACULTY LOCKED) */}
+      {/* =================================================================== */}
+      <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-between">
+        <span>MFO 1: Higher Education Services</span>
+        {isFaculty && (
+          <span className="text-[11px] bg-white/20 px-2.5 py-0.5 rounded-full font-medium">
+            Program Wide (Read-Only for Faculty)
+          </span>
+        )}
+      </div>
+
+      {isFaculty && (
+        <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building className="w-4 h-4 text-blue-700 shrink-0" />
+            <span>
+              {chairMfo1Data
+                ? `MFO 1 records are synchronized with Chairperson (${chairMfo1Data.program_chair || 'Program Chair'}) for ${quarter} Quarter ${year}.`
+                : `The Program Chairperson has not yet published MFO 1 records for ${activeReportDeptCode || myDeptCode} for ${quarter} Quarter ${year}.`}
+            </span>
+          </div>
+          {loadingChairMfo1 && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-700" />}
+        </div>
+      )}
+
       <Section title="PI 1: First-time Licensure Examination Passers">
-        <EditableTable columns={[{key:'date_exam',label:'LET Exam Date'},{key:'no_first_time',label:'First-time Takers'},{key:'no_passers',label:'Passers'},{key:'passing_pct_first',label:'Passing %'},{key:'total_takers',label:'Total Takers'},{key:'total_passers',label:'Total Passers'},{key:'overall_pct',label:'Overall %'}]} rows={pi1} onChange={setPi1} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'date_exam',label:'LET Exam Date'},{key:'no_first_time',label:'First-time Takers'},{key:'no_passers',label:'Passers'},{key:'passing_pct_first',label:'Passing %'},{key:'total_takers',label:'Total Takers'},{key:'total_passers',label:'Total Passers'},{key:'overall_pct',label:'Overall %'}]}
+          rows={pi1}
+          onChange={setPi1}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 2: Employment of Graduates (2 Years Prior)">
-        <EditableTable columns={[{key:'no_graduates',label:'Graduates'},{key:'no_employed',label:'Employed'},{key:'percentage',label:'Percentage'}]} rows={pi2} onChange={setPi2} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'no_graduates',label:'Graduates'},{key:'no_employed',label:'Employed'},{key:'percentage',label:'Percentage'}]}
+          rows={pi2}
+          onChange={setPi2}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 3: Enrollment in Priority Programs">
-        <EditableTable columns={[{key:'class_section',label:'Class Section'},{key:'no_enrolled',label:'Enrolled'},{key:'name_adviser',label:'Adviser'}]} rows={pi3} onChange={setPi3} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'class_section',label:'Class Section'},{key:'no_enrolled',label:'Enrolled'},{key:'name_adviser',label:'Adviser'}]}
+          rows={pi3}
+          onChange={setPi3}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 4: Syllabi Submissions">
-        <EditableTable columns={[{key:'name_faculty',label:'Faculty'},{key:'courses_taught',label:'Courses'},{key:'status_syllabus',label:'Status'},{key:'remarks',label:'Remarks'}]} rows={pi4} onChange={setPi4} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'name_faculty',label:'Faculty'},{key:'courses_taught',label:'Courses'},{key:'status_syllabus',label:'Status'},{key:'remarks',label:'Remarks'}]}
+          rows={pi4}
+          onChange={setPi4}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 5: Certifications Acquired (TESDA/ISO/AACCUP)">
-        <EditableTable columns={[{key:'name_faculty',label:'Faculty'},{key:'nature_cert',label:'Certification'},{key:'granting_agency',label:'Granting Agency'},{key:'date_granted',label:'Date'}]} rows={pi5} onChange={setPi5} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'name_faculty',label:'Faculty'},{key:'nature_cert',label:'Certification'},{key:'granting_agency',label:'Granting Agency'},{key:'date_granted',label:'Date'}]}
+          rows={pi5}
+          onChange={setPi5}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 6: Faculty Post-Graduate Education">
-        <EditableTable columns={[{key:'name_faculty',label:'Faculty'},{key:'program_enrolled',label:'Program'},{key:'total_units',label:'Earned Units'},{key:'units_this_sem',label:'Units This Sem'},{key:'institution',label:'Institution'}]} rows={pi6} onChange={setPi6} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'name_faculty',label:'Faculty'},{key:'program_enrolled',label:'Program'},{key:'total_units',label:'Earned Units'},{key:'units_this_sem',label:'Units This Sem'},{key:'institution',label:'Institution'}]}
+          rows={pi6}
+          onChange={setPi6}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 7: Faculty Trainings/Workshops Attended">
-        <EditableTable columns={[{key:'name_faculty',label:'Faculty'},{key:'title_training',label:'Training Title'},{key:'date',label:'Date'},{key:'venue',label:'Venue'},{key:'sponsoring_agency',label:'Sponsor'},{key:'role',label:'Role'}]} rows={pi7} onChange={setPi7} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'name_faculty',label:'Faculty'},{key:'title_training',label:'Training Title'},{key:'date',label:'Date'},{key:'venue',label:'Venue'},{key:'sponsoring_agency',label:'Sponsor'},{key:'role',label:'Role'}]}
+          rows={pi7}
+          onChange={setPi7}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
       <Section title="PI 8: Instructional Materials Produced">
-        <EditableTable columns={[{key:'name_faculty',label:'Author(s)'},{key:'title_im',label:'IM Title'},{key:'type_im',label:'Type'},{key:'courses_utilizing',label:'Courses Utilizing'},{key:'ip_protection',label:'IP Protection'}]} rows={pi8} onChange={setPi8} readOnly={isFormLocked} />
+        <EditableTable
+          columns={[{key:'name_faculty',label:'Author(s)'},{key:'title_im',label:'IM Title'},{key:'type_im',label:'Type'},{key:'courses_utilizing',label:'Courses Utilizing'},{key:'ip_protection',label:'IP Protection'}]}
+          rows={pi8}
+          onChange={setPi8}
+          readOnly={isFaculty || isFormLocked}
+        />
       </Section>
 
+      {/* =================================================================== */}
+      {/* MFO 3: RESEARCH                                                     */}
+      {/* =================================================================== */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 3: Research</div>
       <Section title="PI 1: Research Output Utilized by Industry/Community">
         <EditableTable columns={[{key:'title_research',label:'Research Title'},{key:'proponents',label:'Proponents'},{key:'nature_utilization',label:'Utilization'},{key:'partner_community',label:'Partner Community'},{key:'address',label:'Address'}]} rows={mfo3pi1} onChange={setMfo3pi1} readOnly={isFormLocked} />
@@ -1393,6 +1563,9 @@ export function AccomplishmentReport({
         <EditableTable columns={[{key:'title_research',label:'Title'},{key:'proponents',label:'Proponents'},{key:'date',label:'Date'},{key:'sponsoring_agency',label:'Sponsoring Agency'},{key:'venue',label:'Venue'}]} rows={mfo3pi4} onChange={setMfo3pi4} readOnly={isFormLocked} />
       </Section>
 
+      {/* =================================================================== */}
+      {/* MFO 4: EXTENSION                                                    */}
+      {/* =================================================================== */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 4: Technical Advisory Extension Program</div>
       <Section title="PI 1: Active Partnerships with LGUs/NGOs/Industries">
         <EditableTable columns={[{key:'title_project',label:'Project Title'},{key:'proponents',label:'Proponents'},{key:'partner',label:'Partner'},{key:'project_locale',label:'Locale'}]} rows={mfo4pi1} onChange={setMfo4pi1} readOnly={isFormLocked} />
@@ -1415,6 +1588,9 @@ export function AccomplishmentReport({
         />
       </Section>
 
+      {/* =================================================================== */}
+      {/* DOCUMENTATION & EVIDENCE                                            */}
+      {/* =================================================================== */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">DOCUMENTATION & EVIDENCE</div>
       {DOC_CATEGORIES.map((cat) => {
         const entries = docEntries.filter((e) => e.category === cat.key);
@@ -1551,7 +1727,7 @@ export function AccomplishmentReport({
                   {quarter} Quarter, School Year {year}
                 </div>
                 <div className="text-[11px] text-gray-600 mt-1">
-                  Program: <span className="font-semibold text-black">{program || 'N/A'}</span> | Submitted by: <span className="font-semibold text-black">{programChair}</span>
+                  Program: <span className="font-semibold text-black">{program || 'N/A'}</span> | Submitted by: <span className="font-semibold text-black">{isChairOfThisReport ? programChair : userName}</span>
                 </div>
               </div>
 
@@ -1698,8 +1874,8 @@ export function AccomplishmentReport({
                     <div className="text-center w-60">
                       <p className="text-left font-semibold mb-8">Prepared by:</p>
                       <div className="border-b border-black w-full mb-1" />
-                      <p className="font-bold uppercase">{programChair}</p>
-                      <p className="text-[10px] text-gray-600">Program Chairperson</p>
+                      <p className="font-bold uppercase">{isChairOfThisReport ? programChair : userName}</p>
+                      <p className="text-[10px] text-gray-600">{isChairOfThisReport ? 'Program Chairperson' : 'Program Faculty'}</p>
                     </div>
                     <div className="text-center w-60">
                       <p className="text-left font-semibold mb-8">Noted by:</p>
@@ -1726,7 +1902,6 @@ export function AccomplishmentReport({
     </div>
   );
 }
-
 // ============================================================================
 // 5. EXTENSION REPORT COMPONENT (STRICT LIFECYCLE & IDENTITY)
 // ============================================================================
