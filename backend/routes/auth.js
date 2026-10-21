@@ -1829,4 +1829,275 @@ router.put('/preferences', authenticate, async (req, res) => {
     });
   }
 });
+
+// =========================================================
+// ROLE MANAGEMENT (Admin/Dean only) - FULL DATA PRESERVATION
+// =========================================================
+const PERMITTED_ROLE_TRANSITIONS = {
+  dean: ['department_chair'],
+  department_chair: ['dean', 'faculty', 'staff'],
+  faculty: ['department_chair'],
+  staff: ['department_chair'],
+  student: ['faculty', 'staff'],
+};
+
+router.post('/users/:id/change-role', authenticate, async (req, res) => {
+  try {
+    // 1. Authorize: Only Dean or Admin can change roles
+    const operatorRole = req.user?.role?.toLowerCase();
+    const operatorId = req.user?.userId;
+
+    if (!['dean', 'admin'].includes(operatorRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the College Dean or Administrator can change user roles.',
+      });
+    }
+
+    const { id } = req.params;
+    const { newRole, department, program, reason } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required.',
+      });
+    }
+
+    if (!newRole) {
+      return res.status(400).json({
+        success: false,
+        error: 'Target role is required.',
+      });
+    }
+
+    const normalizedNewRole = String(newRole).trim().toLowerCase();
+
+    // Prevent Dean from accidentally stripping their own active session
+    if (id === operatorId && normalizedNewRole !== 'dean') {
+      return res.status(400).json({
+        success: false,
+        error: 'You cannot change your own active Dean role.',
+      });
+    }
+
+    // 2. Fetch existing user and profile to check current state
+    const { data: existingProfile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (profileErr) {
+      return res.status(500).json({ success: false, error: profileErr.message });
+    }
+
+    if (!existingProfile) {
+      return res.status(404).json({ success: false, error: 'User profile not found.' });
+    }
+
+    const currentRole = String(existingProfile.role || '').toLowerCase();
+    const validTargets = PERMITTED_ROLE_TRANSITIONS[currentRole] || [];
+
+    // 3. Validate transition rules
+    if (!validTargets.includes(normalizedNewRole)) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot change role from "${currentRole}" to "${normalizedNewRole}". This transition is not allowed.`,
+      });
+    }
+
+    // Normalizer to satisfy check constraint "profiles_department_valid_program"
+    const normalizeProgramCode = (val) => {
+      if (!val) return null;
+      const lower = String(val).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (lower.includes('beed') || lower.includes('elementary')) return 'BEEd';
+      if (lower.includes('btled') || lower.includes('livelihood')) return 'BTLEd';
+      if (lower.includes('math')) return 'BSEd-Math';
+      if (lower.includes('english')) return 'BSEd-English';
+      if (lower.includes('bsed')) return 'BSEd-Math';
+      return val;
+    };
+
+    // 4. Resolve Department & Program Requirements
+    let updatedDept = existingProfile.department;
+    let updatedProg = existingProfile.program;
+    let resolvedDepartmentId = null;
+
+    if (normalizedNewRole === 'department_chair') {
+      const selectedDept = department || existingProfile.department;
+      if (!selectedDept || !String(selectedDept).trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'A Department Chair requires a valid department assignment.',
+        });
+      }
+
+      // Convert to approved constraint program code (e.g. 'BEEd', 'BTLEd', etc.)
+      const validCode = normalizeProgramCode(selectedDept);
+      updatedDept = validCode;
+      updatedProg = validCode;
+
+      // Find official UUID from mapping or departments table
+      const mapped = PROGRAM_TO_DEPARTMENT[validCode];
+      if (mapped) {
+        resolvedDepartmentId = mapped.id;
+      } else {
+        const { data: deptRow } = await supabase
+          .from('departments')
+          .select('id')
+          .or(`id.eq.${selectedDept},name.ilike.%${validCode}%,code.ilike.%${validCode}%`)
+          .maybeSingle();
+
+        if (deptRow) resolvedDepartmentId = deptRow.id;
+      }
+    } else if (normalizedNewRole === 'faculty' || normalizedNewRole === 'staff') {
+      if (currentRole === 'student') {
+        if (!department || !String(department).trim()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Department assignment is required when appointing a student to Faculty or Staff.',
+          });
+        }
+        const validCode = normalizeProgramCode(department);
+        updatedDept = validCode;
+        updatedProg = program ? normalizeProgramCode(program) : validCode;
+
+        const mapped = PROGRAM_TO_DEPARTMENT[validCode];
+        if (mapped) {
+          resolvedDepartmentId = mapped.id;
+        } else {
+          const { data: deptRow } = await supabase
+            .from('departments')
+            .select('id')
+            .or(`id.eq.${department},name.ilike.%${validCode}%,code.ilike.%${validCode}%`)
+            .maybeSingle();
+
+          if (deptRow) resolvedDepartmentId = deptRow.id;
+        }
+      } else {
+        // Retain existing department or normalize if provided
+        if (department) {
+          const validCode = normalizeProgramCode(department);
+          updatedDept = validCode;
+          updatedProg = program ? normalizeProgramCode(program) : validCode;
+          const mapped = PROGRAM_TO_DEPARTMENT[validCode];
+          if (mapped) resolvedDepartmentId = mapped.id;
+        }
+      }
+    } else if (normalizedNewRole === 'dean') {
+      // Avoid writing 'College of Education' into profiles to satisfy the check constraint
+      updatedDept = null;
+      updatedProg = existingProfile.program || null;
+    }
+
+    // 5. Update public.profiles without deleting or altering primary keys
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({
+        role: normalizedNewRole,
+        department: updatedDept,
+        program: updatedProg,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (profileUpdateError) {
+      return res.status(400).json({ success: false, error: profileUpdateError.message });
+    }
+
+    // 6. Update public.users table (role, department_ids array, and programs array)
+    const userUpdatePayload = {
+      role: normalizedNewRole,
+    };
+
+    if (resolvedDepartmentId) {
+      userUpdatePayload.department_ids = [resolvedDepartmentId];
+      userUpdatePayload.programs = [updatedDept];
+    }
+
+    const { error: usersUpdateError } = await supabase
+      .from('users')
+      .update(userUpdatePayload)
+      .eq('id', id);
+
+    if (usersUpdateError) {
+      // Revert profiles if users table update fails
+      await supabase
+        .from('profiles')
+        .update({
+          role: currentRole,
+          department: existingProfile.department,
+          program: existingProfile.program,
+        })
+        .eq('id', id);
+
+      return res.status(400).json({ success: false, error: usersUpdateError.message });
+    }
+
+    // 7. Ensure / update faculty_profiles table with department_id
+    if (['department_chair', 'faculty'].includes(normalizedNewRole)) {
+      const { data: existingFacultyProfile } = await supabase
+        .from('faculty_profiles')
+        .select('id')
+        .eq('user_id', id)
+        .maybeSingle();
+
+      if (!existingFacultyProfile) {
+        await supabase
+          .from('faculty_profiles')
+          .insert([
+            {
+              user_id: id,
+              department_id: resolvedDepartmentId,
+              full_name: updatedProfile.full_name,
+              contact_email: updatedProfile.email,
+              status: 'Active',
+            },
+          ]);
+      } else if (resolvedDepartmentId) {
+        await supabase
+          .from('faculty_profiles')
+          .update({
+            department_id: resolvedDepartmentId,
+          })
+          .eq('user_id', id);
+      }
+    }
+
+    // 8. Record audit log (gracefully skipped if table does not exist)
+    try {
+      await supabase
+        .from('role_change_audit_logs')
+        .insert([
+          {
+            user_id: id,
+            previous_role: currentRole,
+            new_role: normalizedNewRole,
+            previous_department: existingProfile.department,
+            new_department: updatedDept,
+            changed_by: operatorId,
+            changed_by_role: operatorRole,
+            reason: reason || 'Administrative role re-assignment via Dean Dashboard',
+          },
+        ]);
+    } catch (auditErr) {
+      console.warn('Audit log write bypassed:', auditErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Role successfully updated to ${normalizedNewRole.toUpperCase()}. All existing records have been preserved.`,
+      profile: updatedProfile,
+    });
+  } catch (error) {
+    console.error('CHANGE ROLE ERROR:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error while changing role.',
+    });
+  }
+});
 module.exports = router; 

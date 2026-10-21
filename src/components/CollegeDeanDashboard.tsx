@@ -100,6 +100,7 @@ import {
   Calendar as CalendarIcon,
   Archive,
   MapPin,
+  UserCog,
   Clock,
   Tag,
   Globe,
@@ -1111,6 +1112,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
 
 
 // ─── User Management ──────────────────────────────────────────────────────────
+
 const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
   student: { length: 7, label: '7 digits' },
   faculty: { length: 6, label: '6 digits' },
@@ -1131,7 +1133,16 @@ const PROGRAM_LABELS: Record<string, string> = {
   'BSED-ENGLISH': 'Bachelor of Secondary Education - Major in English',
 };
 
-function UserManagement() {
+// Institutional allowed role transition map
+const PERMITTED_ROLE_TRANSITIONS: Record<string, string[]> = {
+  dean: ['department_chair'],
+  department_chair: ['dean', 'faculty', ],
+  faculty: ['department_chair'],
+  staff: ['department_chair'],
+  student: ['faculty',],
+};
+
+export function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
   const [users, setUsers]               = useState<any[]>([]);
   const [filtered, setFiltered]         = useState<any[]>([]);
@@ -1157,6 +1168,15 @@ function UserManagement() {
     id_number: '', program: '', status: 'active', password: '',
   });
 
+  // ── Role Change States ──
+  const [roleModalUser, setRoleModalUser] = useState<any | null>(null);
+  const [targetNewRole, setTargetNewRole] = useState<string>('');
+  const [targetDepartment, setTargetDepartment] = useState<string>('');
+  const [roleChangeReason, setRoleChangeReason] = useState<string>('');
+  const [isChangingRole, setIsChangingRole] = useState(false);
+  const [roleModalError, setRoleModalError] = useState<string>('');
+  const [departmentsList, setDepartmentsList] = useState<{ id: string; name: string }[]>([]);
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setFetchError('');
@@ -1181,9 +1201,19 @@ function UserManagement() {
     }
   }, []);
 
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('departments').select('id, name').order('name');
+      if (data) setDepartmentsList(data);
+    } catch (e) {
+      console.error('Error fetching departments list:', e);
+    }
+  }, []);
+
   useEffect(() => { 
     fetchUsers(); 
-  }, [fetchUsers]);
+    fetchDepartments();
+  }, [fetchUsers, fetchDepartments]);
 
   useEffect(() => {
     let result = [...users];
@@ -1230,6 +1260,74 @@ function UserManagement() {
     setModal('edit');
   };
 
+  // ── Open & Close Role Change Modal ──
+  const openRoleChangeModal = (user: any) => {
+    const validTargets = PERMITTED_ROLE_TRANSITIONS[user.role] || [];
+    setRoleModalUser(user);
+    setTargetNewRole(validTargets.length > 0 ? validTargets[0] : '');
+    setTargetDepartment(user.department || user.program || (departmentsList[0]?.name ?? ''));
+    setRoleChangeReason('');
+    setRoleModalError('');
+  };
+
+  const closeRoleChangeModal = () => {
+    if (isChangingRole) return;
+    setRoleModalUser(null);
+    setTargetNewRole('');
+    setTargetDepartment('');
+    setRoleModalError('');
+  };
+
+  const handleConfirmRoleChange = async () => {
+    if (!roleModalUser || !targetNewRole) return;
+    setRoleModalError('');
+
+    // Specific Department validation
+    if (targetNewRole === 'department_chair' && !targetDepartment.trim()) {
+      setRoleModalError('A department assignment is required for Department Chair.');
+      return;
+    }
+
+    if (roleModalUser.role === 'student' && (targetNewRole === 'faculty' || targetNewRole === 'staff') && !targetDepartment.trim()) {
+      setRoleModalError('Please assign a department for the promoted faculty/staff member.');
+      return;
+    }
+
+    setIsChangingRole(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/auth/users/${roleModalUser.id}/change-role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          newRole: targetNewRole,
+          department: targetDepartment.trim(),
+          reason: roleChangeReason.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to modify role.');
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: `Role for ${roleModalUser.full_name} has been successfully changed to ${targetNewRole.toUpperCase()}. All existing data, submissions, and credentials remain intact.`,
+      });
+
+      closeRoleChangeModal();
+      await fetchUsers();
+    } catch (err: any) {
+      setRoleModalError(err.message || 'Operation failed. Original role and records remain preserved.');
+    } finally {
+      setIsChangingRole(false);
+    }
+  };
+
   const handleAdd = async () => {
     setFormError('');
     if (!form.username.trim()) { setFormError('Username is required.'); return; }
@@ -1261,7 +1359,6 @@ function UserManagement() {
     try {
       const token = localStorage.getItem('token');
       
-      // If program is empty/not assigned or role is alumni, send strictly null to backend
       const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
 
       const response = await fetch('http://localhost:5000/api/auth/register', {
@@ -1278,7 +1375,7 @@ function UserManagement() {
           full_name: form.full_name.trim(),
           id_number: form.id_number.trim(),
           program: payloadProgram,
-          department: payloadProgram, // Sent as department for strict backend validation
+          department: payloadProgram,
           status: form.status,
         }),
       });
@@ -1365,7 +1462,7 @@ function UserManagement() {
           role: form.role,
           id_number: form.id_number.trim(),
           program: payloadProgram,
-          department: payloadProgram, // Sent as department for strict backend validation
+          department: payloadProgram,
           status: form.status,
           ...(form.password.trim() ? { password: form.password.trim() } : {}),
         }),
@@ -1430,8 +1527,7 @@ function UserManagement() {
   const toggleStatus = async (user: any) => {
     if (user.status === 'pending') return;
 
-    const nextStatus =
-      user.status === 'active' ? 'inactive' : 'active';
+    const nextStatus = user.status === 'active' ? 'inactive' : 'active';
 
     setStatusMessage(null);
     setActivating(user.id);
@@ -1483,8 +1579,7 @@ function UserManagement() {
     } catch (error: any) {
       setStatusMessage({
         type: 'error',
-        text: error.message ||
-          'Unable to update the account status.',
+        text: error.message || 'Unable to update the account status.',
       });
     } finally {
       setActivating(null);
@@ -1492,8 +1587,8 @@ function UserManagement() {
   };
 
   return (
-<div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">      
-  <div className="flex items-center justify-between gap-3">
+    <div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">      
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">User Management</h1>
           <p className="text-gray-500 mt-1 text-sm">{total} user{total !== 1 ? 's' : ''} found</p>
@@ -1577,8 +1672,8 @@ function UserManagement() {
         </div>
       </div>
 
-<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-    {loading ? (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
           </div>
@@ -1588,10 +1683,10 @@ function UserManagement() {
             <p className="font-medium">No users found</p>
           </div>
         ) : (
-           <div className="user-management-scroll min-h-0 flex-1 overflow-auto overscroll-contain">
-    <table className="w-full min-w-[640px]">
-             <thead className="sticky top-0 z-20 bg-gray-50">
-  <tr className="border-b border-gray-200 bg-gray-50">
+          <div className="user-management-scroll min-h-0 flex-1 overflow-auto overscroll-contain">
+            <table className="w-full min-w-[640px]">
+              <thead className="sticky top-0 z-20 bg-gray-50">
+                <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
                   <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
@@ -1608,6 +1703,7 @@ function UserManagement() {
                   const isPending    = user.status === 'pending';
                   const isActivating = activating === user.id;
                   const affiliation  = user.program || user.department;
+                  const canChangeRole = (PERMITTED_ROLE_TRANSITIONS[user.role] || []).length > 0;
 
                   return (
                     <tr key={user.id} className={`transition-colors ${isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/30'}`}>
@@ -1671,6 +1767,16 @@ function UserManagement() {
                               <span className="hidden sm:inline">Activate</span>
                             </button>
                           )}
+                          {canChangeRole && (
+                            <button
+                              type="button"
+                              onClick={() => openRoleChangeModal(user)}
+                              className="p-1.5 sm:p-2 text-[#1E3A8A] hover:bg-blue-100 rounded-lg transition-colors"
+                              title="Change User Role"
+                            >
+                              <UserCog className="w-4 h-4" />
+                            </button>
+                          )}
                           <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="Edit User">
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -1684,49 +1790,43 @@ function UserManagement() {
           </div>
         )}
 
-        
-{!loading && !fetchError && total > 0 && (
-  <div className="flex flex-shrink-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-    <div className="min-w-0">
-      <p className="text-xs text-gray-500 sm:text-sm">
-        Showing{" "}
-        {((page - 1) * PAGE_SIZE) + 1}–
-        {Math.min(page * PAGE_SIZE, total)} of {total} users
-      </p>
+        {!loading && !fetchError && total > 0 && (
+          <div className="flex flex-shrink-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500 sm:text-sm">
+                Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} users
+              </p>
+              <p className="mt-1 text-xs font-medium text-gray-400">
+                Page {page} of {Math.max(1, totalPages)}
+              </p>
+            </div>
 
-      <p className="mt-1 text-xs font-medium text-gray-400">
-        Page {page} of {Math.max(1, totalPages)}
-      </p>
-    </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+                aria-label="Previous page"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
 
-    <div className="flex flex-shrink-0 items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setPage((current) => Math.max(1, current - 1))}
-        disabled={page <= 1}
-        aria-label="Previous page"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={() =>
-          setPage((current) => Math.min(totalPages, current + 1))
-        }
-        disabled={page >= totalPages}
-        aria-label="Next page"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  </div>
-)}
-
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages}
+                aria-label="Next page"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* ── Add / Edit Modal ── */}
       {(modal === 'add' || modal === 'edit') && (
         <div 
           className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
@@ -1868,6 +1968,125 @@ function UserManagement() {
               <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
               <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving} className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm">
                 {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Role Change Confirmation Modal (Full Viewport Blur) ── */}
+      {roleModalUser && (
+        <div 
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0 }}
+        >
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-[#1E3A8A] rounded-xl">
+                  <UserCog className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Change Account Role</h3>
+                  <p className="text-xs text-gray-500">Reassign permissions while preserving records</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeRoleChangeModal} className="text-gray-400 hover:text-gray-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {roleModalError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{roleModalError}</span>
+              </div>
+            )}
+
+            <div className="my-4 space-y-3.5 text-xs">
+              <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-1">
+                <p className="text-gray-500 font-medium">User Profile:</p>
+                <p className="text-sm font-bold text-gray-900">{roleModalUser.full_name}</p>
+                <p className="text-gray-400 font-mono">{roleModalUser.email} · ID #{roleModalUser.id_number}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-gray-600 mb-1">Current Role</label>
+                  <div className="p-2.5 bg-gray-100 rounded-xl font-semibold text-gray-700">
+                    {ROLE_CONFIG[roleModalUser.role]?.label || roleModalUser.role}
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-semibold text-gray-600 mb-1">New Role *</label>
+                  <select
+                    value={targetNewRole}
+                    onChange={e => setTargetNewRole(e.target.value)}
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-semibold bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    {(PERMITTED_ROLE_TRANSITIONS[roleModalUser.role] || []).map(r => (
+                      <option key={r} value={r}>
+                        {ROLE_CONFIG[r]?.label || r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Department assignment when chair or student -> faculty/staff */}
+              {(targetNewRole === 'department_chair' || (roleModalUser.role === 'student' && (targetNewRole === 'faculty' || targetNewRole === 'staff'))) && (
+                <div>
+                  <label className="block font-semibold text-gray-600 mb-1">
+                    Department Assignment *
+                  </label>
+                  <select
+                    value={targetDepartment}
+                    onChange={e => setTargetDepartment(e.target.value)}
+                    className="w-full p-2.5 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="">-- Select Official Department --</option>
+                    {departmentsList.map(d => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-gray-600 mb-1">Reason for Reassignment (Optional)</label>
+                <input
+                  type="text"
+                  value={roleChangeReason}
+                  onChange={e => setRoleChangeReason(e.target.value)}
+                  placeholder="e.g. Appointed as Department Chair"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-snug">
+                  <span className="font-bold">Access Warning:</span> Dashboard privileges and permissions will update immediately upon next session refresh. All existing submissions, records, and files are permanently preserved under this account.
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={closeRoleChangeModal}
+                disabled={isChangingRole}
+                className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRoleChange}
+                disabled={isChangingRole}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-semibold hover:bg-[#1E40AF] disabled:opacity-50 transition-colors shadow-xs"
+              >
+                {isChangingRole ? 'Updating...' : 'Confirm Role Change'}
               </button>
             </div>
           </div>
