@@ -55,9 +55,11 @@ interface Committee {
   full_name: string;
   description: string;
   focus: string;
+  logo_url: string | null;
+  president_name: string | null;
+  adviser_name: string | null;
   display_order: number;
 }
-
 // =====================================================
 // PAGE PROPS
 // =====================================================
@@ -509,60 +511,105 @@ export function ClubsPage({
 
         </div>
 
-        {/* ================================================= */}
-        {/* COMMITTEES */}
-        {/* ================================================= */}
+        
+{/* ================================================= */}
+{/* UnEC COMMITTEES */}
+{/* ================================================= */}
 
-        <div>
+<div>
+  <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 pb-3 border-b-4 border-[#2563EB]">
+    UnEC Committees
+  </h2>
 
-          <h2 className="text-2xl font-semibold text-[#1E3A8A] mb-6 pb-3 border-b-4 border-[#2563EB]">
-            UnEC Committees
-          </h2>
+  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    {Array.from({ length: 10 }, (_, index) => {
+      const committee = committees[index];
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-            {committees.map((committee) => (
-
-              <div
-                key={committee.id}
-                className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
-              >
-
-                <div className="mb-4">
-
-                  <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold mb-3">
-                    {committee.committee_code}
-                  </div>
-
-                  <h3 className="text-lg font-semibold text-[#2563EB]">
-                    {committee.full_name}
-                  </h3>
-
-                </div>
-
-                <p className="text-gray-700 text-sm leading-relaxed mb-4">
-                  {committee.description}
-                </p>
-
-                <div className="pt-4 border-t border-gray-200">
-
-                  <p className="text-xs text-gray-500 font-medium mb-1">
-                    FOCUS AREA
-                  </p>
-
-                  <p className="text-sm font-semibold text-gray-900">
-                    {committee.focus}
-                  </p>
-
-                </div>
-
-              </div>
-
-            ))}
-
+      return (
+        <div
+          key={committee?.id ?? `empty-${index}`}
+          className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow border border-gray-100 flex flex-col"
+        >
+          {/* LOGO */}
+          <div className="flex justify-center mb-5">
+            <div className="w-24 h-24 rounded-full border-2 border-blue-100 bg-gray-50 flex items-center justify-center overflow-hidden">
+              {committee?.logo_url ? (
+                <img
+                  src={committee.logo_url}
+                  alt={`${committee.full_name} logo`}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <Building2 className="w-10 h-10 text-blue-300" />
+              )}
+            </div>
           </div>
 
+          {/* COMMITTEE INFORMATION */}
+          <div className="mb-4 text-center">
+            <div className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold mb-3">
+              {committee?.committee_code || `CLUB ${String(index + 1).padStart(2, "0")}`}
+            </div>
+
+            <h3 className="text-lg font-semibold text-[#2563EB]">
+              {committee?.full_name || "Club Name"}
+            </h3>
+          </div>
+
+          {/* DESCRIPTION */}
+          <p className="text-gray-700 text-sm leading-relaxed mb-4 text-center">
+            {committee?.description ||
+              "Club description will be added here."}
+          </p>
+
+          {/* PRESIDENT AND ADVISER */}
+          <div className="space-y-4 mt-auto pt-4 border-t border-gray-200">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                <UserRound className="w-5 h-5 text-blue-700" />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium mb-1">
+                  CLUB PRESIDENT
+                </p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {committee?.president_name || "To be announced"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-5 h-5 text-purple-700" />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium mb-1">
+                  CLUB ADVISER
+                </p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {committee?.adviser_name || "To be announced"}
+                </p>
+              </div>
+            </div>
+
+            {/* FOCUS AREA */}
+            <div className="pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-500 font-medium mb-1">
+                FOCUS AREA
+              </p>
+              <p className="text-sm font-semibold text-gray-900">
+                {committee?.focus || "To be determined"}
+              </p>
+            </div>
+          </div>
         </div>
+      );
+    })}
+  </div>
+</div>
+
 
       </div>
 
