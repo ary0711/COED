@@ -1,3 +1,4 @@
+import type { Committee } from './landingPageTypes';
 import { supabase } from '../../supabaseClient';
 
 /* =========================
@@ -14,38 +15,36 @@ export async function getClubStatistics() {
   return await supabase
     .from('clubs_statistics')
     .select('*')
-    .order('display_order');
+    .order('display_order', { ascending: true });
 }
 
 export async function getOrganizations() {
   return await supabase
     .from('organizations')
     .select('*')
-    .order('display_order');
+    .order('display_order', { ascending: true });
 }
 
 export async function getCommittees() {
   return await supabase
     .from('committees')
     .select('*')
-    .order('display_order');
+    .order('display_order', { ascending: true });
 }
 
 /* =========================
    SAVE FUNCTIONS
 ========================= */
 
-export async function saveClubsContent(
-  clubsContent: any
-) {
-  const updates = Object.entries(
-    clubsContent
-  ).map(([section_name, values]: any) => ({
-    section_name,
-    title: values.title,
-    description: values.description,
-    content: values.content,
-  }));
+export async function saveClubsContent(clubsContent: any) {
+  const updates = Object.entries(clubsContent).map(
+    ([section_name, values]: any) => ({
+      section_name,
+      title: values.title,
+      description: values.description,
+      content: values.content,
+    })
+  );
 
   return await supabase
     .from('clubs_page_content')
@@ -54,96 +53,98 @@ export async function saveClubsContent(
     });
 }
 
-export async function saveClubStatistics(
-  statistics: any[]
-) {
+export async function saveClubStatistics(statistics: any[]) {
   return await supabase
     .from('clubs_statistics')
     .upsert(statistics);
 }
 
-export async function saveOrganizations(
-  organizations: any[]
-) {
+export async function saveOrganizations(organizations: any[]) {
   return await supabase
     .from('organizations')
     .upsert(organizations);
 }
 
+/* =========================
+   SAVE COMMITTEES
+========================= */
 
-
-export async function saveCommittees(committees: any[]) {
+export async function saveCommittees(committees: Committee[]) {
   try {
-    // Ignore completely empty editor slots.
-    const validCommittees = committees.filter(
-      (committee) =>
-        committee.committee_code.trim() &&
-        committee.full_name.trim()
+    const validCommittees = committees
+      .filter(
+        (c) => c.committee_code?.trim() && c.full_name?.trim()
+      )
+      .map((c, index) => ({
+        id: c.id,
+        committee_code: c.committee_code.trim(),
+        full_name: c.full_name.trim(),
+        description: c.description?.trim() || null,
+        focus: c.focus?.trim() || null,
+        logo_url: c.logo_url || null,
+        president_name: c.president_name?.trim() || null,
+        adviser_name: c.adviser_name?.trim() || null,
+        display_order: c.display_order ?? index + 1,
+      }));
+
+    const existing = validCommittees.filter(
+      (c) => c.id && !c.id.startsWith('new-')
     );
 
-    const existingCommittees = validCommittees
-      .filter((committee) => !committee.id.startsWith('new-'))
-      .map((committee) => ({
-        id: committee.id,
-        committee_code: committee.committee_code,
-        full_name: committee.full_name,
-        description: committee.description || null,
-        focus: committee.focus || null,
-        logo_url: committee.logo_url || null,
-        president_name: committee.president_name || null,
-        adviser_name: committee.adviser_name || null,
-        display_order: committee.display_order,
-      }));
+    const newRecords = validCommittees
+      .filter((c) => !c.id || c.id.startsWith('new-'))
+      .map(({ id, ...record }) => record);
 
-    const newCommittees = validCommittees
-      .filter((committee) => committee.id.startsWith('new-'))
-      .map((committee) => ({
-        committee_code: committee.committee_code,
-        full_name: committee.full_name,
-        description: committee.description || null,
-        focus: committee.focus || null,
-        logo_url: committee.logo_url || null,
-        president_name: committee.president_name || null,
-        adviser_name: committee.adviser_name || null,
-        display_order: committee.display_order,
-      }));
+    // Save existing committees in small batches.
+    for (let i = 0; i < existing.length; i += 3) {
+      const batch = existing.slice(i, i + 3);
 
-    const savedRecords: any[] = [];
-
-    // Update existing database records.
-    if (existingCommittees.length > 0) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('committees')
-        .upsert(existingCommittees, { onConflict: 'id' })
-        .select();
+        .upsert(batch, { onConflict: 'id' });
 
-      if (error) throw error;
-
-      savedRecords.push(...(data || []));
+      if (error) {
+        console.error('Committee update failed:', error);
+        throw new Error(
+          `Updating committees failed: ${error.message}`
+        );
+      }
     }
 
-    // Insert new records; Supabase generates their UUIDs.
-    if (newCommittees.length > 0) {
-      const { data, error } = await supabase
+    // Insert new committees in small batches.
+    for (let i = 0; i < newRecords.length; i += 3) {
+      const batch = newRecords.slice(i, i + 3);
+
+      const { error } = await supabase
         .from('committees')
-        .insert(newCommittees)
-        .select();
+        .insert(batch);
 
-      if (error) throw error;
-
-      savedRecords.push(...(data || []));
+      if (error) {
+        console.error('Committee insert failed:', error);
+        throw new Error(
+          `Inserting committees failed: ${error.message}`
+        );
+      }
     }
 
-    return { data: savedRecords, error: null };
-  } catch (error) {
-    console.error('Error saving committees:', error);
+    // Do not run another SELECT after saving.
+    // This avoids an unnecessary database request.
+    return {
+      data: validCommittees,
+      error: null,
+    };
+  } catch (error: any) {
+    console.error('Failed to save committees:', error);
 
     return {
       data: null,
-      error:
-        error instanceof Error
-          ? error
-          : new Error('Failed to save committees.'),
+      error: {
+        message:
+          error?.message || 'Unable to save committees.',
+        code: error?.code ?? null,
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+      },
     };
   }
 }

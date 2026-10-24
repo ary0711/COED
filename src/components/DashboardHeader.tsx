@@ -130,8 +130,7 @@ export function DashboardHeader({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [kindFilter, setKindFilter] = useState<Kind | 'all'>('all');
-  const [showFilter, setShowFilter] = useState(false);
-
+  const [showFilter, setShowFilter] = useState(false); 
   // =====================================================
   // CURRENT USER DISPLAY STATE
   // =====================================================
@@ -140,6 +139,61 @@ export function DashboardHeader({
       localStorage.getItem('userFullName') ||
       'User'
   );
+
+const [academicYear, setAcademicYear] = useState('');
+const [currentSemester, setCurrentSemester] = useState('');
+
+const normalizedRole = userRole
+  .trim()
+  .toLowerCase()
+  .replace(/[_-]+/g, ' ');
+
+const showAcademicSettings = ![
+  'dean',
+  'college dean',
+  'alumni',
+].includes(normalizedRole);
+
+useEffect(() => {
+  if (!showAcademicSettings) return;
+
+  let mounted = true;
+
+  const loadAcademicSettings = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/academic-settings',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Unable to load academic settings.');
+      }
+
+      const data = await response.json();
+
+      if (!mounted) return;
+
+      setAcademicYear(data.academicYear || '');
+      setCurrentSemester(data.semester || '');
+    } catch (error) {
+      console.error('Failed to load academic settings:', error);
+    }
+  };
+
+  loadAcademicSettings();
+
+  return () => {
+    mounted = false;
+  };
+}, [showAcademicSettings]);
 
   const unreadCount = notifications.filter(
     (n) => !n.is_read
@@ -301,6 +355,7 @@ export function DashboardHeader({
       : activeTab === 'unread'
         ? 'You’re all caught up.'
         : 'No notifications yet. New activity will show up here.';
+  
 
   return (
     <div className="sticky top-0 z-40 bg-white w-full border-b border-gray-200/60 shadow-sm">
@@ -317,6 +372,25 @@ export function DashboardHeader({
               <Menu className="w-5 h-5" />
             </button>
           )}
+          
+{showAcademicSettings && (academicYear || currentSemester) && (
+  <div className="flex flex-col min-w-0">
+    {academicYear && (
+      <span className="text-sm font-semibold text-gray-800">
+        Academic Year: {academicYear}
+      </span>
+    )}
+
+    {currentSemester && (
+      <span className="text-xs text-gray-500">
+        {currentSemester}
+      </span>
+    )}
+  </div>
+)}
+
+
+
         </div>
 
         {/* RIGHT: NOTIFICATIONS + PROFILE */}

@@ -2100,4 +2100,125 @@ router.post('/users/:id/change-role', authenticate, async (req, res) => {
     });
   }
 });
+
+
+/* =========================================
+   UPDATE STUDENT YEAR LEVEL
+========================================= */
+router.put('/student-year-level', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const role = String(req.user?.role || '').trim().toLowerCase();
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid session. Please log in again.',
+      });
+    }
+
+    if (role !== 'student') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only students can update their year level.',
+      });
+    }
+
+    const yearLevelMap = {
+      'First Year': 1,
+      'Second Year': 2,
+      'Third Year': 3,
+      'Fourth Year': 4,
+    };
+
+    const { year_level } = req.body;
+    const numericYearLevel = yearLevelMap[year_level];
+
+    if (!numericYearLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please select a valid year level.',
+      });
+    }
+
+    // Check that the student profile exists.
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+
+    if (!profile || String(profile.role).toLowerCase() !== 'student') {
+      return res.status(404).json({
+        success: false,
+        error: 'Student profile not found.',
+      });
+    }
+
+    const { data: studentProfile, error: studentError } = await supabase
+      .from('student_profiles')
+      .select('year_level')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (studentError) throw studentError;
+
+    if (!studentProfile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Student academic record not found.',
+      });
+    }
+
+    // Update the numeric academic year first.
+    const { error: academicUpdateError } = await supabase
+      .from('student_profiles')
+      .update({ year_level: numericYearLevel })
+      .eq('user_id', userId);
+
+    if (academicUpdateError) throw academicUpdateError;
+
+    // Update the display label in profiles.
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({
+        year_level,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+      .select('year_level')
+      .single();
+
+    if (profileUpdateError) {
+      // Restore the original academic year if the second update fails.
+      const { error: rollbackError } = await supabase
+        .from('student_profiles')
+        .update({ year_level: studentProfile.year_level })
+        .eq('user_id', userId);
+
+      if (rollbackError) {
+        console.error('Year-level rollback failed:', rollbackError.message);
+      }
+
+      throw profileUpdateError;
+    }
+
+    return res.json({
+      success: true,
+      message: 'Year level updated successfully.',
+      year_level: updatedProfile.year_level,
+      numeric_year_level: numericYearLevel,
+    });
+  } catch (error) {
+    console.error('UPDATE STUDENT YEAR LEVEL ERROR:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: 'Unable to save your year level. Please try again.',
+    });
+  }
+});
+
 module.exports = router; 

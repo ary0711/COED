@@ -199,44 +199,111 @@ interface StudentDashboardProps {
   userName?: string;
 }
 
-export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Student' }: StudentDashboardProps) {
+
+
+export function StudentDashboard({
+  activeMenuItem,
+  setActiveMenuItem,
+  onLogout,
+  userName = 'Student',
+}: StudentDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const handleInternalLogout = () => {
-    localStorage.clear();
-    if (onLogout) {
-      onLogout();
-    }
-  };
   const [selectedProgram, setSelectedProgram] = useState(PROGRAM_OPTIONS[0]);
+
+  const [showYearLevelModal, setShowYearLevelModal] = useState(false);
+  const [selectedYearLevel, setSelectedYearLevel] = useState('');
+  const [savingYearLevel, setSavingYearLevel] = useState(false);
+  const [yearLevelMessage, setYearLevelMessage] = useState('');
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Club officer access (President / Vice President / Secretary only)
   const [clubAccess, setClubAccess] = useState<ClubAccess | null>(null);
 
+  const handleInternalLogout = () => {
+    localStorage.clear();
+
+    if (onLogout) {
+      onLogout();
+    }
+  };
+
+  // Convert numeric or text year levels into a number.
+  const getYearLevelNumber = (value: unknown): number | null => {
+    if (value == null || value === '') return null;
+
+    const normalized = String(value).trim().toLowerCase();
+
+    const yearMap: Record<string, number> = {
+      '1': 1,
+      '1st': 1,
+      'first': 1,
+      'first year': 1,
+      '2': 2,
+      '2nd': 2,
+      'second': 2,
+      'second year': 2,
+      '3': 3,
+      '3rd': 3,
+      'third': 3,
+      'third year': 3,
+      '4': 4,
+      '4th': 4,
+      'fourth': 4,
+      'fourth year': 4,
+    };
+
+    return yearMap[normalized] ?? null;
+  };
+
+  // Convert the current year into the dropdown option.
+  const getYearLevelOption = (value: unknown): string => {
+    const number = getYearLevelNumber(value);
+
+    const options: Record<number, string> = {
+      1: 'First Year',
+      2: 'Second Year',
+      3: 'Third Year',
+      4: 'Fourth Year',
+    };
+
+    return number ? options[number] : '';
+  };
+
+  // Load club officer access.
   useEffect(() => {
     const loadClubAccess = async () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) return;
+
         const res = await fetch(CLUB_ME_API_URL, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         });
-        if (res.ok) setClubAccess(await res.json());
+
+        if (res.ok) {
+          setClubAccess(await res.json());
+        }
       } catch (err) {
         console.error('Failed to load club access', err);
       }
     };
+
     loadClubAccess();
   }, []);
 
-  // Regular students keep the original menu; officers get an extra "Club" item
+  // Regular students keep the original menu.
+  // Eligible club officers receive an additional Club item.
   const menuItems = useMemo(() => {
     if (!clubAccess?.isOfficer) return studentMenuItems;
-    const settingsItem = studentMenuItems[studentMenuItems.length - 1];
+
+    const settingsItem =
+      studentMenuItems[studentMenuItems.length - 1];
+
     return [
       ...studentMenuItems.slice(0, -1),
       { icon: Shield, label: 'Club', id: 'club' },
@@ -244,14 +311,21 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
     ];
   }, [clubAccess]);
 
+  // Load the student's profile.
   const fetchProfile = async (silent = false) => {
-    if (!silent) setProfileLoading(true);
+    if (!silent) {
+      setProfileLoading(true);
+    }
+
     setProfileError(null);
 
     try {
       const token = localStorage.getItem('token');
+
       if (!token) {
-        setProfileError('No logged-in user found. Please sign in again.');
+        setProfileError(
+          'No logged-in user found. Please sign in again.'
+        );
         return;
       }
 
@@ -266,12 +340,17 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
       const data = await res.json();
 
       if (!res.ok) {
-        setProfileError(data.error || data.message || 'Failed to load your profile. Please try again.');
+        setProfileError(
+          data.error ||
+            data.message ||
+            'Failed to load your profile. Please try again.'
+        );
         return;
       }
 
       const profileData = data.profile || {};
-      const studentProfileData = data.studentProfile || data.student_profile || {};
+      const studentProfileData =
+        data.studentProfile || data.student_profile || {};
 
       const resolvedFullName =
         data.fullName ||
@@ -306,9 +385,21 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         getStoredStudentId() ||
         '';
 
-      const resolvedYearLevel = data.yearLevel ?? data.year_level ?? studentProfileData.year_level ?? 0;
-      const resolvedProgram = data.program || studentProfileData.program || '';
-      const resolvedGpa = data.gpa ?? studentProfileData.gpa ?? null;
+      const resolvedYearLevel =
+        data.yearLevel ??
+        data.year_level ??
+        profileData.year_level ??
+        studentProfileData.year_level ??
+        0;
+
+      const resolvedProgram =
+        data.program ||
+        profileData.program ||
+        studentProfileData.program ||
+        '';
+
+      const resolvedGpa =
+        data.gpa ?? studentProfileData.gpa ?? null;
 
       const resolvedAcademicStanding =
         data.academicStanding ||
@@ -322,9 +413,19 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         studentProfileData.enrollment_status ||
         '—';
 
-      const resolvedDepartmentId = data.departmentId ?? data.department_id ?? studentProfileData.department_id ?? null;
-      const resolvedDepartmentName = data.departmentName || data.departmentNames?.[0] || null;
-      const resolvedUserId = data.userId || data.id || profileData.id || '';
+      const resolvedDepartmentId =
+        data.departmentId ??
+        data.department_id ??
+        studentProfileData.department_id ??
+        null;
+
+      const resolvedDepartmentName =
+        data.departmentName ||
+        data.departmentNames?.[0] ||
+        null;
+
+      const resolvedUserId =
+        data.userId || data.id || profileData.id || '';
 
       setProfile({
         student_id: resolvedUserId,
@@ -343,15 +444,31 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
 
       setUserEmail(resolvedEmail);
 
-      if (resolvedFullName) localStorage.setItem('userFullName', resolvedFullName);
-      if (resolvedUsername) localStorage.setItem('userUsername', resolvedUsername);
-      if (resolvedEmail) localStorage.setItem('userEmail', resolvedEmail);
-      if (resolvedStudentNo) localStorage.setItem('userIdNumber', resolvedStudentNo);
+      if (resolvedFullName) {
+        localStorage.setItem('userFullName', resolvedFullName);
+      }
 
-      if (resolvedProgram) setSelectedProgram(resolvedProgram);
+      if (resolvedUsername) {
+        localStorage.setItem('userUsername', resolvedUsername);
+      }
+
+      if (resolvedEmail) {
+        localStorage.setItem('userEmail', resolvedEmail);
+      }
+
+      if (resolvedStudentNo) {
+        localStorage.setItem('userIdNumber', resolvedStudentNo);
+      }
+
+      if (resolvedProgram) {
+        setSelectedProgram(resolvedProgram);
+      }
     } catch (error) {
       console.error('FETCH STUDENT PROFILE ERROR:', error);
-      setProfileError('Could not reach the server. Please try again.');
+
+      setProfileError(
+        'Could not reach the server. Please try again.'
+      );
     } finally {
       setProfileLoading(false);
     }
@@ -359,8 +476,11 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
 
   useEffect(() => {
     fetchProfile();
+
     const refresh = () => fetchProfile(true);
+
     window.addEventListener('focus', refresh);
+
     const timer = setInterval(refresh, PROFILE_REFRESH_MS);
 
     return () => {
@@ -370,16 +490,93 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   }, []);
 
   useEffect(() => {
-    if (activeMenuItem === 'dashboard') fetchProfile(true);
+    if (activeMenuItem === 'dashboard') {
+      fetchProfile(true);
+    }
   }, [activeMenuItem]);
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 1024) setSidebarOpen(false);
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(false);
+      }
     };
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
+
+  // Open the popup from the existing Year Level card.
+  const openYearLevelModal = () => {
+    setSelectedYearLevel(
+      getYearLevelOption(profile?.year_level)
+    );
+
+    setYearLevelMessage('');
+    setShowYearLevelModal(true);
+  };
+
+  // Save the selected year level.
+  const saveYearLevel = async () => {
+    if (!selectedYearLevel) {
+      setYearLevelMessage('Please select a year level.');
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setYearLevelMessage(
+        'Your session has expired. Please log in again.'
+      );
+      return;
+    }
+
+    setSavingYearLevel(true);
+    setYearLevelMessage('');
+
+    try {
+      const res = await fetch(
+        'http://localhost:5000/api/auth/student-year-level',
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            year_level: selectedYearLevel,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.error || 'Failed to update year level.'
+        );
+      }
+
+      setShowYearLevelModal(false);
+      setYearLevelMessage('');
+
+      await fetchProfile(true);
+    } catch (error) {
+      console.error('UPDATE YEAR LEVEL ERROR:', error);
+
+      setYearLevelMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to update year level.'
+      );
+    } finally {
+      setSavingYearLevel(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -393,18 +590,21 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
         onLogout={handleInternalLogout}
       />
 
-      <div className="hidden lg:block w-64 shrink-0" />
+      <div className="hidden w-64 shrink-0 lg:block" />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* HEADER */}
+        <div className="sticky top-0 z-20 border-b border-gray-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 px-4 lg:px-0">
             <button
+              type="button"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+              className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 lg:hidden"
               aria-label="Open menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="h-5 w-5" />
             </button>
+
             <div className="flex-1">
               <DashboardHeader
                 userRole="Student"
@@ -415,22 +615,38 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           </div>
         </div>
 
-        <main className="p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
-          {activeMenuItem === 'dashboard'    && (
+        {/* MAIN CONTENT */}
+        <main className="animate-in fade-in p-4 duration-500 sm:p-6 lg:p-8">
+          {activeMenuItem === 'dashboard' && (
             <StudentDashboardView
               selectedProgram={selectedProgram}
               profile={profile}
               loading={profileLoading}
               error={profileError}
               setActiveMenuItem={setActiveMenuItem}
+              onYearLevelClick={openYearLevelModal}
             />
           )}
-          {activeMenuItem === 'faculty'      && <FacultyDepartments profile={profile} />}
-          {activeMenuItem === 'resources'    && <AcademicResources />}
-          {activeMenuItem === 'achievements'&& <AchievementsActivities clubAccess={clubAccess} />}
-          {activeMenuItem === 'club' && clubAccess?.isOfficer && <ClubDashboard />}
-          {activeMenuItem === 'inquiry'      && <InquiryContact />}
-          {activeMenuItem === 'settings'     && (
+
+          {activeMenuItem === 'faculty' && (
+            <FacultyDepartments profile={profile} />
+          )}
+
+          {activeMenuItem === 'resources' && (
+            <AcademicResources />
+          )}
+
+          {activeMenuItem === 'achievements' && (
+            <AchievementsActivities clubAccess={clubAccess} />
+          )}
+
+          {activeMenuItem === 'club' && clubAccess?.isOfficer && (
+            <ClubDashboard />
+          )}
+
+          {activeMenuItem === 'inquiry' && <InquiryContact />}
+
+          {activeMenuItem === 'settings' && (
             <StudentSettings
               selectedProgram={selectedProgram}
               setSelectedProgram={setSelectedProgram}
@@ -442,9 +658,97 @@ export function StudentDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           )}
         </main>
       </div>
+
+      {/* YEAR LEVEL POPUP */}
+      {showYearLevelModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => {
+            if (!savingYearLevel) {
+              setShowYearLevelModal(false);
+              setYearLevelMessage('');
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="year-level-title"
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2
+              id="year-level-title"
+              className="text-xl font-bold text-gray-900"
+            >
+              Select Year Level
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Choose your current academic year.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              {[
+                'First Year',
+                'Second Year',
+                'Third Year',
+                'Fourth Year',
+              ].map((year) => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => setSelectedYearLevel(year)}
+                  className={`w-full rounded-xl border p-3 text-left text-sm font-medium transition ${
+                    selectedYearLevel === year
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {year}
+
+                  {selectedYearLevel === year && (
+                    <span className="float-right">✓</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {yearLevelMessage && (
+              <p className="mt-3 text-sm text-red-600">
+                {yearLevelMessage}
+              </p>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                disabled={savingYearLevel}
+                onClick={() => {
+                  setShowYearLevelModal(false);
+                  setYearLevelMessage('');
+                }}
+                className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={saveYearLevel}
+                disabled={!selectedYearLevel || savingYearLevel}
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingYearLevel ? 'Saving...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 // ====================== NOTIFICATION BELL ======================
 export function NotificationBell({ onGoToInquiries }: { onGoToInquiries: () => void }) {
@@ -575,9 +879,11 @@ interface StudentDashboardViewProps {
   loading: boolean;
   error: string | null;
   setActiveMenuItem: (id: string) => void;
+  onYearLevelClick: () => void;
+
 }
 
-function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDashboardViewProps) {
+function StudentDashboardView({ profile, loading, setActiveMenuItem, onYearLevelClick }: StudentDashboardViewProps) {
   const displayId = profile?.student_no ?? '—';
   const displayYearLevel = profile?.year_level ? `${profile.year_level} Year` : '—';
   const displayStanding = profile?.academic_standing ?? '—';
@@ -695,7 +1001,19 @@ function StudentDashboardView({ profile, loading, setActiveMenuItem }: StudentDa
           <div className="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">Student ID</div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-default">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Change year level"
+          onClick={onYearLevelClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onYearLevelClick();
+            }
+          }}
+          className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col justify-center cursor-pointer transition-all hover:shadow-md hover:border-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+        >
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
             <GraduationCap className="w-5 h-5" />
           </div>

@@ -33,7 +33,7 @@ app.get('/api/auth/profile-test', (req, res) => {
     message: 'Auth route is working.',
   });
 });
-
+app.use('/api/academic-settings', require('./routes/academicSettings'));
 app.use('/api/research-submissions', require('./routes/researchSubmissions'));
 app.use('/api/students', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
