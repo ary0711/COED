@@ -19,7 +19,7 @@ const upload = multer({
 });
 
 // GET /api/accomplishment-reports/program-mfo1
-// Retrieves the Department Chairperson's official MFO 1 entries for a given program & period
+// Retrieves the Department Chairperson's official MFO 1 & MFO 2 entries for a given program & period
 router.get('/program-mfo1', authenticate, async (req, res) => {
   try {
     const { program, quarter, year } = req.query;
@@ -45,7 +45,12 @@ router.get('/program-mfo1', authenticate, async (req, res) => {
 
     const { data, error } = await supabase
       .from('accomplishment_reports')
-      .select('id, program, program_chair, quarter, year, pi1_data, pi2_data, pi3_data, pi4_data, pi5_data, pi6_data, pi7_data, pi8_data, updated_at')
+      .select(`
+        id, program, program_chair, quarter, year, 
+        pi1_data, pi2_data, pi3_data, pi4_data, pi5_data, pi6_data, pi7_data, pi8_data, 
+        mfo2_pi1_data, mfo2_pi2_data, mfo2_pi3_data,
+        updated_at
+      `)
       .eq('quarter', quarter)
       .eq('year', String(year))
       .ilike('program', `%${searchCode}%`)
@@ -267,7 +272,7 @@ router.post('/', authenticate, async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    // If faculty, strip MFO 1 fields so only Chairperson entries populate MFO 1
+    // If regular faculty, lock down MFO 1 fields so only Chairperson entries populate MFO 1
     if (userRole === 'faculty') {
       delete insertPayload.pi1_data;
       delete insertPayload.pi2_data;

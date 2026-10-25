@@ -20,6 +20,7 @@ import {
   Inbox,
   XCircle,
   Megaphone,
+  BookOpen,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendNotification } from '../notificationService';
@@ -87,6 +88,13 @@ function getCurrentQuarterInfo() {
   };
 }
 
+const hasPopulatedRows = (rows?: any[]): boolean => {
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+  return rows.some((row) =>
+    Object.values(row).some((val) => typeof val === 'string' && val.trim() !== '')
+  );
+};
+
 const PRINT_LAYOUT_STYLES = `
   @media print {
     @page {
@@ -103,10 +111,12 @@ const PRINT_LAYOUT_STYLES = `
     body * {
       visibility: hidden;
     }
-    #dean-print-area, #dean-print-area * {
+    #dean-print-area, #dean-print-area *,
+    #dean-research-dossier, #dean-research-dossier * {
       visibility: visible;
     }
-    #dean-print-area {
+    #dean-print-area,
+    #dean-research-dossier {
       position: absolute;
       left: 0;
       top: 0;
@@ -165,9 +175,10 @@ export function ReportsAnalytics() {
   const [savingDeadline, setSavingDeadline] = useState(false);
   const [sendingBulk, setSendingBulk] = useState(false);
 
-  // New Modal States replacing alerts
+  // Modal States
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [showBulkReminderModal, setShowBulkReminderModal] = useState(false);
+  const [showResearchDossierModal, setShowResearchDossierModal] = useState(false);
   const [statusMessageModal, setStatusMessageModal] = useState<{
     type: 'success' | 'warning' | 'error';
     title: string;
@@ -178,20 +189,26 @@ export function ReportsAnalytics() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 15;
 
-  // Modals & Action States
+  // Inspections & Printing
   const [inspectReport, setInspectReport] = useState<RawReportItem | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [rejectingTarget, setRejectingTarget] = useState<RawReportItem | null>(null);
   const [remarksInput, setRemarksInput] = useState<string>('');
 
-  // Custom Modal Confirmation State for Archiving / Restoring
   const [archiveModalTarget, setArchiveModalTarget] = useState<{
     item: RawReportItem;
     targetState: boolean;
   } | null>(null);
 
   const getToken = () => localStorage.getItem('token');
+
+  // Calculates current datetime in YYYY-MM-DDTHH:mm format to restrict past inputs
+  const minDateTimeInput = useMemo(() => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }, [showDeadlineModal]);
 
   // Load official departments
   const fetchDepartments = useCallback(async () => {
@@ -209,7 +226,6 @@ export function ReportsAnalytics() {
     }
   }, []);
 
-  // Standardized helper matching any report/user text to an official department code
   const matchDepartmentCode = useCallback((val?: string | null): string | null => {
     if (!val) return null;
     const cleaned = val.trim().toLowerCase();
@@ -235,7 +251,6 @@ export function ReportsAnalytics() {
     return null;
   }, [officialDepartments]);
 
-  // Load deadline for the selected quarter & year
   const fetchDeadline = useCallback(async () => {
     const periodTitle = `Quarterly Report – ${selectedQuarter} Quarter ${selectedYear}`;
     const { data } = await supabase
@@ -255,7 +270,7 @@ export function ReportsAnalytics() {
     }
   }, [selectedQuarter, selectedYear]);
 
-  // Save deadline & notify personnel
+  // Save deadline & notify personnel (Validating past times)
   const saveDeadline = async () => {
     if (!deadlineInput) {
       setStatusMessageModal({
@@ -265,6 +280,17 @@ export function ReportsAnalytics() {
       });
       return;
     }
+
+    const pickedTime = new Date(deadlineInput).getTime();
+    if (pickedTime < Date.now()) {
+      setStatusMessageModal({
+        type: 'warning',
+        title: 'Invalid Timestamp',
+        message: 'You cannot set a deadline in the past. Please select an upcoming date and time.',
+      });
+      return;
+    }
+
     setSavingDeadline(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -309,7 +335,6 @@ export function ReportsAnalytics() {
     }
   };
 
-  // Load all reports & profiles
   const fetchAllData = useCallback(async () => {
     setLoading(true);
     setLoadError('');
@@ -453,7 +478,6 @@ export function ReportsAnalytics() {
     };
   }, [fetchAllData, fetchDeadline]);
 
-  // Quarter Stepper Helpers
   const stepQuarter = (direction: 'prev' | 'next') => {
     const idx = QUARTER_NAMES.indexOf(selectedQuarter as any);
     const yr = parseInt(selectedYear, 10);
@@ -481,12 +505,10 @@ export function ReportsAnalytics() {
     setCurrentPage(1);
   };
 
-  // Period-Filtered Reports
   const periodReports = useMemo(() => {
     return reports.filter((r) => r.quarter === selectedQuarter && r.year === selectedYear);
   }, [reports, selectedQuarter, selectedYear]);
 
-  // Top Metrics
   const metrics = useMemo(() => {
     const active = periodReports.filter((r) => !r.is_archived);
     return {
@@ -498,7 +520,66 @@ export function ReportsAnalytics() {
     };
   }, [periodReports]);
 
-  // Pending Profiles for Bulk Reminder
+  // Aggregates all research entries across every accomplishment report in the current quarter
+  const quarterlyResearchDossier = useMemo(() => {
+    const accReports = periodReports.filter((r) => r.type === 'accomplishment' && !r.is_archived);
+
+    const onGoingCompleted: any[] = [];
+    const inHouseReviews: any[] = [];
+    const expertServices: any[] = [];
+    const publications: any[] = [];
+
+    accReports.forEach((rep) => {
+      const submitterName = rep.submitter?.full_name || rep.program_chair || 'Faculty';
+      const dept = matchDepartmentCode(rep.submitter?.department || rep.rawData?.program) || 'COED';
+
+      (rep.rawData?.mfo2_pi1_data || []).forEach((row: any) => {
+        if (row.name_faculty || row.event_title || row.nature_service) {
+          expertServices.push({ ...row, submitter: submitterName, department: dept });
+        }
+      });
+
+      (rep.rawData?.mfo2_pi2_data || []).forEach((row: any) => {
+        if (row.title_research) {
+          onGoingCompleted.push({ ...row, submitter: submitterName, department: dept });
+        }
+      });
+
+      (rep.rawData?.mfo2_pi3_data || []).forEach((row: any) => {
+        if (row.title_research) {
+          inHouseReviews.push({ ...row, submitter: submitterName, department: dept });
+        }
+      });
+
+      (rep.rawData?.mfo3_pi2_data || []).forEach((row: any) => {
+        if (row.title_research) {
+          onGoingCompleted.push({
+            title_research: row.title_research,
+            proponents: row.proponents || submitterName,
+            status_phase: 'Completed',
+            funding_source: row.funding_source || '—',
+            submitter: submitterName,
+            department: dept,
+          });
+        }
+      });
+
+      (rep.rawData?.mfo3_pi3_data || []).forEach((row: any) => {
+        if (row.title_research) {
+          publications.push({ ...row, submitter: submitterName, department: dept });
+        }
+      });
+    });
+
+    return {
+      totalFound: onGoingCompleted.length + inHouseReviews.length + expertServices.length + publications.length,
+      onGoingCompleted,
+      inHouseReviews,
+      expertServices,
+      publications,
+    };
+  }, [periodReports, matchDepartmentCode]);
+
   const pendingProfiles = useMemo(() => {
     const submittedUserIds = new Set(
       periodReports
@@ -508,7 +589,6 @@ export function ReportsAnalytics() {
     return profiles.filter((p) => !submittedUserIds.has(p.id));
   }, [periodReports, profiles]);
 
-  // Send Bulk Reminder Execution
   const executeSendBulkReminder = async () => {
     if (pendingProfiles.length === 0) {
       setShowBulkReminderModal(false);
@@ -550,7 +630,6 @@ export function ReportsAnalytics() {
     }
   };
 
-  // Department Breakdown tallies strictly under the 3 official departments
   const departmentBreakdown = useMemo(() => {
     const statsMap: Record<string, { code: string; label: string; total: number; approved: number; pending: number; rejected: number }> = {};
 
@@ -580,7 +659,6 @@ export function ReportsAnalytics() {
     return Object.values(statsMap);
   }, [officialDepartments, periodReports, matchDepartmentCode]);
 
-  // Filter Engine
   const filteredReports = useMemo(() => {
     return reports.filter((r) => {
       if (r.quarter !== selectedQuarter || r.year !== selectedYear) return false;
@@ -621,14 +699,12 @@ export function ReportsAnalytics() {
     });
   }, [reports, selectedQuarter, selectedYear, activeTab, selectedType, selectedDept, selectedRole, searchQuery, matchDepartmentCode]);
 
-  // Paginated View
   const totalPages = Math.ceil(filteredReports.length / pageSize) || 1;
   const paginatedReports = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredReports.slice(start, start + pageSize);
   }, [filteredReports, currentPage]);
 
-  // Approval / Rejection Handler
   const handleDecide = async (reportItem: RawReportItem, newStatus: 'approved' | 'rejected', remarks?: string) => {
     setActionLoading(true);
     const endpoint =
@@ -678,7 +754,6 @@ export function ReportsAnalytics() {
     }
   };
 
-  // Archive / Restore Handler with confirmation execution
   const executeToggleArchive = async (reportItem: RawReportItem, newArchiveState: boolean) => {
     setActionLoading(true);
     const endpoint =
@@ -746,7 +821,7 @@ export function ReportsAnalytics() {
           <p className="text-sm text-gray-500 mt-1">Review, monitor, and approve faculty and department chairperson submissions</p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200 shadow-xs self-start lg:self-auto">
+        <div className="flex flex-wrap items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200 shadow-xs self-start lg:self-auto">
           <button
             onClick={() => stepQuarter('prev')}
             className="p-2 hover:bg-gray-100 rounded-xl text-gray-600 transition-colors"
@@ -854,7 +929,7 @@ export function ReportsAnalytics() {
         </div>
       </div>
 
-      {/* Set Deadline & Bulk Reminder Panel Trigger Buttons */}
+      {/* Set Deadline, Bulk Reminder & Single Action Toolbar */}
       <div className="bg-white rounded-2xl shadow-xs border border-gray-200/80 p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
@@ -875,7 +950,7 @@ export function ReportsAnalytics() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
             <button
               onClick={() => setShowDeadlineModal(true)}
               className="flex-1 sm:flex-initial px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 shadow-xs"
@@ -890,6 +965,15 @@ export function ReportsAnalytics() {
             >
               <Megaphone className="w-4 h-4" />
               Send Bulk Reminder
+            </button>
+
+            {/* Retained Single Action Button with Layout, Logo & Print View */}
+            <button
+              onClick={() => setShowResearchDossierModal(true)}
+              className="flex-1 sm:flex-initial px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Printer className="w-4 h-4" />
+              Print Quarterly Research
             </button>
           </div>
         </div>
@@ -1127,7 +1211,6 @@ export function ReportsAnalytics() {
 
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Unarchive Button (Triggers Styled Modal) */}
                             {item.is_archived && (
                               <button
                                 type="button"
@@ -1139,7 +1222,6 @@ export function ReportsAnalytics() {
                               </button>
                             )}
 
-                            {/* View Button */}
                             <button
                               onClick={() => setInspectReport(item)}
                               className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1"
@@ -1147,7 +1229,6 @@ export function ReportsAnalytics() {
                               <Eye className="w-3.5 h-3.5" /> View
                             </button>
 
-                            {/* Print Button */}
                             {item.status === 'approved' && (
                               <button
                                 onClick={() => {
@@ -1161,7 +1242,6 @@ export function ReportsAnalytics() {
                               </button>
                             )}
 
-                            {/* Archive Button (Triggers Styled Modal) */}
                             {canArchive && (
                               <button
                                 type="button"
@@ -1285,7 +1365,7 @@ export function ReportsAnalytics() {
       </div>
 
       {/* ===================================================================== */}
-      {/* 3. REPORT VIEWER MODAL (PORTAL COVERING 100% OF VIEWPORT)             */}
+      {/* 3. REPORT VIEWER MODAL (WITH OFFICIAL HEADER & FOOTER LOGOS)          */}
       {/* ===================================================================== */}
       {inspectReport && !showPrintModal && typeof document !== 'undefined' && createPortal(
         <div 
@@ -1327,6 +1407,19 @@ export function ReportsAnalytics() {
             </div>
 
             <div className="p-5 sm:p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* Header Logo */}
+              <div className="text-center pb-2">
+                <img
+                  src="/header-pics/ctu-header.png"
+                  alt="CTU Header"
+                  className="max-w-[440px] w-full mx-auto object-contain mb-2"
+                />
+                <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">College of Education</div>
+                <div className="text-xs font-bold text-gray-900 uppercase">
+                  {inspectReport.type === 'wfh' ? 'Work-From-Home Accomplishment' : inspectReport.type === 'extension' ? 'Community Extension Report' : 'Program Accomplishment Report'}
+                </div>
+              </div>
+
               {inspectReport.dean_remarks && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">
                   <div className="font-bold flex items-center gap-1 mb-1">
@@ -1346,7 +1439,8 @@ export function ReportsAnalytics() {
                     <div><strong>Program Chair:</strong> {inspectReport.rawData.program_chair || 'N/A'}</div>
                   </div>
 
-                  {inspectReport.rawData.pi1_data?.length > 0 && (
+                  {/* MFO 1 Table */}
+                  {hasPopulatedRows(inspectReport.rawData.pi1_data) && (
                     <div className="border border-gray-200 rounded-xl p-3">
                       <h4 className="font-bold text-gray-800 mb-2">MFO 1: Licensure Exam Passers</h4>
                       <GenericTableViewer
@@ -1362,7 +1456,61 @@ export function ReportsAnalytics() {
                     </div>
                   )}
 
-                  {inspectReport.rawData.mfo3_pi2_data?.length > 0 && (
+                  {/* MFO 2A Table: Faculty Awards & Expert Services */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi1_data) && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <h4 className="font-bold text-gray-800 mb-2">MFO 2A: Faculty Awards & Expert Services Rendered</h4>
+                      <GenericTableViewer
+                        rows={inspectReport.rawData.mfo2_pi1_data}
+                        columns={[
+                          { key: 'name_faculty', label: 'Faculty / Staff' },
+                          { key: 'nature_service', label: 'Nature of Service / Award' },
+                          { key: 'event_title', label: 'Event / Engagement Title' },
+                          { key: 'date', label: 'Date' },
+                          { key: 'venue', label: 'Venue' },
+                          { key: 'level_role', label: 'Role / Level' },
+                        ]}
+                      />
+                    </div>
+                  )}
+
+                  {/* MFO 2B Table: On-Going / Completed Researches */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi2_data) && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <h4 className="font-bold text-gray-800 mb-2">MFO 2B: On-Going / Completed Researches</h4>
+                      <GenericTableViewer
+                        rows={inspectReport.rawData.mfo2_pi2_data}
+                        columns={[
+                          { key: 'title_research', label: 'Research Title' },
+                          { key: 'proponents', label: 'Proponents' },
+                          { key: 'status_phase', label: 'Status / Phase' },
+                          { key: 'funding_source', label: 'Funding Source' },
+                          { key: 'date_started', label: 'Date Started' },
+                          { key: 'target_completion', label: 'Target / Completed' },
+                        ]}
+                      />
+                    </div>
+                  )}
+
+                  {/* MFO 2C Table: Research In-house Review */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi3_data) && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <h4 className="font-bold text-gray-800 mb-2">MFO 2C: Research In-house Review</h4>
+                      <GenericTableViewer
+                        rows={inspectReport.rawData.mfo2_pi3_data}
+                        columns={[
+                          { key: 'title_research', label: 'Proposal / Research Title' },
+                          { key: 'proponents', label: 'Proponents' },
+                          { key: 'date_review', label: 'Date of Review' },
+                          { key: 'panel_reviewers', label: 'Panel Reviewers' },
+                          { key: 'remarks', label: 'Remarks / Action Taken' },
+                        ]}
+                      />
+                    </div>
+                  )}
+
+                  {/* MFO 3: Completed Research Output */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo3_pi2_data) && (
                     <div className="border border-gray-200 rounded-xl p-3">
                       <h4 className="font-bold text-gray-800 mb-2">MFO 3 — PI 2: Research Output Completed Within Quarter</h4>
                       <GenericTableViewer
@@ -1411,20 +1559,22 @@ export function ReportsAnalytics() {
                     <div><strong>Quarter/Year:</strong> {inspectReport.quarter} Quarter, {inspectReport.year}</div>
                   </div>
 
-                  <div className="border border-gray-200 rounded-xl p-3">
-                    <h4 className="font-bold text-gray-800 mb-2">Extension Projects & Activities</h4>
-                    <GenericTableViewer
-                      rows={inspectReport.rawData.rows || []}
-                      columns={[
-                        { key: 'extension_project', label: 'Project / Activity' },
-                        { key: 'highlights', label: 'Highlights' },
-                        { key: 'partner_linkage', label: 'Partner' },
-                        { key: 'num_trainees', label: 'No. Trainees' },
-                        { key: 'venue', label: 'Venue' },
-                        { key: 'inclusive_date', label: 'Date' },
-                      ]}
-                    />
-                  </div>
+                  {hasPopulatedRows(inspectReport.rawData.rows) && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <h4 className="font-bold text-gray-800 mb-2">Extension Projects & Activities</h4>
+                      <GenericTableViewer
+                        rows={inspectReport.rawData.rows || []}
+                        columns={[
+                          { key: 'extension_project', label: 'Project / Activity' },
+                          { key: 'highlights', label: 'Highlights' },
+                          { key: 'partner_linkage', label: 'Partner' },
+                          { key: 'num_trainees', label: 'No. Trainees' },
+                          { key: 'venue', label: 'Venue' },
+                          { key: 'inclusive_date', label: 'Date' },
+                        ]}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1439,17 +1589,19 @@ export function ReportsAnalytics() {
                     <p><strong>Hours:</strong> {inspectReport.rawData.working_hours || 'N/A'}</p>
                   </div>
 
-                  <div className="border border-gray-200 rounded-xl p-3">
-                    <h4 className="font-bold text-gray-800 mb-2">Daily Accomplishments</h4>
-                    <GenericTableViewer
-                      rows={inspectReport.rawData.daily_accomplishments || []}
-                      columns={[
-                        { key: 'date', label: 'Date' },
-                        { key: 'activities', label: 'Activities Accomplished' },
-                        { key: 'output', label: 'Output / Deliverable' },
-                      ]}
-                    />
-                  </div>
+                  {hasPopulatedRows(inspectReport.rawData.daily_accomplishments) && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <h4 className="font-bold text-gray-800 mb-2">Daily Accomplishments</h4>
+                      <GenericTableViewer
+                        rows={inspectReport.rawData.daily_accomplishments || []}
+                        columns={[
+                          { key: 'date', label: 'Date' },
+                          { key: 'activities', label: 'Activities Accomplished' },
+                          { key: 'output', label: 'Output / Deliverable' },
+                        ]}
+                      />
+                    </div>
+                  )}
 
                   {inspectReport.rawData.photos?.length > 0 && (
                     <div className="border border-gray-200 rounded-xl p-3">
@@ -1466,6 +1618,15 @@ export function ReportsAnalytics() {
                   )}
                 </div>
               )}
+
+              {/* Footer Logo */}
+              <div className="pt-4 text-center">
+                <img
+                  src="/header-pics/ctu-footer.png"
+                  alt="CTU Footer"
+                  className="max-w-[440px] w-full mx-auto object-contain"
+                />
+              </div>
             </div>
 
             {/* Approval / Rejection Controls */}
@@ -1599,7 +1760,7 @@ export function ReportsAnalytics() {
       )}
 
       {/* ===================================================================== */}
-      {/* 6. SET / UPDATE DEADLINE MODAL (FULL VIEWPORT PORTAL)                */}
+      {/* 6. SET / UPDATE DEADLINE MODAL (RESTRICTS PAST TIMESTAMPS)            */}
       {/* ===================================================================== */}
       {showDeadlineModal && typeof document !== 'undefined' && createPortal(
         <div 
@@ -1635,10 +1796,12 @@ export function ReportsAnalytics() {
               <label className="block text-xs font-semibold text-gray-700 mb-1">Due Date & Time</label>
               <input
                 type="datetime-local"
+                min={minDateTimeInput}
                 value={deadlineInput}
                 onChange={(e) => setDeadlineInput(e.target.value)}
                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               />
+              <span className="text-[11px] text-gray-400 mt-1 block">Past dates and times are disabled.</span>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -1830,7 +1993,8 @@ export function ReportsAnalytics() {
               {/* Accomplishment Tables */}
               {inspectReport.type === 'accomplishment' && (
                 <div className="space-y-4">
-                  {inspectReport.rawData.pi1_data?.length > 0 && (
+                  {/* Print MFO 1 */}
+                  {hasPopulatedRows(inspectReport.rawData.pi1_data) && (
                     <div className="print-avoid-break">
                       <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">MFO 1: Licensure Examination Passers</div>
                       <table className="w-full border border-black border-collapse text-[10px]">
@@ -1856,7 +2020,97 @@ export function ReportsAnalytics() {
                     </div>
                   )}
 
-                  {inspectReport.rawData.mfo3_pi2_data?.length > 0 && (
+                  {/* Print MFO 2A: Faculty Awards & Expert Services */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi1_data) && (
+                    <div className="print-avoid-break">
+                      <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                        MFO 2A: Faculty Awards & Expert Services Rendered
+                      </div>
+                      <table className="w-full border border-black border-collapse text-[10px]">
+                        <thead>
+                          <tr className="bg-gray-100 text-left">
+                            <th className="border border-black p-1">Faculty / Staff</th>
+                            <th className="border border-black p-1">Nature of Service / Award</th>
+                            <th className="border border-black p-1">Event Title</th>
+                            <th className="border border-black p-1">Date</th>
+                            <th className="border border-black p-1">Venue</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inspectReport.rawData.mfo2_pi1_data.map((r: any, i: number) => (
+                            <tr key={i}>
+                              <td className="border border-black p-1 font-semibold">{r.name_faculty || '—'}</td>
+                              <td className="border border-black p-1">{r.nature_service || '—'}</td>
+                              <td className="border border-black p-1">{r.event_title || '—'}</td>
+                              <td className="border border-black p-1">{r.date || '—'}</td>
+                              <td className="border border-black p-1">{r.venue || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Print MFO 2B: On-Going / Completed Researches */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi2_data) && (
+                    <div className="print-avoid-break">
+                      <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                        MFO 2B: On-Going / Completed Researches
+                      </div>
+                      <table className="w-full border border-black border-collapse text-[10px]">
+                        <thead>
+                          <tr className="bg-gray-100 text-left">
+                            <th className="border border-black p-1">Research Title</th>
+                            <th className="border border-black p-1">Proponents</th>
+                            <th className="border border-black p-1">Status / Phase</th>
+                            <th className="border border-black p-1">Funding</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inspectReport.rawData.mfo2_pi2_data.map((r: any, i: number) => (
+                            <tr key={i}>
+                              <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                              <td className="border border-black p-1">{r.proponents || '—'}</td>
+                              <td className="border border-black p-1">{r.status_phase || '—'}</td>
+                              <td className="border border-black p-1">{r.funding_source || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Print MFO 2C: Research In-house Review */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo2_pi3_data) && (
+                    <div className="print-avoid-break">
+                      <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                        MFO 2C: Research In-house Review
+                      </div>
+                      <table className="w-full border border-black border-collapse text-[10px]">
+                        <thead>
+                          <tr className="bg-gray-100 text-left">
+                            <th className="border border-black p-1">Proposal Title</th>
+                            <th className="border border-black p-1">Proponents</th>
+                            <th className="border border-black p-1">Date</th>
+                            <th className="border border-black p-1">Panel</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inspectReport.rawData.mfo2_pi3_data.map((r: any, i: number) => (
+                            <tr key={i}>
+                              <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                              <td className="border border-black p-1">{r.proponents || '—'}</td>
+                              <td className="border border-black p-1">{r.date_review || '—'}</td>
+                              <td className="border border-black p-1">{r.panel_reviewers || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Print MFO 3: Completed Research */}
+                  {hasPopulatedRows(inspectReport.rawData.mfo3_pi2_data) && (
                     <div className="print-avoid-break">
                       <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">MFO 3 — PI 2: Research Completed Within Quarter</div>
                       <table className="w-full border border-black border-collapse text-[10px]">
@@ -1885,7 +2139,7 @@ export function ReportsAnalytics() {
               )}
 
               {/* Extension Table */}
-              {inspectReport.type === 'extension' && (
+              {inspectReport.type === 'extension' && hasPopulatedRows(inspectReport.rawData.rows) && (
                 <div className="print-avoid-break">
                   <table className="w-full border border-black border-collapse text-[10px] mb-6">
                     <thead>
@@ -1944,12 +2198,233 @@ export function ReportsAnalytics() {
         </div>,
         document.body
       )}
+
+      {/* ===================================================================== */}
+      {/* 10. SINGLE ACTION PRINT MODAL: CONSOLIDATED QUARTERLY RESEARCH        */}
+      {/* ===================================================================== */}
+      {showResearchDossierModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="!fixed !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen z-[99999] bg-black/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 px-4 m-0"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-6 sm:p-8 z-10 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-4 border-b mb-6 print-hide">
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">
+                  College of Education — Consolidated Research Outputs
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedQuarter} Quarter, {selectedYear} · {quarterlyResearchDossier.totalFound} Total Deliverables Found
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm font-semibold flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" /> Print Research Dossier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowResearchDossierModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-xl text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {quarterlyResearchDossier.totalFound === 0 ? (
+              <div className="py-16 text-center text-gray-400">
+                <BookOpen className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm font-medium">No research deliverables recorded for {selectedQuarter} Quarter {selectedYear}.</p>
+              </div>
+            ) : (
+              <div id="dean-research-dossier" className="text-black bg-white text-xs leading-relaxed max-w-[850px] mx-auto">
+                <div className="text-center mb-5">
+                  <img
+                    src="/header-pics/ctu-header.png"
+                    alt="CTU Header"
+                    className="max-w-[500px] w-full mx-auto object-contain mb-2"
+                  />
+                  <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">College of Education</div>
+                  <h1 className="text-sm font-extrabold uppercase mt-1">
+                    CONSOLIDATED RESEARCH & DEVELOPMENT ACCOMPLISHMENTS
+                  </h1>
+                  <div className="text-xs font-semibold text-gray-800">
+                    {selectedQuarter} Quarter, School Year {selectedYear}
+                  </div>
+                </div>
+
+                {/* Section 1: Completed / On-going Researches */}
+                {quarterlyResearchDossier.onGoingCompleted.length > 0 && (
+                  <div className="print-avoid-break mb-6">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                      I. Completed & On-Going Research Outputs ({quarterlyResearchDossier.onGoingCompleted.length})
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1.5">#</th>
+                          <th className="border border-black p-1.5">Research Title</th>
+                          <th className="border border-black p-1.5">Proponents / Lead</th>
+                          <th className="border border-black p-1.5">Program / Dept</th>
+                          <th className="border border-black p-1.5">Status / Phase</th>
+                          <th className="border border-black p-1.5">Funding Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quarterlyResearchDossier.onGoingCompleted.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1.5 text-center">{i + 1}</td>
+                            <td className="border border-black p-1.5 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1.5">{r.proponents || r.submitter || '—'}</td>
+                            <td className="border border-black p-1.5">{r.department || '—'}</td>
+                            <td className="border border-black p-1.5">{r.status_phase || 'Completed'}</td>
+                            <td className="border border-black p-1.5">{r.funding_source || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Section 2: Refereed Journal Publications */}
+                {quarterlyResearchDossier.publications.length > 0 && (
+                  <div className="print-avoid-break mb-6">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                      II. Refereed Journal Publications ({quarterlyResearchDossier.publications.length})
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1.5">#</th>
+                          <th className="border border-black p-1.5">Publication / Journal Title</th>
+                          <th className="border border-black p-1.5">Proponents</th>
+                          <th className="border border-black p-1.5">Journal Name</th>
+                          <th className="border border-black p-1.5">Date Published</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quarterlyResearchDossier.publications.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1.5 text-center">{i + 1}</td>
+                            <td className="border border-black p-1.5 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1.5">{r.proponents || r.submitter || '—'}</td>
+                            <td className="border border-black p-1.5">{r.name_publication || '—'}</td>
+                            <td className="border border-black p-1.5">{r.date_published || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Section 3: Faculty Awards & Expert Services Rendered */}
+                {quarterlyResearchDossier.expertServices.length > 0 && (
+                  <div className="print-avoid-break mb-6">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                      III. Expert Services Rendered & Research Awards ({quarterlyResearchDossier.expertServices.length})
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1.5">#</th>
+                          <th className="border border-black p-1.5">Faculty / Researcher</th>
+                          <th className="border border-black p-1.5">Engagement / Event</th>
+                          <th className="border border-black p-1.5">Nature of Service</th>
+                          <th className="border border-black p-1.5">Venue / Agency</th>
+                          <th className="border border-black p-1.5">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quarterlyResearchDossier.expertServices.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1.5 text-center">{i + 1}</td>
+                            <td className="border border-black p-1.5 font-semibold">{r.name_faculty || r.submitter || '—'}</td>
+                            <td className="border border-black p-1.5">{r.event_title || '—'}</td>
+                            <td className="border border-black p-1.5">{r.nature_service || '—'}</td>
+                            <td className="border border-black p-1.5">{r.venue || '—'}</td>
+                            <td className="border border-black p-1.5">{r.date || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Section 4: In-House Proposal Reviews */}
+                {quarterlyResearchDossier.inHouseReviews.length > 0 && (
+                  <div className="print-avoid-break mb-6">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                      IV. In-House Reviews & Proposal Evaluations ({quarterlyResearchDossier.inHouseReviews.length})
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1.5">#</th>
+                          <th className="border border-black p-1.5">Proposal Title</th>
+                          <th className="border border-black p-1.5">Proponents</th>
+                          <th className="border border-black p-1.5">Review Date</th>
+                          <th className="border border-black p-1.5">Panel / Evaluators</th>
+                          <th className="border border-black p-1.5">Status / Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quarterlyResearchDossier.inHouseReviews.map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1.5 text-center">{i + 1}</td>
+                            <td className="border border-black p-1.5 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1.5">{r.proponents || r.submitter || '—'}</td>
+                            <td className="border border-black p-1.5">{r.date_review || '—'}</td>
+                            <td className="border border-black p-1.5">{r.panel_reviewers || '—'}</td>
+                            <td className="border border-black p-1.5">{r.remarks || 'Reviewed'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Dean & Institutional Signatures */}
+                <div className="pt-8 print-avoid-break">
+                  <div className="flex justify-between items-start text-[11px] px-6">
+                    <div className="text-center w-60">
+                      <p className="text-left font-semibold mb-8">Consolidated by:</p>
+                      <div className="border-b border-black w-full mb-1" />
+                      <p className="font-bold uppercase">Research & Extension Chairperson</p>
+                      <p className="text-[10px] text-gray-600">College of Education</p>
+                    </div>
+                    <div className="text-center w-60">
+                      <p className="text-left font-semibold mb-8">Approved by:</p>
+                      <div className="border-b border-black w-full mb-1" />
+                      <p className="font-bold uppercase">Dean / Campus Director</p>
+                      <p className="text-[10px] text-gray-600">College of Education</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 text-center">
+                  <img
+                    src="/header-pics/ctu-footer.png"
+                    alt="CTU Footer"
+                    className="max-w-[500px] w-full mx-auto object-contain"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // ============================================================================
-// 7. HELPER TABLE VIEWER COMPONENT
+// 11. HELPER TABLE VIEWER COMPONENT
 // ============================================================================
 function GenericTableViewer({ rows, columns }: { rows: any[]; columns: { key: string; label: string }[] }) {
   if (!rows || rows.length === 0) return <p className="text-gray-400 italic py-1 text-xs">No records entered.</p>;

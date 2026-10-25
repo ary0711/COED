@@ -205,6 +205,7 @@ const PRINT_LAYOUT_STYLES = `
     }
   }
 `;
+
 function MyDraftsPanel({
   onEdit,
 }: {
@@ -827,7 +828,7 @@ export function AccomplishmentReport({
   const token = getToken();
   const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
   const rawRole = (propRole || decoded?.role || 'faculty').toLowerCase().trim();
-  const rawDept = propDept || decoded?.departmentNames?.[0] || decoded?.department || decoded?.program || '';
+  const rawDept = propDept || decoded?.program || decoded?.department || decoded?.departmentNames?.[0] || '';
 
   const myDeptCode = normalizeDepartmentCode(rawDept);
   const isChairUser = rawRole === 'chair' || rawRole === 'department_chair';
@@ -878,6 +879,12 @@ export function AccomplishmentReport({
   const [pi6, setPi6] = useState<GenericRow[]>([emptyRow(['name_faculty','program_enrolled','total_units','units_this_sem','institution'])]);
   const [pi7, setPi7] = useState<GenericRow[]>([emptyRow(['name_faculty','title_training','date','venue','sponsoring_agency','role'])]);
   const [pi8, setPi8] = useState<GenericRow[]>([emptyRow(['name_faculty','title_im','type_im','courses_utilizing','ip_protection'])]);
+
+  // --- MFO 2 State Arrays (Research and Development Services) ---
+  const [mfo2pi1, setMfo2pi1] = useState<GenericRow[]>([emptyRow(['name_faculty','nature_service','event_title','date','venue','level_role'])]);
+  const [mfo2pi2, setMfo2pi2] = useState<GenericRow[]>([emptyRow(['title_research','proponents','status_phase','funding_source','date_started','target_completion'])]);
+  const [mfo2pi3, setMfo2pi3] = useState<GenericRow[]>([emptyRow(['title_research','proponents','date_review','panel_reviewers','remarks'])]);
+
   const [mfo3pi1, setMfo3pi1] = useState<GenericRow[]>([emptyRow(['title_research','proponents','nature_utilization','partner_community','address'])]);
   const [mfo3pi2, setMfo3pi2] = useState<GenericRow[]>([emptyRow(['title_research','proponents','date_completed','funding_source'])]);
   const [mfo3pi3, setMfo3pi3] = useState<GenericRow[]>([emptyRow(['title_research','proponents','name_publication','date_published','funding_source'])]);
@@ -907,6 +914,12 @@ export function AccomplishmentReport({
     setPi6([emptyRow(['name_faculty','program_enrolled','total_units','units_this_sem','institution'])]);
     setPi7([emptyRow(['name_faculty','title_training','date','venue','sponsoring_agency','role'])]);
     setPi8([emptyRow(['name_faculty','title_im','type_im','courses_utilizing','ip_protection'])]);
+
+    // Reset MFO 2
+    setMfo2pi1([emptyRow(['name_faculty','nature_service','event_title','date','venue','level_role'])]);
+    setMfo2pi2([emptyRow(['title_research','proponents','status_phase','funding_source','date_started','target_completion'])]);
+    setMfo2pi3([emptyRow(['title_research','proponents','date_review','panel_reviewers','remarks'])]);
+
     setMfo3pi1([emptyRow(['title_research','proponents','nature_utilization','partner_community','address'])]);
     setMfo3pi2([emptyRow(['title_research','proponents','date_completed','funding_source'])]);
     setMfo3pi3([emptyRow(['title_research','proponents','name_publication','date_published','funding_source'])]);
@@ -958,6 +971,12 @@ export function AccomplishmentReport({
         if (matched.pi6_data?.length) setPi6(matched.pi6_data);
         if (matched.pi7_data?.length) setPi7(matched.pi7_data);
         if (matched.pi8_data?.length) setPi8(matched.pi8_data);
+
+        // Hydrate MFO 2
+        if (matched.mfo2_pi1_data?.length) setMfo2pi1(matched.mfo2_pi1_data);
+        if (matched.mfo2_pi2_data?.length) setMfo2pi2(matched.mfo2_pi2_data);
+        if (matched.mfo2_pi3_data?.length) setMfo2pi3(matched.mfo2_pi3_data);
+
         if (matched.mfo3_pi1_data?.length) setMfo3pi1(matched.mfo3_pi1_data);
         if (matched.mfo3_pi2_data?.length) setMfo3pi2(matched.mfo3_pi2_data);
         if (matched.mfo3_pi3_data?.length) setMfo3pi3(matched.mfo3_pi3_data);
@@ -982,58 +1001,64 @@ export function AccomplishmentReport({
 
   // Synchronize Chairperson MFO 1 entries if Faculty
   useEffect(() => {
-  if (isChairOfThisReport) {
-    setChairMfo1Data(null);
-    return;
-  }
-
-  const fetchChairMfo1 = async () => {
-    // Falls back to myDeptCode if program is empty
-    const targetDept = normalizeDepartmentCode(program || myDeptCode);
-    if (!targetDept) return;
-
-    setLoadingChairMfo1(true);
-    try {
-      const res = await fetch(
-        `${ACCOMPLISHMENT_API_URL}/program-mfo1?program=${encodeURIComponent(targetDept)}&quarter=${quarter}&year=${year}`,
-        { headers: { Authorization: `Bearer ${getToken()}` } }
-      );
-      if (res.ok) {
-        const chairData = await res.json();
-        if (chairData) {
-          setChairMfo1Data(chairData);
-          if (chairData.program_chair) setProgramChair(chairData.program_chair);
-          setProgram(chairData.program || targetDept);
-
-          // Populate the faculty's read-only MFO 1 tables
-          if (chairData.pi1_data?.length) setPi1(chairData.pi1_data);
-          if (chairData.pi2_data?.length) setPi2(chairData.pi2_data);
-          if (chairData.pi3_data?.length) setPi3(chairData.pi3_data);
-          if (chairData.pi4_data?.length) setPi4(chairData.pi4_data);
-          if (chairData.pi5_data?.length) setPi5(chairData.pi5_data);
-          if (chairData.pi6_data?.length) setPi6(chairData.pi6_data);
-          if (chairData.pi7_data?.length) setPi7(chairData.pi7_data);
-          if (chairData.pi8_data?.length) setPi8(chairData.pi8_data);
-        } else {
-          setChairMfo1Data(null);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load Chairperson MFO 1:', err);
-    } finally {
-      setLoadingChairMfo1(false);
+    if (isChairOfThisReport) {
+      setChairMfo1Data(null);
+      return;
     }
-  };
 
-  fetchChairMfo1();
-}, [quarter, year, isChairOfThisReport, myDeptCode, program]);
+    const fetchChairMfo1 = async () => {
+      const targetDept = normalizeDepartmentCode(program || myDeptCode);
+      if (!targetDept) return;
+
+      setLoadingChairMfo1(true);
+      try {
+        const res = await fetch(
+          `${ACCOMPLISHMENT_API_URL}/program-mfo1?program=${encodeURIComponent(targetDept)}&quarter=${quarter}&year=${year}`,
+          { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+        if (res.ok) {
+          const chairData = await res.json();
+          if (chairData) {
+            setChairMfo1Data(chairData);
+            if (chairData.program_chair) setProgramChair(chairData.program_chair);
+            setProgram(chairData.program || targetDept);
+
+            // Populate the faculty's read-only MFO 1 tables
+            if (chairData.pi1_data?.length) setPi1(chairData.pi1_data);
+            if (chairData.pi2_data?.length) setPi2(chairData.pi2_data);
+            if (chairData.pi3_data?.length) setPi3(chairData.pi3_data);
+            if (chairData.pi4_data?.length) setPi4(chairData.pi4_data);
+            if (chairData.pi5_data?.length) setPi5(chairData.pi5_data);
+            if (chairData.pi6_data?.length) setPi6(chairData.pi6_data);
+            if (chairData.pi7_data?.length) setPi7(chairData.pi7_data);
+            if (chairData.pi8_data?.length) setPi8(chairData.pi8_data);
+          } else {
+            setChairMfo1Data(null);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load Chairperson MFO 1:', err);
+      } finally {
+        setLoadingChairMfo1(false);
+      }
+    };
+
+    fetchChairMfo1();
+  }, [quarter, year, isChairOfThisReport, myDeptCode, program]);
+
   // Lifecycle & Form Locking
   const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
   const isApproved = status === 'approved';
   const isRevisionMode = status === 'rejected';
 
   const computeProgress = () => {
-    const allRows = [pi1,pi2,pi3,pi4,pi5,pi6,pi7,pi8,mfo3pi1,mfo3pi2,mfo3pi3,mfo3pi4,mfo4pi1,mfo4pi2,otherInitiatives,awards];
+    const allRows = [
+      pi1, pi2, pi3, pi4, pi5, pi6, pi7, pi8,
+      mfo2pi1, mfo2pi2, mfo2pi3,
+      mfo3pi1, mfo3pi2, mfo3pi3, mfo3pi4,
+      mfo4pi1, mfo4pi2,
+      otherInitiatives, awards
+    ];
     const totalCells = allRows.reduce((acc, rows) => acc + rows.length * Object.keys(rows[0] || {}).length, 0);
     const filledCells = allRows.reduce((acc, rows) => acc + rows.reduce((a, row) => a + Object.values(row).filter((v) => v.trim() !== '').length, 0), 0);
     const textFields = [program, otherAccomplishments, dateSubmitted].filter((v) => v.trim() !== '').length;
@@ -1123,6 +1148,9 @@ export function AccomplishmentReport({
     pi6_data: pi6,
     pi7_data: pi7,
     pi8_data: pi8,
+    mfo2_pi1_data: mfo2pi1,
+    mfo2_pi2_data: mfo2pi2,
+    mfo2_pi3_data: mfo2pi3,
     mfo3_pi1_data: mfo3pi1,
     mfo3_pi2_data: mfo3pi2,
     mfo3_pi3_data: mfo3pi3,
@@ -1541,6 +1569,57 @@ export function AccomplishmentReport({
       </Section>
 
       {/* =================================================================== */}
+      {/* MFO 2: RESEARCH AND DEVELOPMENT SERVICES                            */}
+      {/* =================================================================== */}
+      <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">
+        MFO 2: Research and Development Services
+      </div>
+      <Section title="MFO 2A: Faculty Awards & Expert Services Rendered (Speaker, Lecturer, Accreditor, Arbiter, Judge)">
+        <EditableTable
+          columns={[
+            { key: 'name_faculty', label: 'Faculty / Staff' },
+            { key: 'nature_service', label: 'Nature of Service / Award' },
+            { key: 'event_title', label: 'Title of Event / Engagement' },
+            { key: 'date', label: 'Date' },
+            { key: 'venue', label: 'Venue / Sponsoring Agency' },
+            { key: 'level_role', label: 'Role / Level' },
+          ]}
+          rows={mfo2pi1}
+          onChange={setMfo2pi1}
+          readOnly={isFormLocked}
+        />
+      </Section>
+      <Section title="MFO 2B: On-Going / Completed Researches">
+        <EditableTable
+          columns={[
+            { key: 'title_research', label: 'Research Title' },
+            { key: 'proponents', label: 'Proponents' },
+            { key: 'status_phase', label: 'Status / Phase (On-going / Completed)' },
+            { key: 'funding_source', label: 'Funding Source' },
+            { key: 'date_started', label: 'Date Started' },
+            { key: 'target_completion', label: 'Target / Date Completed' },
+          ]}
+          rows={mfo2pi2}
+          onChange={setMfo2pi2}
+          readOnly={isFormLocked}
+        />
+      </Section>
+      <Section title="MFO 2C: Research In-house Review">
+        <EditableTable
+          columns={[
+            { key: 'title_research', label: 'Research / Proposal Title' },
+            { key: 'proponents', label: 'Proponents' },
+            { key: 'date_review', label: 'Date of Review' },
+            { key: 'panel_reviewers', label: 'Panel Reviewers / Evaluators' },
+            { key: 'remarks', label: 'Action Taken / Remarks' },
+          ]}
+          rows={mfo2pi3}
+          onChange={setMfo2pi3}
+          readOnly={isFormLocked}
+        />
+      </Section>
+
+      {/* =================================================================== */}
       {/* MFO 3: RESEARCH                                                     */}
       {/* =================================================================== */}
       <div className="bg-[#1E3A8A] text-white px-5 py-3 rounded-xl font-bold text-sm">MFO 3: Research</div>
@@ -1786,6 +1865,73 @@ export function AccomplishmentReport({
                   </div>
                 )}
 
+                {/* Print Section for MFO 2 */}
+                {(hasPopulatedData(mfo2pi1) || hasPopulatedData(mfo2pi2) || hasPopulatedData(mfo2pi3)) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 2: Research and Development Services
+                    </div>
+
+                    {hasPopulatedData(mfo2pi1) && (
+                      <div className="mb-2">
+                        <div className="font-semibold text-[10px] text-gray-800 mb-0.5">
+                          MFO 2A: Faculty Awards & Expert Services Rendered
+                        </div>
+                        <table className="w-full border border-black border-collapse text-[9.5px]">
+                          <thead>
+                            <tr className="bg-gray-100 text-left">
+                              <th className="border border-black p-1">Faculty / Staff</th>
+                              <th className="border border-black p-1">Nature of Service / Award</th>
+                              <th className="border border-black p-1">Event / Title</th>
+                              <th className="border border-black p-1">Date</th>
+                              <th className="border border-black p-1">Venue</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mfo2pi1.map((r, i) => (
+                              <tr key={i}>
+                                <td className="border border-black p-1 font-semibold">{r.name_faculty || '—'}</td>
+                                <td className="border border-black p-1">{r.nature_service || '—'}</td>
+                                <td className="border border-black p-1">{r.event_title || '—'}</td>
+                                <td className="border border-black p-1">{r.date || '—'}</td>
+                                <td className="border border-black p-1">{r.venue || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {hasPopulatedData(mfo2pi2) && (
+                      <div className="mb-2">
+                        <div className="font-semibold text-[10px] text-gray-800 mb-0.5">
+                          MFO 2B: On-Going / Completed Researches
+                        </div>
+                        <table className="w-full border border-black border-collapse text-[9.5px]">
+                          <thead>
+                            <tr className="bg-gray-100 text-left">
+                              <th className="border border-black p-1">Research Title</th>
+                              <th className="border border-black p-1">Proponents</th>
+                              <th className="border border-black p-1">Status / Phase</th>
+                              <th className="border border-black p-1">Funding</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mfo2pi2.map((r, i) => (
+                              <tr key={i}>
+                                <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                                <td className="border border-black p-1">{r.proponents || '—'}</td>
+                                <td className="border border-black p-1">{r.status_phase || '—'}</td>
+                                <td className="border border-black p-1">{r.funding_source || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {hasPopulatedData(mfo3pi2) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
@@ -1902,6 +2048,7 @@ export function AccomplishmentReport({
     </div>
   );
 }
+
 // ============================================================================
 // 5. EXTENSION REPORT COMPONENT (STRICT LIFECYCLE & IDENTITY)
 // ============================================================================
@@ -2833,7 +2980,7 @@ export function WfhReport({
               <button type="button" onClick={() => handleSave('draft')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-sm hover:bg-blue-100 disabled:opacity-50">
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Draft'}
               </button>
-              <button type="button" onClick={() => handleSave('submitted')} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm hover:bg-[#1E40AF] disabled:opacity-50 shadow-xs">
+              <button type="button" onClick={() => handleSave('submitted')} disabled={saving} className="px-3 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm hover:bg-[#1E40AF] disabled:opacity-50 shadow-xs">
                 {saving ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> Submitting...
