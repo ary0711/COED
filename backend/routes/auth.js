@@ -383,11 +383,14 @@ router.post('/login', async (req, res) => {
     }
 
     let fullName = normalizedUsername;
-    let idNumber = '';
-    let profileId = null;
-    let profileStatus = null;
-    let department = null;
-    let profileEmail = user.email || '';
+let idNumber = '';
+let profileId = null;
+let profileStatus = null;
+let department = null;
+let profileEmail = user.email || '';
+
+// Use profiles.role as the authoritative dashboard role.
+let profileRole = user.role || '';
 
     // =====================================================
     // FIND PROFILE USING EMAIL
@@ -414,18 +417,16 @@ router.post('/login', async (req, res) => {
       }
 
       if (profile) {
-        profileId = profile.id;
-        fullName =
-          profile.full_name || normalizedUsername;
-        idNumber =
-          profile.id_number || '';
-        profileStatus =
-          profile.status;
-        department =
-          profile.department || null;
-        profileEmail =
-          profile.email || user.email || '';
-      }
+  profileId = profile.id;
+  fullName = profile.full_name || normalizedUsername;
+  idNumber = profile.id_number || '';
+  profileStatus = profile.status;
+  department = profile.department || null;
+  profileEmail = profile.email || user.email || '';
+
+  // IMPORTANT: Read the latest role after graduation.
+  profileRole = profile.role || user.role || '';
+}
     }
 
     // =====================================================
@@ -479,7 +480,7 @@ router.post('/login', async (req, res) => {
         userId: user.id,
         profileId,
         username: user.username,
-        role: user.role,
+        role: profileRole,
         fullName,
         idNumber,
         email: profileEmail,
@@ -504,8 +505,7 @@ router.post('/login', async (req, res) => {
         id: user.id,
         profileId,
         username: user.username,
-        role: user.role,
-        fullName,
+role: profileRole,        fullName,
         idNumber,
         email: profileEmail,
         department

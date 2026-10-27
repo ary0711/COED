@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
 import { CollegeDeanDashboard } from './components/CollegeDeanDashboard';
@@ -48,76 +49,143 @@ export default function App() {
     role: string;
     idNumber?: string;
   } | null>(null);
+const normalizeRole = (role: string | null | undefined): UserRole => {
+  const normalized = role?.trim().toLowerCase();
 
+  switch (normalized) {
+    case 'dean':
+      return 'dean';
+    case 'chair':
+    case 'department_chair':
+      return 'chair';
+    case 'faculty':
+      return 'faculty';
+    case 'student':
+      return 'student';
+    case 'alumni':
+      return 'alumni';
+    default:
+      return null;
+  }
+};
+  
   // =====================================================
   // RESTORE SESSION ON BROWSER REFRESH
+  // Always read the latest role from Supabase profiles.
   // =====================================================
   useEffect(() => {
-    if (window.location.pathname === '/reset-password') {
-      setAppMode('public');
-      setCurrentPage('reset-password');
-      setInitializing(false);
-      return;
-    }
+    let cancelled = false;
 
-    const token = localStorage.getItem('token');
-    const savedRole = localStorage.getItem('user_role') as UserRole;
+    const restoreSession = async () => {
+      if (window.location.pathname === '/reset-password') {
+        setAppMode('public');
+        setCurrentPage('reset-password');
+        setInitializing(false);
+        return;
+      }
 
-    if (token) {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        setAppMode('public');
+        setInitializing(false);
+        return;
+      }
+
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        const rawRole = (payload.role || savedRole || '').toLowerCase();
 
-        let normalizedRole: UserRole = null;
-        if (rawRole === 'dean') normalizedRole = 'dean';
-        else if (rawRole === 'chair' || rawRole === 'department_chair') normalizedRole = 'chair';
-        else if (rawRole === 'faculty') normalizedRole = 'faculty';
-        else if (rawRole === 'student') normalizedRole = 'student';
-        else if (rawRole === 'alumni') normalizedRole = 'alumni';
+        // Find the current profile using the profile ID in the token.
+        let profileQuery = supabase
+          .from('profiles')
+          .select('id, full_name, id_number, role, status');
 
-        if (normalizedRole) {
-          setCurrentUser({
-            username: payload.fullName ?? payload.username ?? 'User',
-            role: payload.role,
-            idNumber: payload.idNumber ?? '',
-          });
-          setCurrentRole(normalizedRole);
-          setAppMode('dashboard');
+        if (payload.profileId) {
+          profileQuery = profileQuery.eq('id', payload.profileId);
+        } else if (payload.email) {
+          profileQuery = profileQuery.eq('email', payload.email);
         } else {
+          throw new Error(
+            'The login token has no profile ID or email. Please log in again.'
+          );
+        }
+
+        const { data: profile, error } = await profileQuery.maybeSingle();
+
+        if (error) throw error;
+
+        if (cancelled) return;
+
+        if (!profile || profile.status !== 'active') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user_role');
+          setCurrentUser(null);
+          setCurrentRole(null);
+          setAppMode('public');
+          return;
+        }
+
+        // profiles.role is the current role, not the potentially stale JWT role.
+        const latestRole = normalizeRole(profile.role);
+
+        if (!latestRole) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user_role');
+          setCurrentUser(null);
+          setCurrentRole(null);
+          setAppMode('public');
+          return;
+        }
+
+        setCurrentUser({
+          username: profile.full_name || payload.fullName || payload.username || 'User',
+          role: latestRole,
+          idNumber: profile.id_number || payload.idNumber || '',
+        });
+
+        setCurrentRole(latestRole);
+        localStorage.setItem('user_role', latestRole);
+        setAppMode('dashboard');
+      } catch (error) {
+        console.error('Failed to restore session:', error);
+
+        if (!cancelled) {
+          setCurrentUser(null);
+          setCurrentRole(null);
           setAppMode('public');
         }
-      } catch (error) {
-        console.error('Failed to parse active session:', error);
-        localStorage.clear();
-        setAppMode('public');
+      } finally {
+        if (!cancelled) {
+          setInitializing(false);
+        }
       }
-    } else {
-      setAppMode('public');
-    }
+    };
 
-    setInitializing(false);
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
 
   // =====================================================
   // LOGIN
   // =====================================================
   const handleLogin = (role: string) => {
     const token = localStorage.getItem('token');
-    let normalizedRole: UserRole = null;
-    const rawRole = role.toLowerCase();
-
-    if (rawRole === 'dean') normalizedRole = 'dean';
-    else if (rawRole === 'chair' || rawRole === 'department_chair') normalizedRole = 'chair';
-    else if (rawRole === 'faculty') normalizedRole = 'faculty';
-    else if (rawRole === 'student') normalizedRole = 'student';
-    else if (rawRole === 'alumni') normalizedRole = 'alumni';
+    let normalizedRole = normalizeRole(role);
 
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
+
+        // Prefer the role supplied by the login token.
+        normalizedRole = normalizeRole(payload.role) ?? normalizedRole;
+
         setCurrentUser({
           username: payload.fullName ?? payload.username ?? 'User',
-          role: payload.role,
+          role: payload.role ?? role,
           idNumber: payload.idNumber ?? '',
         });
       } catch (error) {
@@ -125,14 +193,20 @@ export default function App() {
       }
     }
 
-    if (normalizedRole) {
-      localStorage.setItem('user_role', normalizedRole);
+    if (!normalizedRole) {
+      setCurrentUser(null);
+      setCurrentRole(null);
+      setAppMode('public');
+      localStorage.removeItem('user_role');
+      return;
     }
 
+    localStorage.setItem('user_role', normalizedRole);
     setCurrentRole(normalizedRole);
     setAppMode('dashboard');
     setActiveMenuItem('dashboard');
   };
+
 
   // =====================================================
   // LOGOUT

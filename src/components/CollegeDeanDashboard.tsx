@@ -1144,7 +1144,20 @@ const PERMITTED_ROLE_TRANSITIONS: Record<string, string[]> = {
 
 
 export function UserManagement() {
+  const [showBatchGraduationModal, setShowBatchGraduationModal] =
+  useState(false);
+  const [programFilter, setProgramFilter] = useState('all');
+  const [graduatingIds, setGraduatingIds] = useState<string[]>([]);
+  const [graduationConfirmUser, setGraduationConfirmUser] =
+  useState<any | null>(null);
   const [graduationUser, setGraduationUser] = useState<any | null>(null);
+  const [showGraduationPanel, setShowGraduationPanel] = useState(false);
+  const [eligibilityFilter, setEligibilityFilter] = useState<
+  'all' | 'eligible' | 'not_eligible'
+>('all');
+const [selectedGraduationIds, setSelectedGraduationIds] = useState<string[]>([]);
+const [updatingEligibility, setUpdatingEligibility] = useState<string | null>(null);
+const [processingBulkGraduation, setProcessingBulkGraduation] = useState(false);
   const [confirmingGraduation, setConfirmingGraduation] = useState(false);
   const [graduationError, setGraduationError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -1252,6 +1265,115 @@ export function UserManagement() {
     user?.graduation_status === 'graduated' ||
     user?.is_graduated === true;
 
+    const isFourthYearStudent = (user: any): boolean => {
+  if (user?.role !== 'student' || isGraduated(user)) {
+    return false;
+  }
+
+  const year = user.year_level ??
+    user.student_year_level ??
+    user.numeric_year_level;
+
+  if (Number(year) === 4) {
+    return true;
+  }
+
+  return typeof year === 'string' &&
+    ['fourth year', '4th year'].includes(year.trim().toLowerCase());
+};
+
+const isGraduationEligible = (user: any): boolean => {
+  if (isGraduated(user)) return false;
+
+  // Fourth-year students are eligible by default.
+  if (isFourthYearStudent(user)) return true;
+
+  return (
+    user?.graduation_eligible === true ||
+    user?.graduation_eligible === 1
+  );
+};
+const fourthYearStudents = users.filter(isFourthYearStudent);
+
+const filteredGraduationStudents = fourthYearStudents.filter((user) => {
+  const matchesEligibility =
+    eligibilityFilter === 'all' ||
+    (eligibilityFilter === 'eligible' &&
+      isGraduationEligible(user)) ||
+    (eligibilityFilter === 'not_eligible' &&
+      !isGraduationEligible(user));
+
+  const program = String(
+    user.program ?? user.course ?? user.department ?? ''
+  ).trim().toLowerCase();
+
+  const matchesProgram =
+    programFilter === 'all' ||
+    program === programFilter.toLowerCase();
+
+  return matchesEligibility && matchesProgram;
+});
+const selectedEligibleStudents = filteredGraduationStudents.filter(
+  (user) =>
+    selectedGraduationIds.includes(String(user.id)) &&
+    isGraduationEligible(user) &&
+    !isGraduated(user)
+);
+const updateGraduationEligibility = async (
+  user: any,
+  eligible: boolean
+) => {
+  if (!user?.id || updatingEligibility !== null) return;
+
+  setUpdatingEligibility(String(user.id));
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+      `http://localhost:5000/api/students/${user.id}/graduation-eligibility`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+  eligible: eligible,
+}),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        result.message ||
+        'Failed to update graduation eligibility.'
+      );
+    }
+
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text: `Graduation eligibility updated for ${user.full_name}.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to update graduation eligibility.',
+    });
+  } finally {
+    setUpdatingEligibility(null);
+  }
+};
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setFetchError('');
@@ -1964,6 +2086,136 @@ export function UserManagement() {
     }
   };
 
+const confirmGraduate = async (user: any) => {
+  if (!user?.id || graduatingIds.length > 0 || processingBulkGraduation) {
+    return;
+  }
+
+  if (!isFourthYearStudent(user)) {
+    setStatusMessage({
+      type: 'error',
+      text: 'Only fourth-year students can be confirmed as graduates.',
+    });
+    return;
+  }
+
+  setGraduatingIds([String(user.id)]);
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+      `http://localhost:5000/api/students/${user.id}/graduate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirm: true }),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || result.message || 'Graduation failed.'
+      );
+    }
+
+    setGraduationConfirmUser(null);
+    setSelectedGraduationIds((previous) =>
+      previous.filter((id) => id !== String(user.id))
+    );
+
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text: `${user.full_name} has been confirmed as a graduate and moved to alumni, if supported by the backend.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to confirm graduation.',
+    });
+  } finally {
+    setGraduatingIds([]);
+  }
+};
+
+const batchConfirmGraduates = async () => {
+  const selectedStudents = selectedEligibleStudents.filter(
+    (student) => isFourthYearStudent(student) && !isGraduated(student)
+  );
+
+  if (selectedStudents.length === 0 || processingBulkGraduation) {
+    setStatusMessage({
+      type: 'error',
+      text: 'Select at least one eligible fourth-year student.',
+    });
+    return;
+  }
+
+
+  setProcessingBulkGraduation(true);
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+  'http://localhost:5000/api/students/batch-graduate',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+    },
+    body: JSON.stringify({
+      confirm: true,
+      studentIds: selectedStudents.map((student) => student.id),
+    }),
+  }
+);
+
+const result = await response.json();
+
+if (!response.ok) {
+  throw new Error(
+    result.error || result.message || 'Batch graduation failed.'
+  );
+}
+
+    setSelectedGraduationIds([]);
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text:
+        result.message ||
+        `${selectedStudents.length} student(s) graduated successfully.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to process batch graduation.',
+    });
+  } finally {
+    setProcessingBulkGraduation(false);
+  }
+};
+
   return (
     <div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">
       {/* Page heading */}
@@ -1996,6 +2248,14 @@ export function UserManagement() {
             <span className="hidden sm:inline">Add User</span>
             <span className="sm:hidden">Add</span>
           </button>
+          <button
+  type="button"
+  onClick={() => setShowGraduationPanel(true)}
+  className="flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+>
+  <Check className="h-4 w-4" />
+  <span>Fourth Year Students</span>
+</button>
         </div>
       </div>
 
@@ -2108,7 +2368,220 @@ export function UserManagement() {
           </div>
         </div>
       </div>
+       
+{showGraduationPanel && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    onClick={() => setShowGraduationPanel(false)}
+  >
+    <div
+      className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Modal Header */}
+      <div className="flex items-center justify-between border-b p-5">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">
+            Fourth Year Students
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Manage graduation eligibility and student status.
+          </p>
+          <select
+  value={programFilter}
+  onChange={(e) => setProgramFilter(e.target.value)}
+  className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+>
+  <option value="all">All Programs</option>
+  <option value="BEEd">BEEd</option>
+  <option value="BTLEd">BTLEd</option>
+  <option value="BSEd-Math">BSEd-Math</option>
+  <option value="BSEd-English">BSEd-English</option>
+</select>
+        </div>
 
+        <button
+          type="button"
+          onClick={() => setShowGraduationPanel(false)}
+          className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+          aria-label="Close modal"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-1 gap-4 border-b bg-gray-50 p-5 sm:grid-cols-2">
+  <div className="rounded-xl bg-white p-4 shadow-sm">
+    <p className="text-sm font-medium text-gray-500">
+      Fourth Year Students
+    </p>
+    <p className="mt-1 text-2xl font-bold text-gray-800">
+      {fourthYearStudents.length}
+    </p>
+  </div>
+
+  <div className="rounded-xl bg-white p-4 shadow-sm">
+    <p className="text-sm font-medium text-gray-500">
+      Eligible
+    </p>
+    <p className="mt-1 text-2xl font-bold text-green-600">
+      {fourthYearStudents.filter(isGraduationEligible).length}
+    </p>
+  </div>
+</div>
+
+      {/* Filters and Actions */}
+      <div className="flex flex-col gap-3 border-b p-5 lg:flex-row lg:items-center lg:justify-between">
+        
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedGraduationIds(
+                filteredGraduationStudents
+                  .filter(
+                    (student) =>
+                      isGraduationEligible(student) &&
+                      !isGraduated(student)
+                  )
+                  .map((student) => String(student.id))
+              )
+            }
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Select Eligible
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedGraduationIds([])}
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Clear Selection
+          </button>
+          <button
+  type="button"
+  onClick={batchConfirmGraduates}
+  disabled={
+    processingBulkGraduation ||
+    selectedEligibleStudents.length === 0
+  }
+  className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {processingBulkGraduation
+    ? 'Processing...'
+    : `Confirm Selected (${selectedEligibleStudents.length})`}
+</button>
+        </div>
+      </div>
+
+      {/* Student Table */}
+      <div className="max-h-[45vh] overflow-auto">
+        <table className="w-full min-w-[750px] text-left text-sm">
+          <thead className="sticky top-0 bg-gray-100 text-gray-600">
+            <tr>
+              <th className="px-5 py-3">Select</th>
+              <th className="px-5 py-3">Student</th>
+              <th className="px-5 py-3">Program</th>
+              <th className="px-5 py-3">Eligibility</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-100">
+            {filteredGraduationStudents.map((student) => (
+              <tr key={student.id} className="hover:bg-gray-50">
+                <td className="px-5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedGraduationIds.includes(
+                      String(student.id)
+                    )}
+                    disabled={
+                      !isGraduationEligible(student) ||
+                      isGraduated(student)
+                    }
+                    onChange={(e) => {
+                      const id = String(student.id);
+
+                      setSelectedGraduationIds((previous) =>
+                        e.target.checked
+                          ? [...new Set([...previous, id])]
+                          : previous.filter((selectedId) => selectedId !== id)
+                      );
+                    }}
+                    aria-label={`Select ${student.full_name || student.name || student.email}`}
+                  />
+                </td>
+
+                <td className="px-5 py-3">
+                  <p className="font-medium text-gray-800">
+                    {student.full_name ||
+                      student.name ||
+                      student.email ||
+                      'Unnamed Student'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {student.student_id || student.id}
+                  </p>
+                </td>
+
+                <td className="px-5 py-3">
+                  {student.program || student.course || '—'}
+                </td>
+
+                <td className="px-5 py-3">
+                  {isGraduated(student) ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
+                      Graduated
+                    </span>
+                  ) : isGraduationEligible(student) ? (
+                    <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                      Eligible
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                      Not Eligible
+                    </span>
+                  )}
+                </td>
+
+              </tr>
+            ))}
+
+            {filteredGraduationStudents.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-5 py-10 text-center text-gray-500"
+                >
+                  No fourth-year students found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal Footer */}
+      <div className="flex flex-col gap-3 border-t bg-gray-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-600">
+          {selectedEligibleStudents.length} eligible student(s) selected.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setShowGraduationPanel(false)}
+          className="rounded-lg bg-gray-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+  
       {/* User table */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         {loading ? (
@@ -2326,36 +2799,16 @@ export function UserManagement() {
                             </button>
                           )}
 
-                          {user.role === 'student' ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setGraduationUser(user);
-                                setGraduationError('');
-                              }}
-                              disabled={graduated}
-                              className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                              title={
-                                graduated
-                                  ? 'Student is already graduated'
-                                  : 'Confirm student graduation'
-                              }
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              <span>
-                                {graduated ? 'Graduated' : 'Confirm Graduate'}
-                              </span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => openEdit(user)}
-                              className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-100 sm:p-2"
-                              title="Edit User"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                          {user.role !== 'student' && (
+  <button
+    type="button"
+    onClick={() => openEdit(user)}
+    className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-100 sm:p-2"
+    title="Edit User"
+  >
+    <Edit className="h-3.5 w-3.5" />
+  </button>
+)}
                         </div>
                       </td>
                     </tr>
@@ -2926,6 +3379,47 @@ export function UserManagement() {
           </div>
         </div>
       )}
+      {graduationConfirmUser && (
+  <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+    >
+      <h2 className="text-lg font-bold text-gray-900">
+        Confirm Student Graduation
+      </h2>
+
+      <p className="mt-3 text-sm leading-6 text-gray-600">
+        Are you sure you want to graduate{' '}
+        <strong>{graduationConfirmUser.full_name}</strong>?
+        Their account will be changed to the alumni role if the
+        server completes the operation successfully.
+      </p>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setGraduationConfirmUser(null)}
+          className="rounded-lg border px-4 py-2 text-sm"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={() => confirmGraduate(graduationConfirmUser)}
+          disabled={
+            graduatingIds.length > 0 || processingBulkGraduation
+          }
+          className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {graduatingIds.length > 0 ? 'Processing...' : 'Confirm Graduate'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
