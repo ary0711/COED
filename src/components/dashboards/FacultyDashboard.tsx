@@ -38,6 +38,7 @@ import {
   Plus,
   Save,
   Folder,
+  Shield,
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
@@ -47,6 +48,7 @@ import { ReportTrackerPanel } from '../ReportTrackerPanel';
 import { ResearchExtension } from '../ResearchExtension'; 
 import { AcademicDocumentsViewer } from '../AcademicDocumentsViewer';
 import { FacultyAchievements } from '../FacultyAchievements';
+import { FacultyClubSection } from './FacultyClubSection';
 import { ReportsSection } from '../ReportsSection'; 
 import AccreditationWorkspace from '../AccreditationWorkspace'; 
 
@@ -77,6 +79,7 @@ interface FacultyDashboardProps {
 }
 
 const ME_API_URL = 'http://localhost:5000/api/me';
+const CLUB_ADVISER_ME_URL = 'http://localhost:5000/api/clubs/adviser/me';
 
 export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,6 +94,35 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   const userId = token ? JSON.parse(atob(token.split('.')[1])).userId : '';
 
   const [departmentNames, setDepartmentNames] = useState<string[]>([]);
+
+  const [isAdviser, setIsAdviser] = useState(false);
+
+useEffect(() => {
+  const checkAdviser = async () => {
+    try {
+      const res = await fetch(CLUB_ADVISER_ME_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsAdviser(!!data.club);
+      }
+    } catch {
+      // silent
+    }
+  };
+  checkAdviser();
+}, [token]);
+
+const menuItems = useMemo(() => {
+  if (!isAdviser) return facultyMenuItems;
+  const settings = facultyMenuItems[facultyMenuItems.length - 1];
+  return [
+    ...facultyMenuItems.slice(0, -1),
+    { icon: Shield, label: 'Club', id: 'club' },
+    settings,
+  ];
+}, [isAdviser]);
 
   useEffect(() => {
     const loadMe = async () => {
@@ -119,7 +151,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC]">
       <Sidebar
-        menuItems={facultyMenuItems}
+        menuItems={menuItems}
         activeItem={activeMenuItem}
         onItemClick={setActiveMenuItem}
         userRole="Faculty Member"
@@ -156,6 +188,7 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
           {activeMenuItem === 'accreditation' && <AccreditationWorkspace userRole="faculty" />} 
           {activeMenuItem === 'reports'             && <ReportsSection userId={userId} userName={userName} />}
           {activeMenuItem === 'calendar'          && <FacultyCalendar />}
+          {activeMenuItem === 'club' && isAdviser && <FacultyClubSection />}
           {activeMenuItem === 'settings'          && <FacultySettings />}
          
         </main>
