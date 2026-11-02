@@ -50,6 +50,7 @@ router.post('/register', async (req, res) => {
       department,
       status,
       graduation_year,
+      club_id,
     } = req.body;
 
     // Phase 1: Pre-validation
@@ -59,7 +60,12 @@ router.post('/register', async (req, res) => {
         error: 'All required fields (Username, Password, Role, Full Name, ID Number, Email) must be filled.',
       });
     }
-
+    if (role === 'faculty' && !club_id) {
+  return res.status(400).json({
+    success: false,
+    error: 'Please assign a club to this faculty member.',
+  });
+}
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
     const trimmedFullName = full_name.trim();
@@ -244,6 +250,7 @@ router.post('/register', async (req, res) => {
           id_number: trimmedIdNumber,
           department: programCode,
           status: accountStatus,
+           club_id: role === 'faculty' ? club_id : null,
         },
       ])
       .select()
@@ -1210,6 +1217,7 @@ router.put('/users/:id', authenticate, async (req, res) => {
       id_number,
       department,
       status,
+      club_id,
       password,
     } = req.body;
 
@@ -1272,7 +1280,24 @@ router.put('/users/:id', authenticate, async (req, res) => {
     // 3. PREPARE PROFILE UPDATES
     // ------------------------------------------------------
     const profileUpdate = {};
+    // Validate and update faculty club assignment
+const targetRole = String(
+  role !== undefined ? role : existingProfile.role
+).trim().toLowerCase();
 
+if (targetRole === 'faculty') {
+  if (!club_id) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please assign a club to this faculty member.',
+    });
+  }
+
+  profileUpdate.club_id = club_id;
+} else {
+  // Remove club assignment when the account is no longer faculty
+  profileUpdate.club_id = null;
+}
     if (full_name !== undefined) {
       profileUpdate.full_name = String(full_name).trim();
     }

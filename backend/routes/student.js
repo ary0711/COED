@@ -176,6 +176,7 @@ router.get('/graduation', authenticate, requireChairRole, async (req, res) => {
              )`
       )
       .eq('role', 'student')
+      .eq('student_profiles.year_level', 4)
       .order('created_at', { ascending: false });
 
     if (isChairScoped) {

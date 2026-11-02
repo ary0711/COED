@@ -1184,15 +1184,16 @@ const [processingBulkGraduation, setProcessingBulkGraduation] = useState(false);
   } | null>(null);
 
   const [form, setForm] = useState({
-    username: '',
-    full_name: '',
-    email: '',
-    role: 'student',
-    id_number: '',
-    program: '',
-    status: 'active',
-    password: '',
-  });
+  username: '',
+  full_name: '',
+  email: '',
+  role: 'student',
+  id_number: '',
+  program: '',
+  club_id: '',
+  status: 'active',
+  password: '',
+});
 
   // Role change states
   const [roleModalUser, setRoleModalUser] = useState<any | null>(null);
@@ -1204,7 +1205,34 @@ const [processingBulkGraduation, setProcessingBulkGraduation] = useState(false);
   const [departmentsList, setDepartmentsList] = useState<
     { id: string; name: string }[]
   >([]);
+ const [clubsList, setClubsList] = useState<
+  { id: string; name: string }[]
+>([]);
 
+const fetchClubs = useCallback(async () => {
+  console.log('Testing Supabase clubs connection...');
+
+  const { data, error, status, count } = await supabase
+    .from('clubs')
+    .select('id, name', { count: 'exact' });
+
+  console.log('Supabase response status:', status);
+  console.log('Total club records:', count);
+  console.log('Club records:', data);
+  console.log('Club query error:', error);
+
+  if (error) {
+    console.error('CLUB ERROR DETAILS:', error.message);
+    setClubsList([]);
+    return;
+  }
+
+  const filteredClubs = (data || []).filter(
+    (club) => club.name.trim().toUpperCase() !== 'UNEC'
+  );
+
+  setClubsList(filteredClubs);
+}, []);
   // Display the year level supplied by the backend.
   const getYearLevelLabel = (user: any): string => {
     if (user.role !== 'student') {
@@ -1443,10 +1471,10 @@ const updateGraduationEligibility = async (
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-    fetchDepartments();
-  }, [fetchUsers, fetchDepartments]);
-
+  fetchUsers();
+  fetchDepartments();
+  fetchClubs();
+}, [fetchUsers, fetchDepartments, fetchClubs]);
   useEffect(() => {
     let result = [...users];
 
@@ -1493,16 +1521,16 @@ const updateGraduationEligibility = async (
 
   const openAdd = () => {
     setForm({
-      username: '',
-      full_name: '',
-      email: '',
-      role: 'student',
-      id_number: '',
-      program: '',
-      status: 'active',
-      password: '',
-    });
-
+  username: '',
+  full_name: '',
+  email: '',
+  role: 'student',
+  id_number: '',
+  program: '',
+  club_id: '',
+  status: 'active',
+  password: '',
+});
     setShowPassword(false);
     setFormError('');
     setSelected(null);
@@ -1513,15 +1541,16 @@ const updateGraduationEligibility = async (
     setSelected(user);
 
     setForm({
-      username: user.username || '',
-      full_name: user.full_name || '',
-      email: user.email || '',
-      role: user.role || 'student',
-      id_number: user.id_number || '',
-      program: user.program || user.department || '',
-      status: user.status || 'active',
-      password: '',
-    });
+  username: user.username || '',
+  full_name: user.full_name || '',
+  email: user.email || '',
+  role: user.role || 'student',
+  id_number: user.id_number || '',
+  program: user.program || user.department || '',
+  club_id: user.club_id || '',
+  status: user.status || 'active',
+  password: '',
+});
 
     setShowPassword(false);
     setFormError('');
@@ -1642,7 +1671,10 @@ const updateGraduationEligibility = async (
 
   const handleAdd = async () => {
     setFormError('');
-
+    if (form.role === 'faculty' && !form.club_id) {
+  setFormError('Please assign a club to this faculty member.');
+  return;
+}
     if (!form.username.trim()) {
       setFormError('Username is required.');
       return;
@@ -1728,6 +1760,7 @@ const updateGraduationEligibility = async (
             full_name: form.full_name.trim(),
             id_number: form.id_number.trim(),
             program: payloadProgram,
+              club_id: form.role === 'faculty' ? form.club_id : null,
             department: payloadProgram,
             status: form.status,
           }),
@@ -1788,6 +1821,7 @@ const updateGraduationEligibility = async (
         role: 'student',
         id_number: '',
         program: '',
+        club_id: '',
         status: 'active',
         password: '',
       });
@@ -1811,7 +1845,10 @@ const updateGraduationEligibility = async (
 
   const handleEdit = async () => {
     setFormError('');
-
+    if (form.role === 'faculty' && !form.club_id) {
+  setFormError('Please assign a club to this faculty member.');
+  return;
+}
     if (!form.username.trim()) {
       setFormError('Username is required.');
       return;
@@ -1876,6 +1913,7 @@ const updateGraduationEligibility = async (
             id_number: form.id_number.trim(),
             program: payloadProgram,
             department: payloadProgram,
+            club_id: form.role === 'faculty' ? form.club_id : null,
             status: form.status,
             ...(form.password.trim()
               ? { password: form.password.trim() }
@@ -3081,6 +3119,38 @@ if (!response.ok) {
                   </div>
                 </div>
               )}
+            {form.role === 'faculty' && (
+  <div className="col-span-2">
+    <label className="mb-1 block text-xs font-semibold text-gray-600">
+      Club Assignment *
+    </label>
+
+    <select
+      value={form.club_id || ''}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          club_id: e.target.value,
+        }))
+      }
+      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">-- Select Club --</option>
+
+      {clubsList.map((club) => (
+        <option key={club.id} value={club.id}>
+          {club.name}
+        </option>
+      ))}
+    </select>
+
+    {clubsList.length === 0 && (
+      <p className="mt-1 text-xs text-red-500">
+        No clubs loaded. Please check Supabase permissions.
+      </p>
+    )}
+  </div>
+)}
             </div>
 
             <div className="mt-6 flex gap-3">
@@ -3420,6 +3490,7 @@ if (!response.ok) {
     </div>
   </div>
 )}
+
     </div>
   );
 }
