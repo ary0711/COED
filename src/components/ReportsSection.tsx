@@ -40,6 +40,7 @@ function getToken() {
 }
 
 export type ReportType = 'accomplishment' | 'extension' | 'wfh';
+
 // Maps any full department name, program name, or code to the official 3 codes
 export function normalizeDepartmentCode(raw?: string | null): 'BEEd' | 'BTLEd' | 'BSEd-Math' | string {
   if (!raw) return '';
@@ -206,6 +207,9 @@ const PRINT_LAYOUT_STYLES = `
   }
 `;
 
+// ============================================================================
+// 2. MY DRAFTS PANEL
+// ============================================================================
 function MyDraftsPanel({
   onEdit,
 }: {
@@ -824,11 +828,27 @@ export function AccomplishmentReport({
   externalPrintTrigger?: boolean;
   onPrintHandled?: () => void;
 }) {
-  // 1. Resolve role & department from token if props are not explicitly provided
+  // 1. Resolve role & department safely from JWT (handles flat or nested .user payloads)
   const token = getToken();
-  const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null;
-  const rawRole = (propRole || decoded?.role || 'faculty').toLowerCase().trim();
-  const rawDept = propDept || decoded?.program || decoded?.department || decoded?.departmentNames?.[0] || '';
+  const decoded = (() => {
+    if (!token) return null;
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(base64));
+    } catch {
+      return null;
+    }
+  })();
+
+  const tokenUser = decoded?.user || decoded || {};
+  const rawRole = (propRole || tokenUser?.role || 'faculty').toLowerCase().trim();
+  const rawDept =
+    propDept ||
+    tokenUser?.program ||
+    tokenUser?.department ||
+    (Array.isArray(tokenUser?.departmentNames) ? tokenUser.departmentNames[0] : '') ||
+    '';
 
   const myDeptCode = normalizeDepartmentCode(rawDept);
   const isChairUser = rawRole === 'chair' || rawRole === 'department_chair';
@@ -840,8 +860,8 @@ export function AccomplishmentReport({
   const [status, setStatus] = useState<'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('draft');
   const [deanRemarks, setDeanRemarks] = useState<string | null>(null);
 
-  // Initialize with official department code for chairs
-  const [program, setProgram] = useState(() => (isChairUser ? myDeptCode : ''));
+  // Initialize with official department code
+  const [program, setProgram] = useState(() => myDeptCode || '');
   const [programChair, setProgramChair] = useState(() => (isChairUser ? userName : ''));
   const [otherAccomplishments, setOtherAccomplishments] = useState('');
   const [dateSubmitted, setDateSubmitted] = useState('');
@@ -931,6 +951,48 @@ export function AccomplishmentReport({
     setLastSavedAt(null);
   }, [userName, isChairOfThisReport, myDeptCode]);
 
+  // Synchronize Chairperson MFO 1 entries if Faculty
+  const fetchChairMfo1 = useCallback(async () => {
+    if (isChairOfThisReport) {
+      setChairMfo1Data(null);
+      return;
+    }
+
+    const targetDept = normalizeDepartmentCode(program || myDeptCode);
+    if (!targetDept) return;
+
+    setLoadingChairMfo1(true);
+    try {
+      const res = await fetch(
+        `${ACCOMPLISHMENT_API_URL}/program-mfo1?program=${encodeURIComponent(targetDept)}&quarter=${quarter}&year=${year}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      if (res.ok) {
+        const chairData = await res.json();
+        if (chairData) {
+          setChairMfo1Data(chairData);
+          if (chairData.program_chair) setProgramChair(chairData.program_chair);
+          setProgram(chairData.program || targetDept);
+
+          if (Array.isArray(chairData.pi1_data) && chairData.pi1_data.length > 0) setPi1(chairData.pi1_data);
+          if (Array.isArray(chairData.pi2_data) && chairData.pi2_data.length > 0) setPi2(chairData.pi2_data);
+          if (Array.isArray(chairData.pi3_data) && chairData.pi3_data.length > 0) setPi3(chairData.pi3_data);
+          if (Array.isArray(chairData.pi4_data) && chairData.pi4_data.length > 0) setPi4(chairData.pi4_data);
+          if (Array.isArray(chairData.pi5_data) && chairData.pi5_data.length > 0) setPi5(chairData.pi5_data);
+          if (Array.isArray(chairData.pi6_data) && chairData.pi6_data.length > 0) setPi6(chairData.pi6_data);
+          if (Array.isArray(chairData.pi7_data) && chairData.pi7_data.length > 0) setPi7(chairData.pi7_data);
+          if (Array.isArray(chairData.pi8_data) && chairData.pi8_data.length > 0) setPi8(chairData.pi8_data);
+        } else {
+          setChairMfo1Data(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load Chairperson MFO 1:', err);
+    } finally {
+      setLoadingChairMfo1(false);
+    }
+  }, [quarter, year, isChairOfThisReport, myDeptCode, program]);
+
   // Load Period Report (Personal draft/submission for this user)
   const loadPeriodReport = useCallback(async (targetQ: string, targetY: string, explicitId?: string) => {
     const periodKey = explicitId ? `id:${explicitId}` : `${targetQ}-${targetY}`;
@@ -957,8 +1019,8 @@ export function AccomplishmentReport({
         setYear(String(matched.year || targetY));
         setStatus(matched.status || 'draft');
         setDeanRemarks(matched.dean_remarks || null);
-        setProgramChair(matched.program_chair ?? (isChairOfThisReport ? userName : ''));
-        setProgram(matched.program ?? myDeptCode ?? '');
+        setProgramChair(matched.program_chair || (isChairOfThisReport ? userName : ''));
+        setProgram(matched.program || myDeptCode || '');
         setOtherAccomplishments(matched.other_accomplishments ?? '');
         setDateSubmitted(matched.date_submitted ?? '');
         setDismissedSubmissionIds(Array.isArray(matched.dismissed_submission_ids) ? matched.dismissed_submission_ids : []);
@@ -992,59 +1054,20 @@ export function AccomplishmentReport({
       }
     } catch {
       // silent
+    } finally {
+      if (!isChairOfThisReport) {
+        fetchChairMfo1();
+      }
     }
-  }, [userName, isChairOfThisReport, myDeptCode, resetBlankForm]);
+  }, [userName, isChairOfThisReport, myDeptCode, resetBlankForm, fetchChairMfo1]);
 
   useEffect(() => {
     loadPeriodReport(quarter, year, targetReportId);
   }, [loadPeriodReport, targetReportId]);
 
-  // Synchronize Chairperson MFO 1 entries if Faculty
   useEffect(() => {
-    if (isChairOfThisReport) {
-      setChairMfo1Data(null);
-      return;
-    }
-
-    const fetchChairMfo1 = async () => {
-      const targetDept = normalizeDepartmentCode(program || myDeptCode);
-      if (!targetDept) return;
-
-      setLoadingChairMfo1(true);
-      try {
-        const res = await fetch(
-          `${ACCOMPLISHMENT_API_URL}/program-mfo1?program=${encodeURIComponent(targetDept)}&quarter=${quarter}&year=${year}`,
-          { headers: { Authorization: `Bearer ${getToken()}` } }
-        );
-        if (res.ok) {
-          const chairData = await res.json();
-          if (chairData) {
-            setChairMfo1Data(chairData);
-            if (chairData.program_chair) setProgramChair(chairData.program_chair);
-            setProgram(chairData.program || targetDept);
-
-            // Populate the faculty's read-only MFO 1 tables
-            if (chairData.pi1_data?.length) setPi1(chairData.pi1_data);
-            if (chairData.pi2_data?.length) setPi2(chairData.pi2_data);
-            if (chairData.pi3_data?.length) setPi3(chairData.pi3_data);
-            if (chairData.pi4_data?.length) setPi4(chairData.pi4_data);
-            if (chairData.pi5_data?.length) setPi5(chairData.pi5_data);
-            if (chairData.pi6_data?.length) setPi6(chairData.pi6_data);
-            if (chairData.pi7_data?.length) setPi7(chairData.pi7_data);
-            if (chairData.pi8_data?.length) setPi8(chairData.pi8_data);
-          } else {
-            setChairMfo1Data(null);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load Chairperson MFO 1:', err);
-      } finally {
-        setLoadingChairMfo1(false);
-      }
-    };
-
     fetchChairMfo1();
-  }, [quarter, year, isChairOfThisReport, myDeptCode, program]);
+  }, [fetchChairMfo1]);
 
   // Lifecycle & Form Locking
   const isFormLocked = readOnly || status === 'submitted' || status === 'under_review' || status === 'approved';
@@ -1139,7 +1162,7 @@ export function AccomplishmentReport({
     quarter,
     year,
     program_chair: programChair,
-    program,
+    program: normalizeDepartmentCode(program) || program,
     pi1_data: pi1,
     pi2_data: pi2,
     pi3_data: pi3,
@@ -1496,10 +1519,20 @@ export function AccomplishmentReport({
             <span>
               {chairMfo1Data
                 ? `MFO 1 records are synchronized with Chairperson (${chairMfo1Data.program_chair || 'Program Chair'}) for ${quarter} Quarter ${year}.`
-                : `The Program Chairperson has not yet published MFO 1 records for ${activeReportDeptCode || myDeptCode} for ${quarter} Quarter ${year}.`}
+                : `The Program Chairperson has not yet published MFO 1 records for ${activeReportDeptCode || myDeptCode || 'your program'} for ${quarter} Quarter ${year}.`}
             </span>
           </div>
-          {loadingChairMfo1 && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-700" />}
+          <div className="flex items-center gap-2">
+            {loadingChairMfo1 && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-700" />}
+            <button
+              type="button"
+              onClick={fetchChairMfo1}
+              className="px-2 py-1 text-[11px] font-semibold bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg transition-colors flex items-center gap-1"
+              title="Refresh MFO 1 from Chairperson"
+            >
+              <RefreshCw className="w-3 h-3" /> Sync MFO 1
+            </button>
+          </div>
         </div>
       )}
 
@@ -1652,8 +1685,11 @@ export function AccomplishmentReport({
       <Section title="PI 2: Weighted Trainees / Manhours">
         <EditableTable columns={[{key:'title_training',label:'Training Title'},{key:'no_beneficiaries',label:'Beneficiaries'},{key:'length_training',label:'Length'},{key:'total_manhours',label:'Manhours'},{key:'partner_agency',label:'Partner'}]} rows={mfo4pi2} onChange={setMfo4pi2} readOnly={isFormLocked} />
       </Section>
-      <Section title="Other Initiatives & Institutional Awards">
+      <Section title="Other Initiatives & Activities">
         <EditableTable columns={[{key:'title_activity',label:'Activity Title'},{key:'date_conducted',label:'Date'},{key:'venue',label:'Venue'},{key:'sponsoring_agency',label:'Sponsor'},{key:'students_involved',label:'Students'},{key:'role_students',label:'Student Role'},{key:'faculty_involved',label:'Faculty'},{key:'role_faculty',label:'Faculty Role'}]} rows={otherInitiatives} onChange={setOtherInitiatives} readOnly={isFormLocked} />
+      </Section>
+      <Section title="Institutional Awards Received">
+        <EditableTable columns={[{key:'title_award',label:'Title of Award'},{key:'nature_award',label:'Nature of Award'},{key:'granting_agency',label:'Granting Agency'},{key:'date_awarding',label:'Date of Awarding'}]} rows={awards} onChange={setAwards} readOnly={isFormLocked} />
       </Section>
 
       <Section title="Other Accomplishments Narrative">
@@ -1691,6 +1727,22 @@ export function AccomplishmentReport({
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      value={entry.venue}
+                      onChange={(e) => updateDocEntryField(entry.id, 'venue', e.target.value)}
+                      disabled={isFormLocked}
+                      placeholder="Venue / Location"
+                      className="px-3 py-1.5 border rounded-lg text-xs"
+                    />
+                    <input
+                      value={entry.date}
+                      onChange={(e) => updateDocEntryField(entry.id, 'date', e.target.value)}
+                      disabled={isFormLocked}
+                      placeholder="Date Conducted"
+                      className="px-3 py-1.5 border rounded-lg text-xs"
+                    />
                   </div>
                   <textarea
                     value={entry.description}
@@ -1811,25 +1863,45 @@ export function AccomplishmentReport({
               </div>
 
               <div className="space-y-4">
+                {/* ==================== MFO 1 ==================== */}
+                {(hasPopulatedData(pi1) ||
+                  hasPopulatedData(pi2) ||
+                  hasPopulatedData(pi3) ||
+                  hasPopulatedData(pi4) ||
+                  hasPopulatedData(pi5) ||
+                  hasPopulatedData(pi6) ||
+                  hasPopulatedData(pi7) ||
+                  hasPopulatedData(pi8)) && (
+                  <div className="font-bold text-xs bg-gray-100 border border-black px-2 py-1 uppercase">
+                    MFO 1: Higher Education Services
+                  </div>
+                )}
+
                 {hasPopulatedData(pi1) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
-                      MFO 1 — PI 1: Licensure Examination Passers
+                      PI 1: First-time Licensure Examination Passers
                     </div>
                     <table className="w-full border border-black border-collapse text-[10px]">
                       <thead>
                         <tr className="bg-gray-100 text-left">
                           <th className="border border-black p-1">Exam Date</th>
+                          <th className="border border-black p-1">First-time Takers</th>
                           <th className="border border-black p-1">First-time Passers</th>
+                          <th className="border border-black p-1">First-time %</th>
+                          <th className="border border-black p-1">Total Takers</th>
                           <th className="border border-black p-1">Total Passers</th>
                           <th className="border border-black p-1">Overall %</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pi1.map((r, i) => (
+                        {pi1.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
                           <tr key={i}>
                             <td className="border border-black p-1">{r.date_exam || '—'}</td>
+                            <td className="border border-black p-1">{r.no_first_time || '—'}</td>
                             <td className="border border-black p-1">{r.no_passers || '—'}</td>
+                            <td className="border border-black p-1">{r.passing_pct_first || '—'}</td>
+                            <td className="border border-black p-1">{r.total_takers || '—'}</td>
                             <td className="border border-black p-1">{r.total_passers || '—'}</td>
                             <td className="border border-black p-1">{r.overall_pct || '—'}</td>
                           </tr>
@@ -1842,7 +1914,7 @@ export function AccomplishmentReport({
                 {hasPopulatedData(pi2) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
-                      MFO 1 — PI 2: Employment of Graduates
+                      PI 2: Employment of Graduates (2 Years Prior)
                     </div>
                     <table className="w-full border border-black border-collapse text-[10px]">
                       <thead>
@@ -1853,7 +1925,7 @@ export function AccomplishmentReport({
                         </tr>
                       </thead>
                       <tbody>
-                        {pi2.map((r, i) => (
+                        {pi2.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
                           <tr key={i}>
                             <td className="border border-black p-1">{r.no_graduates || '—'}</td>
                             <td className="border border-black p-1">{r.no_employed || '—'}</td>
@@ -1865,77 +1937,325 @@ export function AccomplishmentReport({
                   </div>
                 )}
 
-                {/* Print Section for MFO 2 */}
-                {(hasPopulatedData(mfo2pi1) || hasPopulatedData(mfo2pi2) || hasPopulatedData(mfo2pi3)) && (
+                {hasPopulatedData(pi3) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
-                      MFO 2: Research and Development Services
+                      PI 3: Enrollment in Priority Programs
                     </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Class Section</th>
+                          <th className="border border-black p-1">No. Enrolled</th>
+                          <th className="border border-black p-1">Adviser</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi3.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.class_section || '—'}</td>
+                            <td className="border border-black p-1">{r.no_enrolled || '—'}</td>
+                            <td className="border border-black p-1">{r.name_adviser || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                    {hasPopulatedData(mfo2pi1) && (
-                      <div className="mb-2">
-                        <div className="font-semibold text-[10px] text-gray-800 mb-0.5">
-                          MFO 2A: Faculty Awards & Expert Services Rendered
-                        </div>
-                        <table className="w-full border border-black border-collapse text-[9.5px]">
-                          <thead>
-                            <tr className="bg-gray-100 text-left">
-                              <th className="border border-black p-1">Faculty / Staff</th>
-                              <th className="border border-black p-1">Nature of Service / Award</th>
-                              <th className="border border-black p-1">Event / Title</th>
-                              <th className="border border-black p-1">Date</th>
-                              <th className="border border-black p-1">Venue</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {mfo2pi1.map((r, i) => (
-                              <tr key={i}>
-                                <td className="border border-black p-1 font-semibold">{r.name_faculty || '—'}</td>
-                                <td className="border border-black p-1">{r.nature_service || '—'}</td>
-                                <td className="border border-black p-1">{r.event_title || '—'}</td>
-                                <td className="border border-black p-1">{r.date || '—'}</td>
-                                <td className="border border-black p-1">{r.venue || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                {hasPopulatedData(pi4) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 4: Syllabi Submissions
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Faculty</th>
+                          <th className="border border-black p-1">Courses Taught</th>
+                          <th className="border border-black p-1">Status</th>
+                          <th className="border border-black p-1">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi4.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.courses_taught || '—'}</td>
+                            <td className="border border-black p-1">{r.status_syllabus || '—'}</td>
+                            <td className="border border-black p-1">{r.remarks || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                    {hasPopulatedData(mfo2pi2) && (
-                      <div className="mb-2">
-                        <div className="font-semibold text-[10px] text-gray-800 mb-0.5">
-                          MFO 2B: On-Going / Completed Researches
-                        </div>
-                        <table className="w-full border border-black border-collapse text-[9.5px]">
-                          <thead>
-                            <tr className="bg-gray-100 text-left">
-                              <th className="border border-black p-1">Research Title</th>
-                              <th className="border border-black p-1">Proponents</th>
-                              <th className="border border-black p-1">Status / Phase</th>
-                              <th className="border border-black p-1">Funding</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {mfo2pi2.map((r, i) => (
-                              <tr key={i}>
-                                <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
-                                <td className="border border-black p-1">{r.proponents || '—'}</td>
-                                <td className="border border-black p-1">{r.status_phase || '—'}</td>
-                                <td className="border border-black p-1">{r.funding_source || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                {hasPopulatedData(pi5) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 5: Certifications Acquired (TESDA/ISO/AACCUP)
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Faculty</th>
+                          <th className="border border-black p-1">Certification</th>
+                          <th className="border border-black p-1">Granting Agency</th>
+                          <th className="border border-black p-1">Date Granted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi5.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.nature_cert || '—'}</td>
+                            <td className="border border-black p-1">{r.granting_agency || '—'}</td>
+                            <td className="border border-black p-1">{r.date_granted || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(pi6) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 6: Faculty Post-Graduate Education
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Faculty</th>
+                          <th className="border border-black p-1">Program Enrolled</th>
+                          <th className="border border-black p-1">Earned Units</th>
+                          <th className="border border-black p-1">Units This Sem</th>
+                          <th className="border border-black p-1">Institution</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi6.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.program_enrolled || '—'}</td>
+                            <td className="border border-black p-1">{r.total_units || '—'}</td>
+                            <td className="border border-black p-1">{r.units_this_sem || '—'}</td>
+                            <td className="border border-black p-1">{r.institution || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(pi7) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 7: Faculty Trainings / Workshops Attended
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Faculty</th>
+                          <th className="border border-black p-1">Training Title</th>
+                          <th className="border border-black p-1">Date</th>
+                          <th className="border border-black p-1">Venue</th>
+                          <th className="border border-black p-1">Sponsor</th>
+                          <th className="border border-black p-1">Role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi7.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.title_training || '—'}</td>
+                            <td className="border border-black p-1">{r.date || '—'}</td>
+                            <td className="border border-black p-1">{r.venue || '—'}</td>
+                            <td className="border border-black p-1">{r.sponsoring_agency || '—'}</td>
+                            <td className="border border-black p-1">{r.role || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(pi8) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 8: Instructional Materials Produced
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Author(s)</th>
+                          <th className="border border-black p-1">IM Title</th>
+                          <th className="border border-black p-1">Type</th>
+                          <th className="border border-black p-1">Courses Utilizing</th>
+                          <th className="border border-black p-1">IP Protection</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pi8.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.title_im || '—'}</td>
+                            <td className="border border-black p-1">{r.type_im || '—'}</td>
+                            <td className="border border-black p-1">{r.courses_utilizing || '—'}</td>
+                            <td className="border border-black p-1">{r.ip_protection || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* ==================== MFO 2 ==================== */}
+                {(hasPopulatedData(mfo2pi1) || hasPopulatedData(mfo2pi2) || hasPopulatedData(mfo2pi3)) && (
+                  <div className="font-bold text-xs bg-gray-100 border border-black px-2 py-1 uppercase mt-4">
+                    MFO 2: Research and Development Services
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo2pi1) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 2A: Faculty Awards & Expert Services Rendered
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Faculty / Staff</th>
+                          <th className="border border-black p-1">Nature of Service / Award</th>
+                          <th className="border border-black p-1">Event / Engagement</th>
+                          <th className="border border-black p-1">Date</th>
+                          <th className="border border-black p-1">Venue / Sponsor</th>
+                          <th className="border border-black p-1">Role / Level</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo2pi1.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.name_faculty || '—'}</td>
+                            <td className="border border-black p-1">{r.nature_service || '—'}</td>
+                            <td className="border border-black p-1">{r.event_title || '—'}</td>
+                            <td className="border border-black p-1">{r.date || '—'}</td>
+                            <td className="border border-black p-1">{r.venue || '—'}</td>
+                            <td className="border border-black p-1">{r.level_role || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo2pi2) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 2B: On-Going / Completed Researches
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Research Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Status / Phase</th>
+                          <th className="border border-black p-1">Funding Source</th>
+                          <th className="border border-black p-1">Date Started</th>
+                          <th className="border border-black p-1">Target / Completed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo2pi2.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.status_phase || '—'}</td>
+                            <td className="border border-black p-1">{r.funding_source || '—'}</td>
+                            <td className="border border-black p-1">{r.date_started || '—'}</td>
+                            <td className="border border-black p-1">{r.target_completion || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo2pi3) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      MFO 2C: Research In-house Review
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Research / Proposal Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Date of Review</th>
+                          <th className="border border-black p-1">Panel Reviewers</th>
+                          <th className="border border-black p-1">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo2pi3.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.date_review || '—'}</td>
+                            <td className="border border-black p-1">{r.panel_reviewers || '—'}</td>
+                            <td className="border border-black p-1">{r.remarks || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* ==================== MFO 3 ==================== */}
+                {(hasPopulatedData(mfo3pi1) ||
+                  hasPopulatedData(mfo3pi2) ||
+                  hasPopulatedData(mfo3pi3) ||
+                  hasPopulatedData(mfo3pi4)) && (
+                  <div className="font-bold text-xs bg-gray-100 border border-black px-2 py-1 uppercase mt-4">
+                    MFO 3: Research
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo3pi1) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 1: Research Output Utilized by Industry / Community
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Research Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Utilization</th>
+                          <th className="border border-black p-1">Partner Community</th>
+                          <th className="border border-black p-1">Address</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo3pi1.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.nature_utilization || '—'}</td>
+                            <td className="border border-black p-1">{r.partner_community || '—'}</td>
+                            <td className="border border-black p-1">{r.address || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
                 {hasPopulatedData(mfo3pi2) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
-                      MFO 3 — PI 2: Research Output Completed Within Quarter
+                      PI 2: Research Output Completed Within Quarter
                     </div>
                     <table className="w-full border border-black border-collapse text-[10px]">
                       <thead>
@@ -1947,7 +2267,7 @@ export function AccomplishmentReport({
                         </tr>
                       </thead>
                       <tbody>
-                        {mfo3pi2.map((r, i) => (
+                        {mfo3pi2.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
                           <tr key={i}>
                             <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
                             <td className="border border-black p-1">{r.proponents || '—'}</td>
@@ -1960,10 +2280,80 @@ export function AccomplishmentReport({
                   </div>
                 )}
 
+                {hasPopulatedData(mfo3pi3) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 3: Refereed Journal Publications
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Journal / Publication</th>
+                          <th className="border border-black p-1">Date Published</th>
+                          <th className="border border-black p-1">Funding Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo3pi3.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.name_publication || '—'}</td>
+                            <td className="border border-black p-1">{r.date_published || '—'}</td>
+                            <td className="border border-black p-1">{r.funding_source || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo3pi4) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 4: Conference Presentations
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Title</th>
+                          <th className="border border-black p-1">Proponents</th>
+                          <th className="border border-black p-1">Date</th>
+                          <th className="border border-black p-1">Sponsoring Agency</th>
+                          <th className="border border-black p-1">Venue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo3pi4.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 font-semibold">{r.title_research || '—'}</td>
+                            <td className="border border-black p-1">{r.proponents || '—'}</td>
+                            <td className="border border-black p-1">{r.date || '—'}</td>
+                            <td className="border border-black p-1">{r.sponsoring_agency || '—'}</td>
+                            <td className="border border-black p-1">{r.venue || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* ==================== MFO 4 & OTHERS ==================== */}
+                {(hasPopulatedData(mfo4pi1) ||
+                  hasPopulatedData(mfo4pi2) ||
+                  hasPopulatedData(otherInitiatives) ||
+                  hasPopulatedData(awards)) && (
+                  <div className="font-bold text-xs bg-gray-100 border border-black px-2 py-1 uppercase mt-4">
+                    MFO 4: Technical Advisory Extension Program & Other Initiatives
+                  </div>
+                )}
+
                 {hasPopulatedData(mfo4pi1) && (
                   <div className="print-avoid-break">
                     <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
-                      MFO 4 — PI 1: Active Partnerships
+                      PI 1: Active Partnerships with LGUs / NGOs / Industries
                     </div>
                     <table className="w-full border border-black border-collapse text-[10px]">
                       <thead>
@@ -1975,12 +2365,106 @@ export function AccomplishmentReport({
                         </tr>
                       </thead>
                       <tbody>
-                        {mfo4pi1.map((r, i) => (
+                        {mfo4pi1.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
                           <tr key={i}>
                             <td className="border border-black p-1">{r.title_project || '—'}</td>
                             <td className="border border-black p-1">{r.proponents || '—'}</td>
                             <td className="border border-black p-1">{r.partner || '—'}</td>
                             <td className="border border-black p-1">{r.project_locale || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(mfo4pi2) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      PI 2: Weighted Trainees / Manhours
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Training Title</th>
+                          <th className="border border-black p-1">Beneficiaries</th>
+                          <th className="border border-black p-1">Length</th>
+                          <th className="border border-black p-1">Total Manhours</th>
+                          <th className="border border-black p-1">Partner Agency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfo4pi2.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.title_training || '—'}</td>
+                            <td className="border border-black p-1">{r.no_beneficiaries || '—'}</td>
+                            <td className="border border-black p-1">{r.length_training || '—'}</td>
+                            <td className="border border-black p-1">{r.total_manhours || '—'}</td>
+                            <td className="border border-black p-1">{r.partner_agency || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(otherInitiatives) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      Other Initiatives & Activities
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Activity Title</th>
+                          <th className="border border-black p-1">Date</th>
+                          <th className="border border-black p-1">Venue</th>
+                          <th className="border border-black p-1">Sponsor</th>
+                          <th className="border border-black p-1">Students (Role)</th>
+                          <th className="border border-black p-1">Faculty (Role)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {otherInitiatives.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.title_activity || '—'}</td>
+                            <td className="border border-black p-1">{r.date_conducted || '—'}</td>
+                            <td className="border border-black p-1">{r.venue || '—'}</td>
+                            <td className="border border-black p-1">{r.sponsoring_agency || '—'}</td>
+                            <td className="border border-black p-1">
+                              {r.students_involved ? `${r.students_involved} (${r.role_students || 'Participant'})` : '—'}
+                            </td>
+                            <td className="border border-black p-1">
+                              {r.faculty_involved ? `${r.faculty_involved} (${r.role_faculty || 'Participant'})` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasPopulatedData(awards) && (
+                  <div className="print-avoid-break">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-1 uppercase">
+                      Institutional Awards Received
+                    </div>
+                    <table className="w-full border border-black border-collapse text-[10px]">
+                      <thead>
+                        <tr className="bg-gray-100 text-left">
+                          <th className="border border-black p-1">Title of Award</th>
+                          <th className="border border-black p-1">Nature of Award</th>
+                          <th className="border border-black p-1">Granting Agency</th>
+                          <th className="border border-black p-1">Date of Awarding</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {awards.filter((r) => Object.values(r).some((v) => v?.trim())).map((r, i) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1">{r.title_award || '—'}</td>
+                            <td className="border border-black p-1">{r.nature_award || '—'}</td>
+                            <td className="border border-black p-1">{r.granting_agency || '—'}</td>
+                            <td className="border border-black p-1">{r.date_awarding || '—'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1997,21 +2481,38 @@ export function AccomplishmentReport({
                   </div>
                 )}
 
-                {docEntries.some((e) => e.photos.length > 0) && (
-                  <div className="print-avoid-break pt-3">
-                    <div className="font-bold text-[11px] border-b border-black pb-0.5 mb-2 uppercase">
+                {docEntries.length > 0 && (
+                  <div className="pt-3 space-y-3">
+                    <div className="font-bold text-[11px] border-b border-black pb-0.5 uppercase">
                       Activity Documentation & Evidence
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {docEntries.flatMap((e) =>
-                        e.photos.map((p, pIdx) => (
-                          <div key={`${e.id}-${pIdx}`} className="border border-black p-1.5 flex flex-col items-center">
-                            <img src={p.url} alt="Documentation" className="max-h-48 object-contain mb-1" />
-                            <p className="text-[9px] text-center font-medium">{p.caption || e.title || 'Activity Photo'}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                    {docEntries.map((e) => {
+                      const catLabel = DOC_CATEGORIES.find((c) => c.key === e.category)?.label || e.category;
+                      return (
+                        <div key={e.id} className="print-avoid-break border border-black p-2 space-y-1.5">
+                          <div className="text-[9.5px] font-bold uppercase text-gray-700">{catLabel}</div>
+                          {e.title && <div className="font-bold text-[10.5px]">{e.title}</div>}
+                          {(e.venue || e.date) && (
+                            <div className="text-[9.5px] text-gray-700">
+                              {[e.venue, e.date].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                          {e.description && (
+                            <p className="text-[10px] whitespace-pre-wrap leading-relaxed">{e.description}</p>
+                          )}
+                          {e.photos.length > 0 && (
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              {e.photos.map((p, pIdx) => (
+                                <div key={`${e.id}-${pIdx}`} className="border border-gray-400 p-1 flex flex-col items-center">
+                                  <img src={p.url} alt="Documentation" className="max-h-44 object-contain mb-1" />
+                                  <p className="text-[9px] text-center font-medium">{p.caption || e.title || 'Activity Photo'}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -2930,6 +3431,13 @@ export function WfhReport({
     }
   };
 
+  useEffect(() => {
+    if (externalPrintTrigger) {
+      setShowPrint(true);
+      onPrintHandled?.();
+    }
+  }, [externalPrintTrigger, onPrintHandled]);
+
   return (
     <div className="space-y-6">
       <style>{PRINT_LAYOUT_STYLES}</style>
@@ -3358,17 +3866,17 @@ export function ReportsSection({ userId, userName }: { userId: string; userName:
   };
 
   const handleAfterSubmit = async (label: string) => {
-  try {
-    await notifyDean({
-      title: `Report Submitted: ${label}`,
-      message: `${userName} submitted the ${label}.`,
-      type: 'report',
-    });
-  } catch (e) {
-    console.error('Report submitted but Dean notification failed:', e);
-  }
-  setTab('track');
-};
+    try {
+      await notifyDean({
+        title: `Report Submitted: ${label}`,
+        message: `${userName} submitted the ${label}.`,
+        type: 'report',
+      });
+    } catch (e) {
+      console.error('Report submitted but Dean notification failed:', e);
+    }
+    setTab('track');
+  };
 
   return (
     <div>
