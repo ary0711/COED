@@ -89,7 +89,7 @@ interface ResearchSubmission {
   file_path?: string | null;
   files?: FileAttachment[] | null;
   status: 'pending' | 'approved' | 'rejected';
-  research_status?: 'on-going' | 'completed' | null;
+  research_status?: 'on-going' | 'completed' | 'published' | null;
   dean_remarks?: string | null;
   remarks?: string | null;
   category?: string | null;
@@ -153,11 +153,11 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
 
   // In-Modal Preview State
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
-  const localBlobUrlMapRef = useRef<Map<string, string>>(new Map());
+  const localBlobUrlMapRef = useRef>(new Map());
 
   // Form State
   const [researchType, setResearchType] = useState<'research' | 'extension' | 'achievement'>('research');
-  const [researchStatus, setResearchStatus] = useState<'on-going' | 'completed'>('completed');
+  const [researchStatus, setResearchStatus] = useState<'on-going' | 'completed' | 'published'>('completed');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -337,10 +337,12 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
     setView('create');
   };
 
-  const handleResearchStatusChange = (statusVal: 'on-going' | 'completed') => {
+  const handleResearchStatusChange = (statusVal: 'on-going' | 'completed' | 'published') => {
     setResearchStatus(statusVal);
-    if (statusVal === 'on-going') {
+    if (statusVal !== 'published') {
       setPublicationLink('');
+    }
+    if (statusVal === 'on-going') {
       setEndDate('');
     }
   };
@@ -418,7 +420,13 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       return;
     }
 
-    if (researchType === 'research' && researchStatus === 'completed' && startDate && endDate && new Date(endDate) < new Date(startDate)) {
+    if (
+      researchType === 'research' &&
+      (researchStatus === 'completed' || researchStatus === 'published') &&
+      startDate &&
+      endDate &&
+      new Date(endDate) < new Date(startDate)
+    ) {
       setModal({
         isOpen: true,
         type: 'validation',
@@ -460,9 +468,11 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
       if (startDate) formData.append('start_date', startDate);
       if (researchType === 'research') {
         formData.append('research_status', researchStatus);
-        if (researchStatus === 'completed') {
+        if (researchStatus !== 'on-going') {
           if (endDate) formData.append('end_date', endDate);
-          if (publicationLink.trim()) formData.append('publication_link', publicationLink.trim());
+        }
+        if (researchStatus === 'published' && publicationLink.trim()) {
+          formData.append('publication_link', publicationLink.trim());
         }
       } else {
         if (endDate) formData.append('end_date', endDate);
@@ -847,12 +857,20 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                                 {item.type}
                               </span>
                               {item.type === 'research' && item.research_status && (
-                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                                  item.research_status === 'on-going'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-emerald-100 text-emerald-800'
-                                }`}>
-                                  {item.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                                <span
+                                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                    item.research_status === 'on-going'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : item.research_status === 'published'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : 'bg-emerald-100 text-emerald-800'
+                                  }`}
+                                >
+                                  {item.research_status === 'on-going'
+                                    ? 'On-going'
+                                    : item.research_status === 'published'
+                                    ? 'Published'
+                                    : 'Completed'}
                                 </span>
                               )}
                               <h3 className="text-sm sm:text-base font-semibold text-gray-900">
@@ -1070,18 +1088,22 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       Publication Link <span className="text-gray-400 font-normal">(Optional DOI or URL)</span>
-                      {researchStatus === 'on-going' && (
-                        <span className="text-amber-600 ml-1 font-medium">✨ Disabled for On-going research</span>
+                      {researchStatus !== 'published' && (
+                        <span className="text-amber-600 ml-1 font-medium">✨ Available only when status is Published</span>
                       )}
                     </label>
                     <input
                       type="url"
                       value={publicationLink}
-                      disabled={researchStatus === 'on-going'}
+                      disabled={researchStatus !== 'published'}
                       onChange={(e) => setPublicationLink(e.target.value)}
-                      placeholder={researchStatus === 'on-going' ? 'Disabled for on-going research' : 'https://doi.org/... or journal link'}
+                      placeholder={
+                        researchStatus !== 'published'
+                          ? 'Select "Published" status to add a link'
+                          : 'https://doi.org/... or journal link'
+                      }
                       className={`w-full px-4 py-2.5 border rounded-xl text-sm transition-all ${
-                        researchStatus === 'on-going'
+                        researchStatus !== 'published'
                           ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-75'
                           : 'border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none'
                       }`}
@@ -1275,11 +1297,12 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                   </label>
                   <select
                     value={researchStatus}
-                    onChange={(e) => handleResearchStatusChange(e.target.value as 'on-going' | 'completed')}
+                    onChange={(e) => handleResearchStatusChange(e.target.value as 'on-going' | 'completed' | 'published')}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer font-medium text-gray-900"
                   >
                     <option value="completed">Completed</option>
                     <option value="on-going">On-going</option>
+                    <option value="published">Published</option>
                   </select>
                 </div>
               )}
@@ -1508,12 +1531,20 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                       {activeSubmission.type}
                     </span>
                     {activeSubmission.type === 'research' && activeSubmission.research_status && (
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        activeSubmission.research_status === 'on-going'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {activeSubmission.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                      <span
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                          activeSubmission.research_status === 'on-going'
+                            ? 'bg-amber-100 text-amber-800'
+                            : activeSubmission.research_status === 'published'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {activeSubmission.research_status === 'on-going'
+                          ? 'On-going'
+                          : activeSubmission.research_status === 'published'
+                          ? 'Published'
+                          : 'Completed'}
                       </span>
                     )}
                     <span className="text-xs text-gray-400">ID: {activeSubmission.id.slice(0, 8)}</span>
@@ -1673,12 +1704,20 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
                 {detailsModalSubmission.type}
               </span>
               {detailsModalSubmission.type === 'research' && detailsModalSubmission.research_status && (
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                  detailsModalSubmission.research_status === 'on-going'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {detailsModalSubmission.research_status === 'on-going' ? 'On-going' : 'Completed'}
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                    detailsModalSubmission.research_status === 'on-going'
+                      ? 'bg-amber-100 text-amber-800'
+                      : detailsModalSubmission.research_status === 'published'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}
+                >
+                  {detailsModalSubmission.research_status === 'on-going'
+                    ? 'On-going'
+                    : detailsModalSubmission.research_status === 'published'
+                    ? 'Published'
+                    : 'Completed'}
                 </span>
               )}
               {statusBadge(detailsModalSubmission.status)}

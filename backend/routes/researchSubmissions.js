@@ -23,6 +23,8 @@ const upload = multer({
 });
 
 const ALLOWED_TYPES = ['research', 'extension', 'achievement'];
+const ALLOWED_RESEARCH_STATUSES = ['on-going', 'completed', 'published'];
+
 // =====================================================
 // PUBLIC: GET APPROVED RESEARCH FOR RESEARCH PAGE
 // =====================================================
@@ -64,6 +66,7 @@ router.get('/public/approved', async (req, res) => {
     });
   }
 });
+
 // Updated to exactly match the frontend dash format to prevent validation errors
 const ALLOWED_SDGS = [
   'SDG 1 – No Poverty',
@@ -240,6 +243,7 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
   const {
     title,
     type,
+    research_status,
     category,
     date_received,
     publication_link,
@@ -260,14 +264,28 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
   if (!ALLOWED_TYPES.includes(type)) {
     return res.status(400).json({ error: 'Invalid type.' });
   }
+  if (type === 'research' && research_status && !ALLOWED_RESEARCH_STATUSES.includes(research_status)) {
+    return res.status(400).json({ error: 'Invalid research status.' });
+  }
+
+  const normalizedResearchStatus =
+    type === 'research' ? (research_status || 'completed') : null;
+  const resolvedEndDate =
+    type === 'research' && normalizedResearchStatus === 'on-going'
+      ? null
+      : (end_date || null);
+  const resolvedPublicationLink =
+    type === 'research' && normalizedResearchStatus === 'published'
+      ? (publication_link?.trim() || null)
+      : null;
 
   if (start_date && isNaN(Date.parse(start_date))) {
     return res.status(400).json({ error: 'Invalid Start Date format.' });
   }
-  if (end_date && isNaN(Date.parse(end_date))) {
+  if (resolvedEndDate && isNaN(Date.parse(resolvedEndDate))) {
     return res.status(400).json({ error: 'Invalid End Date format.' });
   }
-  if (start_date && end_date && new Date(end_date) < new Date(start_date)) {
+  if (start_date && resolvedEndDate && new Date(resolvedEndDate) < new Date(start_date)) {
     return res.status(400).json({ error: 'End Date cannot be earlier than Start Date.' });
   }
 
@@ -338,12 +356,13 @@ router.post('/', authenticate, upload.any(), async (req, res) => {
     submitted_by: req.user.userId,
     title: String(title).trim(),
     type,
+    research_status: normalizedResearchStatus,
     category: category || null,
     date_received: date_received || null,
     description: description?.trim() || null,
     start_date: start_date || null,
-    end_date: end_date || null,
-    publication_link: type === 'research' ? (publication_link?.trim() || null) : null,
+    end_date: resolvedEndDate,
+    publication_link: resolvedPublicationLink,
     funding_source: type === 'research' ? (funding_source?.trim() || null) : null,
     authors: type === 'research' ? (authors?.trim() || null) : null,
     budget: type === 'research' ? parsedBudget : null,
@@ -394,6 +413,7 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
 
   const {
     title,
+    research_status,
     category,
     description,
     start_date,
@@ -407,7 +427,24 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
     sdg_alignment,
   } = req.body;
 
-  if (start_date && end_date && new Date(end_date) < new Date(start_date)) {
+  if (existing.type === 'research' && research_status && !ALLOWED_RESEARCH_STATUSES.includes(research_status)) {
+    return res.status(400).json({ error: 'Invalid research status.' });
+  }
+
+  const normalizedResearchStatus =
+    existing.type === 'research'
+      ? (research_status || existing.research_status || 'completed')
+      : null;
+  const resolvedEndDate =
+    existing.type === 'research' && normalizedResearchStatus === 'on-going'
+      ? null
+      : (end_date || null);
+  const resolvedPublicationLink =
+    existing.type === 'research' && normalizedResearchStatus === 'published'
+      ? (publication_link !== undefined ? (publication_link ? publication_link.trim() : null) : existing.publication_link)
+      : null;
+
+  if (start_date && resolvedEndDate && new Date(resolvedEndDate) < new Date(start_date)) {
     return res.status(400).json({ error: 'End Date cannot be earlier than Start Date.' });
   }
 
@@ -457,11 +494,12 @@ router.put('/:id', authenticate, upload.any(), async (req, res) => {
   // Strict UPDATE: Re-enters 'pending' review under the exact same submission ID
   const updatePayload = {
     title: title ? String(title).trim() : existing.title,
+    research_status: normalizedResearchStatus,
     category: category !== undefined ? category : existing.category,
     description: description !== undefined ? (description ? description.trim() : null) : existing.description,
     start_date: start_date || null,
-    end_date: end_date || null,
-    publication_link: publication_link !== undefined ? (publication_link ? publication_link.trim() : null) : existing.publication_link,
+    end_date: resolvedEndDate,
+    publication_link: resolvedPublicationLink,
     funding_source: funding_source !== undefined ? (funding_source ? funding_source.trim() : null) : existing.funding_source,
     authors: authors !== undefined ? (authors ? authors.trim() : null) : existing.authors,
     budget: parsedBudget,

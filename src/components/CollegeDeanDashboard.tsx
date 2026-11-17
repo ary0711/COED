@@ -100,6 +100,7 @@ import {
   Calendar as CalendarIcon,
   Archive,
   MapPin,
+  UserCog,
   Clock,
   Tag,
   Globe,
@@ -1111,6 +1112,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
 
 
 // ─── User Management ──────────────────────────────────────────────────────────
+
 const ID_LENGTH_CONFIG: Record<string, { length: number; label: string }> = {
   student: { length: 7, label: '7 digits' },
   faculty: { length: 6, label: '6 digits' },
@@ -1131,194 +1133,711 @@ const PROGRAM_LABELS: Record<string, string> = {
   'BSED-ENGLISH': 'Bachelor of Secondary Education - Major in English',
 };
 
-function UserManagement() {
-  const [showPassword, setShowPassword] = useState(false);
-  const [users, setUsers]               = useState<any[]>([]);
-  const [filtered, setFiltered]         = useState<any[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [search, setSearch]             = useState('');
-  const [roleFilter, setRoleFilter]     = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [page, setPage]                 = useState(1);
-  const [total, setTotal]               = useState(0);
-  const [activating, setActivating]     = useState<string | null>(null);
+// Institutional allowed role transition map
+const PERMITTED_ROLE_TRANSITIONS: Record<string, string[]> = {
+  dean: ['department_chair'],
+  department_chair: ['dean', 'faculty', ],
+  faculty: ['department_chair'],
+  staff: ['department_chair'],
+  student: ['faculty',],
+};
 
-  const [modal, setModal]         = useState<'add' | 'edit' | null>(null);
-  const [selected, setSelected]   = useState<any | null>(null);
-  const [saving, setSaving]       = useState(false);
+
+export function UserManagement() {
+  const [showBatchGraduationModal, setShowBatchGraduationModal] =
+  useState(false);
+  const [programFilter, setProgramFilter] = useState('all');
+  const [graduatingIds, setGraduatingIds] = useState<string[]>([]);
+  const [graduationConfirmUser, setGraduationConfirmUser] =
+  useState<any | null>(null);
+  const [graduationUser, setGraduationUser] = useState<any | null>(null);
+  const [showGraduationPanel, setShowGraduationPanel] = useState(false);
+  const [eligibilityFilter, setEligibilityFilter] = useState<
+  'all' | 'eligible' | 'not_eligible'
+>('all');
+const [selectedGraduationIds, setSelectedGraduationIds] = useState<string[]>([]);
+const [updatingEligibility, setUpdatingEligibility] = useState<string | null>(null);
+const [processingBulkGraduation, setProcessingBulkGraduation] = useState(false);
+  const [confirmingGraduation, setConfirmingGraduation] = useState(false);
+  const [graduationError, setGraduationError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [users, setUsers] = useState<any[]>([]);
+  const [filtered, setFiltered] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [activating, setActivating] = useState<string | null>(null);
+
+  const [modal, setModal] = useState<'add' | 'edit' | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [fetchError, setFetchError] = useState('');
+
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [form, setForm] = useState({
-    username: '', full_name: '', email: '', role: 'student',
-    id_number: '', program: '', status: 'active', password: '',
-  });
 
+  const [form, setForm] = useState({
+  username: '',
+  full_name: '',
+  email: '',
+  role: 'student',
+  id_number: '',
+  program: '',
+  club_id: '',
+  status: 'active',
+  password: '',
+});
+
+  // Role change states
+  const [roleModalUser, setRoleModalUser] = useState<any | null>(null);
+  const [targetNewRole, setTargetNewRole] = useState('');
+  const [targetDepartment, setTargetDepartment] = useState('');
+  const [roleChangeReason, setRoleChangeReason] = useState('');
+  const [isChangingRole, setIsChangingRole] = useState(false);
+  const [roleModalError, setRoleModalError] = useState('');
+  const [departmentsList, setDepartmentsList] = useState<
+    { id: string; name: string }[]
+  >([]);
+ const [clubsList, setClubsList] = useState<
+  { id: string; name: string }[]
+>([]);
+
+const fetchClubs = useCallback(async () => {
+  console.log('Testing Supabase clubs connection...');
+
+  const { data, error, status, count } = await supabase
+    .from('clubs')
+    .select('id, name', { count: 'exact' });
+
+  console.log('Supabase response status:', status);
+  console.log('Total club records:', count);
+  console.log('Club records:', data);
+  console.log('Club query error:', error);
+
+  if (error) {
+    console.error('CLUB ERROR DETAILS:', error.message);
+    setClubsList([]);
+    return;
+  }
+
+  const filteredClubs = (data || []).filter(
+    (club) => club.name.trim().toUpperCase() !== 'UNEC'
+  );
+
+  setClubsList(filteredClubs);
+}, []);
+  // Display the year level supplied by the backend.
+  const getYearLevelLabel = (user: any): string => {
+    if (user.role !== 'student') {
+      return '—';
+    }
+
+    if (
+      user.graduation_status === 'graduated' ||
+      user.is_graduated === true
+    ) {
+      return 'Graduated';
+    }
+
+    const rawYearLevel =
+      user.year_level ??
+      user.student_year_level ??
+      user.numeric_year_level;
+
+    if (
+      rawYearLevel === null ||
+      rawYearLevel === undefined ||
+      rawYearLevel === ''
+    ) {
+      return 'Not Set';
+    }
+
+    const numericYearLevel = Number(rawYearLevel);
+
+    const labels: Record<number, string> = {
+      1: 'First Year',
+      2: 'Second Year',
+      3: 'Third Year',
+      4: 'Fourth Year',
+    };
+
+    // Also supports labels returned directly by the backend.
+    if (typeof rawYearLevel === 'string' && isNaN(numericYearLevel)) {
+      const normalized = rawYearLevel.trim().toLowerCase();
+
+      const existingLabels: Record<string, string> = {
+        'first year': 'First Year',
+        '1st year': 'First Year',
+        'second year': 'Second Year',
+        '2nd year': 'Second Year',
+        'third year': 'Third Year',
+        '3rd year': 'Third Year',
+        'fourth year': 'Fourth Year',
+        '4th year': 'Fourth Year',
+      };
+
+      return existingLabels[normalized] ?? rawYearLevel;
+    }
+
+    return labels[numericYearLevel] ?? 'Not Set';
+  };
+
+  const isGraduated = (user: any): boolean =>
+    user?.graduation_status === 'graduated' ||
+    user?.is_graduated === true;
+
+    const isFourthYearStudent = (user: any): boolean => {
+  if (user?.role !== 'student' || isGraduated(user)) {
+    return false;
+  }
+
+  const year = user.year_level ??
+    user.student_year_level ??
+    user.numeric_year_level;
+
+  if (Number(year) === 4) {
+    return true;
+  }
+
+  return typeof year === 'string' &&
+    ['fourth year', '4th year'].includes(year.trim().toLowerCase());
+};
+
+const isGraduationEligible = (user: any): boolean => {
+  if (isGraduated(user)) return false;
+
+  // Fourth-year students are eligible by default.
+  if (isFourthYearStudent(user)) return true;
+
+  return (
+    user?.graduation_eligible === true ||
+    user?.graduation_eligible === 1
+  );
+};
+const fourthYearStudents = users.filter(isFourthYearStudent);
+
+const filteredGraduationStudents = fourthYearStudents.filter((user) => {
+  const matchesEligibility =
+    eligibilityFilter === 'all' ||
+    (eligibilityFilter === 'eligible' &&
+      isGraduationEligible(user)) ||
+    (eligibilityFilter === 'not_eligible' &&
+      !isGraduationEligible(user));
+
+  const program = String(
+    user.program ?? user.course ?? user.department ?? ''
+  ).trim().toLowerCase();
+
+  const matchesProgram =
+    programFilter === 'all' ||
+    program === programFilter.toLowerCase();
+
+  return matchesEligibility && matchesProgram;
+});
+const selectedEligibleStudents = filteredGraduationStudents.filter(
+  (user) =>
+    selectedGraduationIds.includes(String(user.id)) &&
+    isGraduationEligible(user) &&
+    !isGraduated(user)
+);
+const updateGraduationEligibility = async (
+  user: any,
+  eligible: boolean
+) => {
+  if (!user?.id || updatingEligibility !== null) return;
+
+  setUpdatingEligibility(String(user.id));
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+      `http://localhost:5000/api/students/${user.id}/graduation-eligibility`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+  eligible: eligible,
+}),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        result.message ||
+        'Failed to update graduation eligibility.'
+      );
+    }
+
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text: `Graduation eligibility updated for ${user.full_name}.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to update graduation eligibility.',
+    });
+  } finally {
+    setUpdatingEligibility(null);
+  }
+};
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setFetchError('');
+
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/auth/users', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      const res = await fetch(
+        'http://localhost:5000/api/auth/users',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+
         setFetchError(err.error || 'Failed to load users.');
         setUsers([]);
         return;
       }
+
       const data = await res.json();
-      setUsers(data ?? []);
-    } catch {
-      setFetchError('Could not reach the server. Please try again.');
+
+      // Supports APIs returning either an array or { users: [...] }.
+      const userList = Array.isArray(data)
+        ? data
+        : Array.isArray(data.users)
+          ? data.users
+          : [];
+
+      setUsers(userList);
+    } catch (error: any) {
+      setFetchError(
+        error.message || 'Could not reach the server. Please try again.'
+      );
       setUsers([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { 
-    fetchUsers(); 
-  }, [fetchUsers]);
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name')
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching departments:', error);
+        return;
+      }
+
+      if (data) {
+        setDepartmentsList(data);
+      }
+    } catch (error) {
+      console.error('Error fetching departments list:', error);
+    }
+  }, []);
 
   useEffect(() => {
+  fetchUsers();
+  fetchDepartments();
+  fetchClubs();
+}, [fetchUsers, fetchDepartments, fetchClubs]);
+  useEffect(() => {
     let result = [...users];
+
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(u =>
-        (u.username || '').toLowerCase().includes(q) ||
-        u.full_name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.id_number.toLowerCase().includes(q) ||
-        (u.department ?? '').toLowerCase().includes(q) ||
-        (u.program ?? '').toLowerCase().includes(q)
+
+      result = result.filter((u) =>
+        String(u.username ?? '').toLowerCase().includes(q) ||
+        String(u.full_name ?? '').toLowerCase().includes(q) ||
+        String(u.email ?? '').toLowerCase().includes(q) ||
+        String(u.id_number ?? '').toLowerCase().includes(q) ||
+        String(u.department ?? '').toLowerCase().includes(q) ||
+        String(u.program ?? '').toLowerCase().includes(q) ||
+        getYearLevelLabel(u).toLowerCase().includes(q)
       );
     }
-    if (roleFilter !== 'all')   result = result.filter(u => u.role === roleFilter);
-    if (statusFilter !== 'all') result = result.filter(u => u.status === statusFilter);
+
+    if (roleFilter !== 'all') {
+      result = result.filter((u) => u.role === roleFilter);
+    }
+
+    if (statusFilter !== 'all') {
+      result = result.filter((u) => u.status === statusFilter);
+    }
+
     setTotal(result.length);
-    setPage(1);
     setFiltered(result);
   }, [users, search, roleFilter, statusFilter]);
 
-  const paginated    = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const totalPages   = Math.ceil(total / PAGE_SIZE);
-  const pendingCount = users.filter(u => u.status === 'pending').length;
+  useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, statusFilter]);
+
+  const paginated = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const pendingCount = users.filter(
+    (u) => u.status === 'pending'
+  ).length;
 
   const openAdd = () => {
-    setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
+    setForm({
+  username: '',
+  full_name: '',
+  email: '',
+  role: 'student',
+  id_number: '',
+  program: '',
+  club_id: '',
+  status: 'active',
+  password: '',
+});
     setShowPassword(false);
     setFormError('');
+    setSelected(null);
     setModal('add');
   };
-  
+
   const openEdit = (user: any) => {
     setSelected(user);
+
     setForm({
-      username: user.username || '',
-      full_name: user.full_name, email: user.email, role: user.role,
-      id_number: user.id_number, 
-      program: user.program || user.department || '',
-      status: user.status, password: '',
-    });
+  username: user.username || '',
+  full_name: user.full_name || '',
+  email: user.email || '',
+  role: user.role || 'student',
+  id_number: user.id_number || '',
+  program: user.program || user.department || '',
+  club_id: user.club_id || '',
+  status: user.status || 'active',
+  password: '',
+});
+
     setShowPassword(false);
     setFormError('');
     setModal('edit');
   };
 
+  const closeUserModal = () => {
+    if (saving) return;
+
+    setModal(null);
+    setSelected(null);
+    setFormError('');
+  };
+
+  // Open role change modal.
+  const openRoleChangeModal = (user: any) => {
+    const validTargets =
+      PERMITTED_ROLE_TRANSITIONS[user.role] || [];
+
+    setRoleModalUser(user);
+    setTargetNewRole(validTargets[0] || '');
+
+    setTargetDepartment(
+      user.department ||
+      user.program ||
+      departmentsList[0]?.name ||
+      ''
+    );
+
+    setRoleChangeReason('');
+    setRoleModalError('');
+  };
+
+  const closeRoleChangeModal = () => {
+    if (isChangingRole) return;
+
+    setRoleModalUser(null);
+    setTargetNewRole('');
+    setTargetDepartment('');
+    setRoleModalError('');
+  };
+
+  const handleConfirmRoleChange = async () => {
+    if (!roleModalUser || !targetNewRole) return;
+
+    setRoleModalError('');
+
+    if (
+      targetNewRole === 'department_chair' &&
+      !targetDepartment.trim()
+    ) {
+      setRoleModalError(
+        'A department assignment is required for Department Chair.'
+      );
+      return;
+    }
+
+    if (
+      roleModalUser.role === 'student' &&
+      ['faculty', 'staff'].includes(targetNewRole) &&
+      !targetDepartment.trim()
+    ) {
+      setRoleModalError(
+        'Please assign a department for the promoted faculty/staff member.'
+      );
+      return;
+    }
+
+    setIsChangingRole(true);
+
+    try {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      const res = await fetch(
+        `http://localhost:5000/api/auth/users/${roleModalUser.id}/change-role`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            newRole: targetNewRole,
+            department: targetDepartment.trim(),
+            reason: roleChangeReason.trim() || undefined,
+          }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to modify role.');
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text:
+          `Role for ${roleModalUser.full_name} has been changed to ` +
+          `${targetNewRole.toUpperCase()}.`,
+      });
+
+      closeRoleChangeModal();
+      await fetchUsers();
+    } catch (error: any) {
+      setRoleModalError(
+        error.message ||
+        'Operation failed. The original role was not confirmed as changed.'
+      );
+    } finally {
+      setIsChangingRole(false);
+    }
+  };
+
   const handleAdd = async () => {
     setFormError('');
-    if (!form.username.trim()) { setFormError('Username is required.'); return; }
-    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
-    if (!form.email.trim()) { setFormError('Email address is required.'); return; }
+    if (form.role === 'faculty' && !form.club_id) {
+  setFormError('Please assign a club to this faculty member.');
+  return;
+}
+    if (!form.username.trim()) {
+      setFormError('Username is required.');
+      return;
+    }
+
+    if (!form.full_name.trim()) {
+      setFormError('Full name is required.');
+      return;
+    }
+
+    if (!form.email.trim()) {
+      setFormError('Email address is required.');
+      return;
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email.trim())) { setFormError('Please enter a valid email address.'); return; }
-    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+
+    if (!emailRegex.test(form.email.trim())) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!form.id_number.trim()) {
+      setFormError('ID number is required.');
+      return;
+    }
 
     const idConfig = ID_LENGTH_CONFIG[form.role];
+
     if (idConfig) {
       const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+
       if (!digitRegex.test(form.id_number.trim())) {
-        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        setFormError(
+          `${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`
+        );
         return;
       }
     }
-    
-    // Require program for students
-    if (form.role === 'student' && !form.program) {
+
+    if (form.role === 'student' && !form.program.trim()) {
       setFormError('Please select a program for this student.');
       return;
     }
 
-    if (!form.password) { setFormError('Password is required.'); return; }
-    if (form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
+    if (!form.password) {
+      setFormError('Password is required.');
+      return;
+    }
+
+    if (form.password.length < 6) {
+      setFormError('Password must be at least 6 characters.');
+      return;
+    }
 
     setSaving(true);
+
     try {
       const token = localStorage.getItem('token');
-      
-      // If program is empty/not assigned or role is alumni, send strictly null to backend
-      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
 
-      const response = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({
-          username: form.username.trim(),
-          email: form.email.trim(),
-          password: form.password,
-          role: form.role,
-          full_name: form.full_name.trim(),
-          id_number: form.id_number.trim(),
-          program: payloadProgram,
-          department: payloadProgram, // Sent as department for strict backend validation
-          status: form.status,
-        }),
-      });
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      const payloadProgram =
+        form.role === 'alumni' || !form.program.trim()
+          ? null
+          : form.program.trim();
+
+      const response = await fetch(
+        'http://localhost:5000/api/auth/register',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            username: form.username.trim(),
+            email: form.email.trim(),
+            password: form.password,
+            role: form.role,
+            full_name: form.full_name.trim(),
+            id_number: form.id_number.trim(),
+            program: payloadProgram,
+              club_id: form.role === 'faculty' ? form.club_id : null,
+            department: payloadProgram,
+            status: form.status,
+          }),
+        }
+      );
 
       const responseText = await response.text();
+
       let result: any = {};
+
       try {
         result = responseText ? JSON.parse(responseText) : {};
       } catch {
-        result = { error: responseText || 'The server returned an invalid response.' };
+        result = {
+          error: responseText || 'The server returned an invalid response.',
+        };
       }
 
       if (!response.ok) {
-        let errorMessage = result.error || result.message || result.details || result.hint;
+        let errorMessage =
+          result.error ||
+          result.message ||
+          result.details ||
+          result.hint;
+
         if (!errorMessage) {
           switch (response.status) {
-            case 400: errorMessage = 'Invalid user information. Please check the form and try again.'; break;
-            case 401: errorMessage = 'You are not authorized to create this account.'; break;
-            case 403: errorMessage = 'You do not have permission to create users.'; break;
-            case 409: errorMessage = 'A user with this username, email or ID number already exists.'; break;
-            case 500: errorMessage = 'The server encountered an error while creating the account.'; break;
-            default:  errorMessage = `Failed to create account. Server returned ${response.status}.`;
+            case 400:
+              errorMessage = 'Invalid user information. Please check the form.';
+              break;
+            case 401:
+              errorMessage = 'You are not authorized to create this account.';
+              break;
+            case 403:
+              errorMessage = 'You do not have permission to create users.';
+              break;
+            case 409:
+              errorMessage = 'A user with this username, email or ID already exists.';
+              break;
+            case 500:
+              errorMessage = 'The server encountered an error creating the account.';
+              break;
+            default:
+              errorMessage = `Failed to create account. Server returned ${response.status}.`;
           }
         }
+
         setFormError(errorMessage);
         return;
       }
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
+      setForm({
+        username: '',
+        full_name: '',
+        email: '',
+        role: 'student',
+        id_number: '',
+        program: '',
+        club_id: '',
+        status: 'active',
+        password: '',
+      });
       setShowPassword(false);
-      setFormError('');
+
       await fetchUsers();
+
+      setStatusMessage({
+        type: 'success',
+        text: 'User account created successfully.',
+      });
     } catch (error: any) {
-      if (error?.name === 'TypeError' && error?.message?.toLowerCase().includes('fetch')) {
-        setFormError('Unable to connect to the backend server on http://localhost:5000.');
-      } else {
-        setFormError(error?.message || 'Something went wrong. Please try again.');
-      }
+      setFormError(
+        error.message ||
+        'Unable to connect to the backend server.'
+      );
     } finally {
       setSaving(false);
     }
@@ -1326,21 +1845,39 @@ function UserManagement() {
 
   const handleEdit = async () => {
     setFormError('');
-    if (!form.username.trim()) { setFormError('Username is required.'); return; }
-    if (!form.full_name.trim()) { setFormError('Full name is required.'); return; }
-    if (!form.id_number.trim()) { setFormError('ID number is required.'); return; }
+    if (form.role === 'faculty' && !form.club_id) {
+  setFormError('Please assign a club to this faculty member.');
+  return;
+}
+    if (!form.username.trim()) {
+      setFormError('Username is required.');
+      return;
+    }
+
+    if (!form.full_name.trim()) {
+      setFormError('Full name is required.');
+      return;
+    }
+
+    if (!form.id_number.trim()) {
+      setFormError('ID number is required.');
+      return;
+    }
 
     const idConfig = ID_LENGTH_CONFIG[form.role];
+
     if (idConfig) {
       const digitRegex = new RegExp(`^\\d{${idConfig.length}}$`);
+
       if (!digitRegex.test(form.id_number.trim())) {
-        setFormError(`${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`);
+        setFormError(
+          `${form.role.charAt(0).toUpperCase() + form.role.slice(1)} ID number must be exactly ${idConfig.length} digits.`
+        );
         return;
       }
     }
-    
-    // Require program for students
-    if (form.role === 'student' && !form.program) {
+
+    if (form.role === 'student' && !form.program.trim()) {
       setFormError('Please select a program for this student.');
       return;
     }
@@ -1348,41 +1885,67 @@ function UserManagement() {
     if (!selected) return;
 
     setSaving(true);
+
     try {
       const token = localStorage.getItem('token');
-      
-      const payloadProgram = form.role === 'alumni' || !form.program.trim() ? null : form.program.trim();
 
-      const response = await fetch(`http://localhost:5000/api/auth/users/${selected.id}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          username: form.username.trim(),
-          full_name: form.full_name.trim(),
-          role: form.role,
-          id_number: form.id_number.trim(),
-          program: payloadProgram,
-          department: payloadProgram, // Sent as department for strict backend validation
-          status: form.status,
-          ...(form.password.trim() ? { password: form.password.trim() } : {}),
-        }),
-      });
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
+      }
 
-      const result = await response.json();
+      const payloadProgram =
+        form.role === 'alumni' || !form.program.trim()
+          ? null
+          : form.program.trim();
+
+      const response = await fetch(
+        `http://localhost:5000/api/auth/users/${selected.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            username: form.username.trim(),
+            full_name: form.full_name.trim(),
+            role: form.role,
+            id_number: form.id_number.trim(),
+            program: payloadProgram,
+            department: payloadProgram,
+            club_id: form.role === 'faculty' ? form.club_id : null,
+            status: form.status,
+            ...(form.password.trim()
+              ? { password: form.password.trim() }
+              : {}),
+          }),
+        }
+      );
+
+      const result = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        setFormError(result.error || result.message || 'Failed to update user.');
+        setFormError(
+          result.error ||
+          result.message ||
+          'Failed to update user.'
+        );
         return;
       }
 
       setModal(null);
       setSelected(null);
-      setForm({ username: '', full_name: '', email: '', role: 'student', id_number: '', program: '', status: 'active', password: '' });
+
       await fetchUsers();
+
+      setStatusMessage({
+        type: 'success',
+        text: 'User account updated successfully.',
+      });
     } catch (error: any) {
-      setFormError(error.message || 'Unable to connect to the backend.');
+      setFormError(
+        error.message || 'Unable to connect to the backend.'
+      );
     } finally {
       setSaving(false);
     }
@@ -1390,40 +1953,48 @@ function UserManagement() {
 
   const activatePending = async (user: any) => {
     setActivating(user.id);
+    setStatusMessage(null);
+
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:5000/api/auth/users/${user.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: 'active' }),
+
+      if (!token) {
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      const res = await fetch(
+        `http://localhost:5000/api/auth/users/${user.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: 'active' }),
+        }
+      );
+
+      const result = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          result.error || 'Failed to activate this account.'
+        );
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: `${user.full_name}'s account has been activated.`,
       });
 
-      if (!res.ok) return;
-
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profile) {
-        const { data: existingUser } = await supabase.from('users').select('id').eq('username', profile.username || profile.email).single();
-        if (!existingUser) {
-          await fetch('http://localhost:5000/api/auth/register', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              username: profile.username || profile.email,
-              password: 'ChangeMe@123',
-              role: profile.role,
-            }),
-          });
-        }
-      }
+      await fetchUsers();
+    } catch (error: any) {
+      setStatusMessage({
+        type: 'error',
+        text: error.message || 'Unable to activate this account.',
+      });
     } finally {
       setActivating(null);
-      fetchUsers();
     }
   };
 
@@ -1451,9 +2022,7 @@ function UserManagement() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            status: nextStatus,
-          }),
+          body: JSON.stringify({ status: nextStatus }),
         }
       );
 
@@ -1473,57 +2042,276 @@ function UserManagement() {
         type: 'success',
         text:
           `The account status for ${user.full_name} was changed to ` +
-          `${nextStatus.toUpperCase()}. ` +
+          `${nextStatus.toUpperCase()}.` +
           (result.emailSent
-            ? `An email notification was sent to ${user.email}.`
+            ? ' An email notification was sent.'
             : result.emailError
-              ? `The status was saved, but the email could not be sent: ${result.emailError}`
-              : 'Check the server response for email delivery status.'),
+              ? ` The email could not be sent: ${result.emailError}`
+              : ''),
       });
     } catch (error: any) {
       setStatusMessage({
         type: 'error',
-        text: error.message ||
-          'Unable to update the account status.',
+        text: error.message || 'Unable to update the account status.',
       });
     } finally {
       setActivating(null);
     }
   };
 
+  // Request graduation confirmation from the backend.
+  const confirmStudentGraduation = async () => {
+    if (!graduationUser || confirmingGraduation) return;
+
+    setGraduationError('');
+
+    if (graduationUser.role !== 'student') {
+      setGraduationError('Only student accounts can be confirmed as graduated.');
+      return;
+    }
+
+    if (isGraduated(graduationUser)) {
+      setGraduationError('This student is already marked as graduated.');
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setGraduationError('Your session has expired. Please log in again.');
+      return;
+    }
+
+    setConfirmingGraduation(true);
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/students/${graduationUser.id}/graduate`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ confirm: true }),
+        }
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          result.message ||
+          'Unable to confirm student graduation.'
+        );
+      }
+
+      setGraduationUser(null);
+
+      setStatusMessage({
+        type: 'success',
+        text: `${graduationUser.full_name} has been confirmed as graduated.`,
+      });
+
+      await fetchUsers();
+    } catch (error: any) {
+      setGraduationError(
+        error.message || 'Unable to confirm graduation.'
+      );
+    } finally {
+      setConfirmingGraduation(false);
+    }
+  };
+
+const confirmGraduate = async (user: any) => {
+  if (!user?.id || graduatingIds.length > 0 || processingBulkGraduation) {
+    return;
+  }
+
+  if (!isFourthYearStudent(user)) {
+    setStatusMessage({
+      type: 'error',
+      text: 'Only fourth-year students can be confirmed as graduates.',
+    });
+    return;
+  }
+
+  setGraduatingIds([String(user.id)]);
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+      `http://localhost:5000/api/students/${user.id}/graduate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirm: true }),
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || result.message || 'Graduation failed.'
+      );
+    }
+
+    setGraduationConfirmUser(null);
+    setSelectedGraduationIds((previous) =>
+      previous.filter((id) => id !== String(user.id))
+    );
+
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text: `${user.full_name} has been confirmed as a graduate and moved to alumni, if supported by the backend.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to confirm graduation.',
+    });
+  } finally {
+    setGraduatingIds([]);
+  }
+};
+
+const batchConfirmGraduates = async () => {
+  const selectedStudents = selectedEligibleStudents.filter(
+    (student) => isFourthYearStudent(student) && !isGraduated(student)
+  );
+
+  if (selectedStudents.length === 0 || processingBulkGraduation) {
+    setStatusMessage({
+      type: 'error',
+      text: 'Select at least one eligible fourth-year student.',
+    });
+    return;
+  }
+
+
+  setProcessingBulkGraduation(true);
+  setStatusMessage(null);
+
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await fetch(
+  'http://localhost:5000/api/students/batch-graduate',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+    },
+    body: JSON.stringify({
+      confirm: true,
+      studentIds: selectedStudents.map((student) => student.id),
+    }),
+  }
+);
+
+const result = await response.json();
+
+if (!response.ok) {
+  throw new Error(
+    result.error || result.message || 'Batch graduation failed.'
+  );
+}
+
+    setSelectedGraduationIds([]);
+    await fetchUsers();
+
+    setStatusMessage({
+      type: 'success',
+      text:
+        result.message ||
+        `${selectedStudents.length} student(s) graduated successfully.`,
+    });
+  } catch (error: any) {
+    setStatusMessage({
+      type: 'error',
+      text: error.message || 'Unable to process batch graduation.',
+    });
+  } finally {
+    setProcessingBulkGraduation(false);
+  }
+};
+
   return (
-<div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">      
-  <div className="flex items-center justify-between gap-3">
+    <div className="flex h-[calc(100vh-100px)] min-h-[600px] flex-col gap-4 overflow-hidden">
+      {/* Page heading */}
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">User Management</h1>
-          <p className="text-gray-500 mt-1 text-sm">{total} user{total !== 1 ? 's' : ''} found</p>
+          <h1 className="text-xl sm:text-3xl font-semibold text-gray-900">
+            User Management
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {total} user{total !== 1 ? 's' : ''} found
+          </p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          <button onClick={fetchUsers} className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
+
+        <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={fetchUsers}
+            className="rounded-xl border border-gray-200 p-2.5 text-gray-600 transition-colors hover:bg-gray-50"
+            title="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
           </button>
-          <button onClick={openAdd} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 bg-[#1E3A8A] text-white rounded-xl hover:bg-[#1E40AF] transition-colors font-medium text-sm shadow-md">
-            <Plus className="w-4 h-4" />
+
+          <button
+            type="button"
+            onClick={openAdd}
+            className="flex items-center gap-2 rounded-xl bg-[#1E3A8A] px-3 py-2.5 text-sm font-medium text-white shadow-md transition-colors hover:bg-[#1E40AF] sm:px-4"
+          >
+            <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Add User</span>
             <span className="sm:hidden">Add</span>
           </button>
+          <button
+  type="button"
+  onClick={() => setShowGraduationPanel(true)}
+  className="flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+>
+  <Check className="h-4 w-4" />
+  <span>Fourth Year Students</span>
+</button>
         </div>
       </div>
-      
+
+      {/* Success and error messages */}
       {statusMessage && (
         <div
           role="status"
-          className={`px-4 py-3 rounded-xl border text-sm ${
+          className={`rounded-xl border px-4 py-3 text-sm ${
             statusMessage.type === 'success'
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : 'bg-red-50 border-red-200 text-red-700'
+              ? 'border-green-200 bg-green-50 text-green-800'
+              : 'border-red-200 bg-red-50 text-red-700'
           }`}
         >
           <div className="flex items-start gap-2">
             {statusMessage.type === 'success' ? (
-              <Check className="w-5 h-5 flex-shrink-0" />
+              <Check className="h-5 w-5 flex-shrink-0" />
             ) : (
-              <X className="w-5 h-5 flex-shrink-0" />
+              <X className="h-5 w-5 flex-shrink-0" />
             )}
             <p>{statusMessage.text}</p>
           </div>
@@ -1531,113 +2319,466 @@ function UserManagement() {
       )}
 
       {fetchError && (
-        <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">{fetchError}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {fetchError}
+        </div>
       )}
 
+      {/* Pending accounts notice */}
       {pendingCount > 0 && (
-        <div className="flex items-start sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-amber-50 border border-amber-200 rounded-2xl">
-          <span className="relative flex h-3 w-3 flex-shrink-0 mt-0.5 sm:mt-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 sm:items-center sm:gap-4 sm:px-5">
+          <span className="relative mt-0.5 flex h-3 w-3 flex-shrink-0 sm:mt-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500" />
           </span>
-          <p className="text-sm text-amber-800 flex-1">
-            <span className="font-semibold">{pendingCount} account{pendingCount !== 1 ? 's' : ''} pending activation.</span>
-            {' '}Filter by <span className="font-semibold">Pending</span> status.
+
+          <p className="flex-1 text-sm text-amber-800">
+            <span className="font-semibold">
+              {pendingCount} account{pendingCount !== 1 ? 's' : ''} pending activation.
+            </span>{' '}
+            Filter by Pending status.
           </p>
-          <button onClick={() => setStatusFilter('pending')} className="text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending')}
+            className="flex-shrink-0 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-200"
+          >
             View
           </button>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Search username, name, email, ID, or program..." value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+      {/* Search and filters */}
+      <div className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col flex-wrap items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+            <input
+              type="text"
+              placeholder="Search username, name, email, ID, program, or year level..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
+
           <div className="flex gap-2">
-            <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
               <option value="all">All Roles</option>
               {Object.entries(ROLE_CONFIG)
-                .filter(([k]) => k !== 'admin')
-                .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                .filter(([key]) => key !== 'admin')
+                .map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value.label}
+                  </option>
+                ))}
             </select>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
               <option value="all">All Status</option>
-              {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {Object.entries(STATUS_CONFIG).map(([key, value]) => (
+                <option key={key} value={key}>
+                  {value.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
       </div>
+       
+{showGraduationPanel && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    onClick={() => setShowGraduationPanel(false)}
+  >
+    <div
+      className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Modal Header */}
+      <div className="flex items-center justify-between border-b p-5">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">
+            Fourth Year Students
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Manage graduation eligibility and student status.
+          </p>
+          <select
+  value={programFilter}
+  onChange={(e) => setProgramFilter(e.target.value)}
+  className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+>
+  <option value="all">All Programs</option>
+  <option value="BEEd">BEEd</option>
+  <option value="BTLEd">BTLEd</option>
+  <option value="BSEd-Math">BSEd-Math</option>
+  <option value="BSEd-English">BSEd-English</option>
+</select>
+        </div>
 
-<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-    {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="w-8 h-8 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3, borderStyle: 'solid' }} />
+        <button
+          type="button"
+          onClick={() => setShowGraduationPanel(false)}
+          className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+          aria-label="Close modal"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-1 gap-4 border-b bg-gray-50 p-5 sm:grid-cols-2">
+  <div className="rounded-xl bg-white p-4 shadow-sm">
+    <p className="text-sm font-medium text-gray-500">
+      Fourth Year Students
+    </p>
+    <p className="mt-1 text-2xl font-bold text-gray-800">
+      {fourthYearStudents.length}
+    </p>
+  </div>
+
+  <div className="rounded-xl bg-white p-4 shadow-sm">
+    <p className="text-sm font-medium text-gray-500">
+      Eligible
+    </p>
+    <p className="mt-1 text-2xl font-bold text-green-600">
+      {fourthYearStudents.filter(isGraduationEligible).length}
+    </p>
+  </div>
+</div>
+
+      {/* Filters and Actions */}
+      <div className="flex flex-col gap-3 border-b p-5 lg:flex-row lg:items-center lg:justify-between">
+        
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedGraduationIds(
+                filteredGraduationStudents
+                  .filter(
+                    (student) =>
+                      isGraduationEligible(student) &&
+                      !isGraduated(student)
+                  )
+                  .map((student) => String(student.id))
+              )
+            }
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Select Eligible
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedGraduationIds([])}
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Clear Selection
+          </button>
+          <button
+  type="button"
+  onClick={batchConfirmGraduates}
+  disabled={
+    processingBulkGraduation ||
+    selectedEligibleStudents.length === 0
+  }
+  className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {processingBulkGraduation
+    ? 'Processing...'
+    : `Confirm Selected (${selectedEligibleStudents.length})`}
+</button>
+        </div>
+      </div>
+
+      {/* Student Table */}
+      <div className="max-h-[45vh] overflow-auto">
+        <table className="w-full min-w-[750px] text-left text-sm">
+          <thead className="sticky top-0 bg-gray-100 text-gray-600">
+            <tr>
+              <th className="px-5 py-3">Select</th>
+              <th className="px-5 py-3">Student</th>
+              <th className="px-5 py-3">Program</th>
+              <th className="px-5 py-3">Eligibility</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-100">
+            {filteredGraduationStudents.map((student) => (
+              <tr key={student.id} className="hover:bg-gray-50">
+                <td className="px-5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedGraduationIds.includes(
+                      String(student.id)
+                    )}
+                    disabled={
+                      !isGraduationEligible(student) ||
+                      isGraduated(student)
+                    }
+                    onChange={(e) => {
+                      const id = String(student.id);
+
+                      setSelectedGraduationIds((previous) =>
+                        e.target.checked
+                          ? [...new Set([...previous, id])]
+                          : previous.filter((selectedId) => selectedId !== id)
+                      );
+                    }}
+                    aria-label={`Select ${student.full_name || student.name || student.email}`}
+                  />
+                </td>
+
+                <td className="px-5 py-3">
+                  <p className="font-medium text-gray-800">
+                    {student.full_name ||
+                      student.name ||
+                      student.email ||
+                      'Unnamed Student'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {student.student_id || student.id}
+                  </p>
+                </td>
+
+                <td className="px-5 py-3">
+                  {student.program || student.course || '—'}
+                </td>
+
+                <td className="px-5 py-3">
+                  {isGraduated(student) ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
+                      Graduated
+                    </span>
+                  ) : isGraduationEligible(student) ? (
+                    <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                      Eligible
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                      Not Eligible
+                    </span>
+                  )}
+                </td>
+
+              </tr>
+            ))}
+
+            {filteredGraduationStudents.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-5 py-10 text-center text-gray-500"
+                >
+                  No fourth-year students found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal Footer */}
+      <div className="flex flex-col gap-3 border-t bg-gray-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-600">
+          {selectedEligibleStudents.length} eligible student(s) selected.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setShowGraduationPanel(false)}
+          className="rounded-lg bg-gray-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+  
+      {/* User table */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <div
+              className="h-8 w-8 animate-spin rounded-full border-blue-600 border-t-transparent"
+              style={{ borderWidth: 3, borderStyle: 'solid' }}
+            />
           </div>
         ) : paginated.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-            <Users className="w-12 h-12 mb-3 opacity-30" />
+          <div className="flex h-64 flex-col items-center justify-center text-gray-400">
+            <Users className="mb-3 h-12 w-12 opacity-30" />
             <p className="font-medium">No users found</p>
           </div>
         ) : (
-           <div className="user-management-scroll min-h-0 flex-1 overflow-auto overscroll-contain">
-    <table className="w-full min-w-[640px]">
-             <thead className="sticky top-0 z-20 bg-gray-50">
-  <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">User</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Username</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">ID</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Role</th>
-                  <th className="text-left py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Program</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                  <th className="text-center py-3.5 px-4 sm:px-6 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+          <div className="user-management-scroll min-h-0 flex-1 overflow-auto overscroll-contain">
+            <table className="w-full min-w-[900px]">
+              <thead className="sticky top-0 z-20 bg-gray-50">
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    User
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    Username
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    ID
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    Role
+                  </th>
+                  <th className="hidden px-4 py-3.5 text-left text-xs font-semibold uppercase text-gray-500 md:table-cell sm:px-6">
+                    Program
+                  </th>
+                  <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    Year Level
+                  </th>
+                  <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    Status
+                  </th>
+                  <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase text-gray-500 sm:px-6">
+                    Actions
+                  </th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-gray-50">
                 {paginated.map((user) => {
-                  const role         = ROLE_CONFIG[user.role]    ?? { label: user.role,   color: '#374151', bg: '#F3F4F6', icon: null };
-                  const status       = STATUS_CONFIG[user.status] ?? { label: user.status, color: '#374151', bg: '#F3F4F6', dot: '#6B7280' };
-                  const isPending    = user.status === 'pending';
+                  const role = ROLE_CONFIG[user.role] ?? {
+                    label: user.role,
+                    color: '#374151',
+                    bg: '#F3F4F6',
+                    icon: null,
+                  };
+
+                  const status = STATUS_CONFIG[user.status] ?? {
+                    label: user.status || 'Unknown',
+                    color: '#374151',
+                    bg: '#F3F4F6',
+                    dot: '#6B7280',
+                  };
+
+                  const isPending = user.status === 'pending';
                   const isActivating = activating === user.id;
-                  const affiliation  = user.program || user.department;
+                  const affiliation = user.program || user.department;
+
+                  const canChangeRole =
+                    (PERMITTED_ROLE_TRANSITIONS[user.role] || []).length > 0;
+
+                  const graduated = isGraduated(user);
+                  const yearLevel = getYearLevelLabel(user);
 
                   return (
-                    <tr key={user.id} className={`transition-colors ${isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/30'}`}>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+                    <tr
+                      key={user.id}
+                      className={`transition-colors ${
+                        isPending
+                          ? 'bg-amber-50/40 hover:bg-amber-50/70'
+                          : 'hover:bg-blue-50/30'
+                      }`}
+                    >
+                      <td className="px-4 py-3 sm:px-6 sm:py-4">
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ background: role.bg, color: role.color }}>
-                            {user.full_name.charAt(0).toUpperCase()}
+                          <div
+                            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold sm:h-9 sm:w-9"
+                            style={{
+                              background: role.bg,
+                              color: role.color,
+                            }}
+                          >
+                            {String(user.full_name || '?').charAt(0).toUpperCase()}
                           </div>
+
                           <div className="min-w-0">
-                            <div className="font-semibold text-gray-900 text-sm truncate max-w-[120px] sm:max-w-none">{user.full_name}</div>
-                            <div className="text-xs text-gray-400 truncate max-w-[120px] sm:max-w-none">{user.email}</div>
+                            <div className="max-w-[120px] truncate text-sm font-semibold text-gray-900 sm:max-w-none">
+                              {user.full_name || 'Unnamed User'}
+                            </div>
+                            <div className="max-w-[120px] truncate text-xs text-gray-400 sm:max-w-none">
+                              {user.email || '—'}
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <span className="text-xs sm:text-sm font-medium text-gray-900">{user.username || '—'}</span>
-                      </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <span className="text-xs sm:text-sm font-mono text-gray-700 bg-gray-100 px-1.5 sm:px-2 py-1 rounded-lg">{user.id_number}</span>
-                      </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
-                        <span className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: role.bg, color: role.color }}>
-                          {role.icon}<span className="hidden sm:inline">{role.label}</span>
+
+                      <td className="px-4 py-3 sm:px-6 sm:py-4">
+                        <span className="text-xs font-medium text-gray-900 sm:text-sm">
+                          {user.username || '—'}
                         </span>
                       </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6 hidden md:table-cell">
-                        <span className="text-sm text-gray-600 line-clamp-2" title={affiliation}>{affiliation ?? '—'}</span>
+
+                      <td className="px-4 py-3 sm:px-6 sm:py-4">
+                        <span className="rounded-lg bg-gray-100 px-1.5 py-1 font-mono text-xs text-gray-700 sm:px-2 sm:text-sm">
+                          {user.id_number || '—'}
+                        </span>
                       </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
+
+                      <td className="px-4 py-3 sm:px-6 sm:py-4">
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold"
+                          style={{
+                            background: role.bg,
+                            color: role.color,
+                          }}
+                        >
+                          {role.icon}
+                          <span>{role.label}</span>
+                        </span>
+                      </td>
+
+                      <td className="hidden px-4 py-3 sm:px-6 sm:py-4 md:table-cell">
+                        <span
+                          className="line-clamp-2 text-sm text-gray-600"
+                          title={affiliation || ''}
+                        >
+                          {affiliation || '—'}
+                        </span>
+                      </td>
+
+                      {/* Year Level */}
+                      <td className="px-4 py-3 text-center sm:px-6 sm:py-4">
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                            graduated
+                              ? 'bg-green-100 text-green-800'
+                              : yearLevel === 'Not Set'
+                                ? 'bg-gray-100 text-gray-600'
+                                : user.role === 'student'
+                                  ? 'bg-blue-50 text-blue-800'
+                                  : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {yearLevel}
+                        </span>
+                      </td>
+
+                      {/* Account Status */}
+                      <td className="px-4 py-3 text-center sm:px-6 sm:py-4">
                         <button
+                          type="button"
                           onClick={() => toggleStatus(user)}
                           disabled={isActivating || isPending}
                           title={
@@ -1645,35 +2786,67 @@ function UserManagement() {
                               ? 'Activate this account using the Activate button'
                               : `Change account status from ${user.status}`
                           }
-                          className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5"
                           style={{
                             background: status.bg,
                             color: status.color,
                           }}
                         >
                           {isActivating ? (
-                            <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
                           ) : (
                             <span
-                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
                               style={{ background: status.dot }}
                             />
                           )}
-                          <span>{isActivating ? 'Updating...' : status.label}</span>
+                          <span>
+                            {isActivating ? 'Updating...' : status.label}
+                          </span>
                         </button>
                       </td>
-                      <td className="py-3 sm:py-4 px-4 sm:px-6">
+
+                      {/* Actions */}
+                      <td className="px-4 py-3 sm:px-6 sm:py-4">
                         <div className="flex items-center justify-center gap-1">
                           {isPending && (
-                            <button onClick={() => activatePending(user)} disabled={isActivating}
-                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg">
-                              {isActivating ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-3 h-3" />}
-                              <span className="hidden sm:inline">Activate</span>
+                            <button
+                              type="button"
+                              onClick={() => activatePending(user)}
+                              disabled={isActivating}
+                              className="flex items-center gap-1 rounded-lg bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 sm:px-3"
+                              title="Activate account"
+                            >
+                              {isActivating ? (
+                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                              ) : (
+                                <Check className="h-3 w-3" />
+                              )}
+                              <span>Activate</span>
                             </button>
                           )}
-                          <button onClick={() => openEdit(user)} className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-100 rounded-lg" title="Edit User">
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
+
+                          {canChangeRole && (
+                            <button
+                              type="button"
+                              onClick={() => openRoleChangeModal(user)}
+                              className="rounded-lg p-1.5 text-[#1E3A8A] transition-colors hover:bg-blue-100 sm:p-2"
+                              title="Change User Role"
+                            >
+                              <UserCog className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {user.role !== 'student' && (
+  <button
+    type="button"
+    onClick={() => openEdit(user)}
+    className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-100 sm:p-2"
+    title="Edit User"
+  >
+    <Edit className="h-3.5 w-3.5" />
+  </button>
+)}
                         </div>
                       </td>
                     </tr>
@@ -1684,83 +2857,130 @@ function UserManagement() {
           </div>
         )}
 
-        
-{!loading && !fetchError && total > 0 && (
-  <div className="flex flex-shrink-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-    <div className="min-w-0">
-      <p className="text-xs text-gray-500 sm:text-sm">
-        Showing{" "}
-        {((page - 1) * PAGE_SIZE) + 1}–
-        {Math.min(page * PAGE_SIZE, total)} of {total} users
-      </p>
+        {/* Pagination */}
+        {!loading && !fetchError && total > 0 && (
+          <div className="flex flex-shrink-0 items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500 sm:text-sm">
+                Showing {(page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, total)} of {total} users
+              </p>
+              <p className="mt-1 text-xs font-medium text-gray-400">
+                Page {page} of {Math.max(1, totalPages)}
+              </p>
+            </div>
 
-      <p className="mt-1 text-xs font-medium text-gray-400">
-        Page {page} of {Math.max(1, totalPages)}
-      </p>
-    </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) => Math.max(1, current - 1))
+                }
+                disabled={page <= 1}
+                aria-label="Previous page"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
 
-    <div className="flex flex-shrink-0 items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setPage((current) => Math.max(1, current - 1))}
-        disabled={page <= 1}
-        aria-label="Previous page"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={() =>
-          setPage((current) => Math.min(totalPages, current + 1))
-        }
-        disabled={page >= totalPages}
-        aria-label="Next page"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  </div>
-)}
-
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) =>
+                    Math.min(Math.max(1, totalPages), current + 1)
+                  )
+                }
+                disabled={page >= totalPages}
+                aria-label="Next page"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Add / Edit User Modal */}
       {(modal === 'add' || modal === 'edit') && (
-        <div 
-          className="!fixed !top-0 !left-0 !right-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4" 
-          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', margin: 0, padding: '1rem' }}
+        <div
+          className="!fixed !left-0 !right-0 !top-0 !bottom-0 z-[99999] flex items-center justify-center bg-black/40 p-4"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            padding: '1rem',
+          }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">{modal === 'add' ? 'Add New User' : 'Edit User'}</h2>
-              <button onClick={() => setModal(null)}><X className="w-5 h-5 text-gray-500" /></button>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">
+                {modal === 'add' ? 'Add New User' : 'Edit User'}
+              </h2>
+              <button type="button" onClick={closeUserModal}>
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
             </div>
-            {formError && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">{formError}</div>}
+
+            {formError && (
+              <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                {formError}
+              </div>
+            )}
+
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Username *</label>
-                  <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Username *
+                  </label>
+                  <input
+                    type="text"
+                    value={form.username}
+                    onChange={(e) =>
+                      setForm({ ...form, username: e.target.value })
+                    }
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Full Name *</label>
-                  <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={form.full_name}
+                    onChange={(e) =>
+                      setForm({ ...form, full_name: e.target.value })
+                    }
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                  />
                 </div>
               </div>
+
               {modal === 'add' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Email Address *</label>
-                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) =>
+                      setForm({ ...form, email: e.target.value })
+                    }
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                  />
                 </div>
               )}
+
               <div className="grid grid-cols-2 gap-3">
-                <div className={form.role === 'alumni' ? "col-span-2" : ""}>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <div className={form.role === 'alumni' ? 'col-span-2' : ''}>
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
                     ID Number * ({ID_LENGTH_CONFIG[form.role]?.label || 'Digits only'})
                   </label>
                   <input
@@ -1770,112 +2990,511 @@ function UserManagement() {
                     maxLength={ID_LENGTH_CONFIG[form.role]?.length ?? 10}
                     placeholder={`e.g. ${'1'.repeat(ID_LENGTH_CONFIG[form.role]?.length ?? 6)}`}
                     value={form.id_number}
-                    onChange={e => {
+                    onChange={(e) => {
                       const maxLen = ID_LENGTH_CONFIG[form.role]?.length;
                       const cleaned = e.target.value.replace(/\D/g, '');
+
                       setForm({
                         ...form,
-                        id_number: maxLen ? cleaned.slice(0, maxLen) : cleaned,
+                        id_number: maxLen
+                          ? cleaned.slice(0, maxLen)
+                          : cleaned,
                       });
                     }}
-                    className="w-full px-3 py-2 border rounded-xl text-sm" 
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
                   />
                 </div>
-                
+
                 {form.role !== 'alumni' && (
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Program</label>
-                    {form.role === 'student' ? (
-                      <select 
-                        value={form.program} 
-                        onChange={e => setForm({ ...form, program: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-xl text-sm"
-                      >
-                        <option value="">-- Select Program --</option>
-                        <option value="BEEd">Bachelor of Elementary Education</option>
-                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
-                        <option value="BSEd-Math">Bachelor of Secondary Education - Major in Mathematics</option>
-                        <option value="BSEd-English">Bachelor of Secondary Education - Major in English</option>
-                      </select>
-                    ) : (
-                      <select 
-                        value={form.program} 
-                        onChange={e => setForm({ ...form, program: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-xl text-sm"
-                      >
-                        <option value="">-- Not Assigned --</option>
-                        <option value="BEEd">Bachelor of Elementary Education</option>
-                        <option value="BTLEd">Bachelor of Technology and Livelihood Education</option>
-                        <option value="BSEd">Bachelor of Secondary Education</option>
-                      </select>
-                    )}
+                    <label className="mb-1 block text-xs font-semibold text-gray-600">
+                      Program
+                    </label>
+
+                    <select
+                      value={form.program}
+                      onChange={(e) =>
+                        setForm({ ...form, program: e.target.value })
+                      }
+                      className="w-full rounded-xl border px-3 py-2 text-sm"
+                    >
+                      <option value="">-- Select Program --</option>
+                      <option value="BEEd">
+                        Bachelor of Elementary Education
+                      </option>
+                      <option value="BTLEd">
+                        Bachelor of Technology and Livelihood Education
+                      </option>
+                      <option value="BSEd-Math">
+                        Bachelor of Secondary Education - Major in Mathematics
+                      </option>
+                      <option value="BSEd-English">
+                        Bachelor of Secondary Education - Major in English
+                      </option>
+                    </select>
                   </div>
                 )}
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Role *</label>
-                  <select 
-                    value={form.role} 
-                    onChange={e => {
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Role *
+                  </label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => {
                       const nextRole = e.target.value;
                       const maxLen = ID_LENGTH_CONFIG[nextRole]?.length;
-                      setForm(prev => ({
+
+                      setForm((prev) => ({
                         ...prev,
                         role: nextRole,
-                        id_number: maxLen ? prev.id_number.slice(0, maxLen) : prev.id_number,
-                        program: '', 
+                        id_number: maxLen
+                          ? prev.id_number.slice(0, maxLen)
+                          : prev.id_number,
+                        program: '',
                       }));
                     }}
-                    className="w-full px-3 py-2 border rounded-xl text-sm"
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
                   >
                     {Object.entries(ROLE_CONFIG)
-                      .filter(([k]) => k !== 'admin')
-                      .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      .filter(([key]) => key !== 'admin')
+                      .map(([key, value]) => (
+                        <option key={key} value={key}>
+                          {value.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Status *</label>
-                  <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-sm">
-                    {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Status *
+                  </label>
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm({ ...form, status: e.target.value })
+                    }
+                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                  >
+                    {Object.entries(STATUS_CONFIG).map(([key, value]) => (
+                      <option key={key} value={key}>
+                        {value.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
+
               {modal === 'add' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Password *</label>
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Password *
+                  </label>
+
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={form.password}
-                      onChange={e => setForm({ ...form, password: e.target.value })}
-                      className="w-full px-3 py-2 pr-10 border rounded-xl text-sm"
+                      onChange={(e) =>
+                        setForm({ ...form, password: e.target.value })
+                      }
+                      className="w-full rounded-xl border px-3 py-2 pr-10 text-sm"
                       placeholder="Min. 6 characters"
                     />
+
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>
               )}
+            {form.role === 'faculty' && (
+  <div className="col-span-2">
+    <label className="mb-1 block text-xs font-semibold text-gray-600">
+      Club Assignment *
+    </label>
+
+    <select
+      value={form.club_id || ''}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          club_id: e.target.value,
+        }))
+      }
+      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">-- Select Club --</option>
+
+      {clubsList.map((club) => (
+        <option key={club.id} value={club.id}>
+          {club.name}
+        </option>
+      ))}
+    </select>
+
+    {clubsList.length === 0 && (
+      <p className="mt-1 text-xs text-red-500">
+        No clubs loaded. Please check Supabase permissions.
+      </p>
+    )}
+  </div>
+)}
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl text-sm">Cancel</button>
-              <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving} className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-sm">
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeUserModal}
+                disabled={saving}
+                className="flex-1 rounded-xl border py-2 text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={modal === 'add' ? handleAdd : handleEdit}
+                disabled={saving}
+                className="flex-1 rounded-xl bg-[#1E3A8A] py-2 text-sm text-white disabled:opacity-50"
+              >
                 {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Graduation Confirmation Modal */}
+      {graduationUser && (
+        <div
+          className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!confirmingGraduation) {
+              setGraduationUser(null);
+              setGraduationError('');
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="graduation-modal-title"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-700">
+                <Check className="h-6 w-6" />
+              </div>
+
+              <div>
+                <h2
+                  id="graduation-modal-title"
+                  className="text-lg font-bold text-gray-900"
+                >
+                  Confirm Graduation
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Verify the student's official graduation status.
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4 space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div>
+                <p className="text-xs font-medium text-gray-500">
+                  Student Name
+                </p>
+                <p className="mt-1 font-semibold text-gray-900">
+                  {graduationUser.full_name}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500">
+                  Student ID
+                </p>
+                <p className="mt-1 font-mono text-sm text-gray-800">
+                  {graduationUser.id_number || '—'}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500">
+                  Program
+                </p>
+                <p className="mt-1 text-sm text-gray-800">
+                  {graduationUser.program ||
+                    graduationUser.department ||
+                    '—'}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500">
+                  Current Year Level
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-800">
+                  {getYearLevelLabel(graduationUser)}
+                </p>
+              </div>
+            </div>
+
+            <p className="mb-4 text-sm leading-6 text-gray-600">
+              Are you sure you want to confirm that this student has graduated?
+              Only continue after verifying the official graduation records.
+            </p>
+
+            {graduationError && (
+              <div
+                role="alert"
+                className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                {graduationError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setGraduationUser(null);
+                  setGraduationError('');
+                }}
+                disabled={confirmingGraduation}
+                className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmStudentGraduation}
+                disabled={confirmingGraduation}
+                className="flex-1 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {confirmingGraduation
+                  ? 'Confirming...'
+                  : 'Confirm Graduation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Change Confirmation Modal */}
+      {roleModalUser && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+          }}
+        >
+          <div className="relative w-full max-w-md animate-in fade-in zoom-in-95 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="rounded-xl bg-blue-50 p-2 text-[#1E3A8A]">
+                  <UserCog className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">
+                    Change Account Role
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Reassign permissions while preserving records
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeRoleChangeModal}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {roleModalError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span>{roleModalError}</span>
+              </div>
+            )}
+
+            <div className="my-4 space-y-3.5 text-xs">
+              <div className="space-y-1 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                <p className="font-medium text-gray-500">User Profile:</p>
+                <p className="text-sm font-bold text-gray-900">
+                  {roleModalUser.full_name}
+                </p>
+                <p className="font-mono text-gray-400">
+                  {roleModalUser.email} · ID #{roleModalUser.id_number}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-semibold text-gray-600">
+                    Current Role
+                  </label>
+                  <div className="rounded-xl bg-gray-100 p-2.5 font-semibold text-gray-700">
+                    {ROLE_CONFIG[roleModalUser.role]?.label ||
+                      roleModalUser.role}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-semibold text-gray-600">
+                    New Role *
+                  </label>
+                  <select
+                    value={targetNewRole}
+                    onChange={(e) => setTargetNewRole(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white p-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {(PERMITTED_ROLE_TRANSITIONS[roleModalUser.role] || []).map(
+                      (role: string) => (
+                        <option key={role} value={role}>
+                          {ROLE_CONFIG[role]?.label || role}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {(targetNewRole === 'department_chair' ||
+                (roleModalUser.role === 'student' &&
+                  ['faculty', 'staff'].includes(targetNewRole))) && (
+                <div>
+                  <label className="mb-1 block font-semibold text-gray-600">
+                    Department Assignment *
+                  </label>
+                  <select
+                    value={targetDepartment}
+                    onChange={(e) => setTargetDepartment(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Select Official Department --</option>
+                    {departmentsList.map((department) => (
+                      <option key={department.id} value={department.name}>
+                        {department.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block font-semibold text-gray-600">
+                  Reason for Reassignment (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={roleChangeReason}
+                  onChange={(e) => setRoleChangeReason(e.target.value)}
+                  placeholder="e.g. Appointed as Department Chair"
+                  className="w-full rounded-xl border border-gray-200 p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                <div className="leading-snug">
+                  <span className="font-bold">Access Warning:</span> Dashboard
+                  privileges and permissions may update upon session refresh.
+                  Existing records should be preserved by the backend.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-2">
+              <button
+                type="button"
+                onClick={closeRoleChangeModal}
+                disabled={isChangingRole}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmRoleChange}
+                disabled={isChangingRole || !targetNewRole}
+                className="rounded-xl bg-[#1E3A8A] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1E40AF] disabled:opacity-50"
+              >
+                {isChangingRole ? 'Updating...' : 'Confirm Role Change'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {graduationConfirmUser && (
+  <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+    >
+      <h2 className="text-lg font-bold text-gray-900">
+        Confirm Student Graduation
+      </h2>
+
+      <p className="mt-3 text-sm leading-6 text-gray-600">
+        Are you sure you want to graduate{' '}
+        <strong>{graduationConfirmUser.full_name}</strong>?
+        Their account will be changed to the alumni role if the
+        server completes the operation successfully.
+      </p>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setGraduationConfirmUser(null)}
+          className="rounded-lg border px-4 py-2 text-sm"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={() => confirmGraduate(graduationConfirmUser)}
+          disabled={
+            graduatingIds.length > 0 || processingBulkGraduation
+          }
+          className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {graduatingIds.length > 0 ? 'Processing...' : 'Confirm Graduate'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
     </div>
   );
 }
+
 // ─── Calendar & Activities (DEAN/ADMIN DASHBOARD) ─────────────────────────────
 
 interface CalendarEvent {
@@ -8525,14 +10144,61 @@ function LandingPageManagement() {
     }));
   }
 
-  async function saveClubsPage() {
-    await saveClubsContent(clubsContent);
-    await saveClubStatistics(clubsStatistics);
-    await saveOrganizations(organizations);
-    await saveCommittees(committees);
+async function saveClubsPage() {
+  try {
+    // 1. Save clubs page content
+    const contentResult = await saveClubsContent(clubsContent);
+
+    if (contentResult.error) {
+      throw new Error(
+        `Failed to save clubs content: ${contentResult.error.message}`
+      );
+    }
+
+    // 2. Save statistics
+    const statisticsResult = await saveClubStatistics(clubsStatistics);
+
+    if (statisticsResult.error) {
+      throw new Error(
+        `Failed to save statistics: ${statisticsResult.error.message}`
+      );
+    }
+
+    // 3. Save organizations
+    const organizationsResult = await saveOrganizations(organizations);
+
+    if (organizationsResult.error) {
+      throw new Error(
+        `Failed to save organizations: ${organizationsResult.error.message}`
+      );
+    }
+
+    // 4. Save committees
+    const committeesResult = await saveCommittees(committees);
+
+    if (committeesResult.error) {
+      throw new Error(
+        `Failed to save committees: ${committeesResult.error.message}`
+      );
+    }
+
+    // Do not replace the editor state with incomplete save results.
+    // The saved data remains in the current state.
+
     setModalMessage('Clubs Page Updated Successfully!');
     setShowSuccessModal(true);
+  } catch (error: any) {
+    console.error('Error saving Clubs Page:', error);
+
+    setModalMessage(
+      error?.message ||
+        'An unexpected error occurred while saving the Clubs Page.'
+    );
+    setShowSuccessModal(true);
   }
+}
+
+
 
   function updateDepartmentField(section: string, field: string, value: string) {
     setDepartmentContent((prev: any) => ({
@@ -9554,30 +11220,116 @@ function SystemSettings({
     }
   };
 
-  const saveAcademicSettings = async () => {
-    if (
-      !academicYear.trim() ||
-      !collegeDept.trim()
-    ) {
-      setMessage({
-        type: 'error',
-        text:
-          'Academic Year and College/Department are required.',
-      });
+  
 
-      return;
+const saveAcademicSettings = async () => {
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    setMessage({
+      type: 'error',
+      text: 'Your session has expired. Please sign in again.',
+    });
+    return;
+  }
+
+  if (!academicYear.trim() || !semester.trim()) {
+    setMessage({
+      type: 'error',
+      text: 'Academic year and semester are required.',
+    });
+    return;
+  }
+
+  setSaving(true);
+  setMessage(null);
+
+  try {
+    const response = await fetch(
+      'http://localhost:5000/api/academic-settings',
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          academicYear: academicYear.trim(),
+          semester: semester.trim(),
+        }),
+      }
+    );
+
+    const responseText = await response.text();
+    let result: any = {};
+
+    try {
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      result = { error: responseText };
     }
 
-    await new Promise((res) =>
-      setTimeout(res, 400)
-    );
+    if (!response.ok) {
+      console.error('Academic settings save failed:', {
+        status: response.status,
+        response: result,
+      });
+
+      throw new Error(
+        result.error ||
+        result.message ||
+        result.details ||
+        `Server error (${response.status}).`
+      );
+    }
 
     setMessage({
       type: 'success',
-      text:
-        'Academic settings updated.',
+      text: 'Academic settings saved successfully.',
     });
+  } catch (error: any) {
+    console.error('Failed to save academic settings:', error);
+
+    setMessage({
+      type: 'error',
+      text: error?.message || 'Unable to connect to the backend.',
+    });
+  } finally {
+    setSaving(false);
+  }
+};
+
+
+useEffect(() => {
+  const loadAcademicSettings = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/academic-settings',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Unable to load academic settings.');
+      }
+
+      const data = await response.json();
+
+      setAcademicYear(data.academicYear || '');
+      setSemester(data.semester || 'First Semester');
+    } catch (error) {
+      console.error('Failed to load academic settings:', error);
+    }
   };
+
+  loadAcademicSettings();
+}, []);
 
   const handleSaveChanges = async () => {
     setMessage(null);

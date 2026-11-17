@@ -51,6 +51,9 @@ export interface Committee {
   full_name: string;
   description: string;
   focus: string;
+  logo_url: string | null;
+  president_name: string | null;
+  adviser_name: string | null;
   display_order: number;
 }
 

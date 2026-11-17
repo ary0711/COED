@@ -46,7 +46,7 @@ import {
   Award,
   Folder,
 } from 'lucide-react';
-
+import GraduationSection from './GraduationSection';
 import { Sidebar } from './Sidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { SummaryCard } from './SummaryCard';
@@ -76,6 +76,7 @@ const toTimestamp = (dateStr: string): string => {
 const chairMenuItems = [
   { icon: LayoutDashboard, label: 'Dashboard',            id: 'dashboard' },
   { icon: Calendar,        label: 'Department Calendar',  id: 'calendar' },
+  { icon: GraduationCap, label: 'Graduation', id: 'graduation' },
   { icon: FileCheck2,      label: 'Reports',              id: 'chairReports' },
   { icon: TrendingUp,      label: 'Research & Extension', id: 'researchExtension' },
   { icon: Award,           label: 'Achievements',         id: 'achievements' },
@@ -190,6 +191,7 @@ export function DepartmentChairDashboard({
         <main className="p-4 sm:p-6 lg:p-8 flex-1 overflow-y-auto">
           {activeMenuItem === 'dashboard'          && <ChairDashboardView setActiveMenuItem={setActiveMenuItem} departmentNames={departmentNames} />}
           {activeMenuItem === 'calendar'           && <DepartmentCalendar organizerId={userId} departmentNames={departmentNames} />}
+          {activeMenuItem === 'graduation' && ( <GraduationSection departmentNames={departmentNames} />)}
           {activeMenuItem === 'researchExtension'  && <ResearchExtension userId={userId} />}
           {activeMenuItem === 'achievements'       && <FacultyAchievements />}
           {activeMenuItem === 'chairReports'       && (<ReportsSection userId={userId} userName={userName} />)}
