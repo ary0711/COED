@@ -153,7 +153,7 @@ export function ResearchExtension({ userId, userName = 'A faculty member' }: { u
 
   // In-Modal Preview State
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
-  const localBlobUrlMapRef = useRef>(new Map());
+  const localBlobUrlMapRef = useRef<Map<string, string>>(new Map());
 
   // Form State
   const [researchType, setResearchType] = useState<'research' | 'extension' | 'achievement'>('research');
