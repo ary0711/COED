@@ -19,7 +19,7 @@ interface WfhReportProps {
   readOnly?: boolean;
 }
 
-const WFH_API_URL = 'http://localhost:5000/api/wfh-reports';
+const WFH_API_URL = 'https://coed.onrender.com/api/wfh-reports';
 
 function getToken() {
   return localStorage.getItem('token');

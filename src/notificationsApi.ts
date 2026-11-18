@@ -1,4 +1,4 @@
-const API = 'http://localhost:5000/api/notifications';
+const API = 'https://coed.onrender.com/api/notifications';
 
 export interface BackendNotificationPayload {
   title: string;
@@ -32,7 +32,7 @@ export async function notifyDean(payload: {
   type?: 'announcement' | 'inquiry' | 'report' | 'staff_update' | 'system';
 }): Promise<{ sent: number; muted: number }> {
   const token = localStorage.getItem('token');
-  const res = await fetch('http://localhost:5000/api/notifications/notify-dean', {
+  const res = await fetch('https://coed.onrender.com/api/notifications/notify-dean', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),

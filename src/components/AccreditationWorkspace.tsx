@@ -64,7 +64,7 @@ interface CustomModalState {
   onConfirm?: () => void;
 }
 
-const DOCS_API_URL = 'http://localhost:5000/api/accreditation';
+const DOCS_API_URL = 'https://coed.onrender.com/api/accreditation';
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;

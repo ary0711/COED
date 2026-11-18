@@ -28,10 +28,10 @@ import { sendNotification } from '../notificationService';
 // ============================================================================
 // 1. ENDPOINTS & INTERFACES
 // ============================================================================
-const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_API_URL      = 'http://localhost:5000/api/extension-reports';
-const WFH_API_URL            = 'http://localhost:5000/api/wfh-reports';
-const USERS_API_URL          = 'http://localhost:5000/api/auth/users';
+const ACCOMPLISHMENT_API_URL = 'https://coed.onrender.com/api/accomplishment-reports';
+const EXTENSION_API_URL      = 'https://coed.onrender.com/api/extension-reports';
+const WFH_API_URL            = 'https://coed.onrender.com/api/wfh-reports';
+const USERS_API_URL          = 'https://coed.onrender.com/api/auth/users';
 
 export type ReportType = 'accomplishment' | 'extension' | 'wfh';
 

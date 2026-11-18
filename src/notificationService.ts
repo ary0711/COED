@@ -141,7 +141,7 @@ export async function sendNotification(payload: {
   departments?: string[];
   user_ids?: string[];
 }) {
-  const res = await fetch('http://localhost:5000/api/notifications/send', {
+  const res = await fetch('https://coed.onrender.com/api/notifications/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

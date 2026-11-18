@@ -52,7 +52,7 @@ interface TracerSurveyData {
   updated_at?: string;
 }
 
-const TRACER_API_URL = 'http://localhost:5000/api/tracer-survey';
+const TRACER_API_URL = 'https://coed.onrender.com/api/tracer-survey';
 
 function getToken() {
   return localStorage.getItem('token');
@@ -330,7 +330,7 @@ function AlumniDashboardView({
         }
 
         const token = localStorage.getItem('token');
-        const res = await fetch('http://localhost:5000/api/calendar-events', {
+        const res = await fetch('https://coed.onrender.com/api/calendar-events', {
           headers: { Authorization: `Bearer ${token}` }
         }).catch(() => null);
         
@@ -1369,7 +1369,7 @@ function TracerSurvey({ alumniId }: { alumniId: string }) {
 
 
 // ====================== ALUMNI CALENDAR ======================
-const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+const CALENDAR_API_URL = 'https://coed.onrender.com/api/calendar-events';
 
 interface BackendCalendarEvent {
   id: string;
@@ -2764,7 +2764,7 @@ function AlumniSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/me',
+        'https://coed.onrender.com/api/auth/me',
         {
           method: 'GET',
           headers: {
@@ -2926,7 +2926,7 @@ const saveNotificationPreferences = async () => {
     setSaveMessage(null);
 
     const response = await fetch(
-      'http://localhost:5000/api/auth/preferences',
+      'https://coed.onrender.com/api/auth/preferences',
       {
         method: 'PUT',
         headers: {
@@ -3072,7 +3072,7 @@ const saveNotificationPreferences = async () => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/profile',
+        'https://coed.onrender.com/api/auth/profile',
         {
           method: 'PUT',
           headers: {
@@ -3263,7 +3263,7 @@ const saveNotificationPreferences = async () => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/password',
+        'https://coed.onrender.com/api/auth/password',
         {
           method: 'PUT',
           headers: {

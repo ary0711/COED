@@ -40,7 +40,7 @@ export function FacultyStaffManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/auth/faculty');
+      const res = await fetch('https://coed.onrender.com/api/auth/faculty');
       const result = await res.json();
       const allPersonnel: FacultyMemberProfile[] =
         result.success && Array.isArray(result.data) ? result.data : [];

@@ -41,8 +41,8 @@ const studentMenuItems = [
   { icon: Settings,     label: 'Settings',                id: 'settings'     },
 ];
 
-const ME_API_URL = 'http://localhost:5000/api/students/me';
-const CLUB_ME_API_URL = 'http://localhost:5000/api/clubs/me';
+const ME_API_URL = 'https://coed.onrender.com/api/students/me';
+const CLUB_ME_API_URL = 'https://coed.onrender.com/api/clubs/me';
 
 // How often the dashboard silently re-fetches the profile so a newly
 // published Dean's List result shows up without a manual reload.
@@ -141,8 +141,8 @@ interface RealCalendarEvent {
   posted_by_role: string | null;
 }
 
-const CALENDAR_API_URL_STUDENT = 'http://localhost:5000/api/calendar-events';
-const DEANS_LIST_STATUS_URL = 'http://localhost:5000/api/deans-list/my-status';
+const CALENDAR_API_URL_STUDENT = 'https://coed.onrender.com/api/calendar-events';
+const DEANS_LIST_STATUS_URL = 'https://coed.onrender.com/api/deans-list/my-status';
 
 interface DeansListStatus {
   published: boolean;
@@ -540,7 +540,7 @@ export function StudentDashboard({
 
     try {
       const res = await fetch(
-        'http://localhost:5000/api/auth/student-year-level',
+        'https://coed.onrender.com/api/auth/student-year-level',
         {
           method: 'PUT',
           headers: {
@@ -2392,7 +2392,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/preferences', {
+      const response = await fetch('https://coed.onrender.com/api/notifications/preferences', {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -2477,7 +2477,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     setSaveMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/students/me', {
+      const response = await fetch('https://coed.onrender.com/api/students/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -2569,7 +2569,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     setSaving(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/password', {
+      const response = await fetch('https://coed.onrender.com/api/auth/password', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -2624,7 +2624,7 @@ function StudentSettings({ profile, userEmail, loading, onProfileUpdated }: Stud
     setSaveMessage(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/preferences', {
+      const response = await fetch('https://coed.onrender.com/api/notifications/preferences', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

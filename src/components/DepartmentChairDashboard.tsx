@@ -238,7 +238,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
       const headers = { Authorization: `Bearer ${token}` };
 
       try {
-        const res = await fetch('http://localhost:5000/api/chair/dashboard-stats', { headers });
+        const res = await fetch('https://coed.onrender.com/api/chair/dashboard-stats', { headers });
         if (res.ok) {
           const stats = await res.json();
           setFacultyCount(stats.facultyCount ?? 0);
@@ -255,7 +255,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
         }
 
         try {
-  const facRes = await fetch('http://localhost:5000/api/accounts/faculty', { headers });
+  const facRes = await fetch('https://coed.onrender.com/api/accounts/faculty', { headers });
   if (facRes.ok) {
     const all = await facRes.json();
     const mine = (all ?? []).filter(
@@ -268,7 +268,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
   console.error('Faculty load failed', e);
 }
 
-        const calRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
+        const calRes = await fetch('https://coed.onrender.com/api/calendar-events', { headers });
         if (calRes.ok) {
           const events = await calRes.json();
           const today = new Date().toISOString().split('T')[0];
@@ -289,7 +289,7 @@ function ChairDashboardView({ setActiveMenuItem, departmentNames }: { setActiveM
     setShowFacultyModal(true);
     setLoadingModal(true);
     try {
-      const res = await fetch('http://localhost:5000/api/accounts/faculty', {
+      const res = await fetch('https://coed.onrender.com/api/accounts/faculty', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) {
@@ -529,7 +529,7 @@ interface DepartmentCalendarProps {
   departmentNames: string[];
 }
 
-const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+const CALENDAR_API_URL = 'https://coed.onrender.com/api/calendar-events';
 
 const PREDEFINED_TYPE_COLORS: Record<string, string> = {
   meeting: '#3B82F6',
@@ -1818,7 +1818,7 @@ export function DepartmentCalendar({ organizerId, departmentNames }: DepartmentC
 /* ─────────────────────────────────────────────
    Account Approvals View
 ───────────────────────────────────────────── */
-const ACCOUNTS_API_URL = 'http://localhost:5000/api/accounts';
+const ACCOUNTS_API_URL = 'https://coed.onrender.com/api/accounts';
 
 const ROLE_TABS: { id: AccountRole; label: string }[] = [
   { id: 'student', label: 'Students' },
@@ -2358,9 +2358,9 @@ function AccountApprovalsView({ departmentNames }: { departmentNames: string[] }
 /* ─────────────────────────────────────────────
    Reports Monitoring
 ───────────────────────────────────────────── */
-const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
-const WFH_API_URL = 'http://localhost:5000/api/wfh-reports';
+const ACCOMPLISHMENT_API_URL = 'https://coed.onrender.com/api/accomplishment-reports';
+const EXTENSION_API_URL = 'https://coed.onrender.com/api/extension-reports';
+const WFH_API_URL = 'https://coed.onrender.com/api/wfh-reports';
 
 interface AccomplishmentReportRow {
   id: string; submitted_by: string; quarter: string; year: string; status: string; progress: number; dean_remarks: string | null; created_at: string; updated_at: string;
@@ -2408,7 +2408,7 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
 
     try {
       const res = await fetch(
-        `http://localhost:5000/api/chair/reports?quarter=${quarter}&year=${year}`,
+        `https://coed.onrender.com/api/chair/reports?quarter=${quarter}&year=${year}`,
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
       const data = await res.json().catch(() => null);
@@ -2431,7 +2431,7 @@ export function ReportsMonitoring({ departmentNames }: { departmentNames: string
   const decideReport = async (type: string, id: string, status: 'approved' | 'rejected', remarks?: string) => {
     setActionId(id);
     try {
-      const res = await fetch(`http://localhost:5000/api/chair/reports/${type}/${id}/decision`, {
+      const res = await fetch(`https://coed.onrender.com/api/chair/reports/${type}/${id}/decision`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ status, remarks }),
@@ -2870,7 +2870,7 @@ function ChairSystemSettings({
 
       try {
         const response = await fetch(
-          'http://localhost:5000/api/auth/me',
+          'https://coed.onrender.com/api/auth/me',
           {
             method: 'GET',
             headers: {
@@ -3068,7 +3068,7 @@ function ChairSystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/profile',
+        'https://coed.onrender.com/api/auth/profile',
         {
           method: 'PUT',
           headers: {
@@ -3256,7 +3256,7 @@ function ChairSystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/password',
+        'https://coed.onrender.com/api/auth/password',
         {
           method: 'PUT',
           headers: {
@@ -3325,7 +3325,7 @@ function ChairSystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/preferences',
+        'https://coed.onrender.com/api/auth/preferences',
         {
           method: 'PUT',
           headers: {

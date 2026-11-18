@@ -57,8 +57,8 @@ interface SubmissionOption {
 }
 
 const MAX_PHOTOS_PER_ENTRY = 8;
-const REPORTS_API_URL = 'http://localhost:5000/api/accomplishment-reports';
-const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
+const REPORTS_API_URL = 'https://coed.onrender.com/api/accomplishment-reports';
+const RESEARCH_API_URL = 'https://coed.onrender.com/api/research-submissions';
 
 function getToken() {
   return localStorage.getItem('token');

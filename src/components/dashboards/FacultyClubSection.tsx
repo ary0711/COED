@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { CLUB_ROLE_LABEL } from './ClubDashboard';
 
-const API = 'http://localhost:5000/api';
+const API = 'https://coed.onrender.com/api';
 export const CLUB_ADVISER_ME_URL = `${API}/clubs/adviser/me`;
 
 interface ClubMember {

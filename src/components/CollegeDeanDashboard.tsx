@@ -270,7 +270,7 @@ export function CollegeDeanDashboard({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/me',
+        'https://coed.onrender.com/api/auth/me',
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -698,7 +698,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
     // 1. Official departments + users (parehas nga source sa User Management)
     const [{ data: depts }, usersRes] = await Promise.all([
       supabase.from('departments').select('id, name, code'),
-      fetch('http://localhost:5000/api/auth/users', {
+      fetch('https://coed.onrender.com/api/auth/users', {
         headers: { Authorization: `Bearer ${token}` },
       }),
     ]);
@@ -789,7 +789,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
     const loadDepartmentCount = async () => {
       try {
         setDepartmentLoading(true);
-        const response = await fetch('http://localhost:5000/api/departments/count');
+        const response = await fetch('https://coed.onrender.com/api/departments/count');
         const result = await response.json();
         if (!response.ok || !result.success) {
           const { count } = await supabase.from('departments').select('*', { count: 'exact', head: true });
@@ -812,7 +812,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
     const loadFacultyCount = async () => {
       try {
         setFacultyLoading(true);
-        const response = await fetch('http://localhost:5000/api/auth/faculty-count');
+        const response = await fetch('https://coed.onrender.com/api/auth/faculty-count');
         const result = await response.json();
         if (!response.ok || !result.success) {
           const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'faculty');
@@ -835,7 +835,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
     const loadStudentCount = async () => {
       try {
         setStudentLoading(true);
-        const response = await fetch('http://localhost:5000/api/auth/student-count');
+        const response = await fetch('https://coed.onrender.com/api/auth/student-count');
         const result = await response.json();
         if (!response.ok || !result.success) {
           const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student');
@@ -858,7 +858,7 @@ function DashboardView({ onNavigate }: { onNavigate: (menuItem: string, subTab?:
     setPendingReportsLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/accomplishment-reports', {
+      const res = await fetch('https://coed.onrender.com/api/accomplishment-reports', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -1364,7 +1364,7 @@ const updateGraduationEligibility = async (
     }
 
     const response = await fetch(
-      `http://localhost:5000/api/students/${user.id}/graduation-eligibility`,
+      `https://coed.onrender.com/api/students/${user.id}/graduation-eligibility`,
       {
         method: 'PATCH',
         headers: {
@@ -1414,7 +1414,7 @@ const updateGraduationEligibility = async (
       }
 
       const res = await fetch(
-        'http://localhost:5000/api/auth/users',
+        'https://coed.onrender.com/api/auth/users',
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1629,7 +1629,7 @@ const updateGraduationEligibility = async (
       }
 
       const res = await fetch(
-        `http://localhost:5000/api/auth/users/${roleModalUser.id}/change-role`,
+        `https://coed.onrender.com/api/auth/users/${roleModalUser.id}/change-role`,
         {
           method: 'POST',
           headers: {
@@ -1745,7 +1745,7 @@ const updateGraduationEligibility = async (
           : form.program.trim();
 
       const response = await fetch(
-        'http://localhost:5000/api/auth/register',
+        'https://coed.onrender.com/api/auth/register',
         {
           method: 'POST',
           headers: {
@@ -1899,7 +1899,7 @@ const updateGraduationEligibility = async (
           : form.program.trim();
 
       const response = await fetch(
-        `http://localhost:5000/api/auth/users/${selected.id}`,
+        `https://coed.onrender.com/api/auth/users/${selected.id}`,
         {
           method: 'PUT',
           headers: {
@@ -1963,7 +1963,7 @@ const updateGraduationEligibility = async (
       }
 
       const res = await fetch(
-        `http://localhost:5000/api/auth/users/${user.id}`,
+        `https://coed.onrender.com/api/auth/users/${user.id}`,
         {
           method: 'PUT',
           headers: {
@@ -2015,7 +2015,7 @@ const updateGraduationEligibility = async (
       }
 
       const response = await fetch(
-        `http://localhost:5000/api/auth/users/${user.id}`,
+        `https://coed.onrender.com/api/auth/users/${user.id}`,
         {
           method: 'PUT',
           headers: {
@@ -2086,7 +2086,7 @@ const updateGraduationEligibility = async (
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/students/${graduationUser.id}/graduate`,
+        `https://coed.onrender.com/api/students/${graduationUser.id}/graduate`,
         {
           method: 'POST',
           headers: {
@@ -2148,7 +2148,7 @@ const confirmGraduate = async (user: any) => {
     }
 
     const response = await fetch(
-      `http://localhost:5000/api/students/${user.id}/graduate`,
+      `https://coed.onrender.com/api/students/${user.id}/graduate`,
       {
         method: 'POST',
         headers: {
@@ -2213,7 +2213,7 @@ const batchConfirmGraduates = async () => {
     }
 
     const response = await fetch(
-  'http://localhost:5000/api/students/batch-graduate',
+  'https://coed.onrender.com/api/students/batch-graduate',
   {
     method: 'POST',
     headers: {
@@ -3522,7 +3522,7 @@ interface DeptOption {
   name: string;
 }
 
-const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+const CALENDAR_API_URL = 'https://coed.onrender.com/api/calendar-events';
 
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
@@ -4926,8 +4926,8 @@ interface AcademicDocument {
   updated_at: string;
 }
 
-const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-const CATEGORIES_API_URL = 'http://localhost:5000/api/academic-records/categories';
+const DOCS_API_URL = 'https://coed.onrender.com/api/academic-records/documents';
+const CATEGORIES_API_URL = 'https://coed.onrender.com/api/academic-records/categories';
 
 function getDocsToken() {
   return localStorage.getItem('token');
@@ -6273,7 +6273,7 @@ interface ResearchSubmissionRow {
   submitter: { full_name: string; department: string | null } | null;
 }
 
-const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
+const RESEARCH_API_URL_DEAN = 'https://coed.onrender.com/api/research-submissions';
 const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },
   approved: { label: 'Approved', color: '#065F46', bg: '#D1FAE5' },
@@ -7129,7 +7129,7 @@ function DocxPreviewModal({
 }
 // ─── Alumni Tracer (COLLEGE DEAN DASHBOARD — QPRO PRIVACY-COMPLIANT) ─────────
 
-const TRACER_API_BASE = 'http://localhost:5000/api/tracer-survey';
+const TRACER_API_BASE = 'https://coed.onrender.com/api/tracer-survey';
 
 interface GraduateRecord {
   id: string;
@@ -8513,7 +8513,7 @@ const openContact = async (contact: ContactMessage) => {
 
       try {
         emailResponse = await fetch(
-          'http://localhost:5000/api/contact/reply',
+          'https://coed.onrender.com/api/contact/reply',
           {
             method: 'POST',
             headers: {
@@ -10770,7 +10770,7 @@ function SystemSettings({
 
       try {
         const response = await fetch(
-          'http://localhost:5000/api/auth/me',
+          'https://coed.onrender.com/api/auth/me',
           {
             method: 'GET',
             headers: {
@@ -10857,7 +10857,7 @@ function SystemSettings({
 
       try {
         const response = await fetch(
-          'http://localhost:5000/api/auth/me',
+          'https://coed.onrender.com/api/auth/me',
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -10979,7 +10979,7 @@ function SystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/profile',
+        'https://coed.onrender.com/api/auth/profile',
         {
           method: 'PUT',
           headers: {
@@ -11110,7 +11110,7 @@ function SystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/password',
+        'https://coed.onrender.com/api/auth/password',
         {
           method: 'PUT',
           headers: {
@@ -11173,7 +11173,7 @@ function SystemSettings({
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/preferences',
+        'https://coed.onrender.com/api/auth/preferences',
         {
           method: 'PUT',
           headers: {
@@ -11246,7 +11246,7 @@ const saveAcademicSettings = async () => {
 
   try {
     const response = await fetch(
-      'http://localhost:5000/api/academic-settings',
+      'https://coed.onrender.com/api/academic-settings',
       {
         method: 'PUT',
         headers: {
@@ -11307,7 +11307,7 @@ useEffect(() => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/academic-settings',
+        'https://coed.onrender.com/api/academic-settings',
         {
           headers: {
             Authorization: `Bearer ${token}`,

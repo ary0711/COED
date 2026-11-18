@@ -33,8 +33,8 @@ interface AcademicDocumentsViewerProps {
   onOpenPreview?: (preview: ClassroomPreview) => void;
 }
 
-const DOCS_API_URL = 'http://localhost:5000/api/academic-records/documents';
-const CATEGORIES_API_URL = 'http://localhost:5000/api/academic-records/categories';
+const DOCS_API_URL = 'https://coed.onrender.com/api/academic-records/documents';
+const CATEGORIES_API_URL = 'https://coed.onrender.com/api/academic-records/categories';
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;

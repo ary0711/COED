@@ -295,7 +295,7 @@ export function ResetPasswordPage({
       // =================================================
 
       const response = await fetch(
-        'http://localhost:5000/api/auth/sync-reset-password',
+        'https://coed.onrender.com/api/auth/sync-reset-password',
         {
           method: 'POST',
 

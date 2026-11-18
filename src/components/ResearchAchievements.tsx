@@ -52,7 +52,7 @@ interface ResearchSubmissionRow {
   submitter: { full_name: string; department: string | null } | null;
 }
 
-const RESEARCH_API_URL_DEAN = 'http://localhost:5000/api/research-submissions';
+const RESEARCH_API_URL_DEAN = 'https://coed.onrender.com/api/research-submissions';
 
 const RESEARCH_STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   pending:  { label: 'Pending Review', color: '#92400E', bg: '#FEF3C7' },

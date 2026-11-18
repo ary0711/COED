@@ -128,7 +128,7 @@ export function ResearchPage({
   // =====================================================
 
   const RESEARCH_PUBLIC_API =
-    'http://localhost:5000/api/research-submissions/public/approved';
+    'https://coed.onrender.com/api/research-submissions/public/approved';
 
   async function loadPublications() {
     try {

@@ -32,8 +32,8 @@ const EMPTY_ROW: ReportRow = {
   inclusive_date: '',
 };
 
-const EXTENSION_API_URL = 'http://localhost:5000/api/extension-reports';
-const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
+const EXTENSION_API_URL = 'https://coed.onrender.com/api/extension-reports';
+const RESEARCH_API_URL = 'https://coed.onrender.com/api/research-submissions';
 
 function getToken() {
   return localStorage.getItem('token');

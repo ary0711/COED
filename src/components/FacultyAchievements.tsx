@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { renderAsync } from 'docx-preview';
 
-const RESEARCH_API_URL = 'http://localhost:5000/api/research-submissions';
+const RESEARCH_API_URL = 'https://coed.onrender.com/api/research-submissions';
 
 function getResearchToken() {
   return localStorage.getItem('token');

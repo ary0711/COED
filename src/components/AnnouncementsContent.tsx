@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-const ANNOUNCEMENTS_API_URL = 'http://localhost:5000/api/announcements';
+const ANNOUNCEMENTS_API_URL = 'https://coed.onrender.com/api/announcements';
 const ALL_ROLES = ['department_chair', 'faculty', 'student', 'alumni'];
 
 const ANNOUNCEMENT_ROLE_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {

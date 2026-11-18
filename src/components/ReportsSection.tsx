@@ -30,10 +30,10 @@ import { notifyDean } from '../notificationsApi';
 // ============================================================================
 // 1. API CONSTANTS & TYPES
 // ============================================================================
-const ACCOMPLISHMENT_API_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_API_URL      = 'http://localhost:5000/api/extension-reports';
-const WFH_API_URL            = 'http://localhost:5000/api/wfh-reports';
-const RESEARCH_API_URL       = 'http://localhost:5000/api/research-submissions';
+const ACCOMPLISHMENT_API_URL = 'https://coed.onrender.com/api/accomplishment-reports';
+const EXTENSION_API_URL      = 'https://coed.onrender.com/api/extension-reports';
+const WFH_API_URL            = 'https://coed.onrender.com/api/wfh-reports';
+const RESEARCH_API_URL       = 'https://coed.onrender.com/api/research-submissions';
 
 function getToken() {
   return localStorage.getItem('token');

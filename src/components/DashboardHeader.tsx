@@ -114,10 +114,10 @@ interface DashboardHeaderProps {
 }
 
 const NOTIFICATIONS_API_URL =
-  'http://localhost:5000/api/notifications';
+  'https://coed.onrender.com/api/notifications';
 
 const PROFILE_API_URL =
-  'http://localhost:5000/api/auth/me';
+  'https://coed.onrender.com/api/auth/me';
 
 export function DashboardHeader({
   userRole,
@@ -165,7 +165,7 @@ useEffect(() => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/academic-settings',
+        'https://coed.onrender.com/api/academic-settings',
         {
           headers: {
             Authorization: `Bearer ${token}`,

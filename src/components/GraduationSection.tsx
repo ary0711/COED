@@ -72,7 +72,7 @@ type BatchResult = {
   }>;
 };
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://coed.onrender.com/api';
 
 function getStudentProfile(student: Student): StudentProfile | null {
   if (Array.isArray(student.student_profiles)) {

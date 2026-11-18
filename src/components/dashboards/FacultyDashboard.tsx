@@ -78,8 +78,8 @@ interface FacultyDashboardProps {
   userName?: string;
 }
 
-const ME_API_URL = 'http://localhost:5000/api/me';
-const CLUB_ADVISER_ME_URL = 'http://localhost:5000/api/clubs/adviser/me';
+const ME_API_URL = 'https://coed.onrender.com/api/me';
+const CLUB_ADVISER_ME_URL = 'https://coed.onrender.com/api/clubs/adviser/me';
 
 export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, userName = 'Faculty' }: FacultyDashboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -218,7 +218,7 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
       const headers = { Authorization: `Bearer ${token}` };
 
       try {
-        const calendarRes = await fetch('http://localhost:5000/api/calendar-events', { headers });
+        const calendarRes = await fetch('https://coed.onrender.com/api/calendar-events', { headers });
         if (calendarRes.ok) {
           const events = await calendarRes.json();
           const today = new Date().toISOString().split('T')[0];
@@ -236,9 +236,9 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
         }
 
         const [accRes, extRes, wfhRes] = await Promise.all([
-          fetch('http://localhost:5000/api/accomplishment-reports/my-draft', { headers }).catch(() => null),
-          fetch('http://localhost:5000/api/extension-reports/my-draft', { headers }).catch(() => null),
-          fetch('http://localhost:5000/api/wfh-reports/my-draft', { headers }).catch(() => null),
+          fetch('https://coed.onrender.com/api/accomplishment-reports/my-draft', { headers }).catch(() => null),
+          fetch('https://coed.onrender.com/api/extension-reports/my-draft', { headers }).catch(() => null),
+          fetch('https://coed.onrender.com/api/wfh-reports/my-draft', { headers }).catch(() => null),
         ]);
 
         const reports: any[] = [];
@@ -279,7 +279,7 @@ function FacultyDashboardView({ setActiveMenuItem, userId }: FacultyDashboardVie
         setPendingReportsCount(reports.length);
         setPendingReportsList(reports);
 
-        const researchRes = await fetch('http://localhost:5000/api/research-submissions/mine', { headers });
+        const researchRes = await fetch('https://coed.onrender.com/api/research-submissions/mine', { headers });
         if (researchRes.ok) {
           const submissions = await researchRes.json();
           setResearchExtensionList(Array.isArray(submissions) ? submissions : []);
@@ -508,8 +508,8 @@ interface TeachingSubject {
   room: string;
 }
 
-const TEACHING_LOAD_URL = 'http://localhost:5000/api/teaching-load';
-const TEACHING_LOAD_SCAN_URL = 'http://localhost:5000/api/teaching-load/scan';
+const TEACHING_LOAD_URL = 'https://coed.onrender.com/api/teaching-load';
+const TEACHING_LOAD_SCAN_URL = 'https://coed.onrender.com/api/teaching-load/scan';
 const EMPTY_SUBJECT: TeachingSubject = { code: '', name: '', units: 3, courseAndYear: '', schedule: '', room: '' };
 
 export default function TeachingLoad() {
@@ -1127,9 +1127,9 @@ interface DraftSummary {
   created_at: string;
 }
 
-const ACCOMPLISHMENT_DRAFTS_URL = 'http://localhost:5000/api/accomplishment-reports';
-const EXTENSION_DRAFTS_URL = 'http://localhost:5000/api/extension-reports';
-const WFH_DRAFTS_URL = 'http://localhost:5000/api/wfh-reports';
+const ACCOMPLISHMENT_DRAFTS_URL = 'https://coed.onrender.com/api/accomplishment-reports';
+const EXTENSION_DRAFTS_URL = 'https://coed.onrender.com/api/extension-reports';
+const WFH_DRAFTS_URL = 'https://coed.onrender.com/api/wfh-reports';
 
 function getDraftsToken() {
   return localStorage.getItem('token');
@@ -1212,7 +1212,7 @@ interface CalendarEvent {
   updated_at: string;
 }
 
-const CALENDAR_API_URL = 'http://localhost:5000/api/calendar-events';
+const CALENDAR_API_URL = 'https://coed.onrender.com/api/calendar-events';
 
 const TYPE_TO_COLOR: Record<string, string> = {
   meeting: '#3B82F6',
@@ -2096,7 +2096,7 @@ function FacultySettings() {
       }
 
       const res = await fetch(
-        'http://localhost:5000/api/auth/me',
+        'https://coed.onrender.com/api/auth/me',
         {
           method: 'GET',
           headers: {
@@ -2293,7 +2293,7 @@ function FacultySettings() {
       }
 
       const res = await fetch(
-        'http://localhost:5000/api/auth/profile',
+        'https://coed.onrender.com/api/auth/profile',
         {
           method: 'PUT',
           headers: {
@@ -2456,7 +2456,7 @@ localStorage.setItem(
       }
 
       const res = await fetch(
-        'http://localhost:5000/api/auth/password',
+        'https://coed.onrender.com/api/auth/password',
         {
           method: 'PUT',
           headers: {
@@ -2574,7 +2574,7 @@ localStorage.setItem(
       }
 
       const res = await fetch(
-        'http://localhost:5000/api/auth/preferences',
+        'https://coed.onrender.com/api/auth/preferences',
         {
           method: 'PUT',
           headers: {

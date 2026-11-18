@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Shield, UserCheck, GraduationCap, Search, Users, Loader2, RefreshCw } from 'lucide-react';
 
-const CLUB_OVERVIEW_URL = 'http://localhost:5000/api/clubs/me/overview';
+const CLUB_OVERVIEW_URL = 'https://coed.onrender.com/api/clubs/me/overview';
 
 export interface ClubAccess {
   isOfficer: boolean;

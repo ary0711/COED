@@ -40,9 +40,9 @@ export function ReportTrackerPanel() {
 
     try {
       const [accRes, extRes, wfhRes] = await Promise.all([
-        fetch('http://localhost:5000/api/accomplishment-reports/mine', { headers }).catch(() => null),
-        fetch('http://localhost:5000/api/extension-reports/mine', { headers }).catch(() => null),
-        fetch('http://localhost:5000/api/wfh-reports/mine', { headers }).catch(() => null),
+        fetch('https://coed.onrender.com/api/accomplishment-reports/mine', { headers }).catch(() => null),
+        fetch('https://coed.onrender.com/api/extension-reports/mine', { headers }).catch(() => null),
+        fetch('https://coed.onrender.com/api/wfh-reports/mine', { headers }).catch(() => null),
       ]);
 
       const accData = accRes && accRes.ok ? await accRes.json() : [];
