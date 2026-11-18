@@ -98,21 +98,24 @@ export function FacultyDashboard({ activeMenuItem, setActiveMenuItem, onLogout, 
   const [isAdviser, setIsAdviser] = useState(false);
 
 useEffect(() => {
-  const checkAdviser = async () => {
-    try {
-      const res = await fetch(CLUB_ADVISER_ME_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsAdviser(!!data.club);
+    const checkAdviser = async () => {
+      const currentToken = localStorage.getItem('token');
+      if (!currentToken) return;
+      try {
+        const res = await fetch(CLUB_ADVISER_ME_URL, {
+          headers: { Authorization: `Bearer ${currentToken}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        console.log('CLUB_ADVISER_ME_URL response:', res.status, data);
+        if (res.ok && data.club) {
+          setIsAdviser(true);
+        }
+      } catch (err) {
+        console.error('CLUB_ADVISER_ME_URL error:', err);
       }
-    } catch {
-      // silent
-    }
-  };
-  checkAdviser();
-}, [token]);
+    };
+    checkAdviser();
+  }, []);
 
 const menuItems = useMemo(() => {
   if (!isAdviser) return facultyMenuItems;
