@@ -10,14 +10,13 @@ const app = express();
 
 const cors = require('cors');
 
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://coed-website.marypgoy.workers.dev',
-  ],
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://coed-website.marypgoy.workers.dev');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 app.use(express.json());
 app.use(helmet());
