@@ -8,8 +8,6 @@ dotenv.config();
 
 const app = express();
 
-const cors = require('cors');
-
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://coed-website.marypgoy.workers.dev');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
