@@ -8,12 +8,9 @@ dotenv.config();
 
 const app = express();
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://coed-website.marypgoy.workers.dev/'],
+}));
 
 app.use(express.json());
 app.use(helmet());
