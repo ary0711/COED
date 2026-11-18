@@ -8,8 +8,15 @@ dotenv.config();
 
 const app = express();
 
+const cors = require('cors');
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://coed-website.marypgoy.workers.dev/'],
+  origin: [
+    'http://localhost:5173',
+    'https://coed-website.marypgoy.workers.dev',
+  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json());
