@@ -74,31 +74,47 @@ interface ProfileCardProps {
   onClick: (person: Person) => void;
 }
 
-const ProfileCard = ({ person, onClick }: ProfileCardProps) => (
-  <div 
-    onClick={() => onClick(person)} 
-    className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300 shadow-md"
-  >
-    {/* Placeholder for actual image */}
-   <img
-  src={person.image}
-  alt={person.name}
-  className="absolute inset-0 w-full h-full object-cover bg-gray-300"
-  onError={() => {}}
-/>
-<div className="hidden image-missing:flex absolute inset-0 items-center justify-center bg-gray-300">
-  <User className="w-12 h-12 text-gray-400" />
-</div>
 
-    {/* Floating White Label */}
-    <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 shadow-md transform transition-transform group-hover:-translate-y-1">
-      <div className="overflow-hidden">
-        <div className="font-bold text-gray-900 text-sm truncate">{person.name}</div>
-        <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold mt-0.5 truncate">{person.role}</div>
+const ProfileCard = ({ person, onClick }: ProfileCardProps) => {
+  const imageUrl = person.image?.trim();
+
+  return (
+    <div
+      onClick={() => onClick(person)}
+      className="relative w-full max-w-[220px] mx-auto aspect-[3/4] bg-[#e5e7eb] rounded-2xl overflow-hidden cursor-pointer group hover:shadow-xl transition-all duration-300 shadow-md"
+    >
+      {/* Placeholder */}
+      <div className="absolute inset-0 flex items-center justify-center bg-gray-300">
+        <User className="w-12 h-12 text-gray-400" />
+      </div>
+
+      {/* Only render image when URL exists */}
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt={person.name || 'Faculty member'}
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      )}
+
+      {/* Floating White Label */}
+      <div className="absolute bottom-2 left-2 right-2 bg-white rounded-xl p-3 shadow-md transform transition-transform group-hover:-translate-y-1">
+        <div className="overflow-hidden">
+          <div className="font-bold text-gray-900 text-sm truncate">
+            {person.name}
+          </div>
+          <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold mt-0.5 truncate">
+            {person.role}
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
+
 
 // --- Main Page Component ---
 export function AboutPage({
@@ -199,12 +215,26 @@ async function loadAboutPage() {
       .from('faculty_members')
       .select('*')
       .eq('member_type', 'dean')
-      .single()
+      .maybeSingle()
   ]);
+  if (deanRes.error) {
+  console.error('Error loading Dean:', deanRes.error);
+}
 
+  if (facultyRes.error) {
+  console.error('Error loading Faculty Members:', facultyRes.error);
+}
   contentRes.data?.forEach((item) => {
   formatted[item.section_name] =
     item as AboutContent;
+    console.log('Departments:', deptRes.data);
+console.log('Departments Error:', deptRes.error);
+
+console.log('Faculty Members:', facultyRes.data);
+console.log('Faculty Error:', facultyRes.error);
+
+console.log('Dean:', deanRes.data);
+console.log('Dean Error:', deanRes.error);
 });
   setAboutContent(formatted);
 

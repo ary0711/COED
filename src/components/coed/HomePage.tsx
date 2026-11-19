@@ -27,6 +27,8 @@ import { useState, useEffect } from 'react';
 import {
   getProfileStatistics,
   getProgramStatistics,
+  debugProfileStatistics,
+  debugSupabaseSession,
 } from '../../landing-page/services/homepageService';
 
 import { supabase } from '../../supabaseClient';
@@ -151,11 +153,17 @@ export function HomePage({
   // LOAD HOME PAGE
   // ===================================================
 
-  useEffect(() => {
-    if (!previewMode) {
-      loadHomePage();
-    }
-  }, [previewMode]);
+  // ===================================================
+// LOAD HOME PAGE
+// ===================================================
+
+useEffect(() => {
+  if (!previewMode) {
+     loadHomePage();
+    debugProfileStatistics();
+    debugSupabaseSession();
+  }
+}, [previewMode]);
 
   async function loadHomePage() {
     setLoading(true);
@@ -184,35 +192,40 @@ export function HomePage({
       ? previewAnnouncements
       : announcements;
 
-  const displayStats =
-    previewMode && previewStats
-      ? previewStats
-      : stats.map((stat) => {
-          const label = stat.label?.trim().toLowerCase();
+  
+const normalizeLabel = (label: string) =>
+  label?.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
 
-          if (label === 'active students') {
-            return {
-              ...stat,
-              value: profileStats.students.toLocaleString(),
-            };
-          }
+const displayStats =
+  previewMode && previewStats
+    ? previewStats
+    : stats.map((stat) => {
+        const label = normalizeLabel(stat.label);
 
-          if (label === 'programs offered') {
-            return {
-              ...stat,
-              value: profileStats.programs.toLocaleString(),
-            };
-          }
+        if (['active students', 'total students', 'students'].includes(label)) {
+          return {
+            ...stat,
+            value: profileStats.students.toLocaleString(),
+          };
+        }
 
-          if (label === 'expert faculty') {
-            return {
-              ...stat,
-              value: profileStats.faculty.toLocaleString(),
-            };
-          }
+        if (['programs offered', 'total programs', 'programs'].includes(label)) {
+          return {
+            ...stat,
+            value: profileStats.programs.toLocaleString(),
+          };
+        }
 
-          return stat;
-        });
+        if (['expert faculty', 'total faculty', 'faculty members', 'faculty'].includes(label)) {
+          return {
+            ...stat,
+            value: profileStats.faculty.toLocaleString(),
+          };
+        }
+
+        return stat;
+      });
+
 
   // ===================================================
   // DATABASE FETCHING
@@ -1014,11 +1027,13 @@ function StatCard({
   return (
     <div className="relative overflow-hidden rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 group hover:scale-105 aspect-[3/4] drop-shadow-lg">
 
-      <img
-        src={image}
-        alt={label}
-        className="absolute inset-0 w-full h-full object-cover object-center"
-      />
+      {image?.trim() && (
+  <img
+    src={image.trim()}
+    alt={label || 'Statistic'}
+    className="absolute inset-0 w-full h-full object-cover object-center"
+  />
+)}
 
       <div className="absolute inset-0 bg-gradient-to-t from-[#1E3A8A]/85 via-[#1E3A8A]/40 to-[#1E3A8A]/10" />
 
