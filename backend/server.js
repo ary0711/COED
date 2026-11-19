@@ -76,7 +76,7 @@ const teachingLoadRoutes = require('./routes/teachingLoad');
 app.use('/api', teachingLoadRoutes);
 
 app.use('/api/contact', require('./routes/contact'));
-
+app.use('/api/cms', require('./routes/cms'));
 const accreditationRouter = require('./routes/accreditation');
 app.use('/api/accreditation', accreditationRouter);
 
