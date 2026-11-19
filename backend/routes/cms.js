@@ -9,6 +9,13 @@ const { createClient } = require('@supabase/supabase-js');
 
 const router = express.Router();
 
+console.log('ENV CHECK:', {
+  url: !!process.env.SUPABASE_URL,
+  key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  jwt: !!process.env.JWT_SECRET,
+  similar: Object.keys(process.env).filter(k => k.toUpperCase().includes('SUPABASE')),
+});
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
