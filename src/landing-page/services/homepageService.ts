@@ -187,6 +187,24 @@ export async function getProfileStatistics() {
     error: null,
   };
 }
+export async function checkHomepageAuth() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  console.log('================================');
+  console.log('HOMEPAGE AUTHENTICATION CHECK');
+  console.log('User:', user);
+  console.log('User ID:', user?.id);
+  console.log('Email:', user?.email);
+  console.log('Error:', error);
+  console.log('================================');
+
+  return { user, error };
+}
+
+
 // ============================================================
 // SAVE ANNOUNCEMENTS
 // Handles base64 image uploads during the save process and 

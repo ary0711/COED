@@ -95,17 +95,31 @@ async function loadDepartmentsPage() {
   
 
   const formatted =
-    data?.map((college: any) => ({
-      ...college,
-      programs:
-        college.programs?.sort(
-          (a: any, b: any) =>
-            a.display_order - b.display_order
-        ) || [],
-    })) || [];
+  data?.map((college: any) => ({
+    ...college,
 
-  setColleges(formatted);
-  setLoading(false);
+    programs:
+      college.programs
+        ?.map((program: any) => ({
+          ...program,
+
+          program_faculty:
+            program.program_faculty
+              ?.sort(
+                (a: any, b: any) =>
+                  (a.display_order ?? 0) -
+                  (b.display_order ?? 0)
+              ) || [],
+        }))
+        .sort(
+          (a: any, b: any) =>
+            (a.display_order ?? 0) -
+            (b.display_order ?? 0)
+        ) || [],
+  })) || [];
+
+setColleges(formatted);
+setLoading(false);
 }
   // Calculate totals
   const totalPrograms =  displayColleges.reduce(

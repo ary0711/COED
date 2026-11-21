@@ -73,100 +73,87 @@ const normalizeRole = (role: string | null | undefined): UserRole => {
   // RESTORE SESSION ON BROWSER REFRESH
   // Always read the latest role from Supabase profiles.
   // =====================================================
-  useEffect(() => {
-    let cancelled = false;
+  
+useEffect(() => {
+  const restoreSession = () => {
+    if (window.location.pathname === '/reset-password') {
+      setAppMode('public');
+      setCurrentPage('reset-password');
+      setInitializing(false);
+      return;
+    }
 
-    const restoreSession = async () => {
-      if (window.location.pathname === '/reset-password') {
-        setAppMode('public');
-        setCurrentPage('reset-password');
-        setInitializing(false);
-        return;
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      setAppMode('public');
+      setInitializing(false);
+      return;
+    }
+
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid token format');
       }
 
-      const token = localStorage.getItem('token');
+      // Decode JWT payload (base64url).
+      const base64 = parts[1]
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
 
-      if (!token) {
-        setAppMode('public');
-        setInitializing(false);
-        return;
+      const payload = JSON.parse(
+        atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))
+      );
+
+      // Reject expired tokens.
+      if (!payload.exp || payload.exp * 1000 <= Date.now()) {
+        throw new Error('Session expired');
       }
 
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+      const role = normalizeRole(payload.role);
 
-        // Find the current profile using the profile ID in the token.
-        let profileQuery = supabase
-          .from('profiles')
-          .select('id, full_name, id_number, role, status');
-
-        if (payload.profileId) {
-          profileQuery = profileQuery.eq('id', payload.profileId);
-        } else if (payload.email) {
-          profileQuery = profileQuery.eq('email', payload.email);
-        } else {
-          throw new Error(
-            'The login token has no profile ID or email. Please log in again.'
-          );
-        }
-
-        const { data: profile, error } = await profileQuery.maybeSingle();
-
-        if (error) throw error;
-
-        if (cancelled) return;
-
-        if (!profile || profile.status !== 'active') {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user_role');
-          setCurrentUser(null);
-          setCurrentRole(null);
-          setAppMode('public');
-          return;
-        }
-
-        // profiles.role is the current role, not the potentially stale JWT role.
-        const latestRole = normalizeRole(profile.role);
-
-        if (!latestRole) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user_role');
-          setCurrentUser(null);
-          setCurrentRole(null);
-          setAppMode('public');
-          return;
-        }
-
-        setCurrentUser({
-          username: profile.full_name || payload.fullName || payload.username || 'User',
-          role: latestRole,
-          idNumber: profile.id_number || payload.idNumber || '',
-        });
-
-        setCurrentRole(latestRole);
-        localStorage.setItem('user_role', latestRole);
-        setAppMode('dashboard');
-      } catch (error) {
-        console.error('Failed to restore session:', error);
-
-        if (!cancelled) {
-          setCurrentUser(null);
-          setCurrentRole(null);
-          setAppMode('public');
-        }
-      } finally {
-        if (!cancelled) {
-          setInitializing(false);
-        }
+      if (!role) {
+        throw new Error('Invalid user role');
       }
-    };
 
-    void restoreSession();
+      setCurrentUser({
+        username:
+          payload.fullName ||
+          payload.username ||
+          localStorage.getItem('userFullName') ||
+          'User',
+        role,
+        idNumber:
+          payload.idNumber ||
+          localStorage.getItem('userIdNumber') ||
+          '',
+      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      setCurrentRole(role);
+      localStorage.setItem('user_role', role);
+      setAppMode('dashboard');
+
+    } catch (error) {
+      console.error('Session restoration failed:', error);
+
+      localStorage.removeItem('token');
+      localStorage.removeItem('user_role');
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userFullName');
+      localStorage.removeItem('userIdNumber');
+      localStorage.removeItem('userEmail');
+
+      setCurrentUser(null);
+      setCurrentRole(null);
+      setAppMode('public');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  restoreSession();
+}, []);
 
 
   // =====================================================
@@ -216,7 +203,12 @@ const normalizeRole = (role: string | null | undefined): UserRole => {
   };
 
   const confirmLogout = () => {
-    localStorage.clear();
+    localStorage.removeItem('token');
+  localStorage.removeItem('user_role');
+  localStorage.removeItem('userId');
+  localStorage.removeItem('userFullName');
+  localStorage.removeItem('userIdNumber');
+  localStorage.removeItem('userEmail');
     setCurrentUser(null);
     setCurrentRole(null);
     setAppMode('public');

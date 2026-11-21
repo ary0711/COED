@@ -1,35 +1,108 @@
+
 import type { Committee } from './landingPageTypes';
-import { supabase } from '../../supabaseClient';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+type ApiResult<T = any> = {
+  data: T | null;
+  error: {
+    message: string;
+    code?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  } | null;
+};
+
+async function clubsRequest<T = any>(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: any
+): Promise<ApiResult<T>> {
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      return {
+        data: null,
+        error: {
+          message: 'Authentication token is missing. Please log in again.',
+          code: 'MISSING_TOKEN',
+        },
+      };
+    }
+
+    const response = await fetch(`${API_BASE}/api/clubs${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      ...(body !== undefined
+        ? { body: JSON.stringify(body) }
+        : {}),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        return {
+          data: null,
+          error: {
+            message:
+              result.error ||
+              'Your session has expired. Please log in again.',
+            code: result.code || 'UNAUTHORIZED',
+          },
+        };
+      }
+
+      return {
+        data: null,
+        error: {
+          message: result.error || 'Request failed.',
+          code: result.code || 'REQUEST_FAILED',
+          details: result.details || null,
+          hint: result.hint || null,
+        },
+      };
+    }
+
+    return {
+      data: result.data ?? null,
+      error: null,
+    };
+  } catch (error: any) {
+    console.error('Clubs API request failed:', error);
+
+    return {
+      data: null,
+      error: {
+        message: error.message || 'Unable to connect to the server.',
+      },
+    };
+  }
+}
 
 /* =========================
    LOAD FUNCTIONS
 ========================= */
 
 export async function getClubsContent() {
-  return await supabase
-    .from('clubs_page_content')
-    .select('*');
+  return clubsRequest('/content');
 }
 
 export async function getClubStatistics() {
-  return await supabase
-    .from('clubs_statistics')
-    .select('*')
-    .order('display_order', { ascending: true });
+  return clubsRequest('/statistics');
 }
 
 export async function getOrganizations() {
-  return await supabase
-    .from('organizations')
-    .select('*')
-    .order('display_order', { ascending: true });
+  return clubsRequest('/organizations');
 }
 
 export async function getCommittees() {
-  return await supabase
-    .from('committees')
-    .select('*')
-    .order('display_order', { ascending: true });
+  return clubsRequest('/committees');
 }
 
 /* =========================
@@ -37,32 +110,15 @@ export async function getCommittees() {
 ========================= */
 
 export async function saveClubsContent(clubsContent: any) {
-  const updates = Object.entries(clubsContent).map(
-    ([section_name, values]: any) => ({
-      section_name,
-      title: values.title,
-      description: values.description,
-      content: values.content,
-    })
-  );
-
-  return await supabase
-    .from('clubs_page_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
+  return clubsRequest('/content', 'POST', clubsContent);
 }
 
 export async function saveClubStatistics(statistics: any[]) {
-  return await supabase
-    .from('clubs_statistics')
-    .upsert(statistics);
+  return clubsRequest('/statistics', 'POST', statistics);
 }
 
 export async function saveOrganizations(organizations: any[]) {
-  return await supabase
-    .from('organizations')
-    .upsert(organizations);
+  return clubsRequest('/organizations', 'POST', organizations);
 }
 
 /* =========================
@@ -70,81 +126,5 @@ export async function saveOrganizations(organizations: any[]) {
 ========================= */
 
 export async function saveCommittees(committees: Committee[]) {
-  try {
-    const validCommittees = committees
-      .filter(
-        (c) => c.committee_code?.trim() && c.full_name?.trim()
-      )
-      .map((c, index) => ({
-        id: c.id,
-        committee_code: c.committee_code.trim(),
-        full_name: c.full_name.trim(),
-        description: c.description?.trim() || null,
-        focus: c.focus?.trim() || null,
-        logo_url: c.logo_url || null,
-        president_name: c.president_name?.trim() || null,
-        adviser_name: c.adviser_name?.trim() || null,
-        display_order: c.display_order ?? index + 1,
-      }));
-
-    const existing = validCommittees.filter(
-      (c) => c.id && !c.id.startsWith('new-')
-    );
-
-    const newRecords = validCommittees
-      .filter((c) => !c.id || c.id.startsWith('new-'))
-      .map(({ id, ...record }) => record);
-
-    // Save existing committees in small batches.
-    for (let i = 0; i < existing.length; i += 3) {
-      const batch = existing.slice(i, i + 3);
-
-      const { error } = await supabase
-        .from('committees')
-        .upsert(batch, { onConflict: 'id' });
-
-      if (error) {
-        console.error('Committee update failed:', error);
-        throw new Error(
-          `Updating committees failed: ${error.message}`
-        );
-      }
-    }
-
-    // Insert new committees in small batches.
-    for (let i = 0; i < newRecords.length; i += 3) {
-      const batch = newRecords.slice(i, i + 3);
-
-      const { error } = await supabase
-        .from('committees')
-        .insert(batch);
-
-      if (error) {
-        console.error('Committee insert failed:', error);
-        throw new Error(
-          `Inserting committees failed: ${error.message}`
-        );
-      }
-    }
-
-    // Do not run another SELECT after saving.
-    // This avoids an unnecessary database request.
-    return {
-      data: validCommittees,
-      error: null,
-    };
-  } catch (error: any) {
-    console.error('Failed to save committees:', error);
-
-    return {
-      data: null,
-      error: {
-        message:
-          error?.message || 'Unable to save committees.',
-        code: error?.code ?? null,
-        details: error?.details ?? null,
-        hint: error?.hint ?? null,
-      },
-    };
-  }
+  return clubsRequest('/committees', 'POST', committees);
 }

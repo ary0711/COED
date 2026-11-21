@@ -182,7 +182,13 @@ export function LoginPage({ onLogin, onBack, onForgotPassword }: LoginPageProps)
 
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Invalid username or password.'); return; }
+      
+      if (!data.token || typeof data.token !== 'string') {
+  setError('The server did not return a valid login token.');
+  return;
+}
 
+localStorage.setItem('token', data.token);
       localStorage.setItem('token', data.token);
 
       const { profileId, fullName, idNumber, email, role } = data.user ?? {};

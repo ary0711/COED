@@ -29,10 +29,10 @@ import {
   getHomepageContent, getHomepageStats, getHomepageFeatures, getHomepageAnnouncements, saveHomepageContent, saveHomepageStats,saveHomepageFeatures
 } from '../landing-page/services/homepageService';
 import {
-  getAboutContent, getAboutStats, getCoreValues, getCoreValueCards, getFacultyMembers, saveAboutContent, saveAboutStats, saveCoreValues, saveCoreValueCards, saveFacultyMembers
+  getAboutContent, getAboutStats, getCoreValues, getCoreValueCards, getFacultyMembers, saveAboutContent, saveAboutStats, saveCoreValues, saveCoreValueCards, saveFacultyMembers,  saveAboutPageData,
 } from '../landing-page/services/aboutService';
 import {
-  getDepartmentContent, getColleges, saveDepartmentContent, saveColleges
+  getDepartmentContent, getColleges, saveDepartmentContent, saveColleges, saveDepartmentPageData
 } from '../landing-page/services/departmentService';
 import {
   getClubsContent, getClubStatistics, getOrganizations, getCommittees, saveClubsContent, saveClubStatistics, saveOrganizations, saveCommittees
@@ -9579,9 +9579,18 @@ function LandingPageManagement() {
     }));
   }
 
+
 async function saveClubsPage() {
   try {
-    // 1. Save clubs page content
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error(
+        'Authentication token is missing. Please log in again.'
+      );
+    }
+
+    // Save clubs page content
     const contentResult = await saveClubsContent(clubsContent);
 
     if (contentResult.error) {
@@ -9590,7 +9599,7 @@ async function saveClubsPage() {
       );
     }
 
-    // 2. Save statistics
+    // Save statistics
     const statisticsResult = await saveClubStatistics(clubsStatistics);
 
     if (statisticsResult.error) {
@@ -9599,7 +9608,7 @@ async function saveClubsPage() {
       );
     }
 
-    // 3. Save organizations
+    // Save organizations
     const organizationsResult = await saveOrganizations(organizations);
 
     if (organizationsResult.error) {
@@ -9608,7 +9617,7 @@ async function saveClubsPage() {
       );
     }
 
-    // 4. Save committees
+    // Save committees
     const committeesResult = await saveCommittees(committees);
 
     if (committeesResult.error) {
@@ -9617,11 +9626,17 @@ async function saveClubsPage() {
       );
     }
 
-    // Do not replace the editor state with incomplete save results.
-    // The saved data remains in the current state.
+    // Reload the saved data
+    await Promise.all([
+      loadClubsContent(),
+      loadClubsStatistics(),
+      loadOrganizations(),
+      loadCommittees(),
+    ]);
 
     setModalMessage('Clubs Page Updated Successfully!');
     setShowSuccessModal(true);
+
   } catch (error: any) {
     console.error('Error saving Clubs Page:', error);
 
@@ -9629,9 +9644,11 @@ async function saveClubsPage() {
       error?.message ||
         'An unexpected error occurred while saving the Clubs Page.'
     );
+
     setShowSuccessModal(true);
   }
 }
+
 
 
 
@@ -9642,27 +9659,73 @@ async function saveClubsPage() {
     }));
   }
 
-  async function loadClubsContent() {
-    const { data } = await getClubsContent();
+  
+async function loadClubsContent() {
+  try {
+    const { data, error } = await getClubsContent();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
     const formatted: any = {};
-    data?.forEach(item => { formatted[item.section_name] = item; });
+
+    data?.forEach((item: any) => {
+      formatted[item.section_name] = item;
+    });
+
     setClubsContent(formatted);
-  }
 
-  async function loadClubsStatistics() {
-    const { data } = await getClubStatistics();
+  } catch (error) {
+    console.error('Failed to load clubs content:', error);
+  }
+}
+
+async function loadClubsStatistics() {
+  try {
+    const { data, error } = await getClubStatistics();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
     setClubsStatistics(data || []);
-  }
 
-  async function loadOrganizations() {
-    const { data } = await getOrganizations();
+  } catch (error) {
+    console.error('Failed to load club statistics:', error);
+  }
+}
+
+async function loadOrganizations() {
+  try {
+    const { data, error } = await getOrganizations();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
     setOrganizations(data || []);
-  }
 
-  async function loadCommittees() {
-    const { data } = await getCommittees();
-    setCommittees(data || []);
+  } catch (error) {
+    console.error('Failed to load organizations:', error);
   }
+}
+
+async function loadCommittees() {
+  try {
+    const { data, error } = await getCommittees();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    setCommittees(data || []);
+
+  } catch (error) {
+    console.error('Failed to load committees:', error);
+  }
+}
+
 
   async function loadColleges() {
     const { data } = await getColleges();
@@ -9740,112 +9803,128 @@ async function saveClubsPage() {
     setAboutContent(formatted);
   }
 
-  async function saveAboutPage() {
-    await saveCoreValues(coreValues);
-    await saveAboutStats(aboutStats);
-    await saveFacultyMembers(facultyMembers);
-    await saveCoreValueCards(coreValueCards);
-    const { error } = await saveAboutContent(aboutContent);
-    if (error) {
-      setModalMessage(error.message);
-      setShowSuccessModal(true);
-      return;
-    }
+  
+async function saveAboutPage() {
+  try {
+    const result = await saveAboutPageData({
+      aboutContent,
+      aboutStats,
+      coreValues,
+      coreValueCards,
+      facultyMembers,
+    });
+
+    console.log('ABOUT PAGE SAVE RESULT:', result);
+
     setModalMessage('About Page Updated Successfully!');
     setShowSuccessModal(true);
-  }
 
-  async function saveHomePage() {
-    try {
-      // 1. Save Content
-      const { error: contentError } = await saveHomepageContent(homeContent);
-      if (contentError) throw contentError;
+  } catch (error: any) {
+    console.error('ABOUT PAGE SAVE FAILED:', error);
 
-      // 2. Save Stats
-      const { error: statsError } = await saveHomepageStats(stats);
-      if (statsError) throw statsError;
+    setModalMessage(
+      `Error saving About Page: ${
+        error.message || 'An unexpected error occurred.'
+      }`
+    );
 
-      // 3. Save Features
-      const { error: featuresError } = await saveHomepageFeatures(features);
-      if (featuresError) throw featuresError;
-
-      // 4. Save Announcements (with robust Supabase image upload handling)
-      const processedAnnouncements = await Promise.all(
-        announcements.map(async (announcement) => {
-          let finalImageUrl = announcement.image_url;
-
-          // If the image_url is a newly selected Base64 string
-          if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
-            try {
-              // Convert Base64 data URL to a clean Blob file object
-              const res = await fetch(finalImageUrl);
-              const blob = await res.blob();
-              const ext = blob.type.split('/')[1] || 'jpeg';
-              const fileName = `announcements/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
-
-              // Upload the blob file to the Supabase 'announcements' bucket
-              const { error: uploadError } = await supabase.storage
-                .from('announcements')
-                .upload(fileName, blob, {
-                  contentType: blob.type,
-                  upsert: true,
-                });
-
-              if (uploadError) {
-                console.error('Storage upload failed:', uploadError.message);
-                throw new Error(`Image upload failed: ${uploadError.message}`);
-              }
-
-              // Fetch the final public URL from Supabase
-              const { data: publicUrlData } = supabase.storage
-                .from('announcements')
-                .getPublicUrl(fileName);
-
-              finalImageUrl = publicUrlData.publicUrl;
-            } catch (imgErr) {
-              console.error('Error processing announcement image:', imgErr);
-              throw imgErr;
-            }
-          }
-
-          return {
-            id: announcement.id,
-            title: announcement.title,
-            description: announcement.description,
-            color: announcement.color,
-            image_url: finalImageUrl || null,
-            announcement_date: announcement.announcement_date,
-            sort_order: announcement.sort_order,
-          };
-        })
-      );
-
-      // Save processed announcements to database
-      const { error: announcementsError } = await supabase
-        .from('homepage_announcements')
-        .upsert(processedAnnouncements);
-
-      if (announcementsError) throw announcementsError;
-
-      // Success notification
-      setModalMessage('Homepage and announcements updated successfully!');
-      setShowSuccessModal(true);
-
-      // Reload announcements to reflect the newly saved public URLs instantly
-      loadAnnouncements();
-
-    } catch (error: any) {
-      console.error('Save failed:', error);
-      setModalMessage(`Error saving homepage: ${error.message || String(error)}`);
-      setShowSuccessModal(true);
-    }
-  }
-  async function saveDepartmentsPage() {
-    await saveColleges(colleges);
-    await saveDepartmentContent(departmentContent);
-    setModalMessage('Departments Page Updated Successfully!');
     setShowSuccessModal(true);
   }
+}
+async function saveHomePage() {
+  try {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const API_BASE_URL =
+      import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/homepage/save`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          homeContent,
+          stats,
+          features,
+          announcements,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || 'Failed to save homepage.'
+      );
+    }
+
+    setModalMessage(
+      'Homepage and announcements updated successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+    await Promise.all([
+      loadHomepageContent(),
+      loadStats(),
+      loadFeatures(),
+      loadAnnouncements(),
+    ]);
+  } catch (error: any) {
+    console.error('Homepage save failed:', error);
+
+    setModalMessage(
+      `Error saving homepage: ${
+        error?.message || 'An unexpected error occurred.'
+      }`
+    );
+
+    setShowSuccessModal(true);
+  }
+}
+
+ async function saveDepartmentsPage() {
+  try {
+    const result = await saveDepartmentPageData({
+      departmentContent,
+      colleges,
+    });
+
+    console.log('DEPARTMENTS PAGE SAVE RESULT:', result);
+
+    // Reload the latest saved data from Supabase
+    await Promise.all([
+      loadDepartmentContent(),
+      loadColleges(),
+    ]);
+
+    setModalMessage(
+      'Departments Page Updated Successfully!'
+    );
+
+    setShowSuccessModal(true);
+
+  } catch (error: any) {
+    console.error('DEPARTMENTS PAGE SAVE FAILED:', error);
+
+    setModalMessage(
+      `Error saving Departments Page: ${
+        error?.message || 'An unexpected error occurred.'
+      }`
+    );
+
+    setShowSuccessModal(true);
+  }
+}
 
   function updateHomepageField(section: string, field: string, value: string) {
     setHomeContent((prev: any) => ({

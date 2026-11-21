@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '../../supabaseClient';
 
 interface Props {
   content: any;
@@ -61,88 +60,120 @@ export function HeroSectionEditor({
   // UPLOAD HERO IMAGE
   // ============================================
   async function uploadHeroImage(file: File) {
-    try {
-      if (!file) return;
+  try {
+    if (!file) return;
 
-      // Check image type
-      if (!file.type.startsWith('image/')) {
-        showModal(
-          'error',
-          'Invalid Image',
-          'Please select a valid image file.'
-        );
-        return;
-      }
+    // Validate image type.
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ];
 
-      // Create unique file name
-      const fileExt = file.name.split('.').pop();
-
-      const fileName = `hero-${Date.now()}.${fileExt}`;
-
-      const filePath = `hero/${fileName}`;
-
-      // Upload image
-      const { error: uploadError } =
-        await supabase.storage
-          .from('landing-page-images')
-          .upload(filePath, file, {
-            upsert: true,
-          });
-
-      if (uploadError) {
-        console.error(
-          'Upload error:',
-          uploadError
-        );
-
-        showModal(
-          'error',
-          'Upload Failed',
-          uploadError.message
-        );
-
-        return;
-      }
-
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage
-        .from('landing-page-images')
-        .getPublicUrl(filePath);
-
-      console.log(
-        'Uploaded image:',
-        publicUrl
-      );
-
-      // Update image URL
-      updateField(
-        'Hero Section',
-        'image_url',
-        publicUrl
-      );
-
-      // Success modal
-      showModal(
-        'success',
-        'Image Uploaded',
-        'Hero image uploaded successfully!'
-      );
-
-    } catch (error) {
-      console.error(
-        'Hero image error:',
-        error
-      );
-
+    if (!allowedTypes.includes(file.type)) {
       showModal(
         'error',
-        'Upload Failed',
-        'Failed to upload the hero image. Please try again.'
+        'Invalid Image',
+        'Please select a JPG, PNG, or WEBP image.'
+      );
+      return;
+    }
+
+    // Validate file size (5 MB maximum).
+    if (file.size > 5 * 1024 * 1024) {
+      showModal(
+        'error',
+        'Image Too Large',
+        'Please select an image smaller than 5 MB.'
+      );
+      return;
+    }
+
+    // Check custom JWT.
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      throw new Error(
+        'Your session has expired. Please log in again.'
       );
     }
+
+    // Convert image to Base64 for the backend request.
+    const imageBase64 = await new Promise<string>(
+      (resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Unable to read the selected image.'));
+          }
+        };
+
+        reader.onerror = () => {
+          reject(new Error('Failed to read the image file.'));
+        };
+
+        reader.readAsDataURL(file);
+      }
+    );
+
+    const API_BASE_URL =
+      import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+    // Upload through Express instead of directly through Supabase.
+    const response = await fetch(
+      `${API_BASE_URL}/api/homepage/upload-hero-image`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          image: imageBase64,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || 'Failed to upload hero image.'
+      );
+    }
+
+    if (!result.imageUrl) {
+      throw new Error('The server did not return an image URL.');
+    }
+
+    // Update the Hero Section image URL.
+    updateField(
+      'Hero Section',
+      'image_url',
+      result.imageUrl
+    );
+
+    showModal(
+      'success',
+      'Image Uploaded',
+      'Hero image uploaded successfully! Remember to click Save Homepage to save your changes.'
+    );
+
+    console.log('Uploaded hero image:', result.imageUrl);
+
+  } catch (error: any) {
+    console.error('Hero image error:', error);
+
+    showModal(
+      'error',
+      'Upload Failed',
+      error.message || 'Failed to upload the hero image. Please try again.'
+    );
   }
+}
 
   return (
     <>
