@@ -1,140 +1,107 @@
-import { supabase } from '../../supabaseClient';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+async function contactRequest(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: any
+) {
+  const token = localStorage.getItem('token');
+
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+    ...(body !== undefined
+      ? { 'Content-Type': 'application/json' }
+      : {}),
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : {}),
+  };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${API_BASE}/api/contact${endpoint}`,
+      {
+        method,
+        headers,
+        ...(body !== undefined
+          ? { body: JSON.stringify(body) }
+          : {}),
+      }
+    );
+  } catch (error) {
+    console.error('CONTACT NETWORK ERROR:', error);
+    throw new Error('Cannot connect to the backend server.');
+  }
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    console.error('CONTACT API ERROR:', {
+      endpoint,
+      status: response.status,
+      response: result,
+    });
+
+    throw new Error(
+      result.error ||
+      result.message ||
+      `Contact request failed: ${response.status}`
+    );
+  }
+
+  return result.data;
+}
 
 export const contactService = {
+  // ============================
+  // LOAD FUNCTIONS
+  // ============================
 
-  async getPageContent() {
-    const { data, error } = await supabase
-      .from('contact_page_content')
-      .select('*')
-      .single();
+  getPageContent: async () => {
+    return await contactRequest('/public/page-content');
+  },
 
-    if (error) {
-      console.error(error);
-      return null;
-    }
+  getOfficeHours: async () => {
+    return (
+      (await contactRequest('/public/office-hours')) || []
+    );
+  },
 
-    return data;
+  getSocialLinks: async () => {
+    return (
+      (await contactRequest('/public/social-links')) || []
+    );
   },
 
   // ============================
-  // GET OFFICE HOURS
+  // SAVE FUNCTIONS
   // ============================
 
-  async getOfficeHours() {
-    const { data, error } = await supabase
-      .from('contact_office_hours')
-      .select('*')
-      .order('sort_order');
-
-    if (error) {
-      console.error(error);
-      return [];
-    }
-
-    return data;
+  savePageContent: async (content: any) => {
+    return await contactRequest(
+      '/save/page-content',
+      'POST',
+      content
+    );
   },
 
-  // ============================
-  // GET SOCIAL LINKS
-  // ============================
-
-  async getSocialLinks() {
-    const { data, error } = await supabase
-      .from('contact_social_links')
-      .select('*')
-      .order('sort_order');
-
-    if (error) {
-      console.error(error);
-      return [];
-    }
-
-    return data;
+  saveOfficeHours: async (hours: any[]) => {
+    return await contactRequest(
+      '/save/office-hours',
+      'POST',
+      hours
+    );
   },
 
-  // ============================
-  // SAVE PAGE CONTENT
-  // ============================
-
-  async savePageContent(content: any) {
-
-    const { error } = await supabase
-      .from('contact_page_content')
-      .update({
-        page_title: content.page_title,
-        page_subtitle: content.page_subtitle,
-
-        address_title: content.address_title,
-        address_content: content.address_content,
-
-        phone_title: content.phone_title,
-        phone_content: content.phone_content,
-
-        email_title: content.email_title,
-        email_content: content.email_content,
-
-        office_hours_title:
-          content.office_hours_title,
-
-        social_title:
-          content.social_title,
-
-        form_title:
-          content.form_title,
-
-        map_embed_url:
-          content.map_embed_url,
-      })
-      .eq('id', content.id);
-
-    if (error) {
-      throw error;
-    }
-  },
-
-  // ============================
-  // SAVE OFFICE HOURS
-  // ============================
-
-  async saveOfficeHours(hours: any[]) {
-
-    for (const item of hours) {
-
-      const { error } = await supabase
-        .from('contact_office_hours')
-        .update({
-          day_name: item.day_name,
-          hours: item.hours,
-          sort_order: item.sort_order,
-        })
-        .eq('id', item.id);
-
-      if (error) {
-        throw error;
-      }
-    }
-  },
-
-  // ============================
-  // SAVE SOCIAL LINKS
-  // ============================
-
-  async saveSocialLinks(links: any[]) {
-
-    for (const item of links) {
-
-      const { error } = await supabase
-        .from('contact_social_links')
-        .update({
-          platform: item.platform,
-          url: item.url,
-          sort_order: item.sort_order,
-        })
-        .eq('id', item.id);
-
-      if (error) {
-        throw error;
-      }
-    }
+  saveSocialLinks: async (links: any[]) => {
+    return await contactRequest(
+      '/save/social-links',
+      'POST',
+      links
+    );
   },
 };

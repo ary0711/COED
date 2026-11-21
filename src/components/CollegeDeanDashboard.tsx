@@ -9420,7 +9420,9 @@ function LandingPageManagement() {
     loadCommittees();
     loadResearchPageData();
     loadAchievementsPage();
-    loadAccreditationData();
+loadAccreditationData().catch((error) => {
+  console.error('INITIAL ACCREDITATION LOAD FAILED:', error);
+});
     loadContactData();
     loadFooterData();
   }, []);
@@ -9462,68 +9464,161 @@ function LandingPageManagement() {
   };
 
   async function loadFooterData() {
-    const [content, quickLinks, socialLinks] = await Promise.all([
+  try {
+    const [content, quickLinks, socials] = await Promise.all([
       footerService.getFooterContent(),
       footerService.getQuickLinks(),
       footerService.getSocialLinks(),
     ]);
+
     setFooterContent(content || {});
     setFooterQuickLinks(quickLinks || []);
-    setFooterSocialLinks(socialLinks || []);
+    setFooterSocialLinks(socials || []);
+
+    console.log('FOOTER DATA LOADED:', {
+      content,
+      quickLinks,
+      socials,
+    });
+
+  } catch (error: any) {
+    console.error('FAILED TO LOAD FOOTER DATA:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to load Footer data.'
+    );
+
+    setShowSuccessModal(true);
   }
+}
 
   async function saveFooterPage() {
-    try {
-      await footerService.saveFooterContent(footerContent);
-      await footerService.saveQuickLinks(footerQuickLinks);
-      await footerService.saveSocialLinks(footerSocialLinks);
-      setModalMessage('Footer Updated Successfully!');
-      setShowSuccessModal(true);
-    } catch (error) {
-      setModalMessage('Failed to save footer');
-      setShowSuccessModal(true);
+  try {
+    if (!footerContent?.id) {
+      throw new Error(
+        'Footer content ID is missing. Please check your footer_content table.'
+      );
     }
-  }
 
+    // Save footer content.
+    await footerService.saveFooterContent(footerContent);
+
+    // Save quick links and social links.
+    await Promise.all([
+      footerService.saveQuickLinks(footerQuickLinks),
+      footerService.saveSocialLinks(footerSocialLinks),
+    ]);
+
+    // Reload saved data.
+    await loadFooterData();
+
+    setModalMessage('Footer Updated Successfully!');
+    setShowSuccessModal(true);
+
+  } catch (error: any) {
+    console.error('FOOTER SAVE ERROR:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to save Footer.'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
   async function loadContactData() {
+  try {
     const [content, hours, socials] = await Promise.all([
       contactService.getPageContent(),
       contactService.getOfficeHours(),
       contactService.getSocialLinks(),
     ]);
-    setContactContent(content);
+
+    setContactContent(content || {});
     setOfficeHours(hours || []);
     setSocialLinks(socials || []);
+
+    console.log('CONTACT DATA LOADED:', {
+      content,
+      hours,
+      socials,
+    });
+  } catch (error: any) {
+    console.error('FAILED TO LOAD CONTACT DATA:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to load Contact Page.'
+    );
+    setShowSuccessModal(true);
   }
+}
 
   async function saveContactPage() {
-    try {
-      await contactService.savePageContent(contactContent);
-      await contactService.saveOfficeHours(officeHours);
-      await contactService.saveSocialLinks(socialLinks);
-      setModalMessage('Contact Page Updated Successfully!');
-      setShowSuccessModal(true);
-    } catch (error) {
-      setModalMessage('Failed to save contact page');
-      setShowSuccessModal(true);
+  try {
+    if (!contactContent?.id) {
+      throw new Error(
+        'Contact page content ID is missing.'
+      );
     }
+
+    await contactService.savePageContent(contactContent);
+
+    await Promise.all([
+      contactService.saveOfficeHours(officeHours),
+      contactService.saveSocialLinks(socialLinks),
+    ]);
+
+    await loadContactData();
+
+    setModalMessage('Contact Page Updated Successfully!');
+    setShowSuccessModal(true);
+
+  } catch (error: any) {
+    console.error('CONTACT PAGE SAVE ERROR:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to save Contact Page.'
+    );
+
+    setShowSuccessModal(true);
   }
+}
 
   async function saveAccreditationPage() {
-    try {
-      await accreditationService.savePageContent(accreditationContent);
-      await accreditationService.saveOverview(overviewItems);
-      await accreditationService.saveLevels(levels);
-      await accreditationService.savePrograms(programs);
-      await accreditationService.saveCertifications(certifications);
-      setModalMessage('Accreditation Page Updated Successfully!');
-      setShowSuccessModal(true);
-    } catch (error) {
-      setModalMessage('Failed to save accreditation page');
-      setShowSuccessModal(true);
+  try {
+    // Make sure the page content exists before saving.
+    if (!accreditationContent) {
+      throw new Error(
+        'Accreditation page content is missing. Please reload the page.'
+      );
     }
-  }
 
+    // Save the main page content.
+    await accreditationService.savePageContent(accreditationContent);
+
+    // Save the remaining Accreditation sections.
+    await Promise.all([
+      accreditationService.saveOverview(overviewItems),
+      accreditationService.saveLevels(levels),
+      accreditationService.savePrograms(programs),
+      accreditationService.saveCertifications(certifications),
+    ]);
+
+    // Reload the latest saved data.
+    await loadAccreditationData();
+
+    setModalMessage('Accreditation Page Updated Successfully!');
+    setShowSuccessModal(true);
+
+  } catch (error: any) {
+    console.error('ACCREDITATION SAVE ERROR:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to save Accreditation Page.'
+    );
+
+    setShowSuccessModal(true);
+  }
+}
   async function saveAchievementsPage() {
     try {
       await achievementsService.savePageContent(achievementPageContent);
@@ -9541,19 +9636,43 @@ function LandingPageManagement() {
   }
 
   async function loadAccreditationData() {
-    const [content, overview, levelData, programData, certificationData] = await Promise.all([
+  try {
+    const [
+      content,
+      overview,
+      levelData,
+      programData,
+      certificationData,
+    ] = await Promise.all([
       accreditationService.getPageContent(),
       accreditationService.getOverview(),
       accreditationService.getLevels(),
       accreditationService.getPrograms(),
       accreditationService.getCertifications(),
     ]);
-    setAccreditationContent(content);
+
+    setAccreditationContent(content || {});
     setOverviewItems(overview || []);
     setLevels(levelData || []);
     setPrograms(programData || []);
     setCertifications(certificationData || []);
+
+    console.log('ACCREDITATION DATA LOADED:', {
+      content,
+      overview,
+      levels: levelData,
+      programs: programData,
+      certifications: certificationData,
+    });
+  } catch (error: any) {
+    console.error('FAILED TO LOAD ACCREDITATION DATA:', error);
+
+    setModalMessage(
+      error?.message || 'Failed to load Accreditation Page data.'
+    );
+    setShowSuccessModal(true);
   }
+}
 
   async function loadResearchPageData() {
     const content = await loadResearchContent();
@@ -9567,10 +9686,27 @@ function LandingPageManagement() {
   }
 
   async function handleSaveResearchPage() {
-    await saveResearchPage(researchContent, researchPublications, researchAwards, featuredAlumni);
+  try {
+    await saveResearchPage(
+      researchContent,
+      researchPublications,
+      researchAwards,
+      featuredAlumni
+    );
+
     setModalMessage('Research Page Updated Successfully!');
     setShowSuccessModal(true);
+
+  } catch (error: any) {
+    console.error('SAVE RESEARCH PAGE ERROR:', error);
+
+    setModalMessage(
+      error.message || 'Failed to update Research Page.'
+    );
+
+    setShowSuccessModal(true);
   }
+}
 
   function updateResearchField(section: string, field: string, value: string) {
     setResearchContent((prev: any) => ({

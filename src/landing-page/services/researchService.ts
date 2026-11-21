@@ -1,45 +1,92 @@
-import { supabase } from '../../supabaseClient';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+/* =========================================
+   RESEARCH API REQUEST
+========================================= */
+
+async function researchRequest(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: any
+) {
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    throw new Error(
+      'Authentication token is missing. Please log in again.'
+    );
+  }
+
+  const response = await fetch(
+    `${API_BASE}/api/research${endpoint}`,
+    {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      ...(body !== undefined
+        ? { body: JSON.stringify(body) }
+        : {}),
+    }
+  );
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    console.error('RESEARCH API ERROR:', {
+      endpoint,
+      status: response.status,
+      response: result,
+    });
+
+    throw new Error(
+      result.error ||
+      result.message ||
+      `Research request failed: ${response.status}`
+    );
+  }
+
+  return result.data;
+}
+
+/* =========================================
+   LOAD RESEARCH CONTENT
+========================================= */
 
 export async function loadResearchContent() {
-  const { data } = await supabase
-    .from('research_page_content')
-    .select('*');
-
-  const formatted: any = {};
-
-  data?.forEach(item => {
-    formatted[item.section_name] = item;
-  });
-
-  return formatted;
+  return await researchRequest('/content');
 }
+
+/* =========================================
+   LOAD RESEARCH PUBLICATIONS
+========================================= */
 
 export async function loadResearchPublications() {
-  const { data } = await supabase
-    .from('research_publications')
-    .select('*')
-    .order('display_order');
-
-  return data || [];
+  return (await researchRequest('/publications')) || [];
 }
+
+/* =========================================
+   LOAD RESEARCH AWARDS
+========================================= */
 
 export async function loadAwards() {
-  const { data } = await supabase
-    .from('research_awards')
-    .select('*')
-    .order('display_order');
-
-  return data || [];
+  return (await researchRequest('/awards')) || [];
 }
+
+/* =========================================
+   LOAD FEATURED ALUMNI
+========================================= */
 
 export async function loadFeaturedAlumni() {
-  const { data } = await supabase
-    .from('featured_alumni')
-    .select('*')
-    .order('display_order');
-
-  return data || [];
+  return (await researchRequest('/alumni')) || [];
 }
+
+/* =========================================
+   SAVE RESEARCH PAGE
+========================================= */
 
 export async function saveResearchPage(
   researchContent: any,
@@ -47,30 +94,10 @@ export async function saveResearchPage(
   achievements: any[],
   alumni: any[]
 ) {
-  const updates = Object.entries(researchContent).map(
-    ([section_name, values]: any) => ({
-      section_name,
-      title: values.title,
-      description: values.description,
-      content: values.content,
-    })
-  );
-
-  await supabase
-    .from('research_page_content')
-    .upsert(updates, {
-      onConflict: 'section_name',
-    });
-
-  await supabase
-    .from('research_publications')
-    .upsert(publications);
-
-  await supabase
-    .from('research_achievements_landingpage')
-    .upsert(achievements);
-
-  await supabase
-    .from('featured_alumni')
-    .upsert(alumni);
+  return await researchRequest('/save', 'POST', {
+    researchContent,
+    publications,
+    achievements,
+    alumni,
+  });
 }

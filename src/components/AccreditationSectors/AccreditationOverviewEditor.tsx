@@ -39,7 +39,7 @@ export function AccreditationOverviewEditor({
         >
 
           <input
-            value={item.title}
+           value={item.title || ''}
             onChange={(e) =>
               updateItem(
                 index,
@@ -51,7 +51,7 @@ export function AccreditationOverviewEditor({
           />
 
           <input
-            value={item.value}
+           value={item.value || ''}
             onChange={(e) =>
               updateItem(
                 index,

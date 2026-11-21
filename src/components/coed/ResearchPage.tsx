@@ -353,12 +353,12 @@ export function ResearchPage({
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-[#1E3A8A] mb-4">
             {pageContent.header?.title ||
-              'Research and Extension'}
+              ''}
           </h1>
 
           <p className="text-xl text-gray-600">
             {pageContent.header?.description ||
-              'Explore the research and extension activities of the College of Education.'}
+              ''}
           </p>
         </div>
 

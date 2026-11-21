@@ -1,102 +1,107 @@
-import { supabase } from '../../supabaseClient';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+async function footerRequest(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: any
+) {
+  const token = localStorage.getItem('token');
+
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+    ...(body !== undefined
+      ? { 'Content-Type': 'application/json' }
+      : {}),
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : {}),
+  };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${API_BASE}/api/footer${endpoint}`,
+      {
+        method,
+        headers,
+        ...(body !== undefined
+          ? { body: JSON.stringify(body) }
+          : {}),
+      }
+    );
+  } catch (error) {
+    console.error('FOOTER NETWORK ERROR:', error);
+    throw new Error('Cannot connect to the backend server.');
+  }
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    console.error('FOOTER API ERROR:', {
+      endpoint,
+      status: response.status,
+      response: result,
+    });
+
+    throw new Error(
+      result.error ||
+      result.message ||
+      `Footer request failed: ${response.status}`
+    );
+  }
+
+  return result.data;
+}
 
 export const footerService = {
+  // =================================
+  // LOAD FUNCTIONS
+  // =================================
 
-  async getFooterContent() {
-
-    const { data, error } = await supabase
-      .from('footer_content')
-      .select('*')
-      .single();
-
-    if (error) {
-      console.error(error);
-      return null;
-    }
-
-    return data;
+  getFooterContent: async () => {
+    return await footerRequest('/public/content');
   },
 
-  async getQuickLinks() {
-
-    const { data, error } = await supabase
-      .from('footer_quick_links')
-      .select('*')
-      .order('sort_order');
-
-    if (error) {
-      console.error(error);
-      return [];
-    }
-
-    return data;
+  getQuickLinks: async () => {
+    return (
+      (await footerRequest('/public/quick-links')) || []
+    );
   },
 
-  async getSocialLinks() {
-
-    const { data, error } = await supabase
-      .from('footer_social_links')
-      .select('*')
-      .order('sort_order');
-
-    if (error) {
-      console.error(error);
-      return [];
-    }
-
-    return data;
+  getSocialLinks: async () => {
+    return (
+      (await footerRequest('/public/social-links')) || []
+    );
   },
-async saveFooterContent(content: any) {
 
-  const { error } = await supabase
-    .from('footer_content')
-    .update({
-      about_title: content.about_title,
-      about_description: content.about_description,
-      contact_title: content.contact_title,
-      address: content.address,
-      phone: content.phone,
-      email: content.email,
-      social_title: content.social_title,
-      copyright_text: content.copyright_text,
-    })
-    .eq('id', content.id);
+  // =================================
+  // SAVE FUNCTIONS
+  // =================================
 
-  if (error) throw error;
-},
-async saveQuickLinks(
-  links: any[]
-) {
+  saveFooterContent: async (content: any) => {
+    return await footerRequest(
+      '/save/content',
+      'POST',
+      content
+    );
+  },
 
-  for (const link of links) {
+  saveQuickLinks: async (links: any[]) => {
+    return await footerRequest(
+      '/save/quick-links',
+      'POST',
+      links
+    );
+  },
 
-    const { error } = await supabase
-      .from('footer_quick_links')
-      .update({
-        label: link.label,
-        url: link.url,
-        sort_order: link.sort_order,
-      })
-      .eq('id', link.id);
-
-    if (error) throw error;
-  }
-},async saveSocialLinks(
-  socials: any[]
-) {
-
-  for (const social of socials) {
-
-    const { error } = await supabase
-      .from('footer_social_links')
-      .update({
-        platform: social.platform,
-        url: social.url,
-        sort_order: social.sort_order,
-      })
-      .eq('id', social.id);
-
-    if (error) throw error;
-  }
-},
+  saveSocialLinks: async (socials: any[]) => {
+    return await footerRequest(
+      '/save/social-links',
+      'POST',
+      socials
+    );
+  },
 };

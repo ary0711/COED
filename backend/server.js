@@ -27,6 +27,16 @@ app.use(helmet());
 app.use('/generated', express.static(path.join(__dirname, 'generated')));
 
 require('./cron');
+const footerRoutes = require('./routes/footerRoutes');
+app.use('/api/footer', footerRoutes);
+const contactRoutes = require('./routes/contactRoutes');
+app.use('/api/contact', contactRoutes);
+const accreditationRoutes = require('./routes/accreditationRoutes');
+app.use('/api/accreditation', accreditationRoutes);
+const achievementsRoutes = require('./routes/achievementsRoutes');
+app.use('/api/achievements', achievementsRoutes);
+const researchRoutes = require('./routes/researchRoutes');
+app.use('/api/research', researchRoutes);
 const clubsRoutes = require('./routes/clubsRoutes');
 app.use('/api/clubs', clubsRoutes);
 const departmentRoutes = require('./routes/departmentRoutes');

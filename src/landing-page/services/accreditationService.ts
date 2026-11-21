@@ -1,76 +1,135 @@
-import { supabase } from '../../supabaseClient';
+
+const API_BASE =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+async function accreditationRequest(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: any
+) {
+  const token = localStorage.getItem('token');
+
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+    ...(body !== undefined
+      ? { 'Content-Type': 'application/json' }
+      : {}),
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : {}),
+  };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${API_BASE}/api/accreditation${endpoint}`,
+      {
+        method,
+        headers,
+        ...(body !== undefined
+          ? { body: JSON.stringify(body) }
+          : {}),
+      }
+    );
+  } catch (error) {
+    console.error('ACCREDITATION NETWORK ERROR:', error);
+    throw new Error('Cannot connect to the backend server.');
+  }
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    console.error('ACCREDITATION API ERROR:', {
+      endpoint,
+      status: response.status,
+      response: result,
+    });
+
+    throw new Error(
+      result.error ||
+      result.message ||
+      `Accreditation request failed: ${response.status}`
+    );
+  }
+
+  return result.data;
+}
 
 export const accreditationService = {
+  // =================================
+  // LOAD FUNCTIONS
+  // =================================
 
   getPageContent: async () => {
-    const { data } = await supabase
-      .from('accreditation_page_content')
-      .select('*')
-      .single();
-
-    return data;
+    return await accreditationRequest('/public/page-content');
   },
 
   getOverview: async () => {
-    const { data } = await supabase
-      .from('accreditation_overview')
-      .select('*')
-      .order('display_order');
-
-    return data;
+    return (
+      (await accreditationRequest('/public/overview')) || []
+    );
   },
 
   getLevels: async () => {
-    const { data } = await supabase
-      .from('accreditation_levels')
-      .select('*')
-      .order('display_order');
-
-    return data;
+    return (
+      (await accreditationRequest('/public/levels')) || []
+    );
   },
 
   getPrograms: async () => {
-    const { data } = await supabase
-      .from('accredited_programs')
-      .select('*')
-      .order('display_order');
-
-    return data;
+    return (
+      (await accreditationRequest('/public/programs')) || []
+    );
   },
 
   getCertifications: async () => {
-    const { data } = await supabase
-      .from('accreditation_certifications')
-      .select('*')
-      .order('display_order');
-
-    return data;
+    return (
+      (await accreditationRequest('/public/certifications')) || []
+    );
   },
-savePageContent: async (data: any) => {
-  return supabase
-    .from('accreditation_page_content')
-    .update(data)
-    .eq('id', data.id);
-},
-saveOverview: async (items: any[]) => {
-  return supabase
-    .from('accreditation_overview')
-    .upsert(items);
-},
-saveLevels: async (items: any[]) => {
-  return supabase
-    .from('accreditation_levels')
-    .upsert(items);
-},
 
-savePrograms: async (items: any[]) => {
-  return supabase
-    .from('accreditation_programs')
-    .upsert(items);
-},
-saveCertifications: async (items: any[]) => {
-  return supabase
-    .from('accreditation_certifications')
-    .upsert(items);
-},
+  // =================================
+  // SAVE FUNCTIONS
+  // =================================
+
+  savePageContent: async (data: any) => {
+    return await accreditationRequest(
+      '/save/page-content',
+      'POST',
+      data
+    );
+  },
+
+  saveOverview: async (items: any[]) => {
+    return await accreditationRequest(
+      '/save/overview',
+      'POST',
+      items
+    );
+  },
+
+  saveLevels: async (items: any[]) => {
+    return await accreditationRequest(
+      '/save/levels',
+      'POST',
+      items
+    );
+  },
+
+  savePrograms: async (items: any[]) => {
+    return await accreditationRequest(
+      '/save/programs',
+      'POST',
+      items
+    );
+  },
+
+  saveCertifications: async (items: any[]) => {
+    return await accreditationRequest(
+      '/save/certifications',
+      'POST',
+      items
+    );
+  },
 };

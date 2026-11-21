@@ -39,7 +39,7 @@ export function AccreditationLevelsEditor({
         >
 
           <input
-            value={level.level_name}
+         value={level.level_name || ''}
             onChange={(e) =>
               updateLevel(
                 index,
@@ -51,7 +51,7 @@ export function AccreditationLevelsEditor({
           />
 
           <textarea
-            value={level.description}
+            value={level.description || ''}
             onChange={(e) =>
               updateLevel(
                 index,
@@ -63,7 +63,7 @@ export function AccreditationLevelsEditor({
           />
 
           <select
-            value={level.color}
+            value={level.color || 'yellow'}
             onChange={(e) =>
               updateLevel(
                 index,
