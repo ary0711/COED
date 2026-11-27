@@ -498,7 +498,7 @@ let profileRole = user.role || '';
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: '30d'
+        expiresIn: '30m'
       }
     );
 
