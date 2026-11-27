@@ -31,8 +31,13 @@ const footerRoutes = require('./routes/footerRoutes');
 app.use('/api/footer', footerRoutes);
 const contactRoutes = require('./routes/contactRoutes');
 app.use('/api/contact', contactRoutes);
+
+// Mount workspace accreditation routes first so /folders, /documents, and /upload match before router.use(authenticate)
+const accreditationRouter = require('./routes/accreditation');
+app.use('/api/accreditation', accreditationRouter);
 const accreditationRoutes = require('./routes/accreditationRoutes');
 app.use('/api/accreditation', accreditationRoutes);
+
 const achievementsRoutes = require('./routes/achievementsRoutes');
 app.use('/api/achievements', achievementsRoutes);
 const researchRoutes = require('./routes/researchRoutes');
@@ -91,9 +96,6 @@ const teachingLoadRoutes = require('./routes/teachingLoad');
 app.use('/api', teachingLoadRoutes);
 
 app.use('/api/contact', require('./routes/contact'));
-
-const accreditationRouter = require('./routes/accreditation');
-app.use('/api/accreditation', accreditationRouter);
 
 const authenticate = require('./middleware/authenticate');
 
